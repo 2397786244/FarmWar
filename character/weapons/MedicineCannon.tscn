@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cros3wgg0wgqx"]
+
+[ext_resource type="Script" uid="uid://ckvk5dxsn3ocm" path="res://src/medicine_cannon.gd" id="1_nyaan"]
+[ext_resource type="PackedScene" uid="uid://crjnc32iqy4un" path="res://assets/tools/MedicineCannon.glb" id="1_x05dh"]
+
+[node name="MedicineCannon" type="Node3D" unique_id=1546170982]
+script = ExtResource("1_nyaan")
+
+[node name="Mesh" parent="." unique_id=1740160743 instance=ExtResource("1_x05dh")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, -0.12519729, 0.31623387)
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1832770347]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.44154692, -1.9566941)
+target_position = Vector3(0, 0, -5)

@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://bt52jly3wkkh1"]
+
+[ext_resource type="PackedScene" uid="uid://bwgf88qwpmidq" path="res://assets/tools/FlameGun.glb" id="1_qpbqy"]
+
+[node name="FlameGun" unique_id=2114166248 instance=ExtResource("1_qpbqy")]
+
+[node name="Grip" parent="FTF_Tool_Flame_Gun_RedYellow" parent_id_path=PackedInt32Array(497249097) index="4" unique_id=1156265691]
+transform = Transform3D(1, 0, 0, 0, 0.9848077, 0.17364818, 0, -0.17364818, 0.9848077, 0, -0.29593092, -0.18025523)
+
+[node name="GripCap" parent="FTF_Tool_Flame_Gun_RedYellow" parent_id_path=PackedInt32Array(497249097) index="5" unique_id=469091695]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5659309, -0.23025523)
+
+[node name="HeatFinTop" parent="FTF_Tool_Flame_Gun_RedYellow" parent_id_path=PackedInt32Array(497249097) index="8" unique_id=930043017]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19782212, 0.61)
+
+[node name="PilotLight" parent="FTF_Tool_Flame_Gun_RedYellow" parent_id_path=PackedInt32Array(497249097) index="13" unique_id=1551502744]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19895232, 0.43)
+
+[node name="Trigger" parent="FTF_Tool_Flame_Gun_RedYellow" parent_id_path=PackedInt32Array(497249097) index="15" unique_id=2138584579]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.09395453, -0.11132137)

@@ -1,0 +1,204 @@
+[gd_scene format=3 uid="uid://c50addjjretsr"]
+
+[ext_resource type="Script" uid="uid://b0a5y7t03ah8o" path="res://src/ai_player_test_root.gd" id="1_root"]
+[ext_resource type="Script" uid="uid://dkf5ajyiobehj" path="res://src/broadcast_camera.gd" id="2_camera"]
+[ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="3_farmgen"]
+[ext_resource type="PackedScene" uid="uid://caipv2a1t7q0v" path="res://character/AIPlayerV2.tscn" id="5_aiv2"]
+[ext_resource type="PackedScene" uid="uid://dqem1yoqn1n6" path="res://assets/buildings/FTF_Building_Wall_2m.glb" id="6_wall"]
+[ext_resource type="PackedScene" uid="uid://dshcnt8vs40sd" path="res://assets/FTF_Rock_Large.glb" id="7_rock_l"]
+[ext_resource type="PackedScene" uid="uid://bf7eq2he5xumb" path="res://assets/FTF_Rock_Medium.glb" id="8_rock_m"]
+
+[sub_resource type="Environment" id="Env_main"]
+background_mode = 1
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.7, 0.85, 1)
+ambient_light_energy = 0.5
+
+[sub_resource type="NavigationMesh" id="NavMesh_main"]
+cell_size = 0.25
+agent_radius = 0.5
+agent_height = 1.8
+agent_max_slope = 45.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.35, 0.55, 0.28, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ground"]
+size = Vector3(140, 1, 140)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(140, 1, 140)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall"]
+size = Vector3(2, 2, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rock"]
+size = Vector3(2, 1.5, 2)
+
+[node name="AIPlayerTestScene" type="Node3D" unique_id=1877664535]
+script = ExtResource("1_root")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=340772013]
+transform = Transform3D(0.866, 0.25, -0.433, 0, 0.866, 0.5, 0.5, -0.433, 0.75, 0, 40, 0)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 120.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1678690221]
+environment = SubResource("Env_main")
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="." unique_id=197848943]
+navigation_mesh = SubResource("NavMesh_main")
+
+[node name="Ground" type="StaticBody3D" parent="NavigationRegion3D" unique_id=423344285]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="NavigationRegion3D/Ground" unique_id=1033133088]
+material_override = SubResource("Mat_ground")
+mesh = SubResource("BoxMesh_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Ground" unique_id=1753709939]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="Obstacles" type="Node3D" parent="NavigationRegion3D" unique_id=1392568186]
+
+[node name="Wall1" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=686938715]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15, 1, -15)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Wall1" unique_id=280255241 instance=ExtResource("6_wall")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Wall1" unique_id=1698714495]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Wall2" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=594455219]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15, 1, 15)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Wall2" unique_id=1835690719 instance=ExtResource("6_wall")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Wall2" unique_id=834204666]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Rock1" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=1239454264]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -35, 0.5, -10)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Rock1" unique_id=1020221002 instance=ExtResource("7_rock_l")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Rock1" unique_id=1068413451]
+shape = SubResource("BoxShape3D_rock")
+
+[node name="Rock2" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=525238786]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 35, 0.5, 10)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Rock2" unique_id=961782131 instance=ExtResource("7_rock_l")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Rock2" unique_id=1181940710]
+shape = SubResource("BoxShape3D_rock")
+
+[node name="Rock3" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=1078972507]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0.5, 35)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Rock3" unique_id=2064133797 instance=ExtResource("8_rock_m")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Rock3" unique_id=892537824]
+shape = SubResource("BoxShape3D_rock")
+
+[node name="Rock4" type="StaticBody3D" parent="NavigationRegion3D/Obstacles" unique_id=1630903203]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.5, -35)
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" parent="NavigationRegion3D/Obstacles/Rock4" unique_id=1042186234 instance=ExtResource("8_rock_m")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NavigationRegion3D/Obstacles/Rock4" unique_id=1824709415]
+shape = SubResource("BoxShape3D_rock")
+
+[node name="CenterFarm" type="Node3D" parent="." unique_id=10989077]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.5, 0, -13.5)
+script = ExtResource("3_farmgen")
+field_label = "center_field"
+length_tiles = 10
+width_tiles = 10
+tile_spacing = 3.0
+
+[node name="NorthWestFarm" type="Node3D" parent="." unique_id=716652239]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -63.5, 0, -63.5)
+script = ExtResource("3_farmgen")
+field_label = "nw_field"
+length_tiles = 10
+width_tiles = 10
+tile_spacing = 3.0
+
+[node name="NorthEastFarm" type="Node3D" parent="." unique_id=110651180]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 36.5, 0, -63.5)
+script = ExtResource("3_farmgen")
+field_label = "ne_field"
+length_tiles = 10
+width_tiles = 10
+tile_spacing = 3.0
+
+[node name="SouthWestFarm" type="Node3D" parent="." unique_id=97031508]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -63.5, 0, 36.5)
+script = ExtResource("3_farmgen")
+field_label = "sw_field"
+length_tiles = 10
+width_tiles = 10
+tile_spacing = 3.0
+
+[node name="SouthEastFarm" type="Node3D" parent="." unique_id=1669515989]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 36.5, 0, 36.5)
+script = ExtResource("3_farmgen")
+field_label = "se_field"
+length_tiles = 10
+width_tiles = 10
+tile_spacing = 3.0
+
+[node name="BlueAI_Farmer" parent="." unique_id=1593974706 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, 0, -60)
+difficulty = 0
+print_decisions = true
+
+[node name="BlueAI_Guard" parent="." unique_id=1650672070 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -60)
+profession = "guard"
+print_decisions = true
+
+[node name="BlueAI_Mage" parent="." unique_id=913118745 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, -60)
+profession = "mage"
+print_decisions = true
+
+[node name="RedAI_Cook" parent="." unique_id=1570560892 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, 0, 60)
+profession = "cook"
+team_id = "red"
+print_decisions = true
+
+[node name="RedAI_Engineer" parent="." unique_id=689863 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 60)
+profession = "engineer"
+team_id = "red"
+print_decisions = true
+
+[node name="RedAI_Trickster" parent="." unique_id=1463393608 instance=ExtResource("5_aiv2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 60)
+difficulty = 0
+profession = "assistant"
+team_id = "red"
+print_decisions = true
+
+[node name="BroadcastCamera" type="Camera3D" parent="." unique_id=1666287942]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866, 0, -0.866, 0.5, 0, 80, 80)
+current = true
+script = ExtResource("2_camera")

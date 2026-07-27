@@ -1,0 +1,34 @@
+[gd_scene format=3 uid="uid://kwvmjeo72p05"]
+
+[ext_resource type="PackedScene" uid="uid://c537rvl4llg3e" path="res://assets/buildings/GunStore.glb" id="1_3okg4"]
+[ext_resource type="Script" uid="uid://coonebpxfj4fu" path="res://src/food_car_shop.gd" id="2_gun_store_shop"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3okg4"]
+size = Vector3(9, 5, 8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_321xu"]
+size = Vector3(6, 1, 3)
+
+[node name="Gunstore" type="StaticBody3D" unique_id=1550176003]
+collision_layer = 4096
+collision_mask = 45739
+script = ExtResource("2_gun_store_shop")
+shop_category = "gun_store"
+shop_display_name = "枪械商店"
+interaction_hint = "[E] 打开枪械商店"
+
+[node name="GunStore" parent="." unique_id=834237586 instance=ExtResource("1_3okg4")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=965223844]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5582495, 0)
+shape = SubResource("BoxShape3D_3okg4")
+
+[node name="ShopArea" type="Area3D" parent="." unique_id=1297695534]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7461424, 0, 4.6032853)
+collision_layer = 512
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ShopArea" unique_id=1241806097]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7501297, 0.52998924, 0.9485769)
+shape = SubResource("BoxShape3D_321xu")
+debug_color = Color(0.89636004, 0.21778783, 0.58393556, 0.41960785)

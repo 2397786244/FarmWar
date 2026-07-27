@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://b0jj2d6v4pqum"]
+
+[ext_resource type="Script" uid="uid://cubedo00gwdhm" path="res://src/reap_wreck.gd" id="1_03if3"]
+[ext_resource type="PackedScene" uid="uid://b1pluwanpe3i7" path="res://assets/tools/DestoryCannon.glb" id="2_i0mba"]
+
+[sub_resource type="Curve" id="Curve_03if3"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5285714, 0.44431943), 0.0, 0.0, 0, 0, Vector2(0.99714285, 0.07142854), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_i0mba"]
+curve = SubResource("Curve_03if3")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_p0mo3"]
+angle_min = -49.99999
+angle_max = 50.00001
+direction = Vector3(0, 0, -1)
+spread = 40.0
+initial_velocity_min = 10.0
+initial_velocity_max = 20.0
+gravity = Vector3(0, -2, 0)
+scale_min = 0.29999998
+scale_max = 0.29999998
+scale_curve = SubResource("CurveTexture_i0mba")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2nntp"]
+albedo_color = Color(0.9098039, 0.92156863, 0.5882353, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_f72rv"]
+material = SubResource("StandardMaterial3D_2nntp")
+radius = 0.2
+height = 0.2
+
+[node name="Wreck" type="Node3D" unique_id=1379208354]
+script = ExtResource("1_03if3")
+
+[node name="FTF_Tool_Destroy_Cannon_BluePurple" parent="." unique_id=623250207 instance=ExtResource("2_i0mba")]
+transform = Transform3D(-0.5, 0, -7.54979e-08, 0, 0.5, 0, 7.54979e-08, 0, -0.5, 0, 0.089944124, 0.0017684102)
+
+[node name="Emitter" type="GPUParticles3D" parent="." unique_id=947981118]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1567213, -0.8779)
+emitting = false
+amount = 15
+lifetime = 0.5
+one_shot = true
+explosiveness = 0.8
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_p0mo3")
+draw_pass_1 = SubResource("SphereMesh_f72rv")
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1297601788]
+position = Vector3(0, 0.17945105, -0.8568884)
+target_position = Vector3(0, 0, -5)

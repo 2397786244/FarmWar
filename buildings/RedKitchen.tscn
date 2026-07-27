@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://jutywdx0i3n2"]
+
+[ext_resource type="PackedScene" uid="uid://cn5bffan4x5vq" path="res://assets/kitchen/RedKitchen.glb" id="1_c2wy4"]
+[ext_resource type="PackedScene" path="res://kitchens/chopping_station.tscn" id="2_chopping"]
+[ext_resource type="PackedScene" uid="uid://b6qlvojhlmpyc" path="res://kitchens/plating_station.tscn" id="3_plating"]
+[ext_resource type="PackedScene" uid="uid://petpktymnucj" path="res://kitchens/farm_smoker.tscn" id="4_smoker"]
+[ext_resource type="PackedScene" path="res://kitchens/freezer.tscn" id="5_freezer"]
+[ext_resource type="PackedScene" path="res://kitchens/griddle_station.tscn" id="6_griddle"]
+[ext_resource type="PackedScene" uid="uid://bqhr7v7svog3p" path="res://kitchens/induction_counter.tscn" id="7_induction"]
+[ext_resource type="PackedScene" uid="uid://k4cpkle6y8i4" path="res://kitchens/ingredient_extractor.tscn" id="8_extractor"]
+[ext_resource type="PackedScene" path="res://kitchens/ingredient_pickup.tscn" id="9_pickup"]
+[ext_resource type="PackedScene" path="res://kitchens/oven.tscn" id="10_oven"]
+[ext_resource type="PackedScene" uid="uid://bl85x4tinjod1" path="res://kitchens/stand_mixer.tscn" id="11_mixer"]
+
+[node name="RedKitchen" type="StaticBody3D" unique_id=64102639]
+
+[node name="RedKitchen" parent="." unique_id=591754071 instance=ExtResource("1_c2wy4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, 8)
+
+[node name="ChoppingStation" parent="." unique_id=2116210553 instance=ExtResource("2_chopping")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.015863, 0, 7.31163)
+
+[node name="PlatingStation" parent="." unique_id=2011262548 instance=ExtResource("3_plating")]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -4.2189026, 0, 5.59343)
+
+[node name="FarmSmoker" parent="." unique_id=1862224505 instance=ExtResource("4_smoker")]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -4.255451, 0, 3.760612)
+
+[node name="Freezer" parent="." unique_id=1590504606 instance=ExtResource("5_freezer")]
+transform = Transform3D(-4.3711385e-08, 0, -0.99999994, 0, 1, 0, 0.99999994, 0, -4.3711385e-08, 2.2454317, 0, 6.512983)
+
+[node name="Oven" parent="." unique_id=807150592 instance=ExtResource("10_oven")]
+transform = Transform3D(0.014799845, 0, -0.99989045, 0, 1, 0, 0.99989045, 0, 0.014799845, 2.1258216, 0, 3.0679555)
+
+[node name="IngredientExtractor" parent="." unique_id=2111663311 instance=ExtResource("8_extractor")]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -4.2251735, 0, 1.8642023)
+
+[node name="IngredientPickup" parent="." unique_id=1160256343 instance=ExtResource("9_pickup")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -1.2209862, 0, 7.303769)
+
+[node name="GriddleStation" parent="." unique_id=979951124 instance=ExtResource("6_griddle")]
+transform = Transform3D(0.040934086, 0, -0.99916184, 0, 1, 0, 0.99916184, 0, 0.040934086, 2.2227106, 0, 4.797605)
+
+[node name="InductionCounter" parent="." unique_id=225586728 instance=ExtResource("7_induction")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.6142096, 0, 7.366895)
+
+[node name="StandMixer" parent="." unique_id=1021535731 instance=ExtResource("11_mixer")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 2.1945195, 0, 1.5080931)

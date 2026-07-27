@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://cyhwi4kvt0j1r"]
+
+[ext_resource type="PackedScene" uid="uid://3jlexu5f3urk" path="res://assets/tools/FreezeGun.glb" id="1_tbfmm"]
+
+[node name="FreezeGun" unique_id=396359496 instance=ExtResource("1_tbfmm")]
+
+[node name="Grip" parent="FTF_Tool_Freeze_Gun_DeepBlue" parent_id_path=PackedInt32Array(2136159295) index="4" unique_id=1150144766]
+transform = Transform3D(1, 0, 0, 0, 0.9848077, 0.17364818, 0, -0.17364818, 0.9848077, 0, -0.32, -0.13717069)
+
+[node name="GripCap" parent="FTF_Tool_Freeze_Gun_DeepBlue" parent_id_path=PackedInt32Array(2136159295) index="5" unique_id=399244757]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.59, -0.1920498)
+
+[node name="RearSight" parent="FTF_Tool_Freeze_Gun_DeepBlue" parent_id_path=PackedInt32Array(2136159295) index="11" unique_id=777737574]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.10568945, -0.02)
+
+[node name="Trigger" parent="FTF_Tool_Freeze_Gun_DeepBlue" parent_id_path=PackedInt32Array(2136159295) index="13" unique_id=125943701]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.13, -0.06829269)

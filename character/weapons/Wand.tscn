@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://cm1c03cdwb4o6"]
+
+[ext_resource type="Script" uid="uid://bx8qek85kahm0" path="res://src/wand.gd" id="1_7oujj"]
+[ext_resource type="PackedScene" uid="uid://ew2vko8r6rla" path="res://assets/tools/Wand.glb" id="1_8i2ck"]
+
+[node name="Wand" type="Node3D" unique_id=201279551]
+script = ExtResource("1_7oujj")
+
+[node name="Wand" parent="." unique_id=1856860722 instance=ExtResource("1_8i2ck")]

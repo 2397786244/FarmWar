@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+
+[node name="PlayerPhysicsBody" type="CharacterBody3D"]
+collision_layer = 8
+collision_mask = 12943
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.98931706, -0.01983869)
+shape = SubResource("CapsuleShape3D_player")

@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://c1hrgrw07m1x7"]
+
+[ext_resource type="Script" uid="uid://k7kv04y7e242" path="res://src/bug_cannon.gd" id="1_8vdmu"]
+[ext_resource type="PackedScene" uid="uid://b1eae0ler3uk4" path="res://assets/tools/BugCannon.glb" id="1_b2bfj"]
+
+[node name="BugCannon" type="Node3D" unique_id=277917039]
+script = ExtResource("1_8vdmu")
+
+[node name="Mesh" parent="." unique_id=1569988938 instance=ExtResource("1_b2bfj")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1156424190]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08724326, -1.2490166)
+target_position = Vector3(0, 0, -5)

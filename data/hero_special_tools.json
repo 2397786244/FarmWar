@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "heroes": {
+	"farmer": ["plant_protector", "fertilizer", "farm_runner"],
+	"cook": ["spicy_blaster", "field_kitchen", "auto_cooker"],
+	"guard": ["anti_air", "shield_door", "auto_shooter", "area_protector"],
+	"apothecary": ["medicine_pistol", "medicine_cannon", "tranquilizer_pistol"],
+	"assistant": ["normal_drone", "wheat_sentry", "cargo_shield"],
+	"engineer": ["signal_jam", "tech_drone", "small_mouse"],
+	"mage": ["wand", "bug_cannon", "rift_book"],
+	"prospector": ["signal_augment", "prospect_scanner", "survey_rider"],
+	"rider": ["repair_welder", "vehicle_shield_shooter", "boom_buggy"],
+	"trickster": ["big_mouth", "trap", "fake_player"]
+  }
+}

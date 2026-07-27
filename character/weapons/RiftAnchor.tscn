@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://b4gd6ag71sakj"]
+
+[ext_resource type="PackedScene" uid="uid://dnfsra2sjseke" path="res://assets/saved_glbs/rift_anchor.tscn" id="1_q3fy7"]
+[ext_resource type="Script" uid="uid://dfn0wkpb3g507" path="res://src/rift_anchor.gd" id="2_anchor"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_q3fy7"]
+size = Vector3(0.3, 0.15, 0.3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_q458e"]
+size = Vector3(0.35, 0.3, 0.35)
+
+[node name="RiftAnchor" type="CharacterBody3D" unique_id=1475119790]
+collision_layer = 128
+collision_mask = 3
+script = ExtResource("2_anchor")
+
+[node name="Mesh" parent="." unique_id=1376057821 instance=ExtResource("1_q3fy7")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1401672738]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07449314, 0)
+shape = SubResource("BoxShape3D_q3fy7")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1244260747]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1340022]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.10860562, 0)
+shape = SubResource("BoxShape3D_q458e")
+debug_color = Color(0.94511086, 0.1152345, 0.51526535, 0.41960785)

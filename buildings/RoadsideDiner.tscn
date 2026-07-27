@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://dba6lq15i61io"]
+
+[ext_resource type="PackedScene" uid="uid://dcs62gsod2fft" path="res://assets/buildings/RoadsideDiner.glb" id="1_0gv23"]
+[ext_resource type="Script" uid="uid://jpvk5kl4ydvn" path="res://src/cargo_delivery_building.gd" id="2_cargo_delivery"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0gv23"]
+size = Vector3(9, 4, 8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_plynf"]
+size = Vector3(8, 1, 5)
+
+[node name="RoadsideDiner" type="StaticBody3D" unique_id=187125575]
+collision_layer = 4096
+collision_mask = 45739
+script = ExtResource("2_cargo_delivery")
+building_id = "roadside_diner"
+display_name = "公路餐厅"
+building_type = "roadside_diner"
+accepted_delivery_categories = PackedStringArray("Cooked Dish Delivery", "Farm Produce Delivery")
+line_color = Color(0.12, 1, 0.24, 1)
+glow_color = Color(0.48, 1, 0.56, 0.28)
+outer_glow_color = Color(0.66, 1, 0.7, 0.12)
+glow_emission = Color(0.24, 1, 0.34, 1)
+
+[node name="RoadsideDiner" parent="." unique_id=1202478574 instance=ExtResource("1_0gv23")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1804623871]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1174612, 0)
+shape = SubResource("BoxShape3D_0gv23")
+
+[node name="CargoArea" type="Area3D" parent="." unique_id=1766207747]
+collision_layer = 512
+collision_mask = 8200
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CargoArea" unique_id=1652027494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5.7577777)
+shape = SubResource("BoxShape3D_plynf")
+debug_color = Color(0.9477678, 0.15741414, 0.42874974, 0.41960785)

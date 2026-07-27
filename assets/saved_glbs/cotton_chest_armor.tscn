@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://bbwmrwvv6e1go"]
+
+[ext_resource type="PackedScene" uid="uid://docd627e2de57" path="res://assets/equipments/CottonChestArmor.glb" id="1_yftkl"]
+
+[node name="CottonChestArmor" unique_id=597424422 instance=ExtResource("1_yftkl")]
+
+[node name="FTF_Equipment_CottonChestArmor" parent="." index="0" unique_id=1540677433]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)

@@ -1,0 +1,380 @@
+{
+  "schema_version": 1,
+  "plantable_order": [
+    "tomato", "corn", "wheat", "pumpkin", "watermelon",
+    "pepper", "eggplant", "strawberry", "beet", "cabbage",
+    "cotton", "lettuce", "mint", "peanut", "sugarcane",
+    "tobacco", "grape", "kiwi", "hazelnut", "pistachio", "walnut",
+    "soybean", "blackpepper", "potato"
+  ],
+  "ingredients": {
+    "tomato": {
+      "display_name": "西红柿",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "常见多汁蔬果，可直接烹调、切配或作为汤品和酱料原料。",
+      "source": {"plantable": true, "farm_scene": "res://items/tomato.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Tomato.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_tomato.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_tomato.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Tomato.glb"}
+    },
+    "corn": {
+      "display_name": "玉米",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "谷物作物，适合烧烤、汤品、配菜与加工料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/corn.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Corn.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_corn.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_corn.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Corn.glb"}
+    },
+    "wheat": {
+      "display_name": "小麦",
+      "kind": "food",
+      "category": "grain",
+	  "description": "基础粮食作物，可加工为面粉并用于面包和主食料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/wheat.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Wheat.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_wheat.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_wheat.glb", "chopped_item": ""}
+    },
+    "pepper": {
+      "display_name": "辣椒",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "辛香蔬菜，切配后可为料理提供辣味与调味用途。",
+      "source": {"plantable": true, "farm_scene": "res://items/pepper.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Pepper.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pepper.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pepper.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_ChiliPepper.glb"}
+    },
+    "strawberry": {
+      "display_name": "草莓",
+      "kind": "food",
+      "category": "fruit",
+	  "pickup_unit_kg": 1.0,
+	  "description": "甜味水果，可用于甜点、饮品与果味料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/strawberry.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Strawberry.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_strawberry.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_strawberry.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Strawberry.glb"}
+    },
+    "eggplant": {
+      "display_name": "茄子",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "适合煎烤和切配的蔬菜，是常见热菜原料。",
+      "source": {"plantable": true, "farm_scene": "res://items/eggplant.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Eggplant.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_eggplant.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_eggplant.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Eggplant.glb"}
+    },
+    "pumpkin": {
+      "display_name": "南瓜",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "体型较大的蔬菜，可切配制作汤品、烤制料理和甜食。",
+      "source": {"plantable": true, "farm_scene": "res://items/pumpkin.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Pumpkin.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pumpkin.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pumpkin.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Pumpkin.glb"}
+    },
+    "watermelon": {
+      "display_name": "西瓜",
+      "kind": "food",
+      "category": "fruit",
+	  "pickup_unit_kg": 1.0,
+	  "description": "高水分水果，可切块制作饮品、甜点或恢复类料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/watermelon.tscn", "farm_tile_count": 1, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Watermelon.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_watermelon.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_watermelon.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Watermelon.glb"}
+    },
+    "beet": {
+      "display_name": "甜菜",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "根茎蔬菜，色泽鲜明，适合汤品、腌制和切配料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/beet.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Beet.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_beet.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_beet.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Beet.glb"}
+    },
+    "cabbage": {
+      "display_name": "卷心菜",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "叶菜类食材，可切配用于汤品、炒菜和卷菜料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/cabbage.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Cabbage.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_cabbage.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_cabbage.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Cabbage.glb"}
+    },
+    "cotton": {
+      "display_name": "棉花",
+      "kind": "material",
+      "category": "fiber_crop",
+	  "description": "纤维作物，用于制造和交易，不属于可食用食材。",
+      "source": {"plantable": true, "farm_scene": "res://items/cotton.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Cotton.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_cotton.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_cotton.glb", "chopped_item": ""}
+    },
+    "lettuce": {
+      "display_name": "生菜",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "清爽叶菜，可切配制作沙拉、配菜和冷食料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/lettuce.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Lettuce.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_lettuce.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_lettuce.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Lettuce.glb"}
+    },
+    "mint": {
+      "display_name": "薄荷",
+      "kind": "cooking_material",
+      "category": "herb",
+	  "description": "芳香香草，可作为饮品、甜点和料理的清凉调味料。",
+      "source": {"plantable": true, "farm_scene": "res://items/mint.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Mint.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_mint.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_mint.glb", "chopped_item": ""}
+    },
+    "peanut": {
+      "display_name": "花生",
+      "kind": "food",
+      "category": "nut",
+	  "description": "坚果类食材，可直接烹调或加工为碎粒、酱料和配料。",
+      "source": {"plantable": true, "farm_scene": "res://items/peanut.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Peanut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_peanut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_peanut.glb", "chopped_item": ""}
+    },
+    "sugarcane": {
+      "display_name": "甘蔗",
+      "kind": "cooking_material",
+      "category": "sweetener_crop",
+	  "description": "甜味原料，可加工为糖分并用于饮品和甜点调味。",
+      "source": {"plantable": true, "farm_scene": "res://items/sugarcane.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Sugarcane.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_sugarcane.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_sugarcane.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Sugarcane.glb"}
+    },
+    "tobacco": {
+      "display_name": "烟草",
+      "kind": "material",
+      "category": "leaf_crop",
+	  "description": "叶片经济作物，用于交易或工业加工，不可食用。",
+      "source": {"plantable": true, "farm_scene": "res://items/tobacco.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Tobacco.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_tobacco.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_tobacco.glb", "chopped_item": ""}
+    },
+    "grape": {
+      "display_name": "葡萄",
+      "kind": "food",
+      "category": "fruit",
+	  "pickup_unit_kg": 1.0,
+	  "description": "可重复收获的水果，可分离果粒用于饮品、甜点和果酱。",
+      "source": {"plantable": true, "farm_scene": "res://items/grape.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "models": {"plant_visual": "res://assets/plants/Grape.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_grape.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_grape.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Separated_Grapes.glb"}
+    },
+    "kiwi": {
+      "display_name": "猕猴桃",
+      "kind": "food",
+      "category": "fruit",
+	  "pickup_unit_kg": 1.0,
+	  "description": "可重复收获的水果，可切片用于甜点、饮品和水果料理。",
+      "source": {"plantable": true, "farm_scene": "res://items/kiwi.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "models": {"plant_visual": "res://assets/plants/Kiwi.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_kiwi.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_kiwi.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Sliced_Kiwi.glb"}
+    },
+    "hazelnut": {
+      "display_name": "榛子",
+      "kind": "food",
+      "category": "nut",
+	  "description": "坚果食材，适合烘焙、甜点和酱料配方。",
+      "source": {"plantable": true, "farm_scene": "res://items/hazelnut.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "models": {"plant_visual": "res://assets/plants/Hazelnut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_hazelnut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_hazelnut.glb", "chopped_item": ""}
+    },
+    "pistachio": {
+      "display_name": "开心果",
+      "kind": "food",
+      "category": "nut",
+	  "description": "坚果食材，可作烘焙、甜点和咸味料理配料。",
+      "source": {"plantable": true, "farm_scene": "res://items/pistachio.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "models": {"plant_visual": "res://assets/plants/Pistachio.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pistachio.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pistachio.glb", "chopped_item": ""}
+    },
+    "walnut": {
+      "display_name": "核桃",
+      "kind": "food",
+      "category": "nut",
+	  "description": "油脂丰富的坚果，适合烘焙、酱料和料理配料。",
+      "source": {"plantable": true, "farm_scene": "res://items/walnut.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "models": {"plant_visual": "res://assets/plants/Walnut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_walnut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_walnut.glb", "chopped_item": ""}
+    },
+    "soybean": {
+      "display_name": "大豆",
+      "kind": "food",
+      "category": "legume",
+	  "description": "豆类食材，可煮制、发酵或加工为多种植物蛋白原料。",
+      "source": {"plantable": true, "farm_scene": "res://items/soybean.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Soybean.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_soybean.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_soybean.glb", "chopped_item": ""}
+    },
+    "blackpepper": {
+      "display_name": "黑胡椒",
+      "kind": "cooking_material",
+      "category": "spice",
+      "description": "辛香调味作物，可加工为黑胡椒并用于咸味料理。",
+      "pickup_unit_kg": 0.01,
+      "source": {"plantable": true, "farm_scene": "res://items/blackpepper.tscn", "farm_tile_count": 4, "harvest_kg_per_instance": 0.1, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/BlackPepper.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_blackpepper.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_blackpepper.glb", "chopped_item": ""}
+    },
+    "potato": {
+      "display_name": "土豆",
+      "kind": "food",
+      "category": "vegetable",
+	  "pickup_unit_kg": 1.0,
+	  "description": "耐储存根茎蔬菜，可切配、煎烤、炖煮或制成配菜。",
+      "source": {"plantable": true, "farm_scene": "res://items/potato.tscn", "farm_tile_count": 1, "reharvestable": false},
+      "models": {"plant_visual": "res://assets/plants/Potato.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_potato.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_potato.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Potato.glb"}
+    },
+    "chicken": {
+      "display_name": "鸡肉",
+      "kind": "food",
+      "category": "meat",
+	  "pickup_unit_kg": 1.0,
+	  "description": "基础禽肉，可切片后煎、烤、炖煮或加入料理。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawChicken_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawChicken_ThickSlice.glb", "chopped_item": "res://assets/food/FTF_Ingredient_ChoppedChicken.glb"}
+    },
+	"egg": {
+	  "display_name": "鸡蛋",
+	  "kind": "food",
+	  "category": "animal_product",
+	  "pickup_unit_kg": 0.1,
+	  "description": "母鸡产下的新鲜鸡蛋，是烘焙、煎制和多种料理的基础食材。",
+	  "source": {"plantable": false},
+	  "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawChicken_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawChicken_ThickSlice.glb", "chopped_item": ""}
+	},
+	"golden_egg": {
+	  "display_name": "大金蛋",
+	  "kind": "food",
+	  "category": "animal_product",
+	  "pickup_unit_kg": 1.0,
+	  "description": "极其罕见的大金蛋，具有耀眼的金色外壳和极高的交易价值。",
+	  "source": {"plantable": false},
+	  "models": {"plant_visual": "", "harvest_drop": "res://assets/food/GoldenEgg.glb", "whole_item": "res://assets/food/GoldenEgg.glb", "chopped_item": ""}
+	},
+    "pork": {
+      "display_name": "猪肉",
+      "kind": "food",
+      "category": "meat",
+	  "pickup_unit_kg": 1.0,
+	  "description": "油脂较丰富的肉类，可切片后煎烤、炖煮和加工。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawPork_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawPork_ThickSlice.glb", "chopped_item": "res://assets/food/FTF_Ingredient_ChoppedPork.glb"}
+    },
+    "beef": {
+      "display_name": "牛肉",
+      "kind": "food",
+      "category": "meat",
+	  "pickup_unit_kg": 1.0,
+	  "description": "风味浓郁的肉类，可切片后煎烤、炖煮和制作主菜。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "chopped_item": "res://assets/food/FTF_Ingredient_ChoppedBeef.glb"}
+    },
+    "wheat_flour": {
+      "display_name": "小麦粉",
+      "kind": "cooking_material",
+      "category": "flour",
+      "description": "由小麦加工而成的烘焙基础粉料。",
+      "pickup_unit_kg": 0.25,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/WheatFlour.glb", "whole_item": "res://assets/food/WheatFlour.glb", "chopped_item": ""}
+    },
+    "sugar": {
+      "display_name": "糖",
+      "kind": "cooking_material",
+      "category": "sweetener",
+      "description": "用于甜点、烘焙和调味的基础甜味配料。",
+      "pickup_unit_kg": 0.25,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/Sugar.glb", "whole_item": "res://assets/food/Sugar.glb", "chopped_item": ""}
+    },
+    "oil": {
+      "display_name": "油",
+      "kind": "cooking_material",
+      "category": "cooking_oil",
+      "description": "用于煎制、烘焙和调味的基础油脂。",
+      "pickup_unit_kg": 0.1,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/Oil.glb", "whole_item": "res://assets/food/Oil.glb", "chopped_item": ""}
+    },
+    "yeast": {
+      "display_name": "酵母粉",
+      "kind": "cooking_material",
+      "category": "leavening",
+      "description": "帮助面团发酵膨松的烘焙配料。",
+      "pickup_unit_kg": 0.01,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/Yeast.glb", "whole_item": "res://assets/food/Yeast.glb", "chopped_item": ""}
+    },
+    "yeast_dough": {
+      "display_name": "发酵面团",
+      "kind": "cooking_material",
+      "category": "dough",
+      "description": "由小麦粉、水和酵母搅拌发酵而成，用于制作面包。",
+      "pickup_unit_kg": 0.25,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/YeastDough.glb", "whole_item": "res://assets/food/YeastDough.glb", "chopped_item": ""}
+    },
+    "puff_pastry_dough": {
+      "display_name": "酥皮面团",
+      "kind": "cooking_material",
+      "category": "dough",
+      "description": "由小麦粉、油和糖揉制的酥皮基底，用于制作派类甜点。",
+      "pickup_unit_kg": 0.25,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/PuffPastryDough.glb", "whole_item": "res://assets/food/PuffPastryDough.glb", "chopped_item": ""}
+    },
+    "water": {
+      "display_name": "水",
+      "kind": "cooking_material",
+      "category": "liquid",
+      "description": "用于汤品、饮品和面团的基础液体配料。",
+      "pickup_unit_kg": 0.5,
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/Water.glb", "whole_item": "res://assets/food/Water.glb", "chopped_item": ""}
+    },
+    "log": {
+      "display_name": "原木",
+      "kind": "material",
+      "category": "wood",
+      "pickup_unit_kg": 2.0,
+      "description": "从被砍倒的树木中获得的原木，可加工成木材板和木梁。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/Log_Drop.glb", "whole_item": "res://assets/other_items/Material/Log_Drop.glb", "chopped_item": ""}
+    },
+    "bear_hide": {
+      "display_name": "黑熊皮",
+      "kind": "material",
+      "category": "animal_product",
+      "pickup_unit_kg": 1.0,
+      "description": "从黑熊身上取得的厚实毛皮，保暖且耐磨，可用于制作防寒装备、皮革制品和高级装具。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "chopped_item": ""}
+    },
+    "coal": {
+      "display_name": "煤矿",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "开采煤矿石获得的燃料矿物，适合作为冶炼、烹饪和工业设备的能源材料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_coal_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_coal_ore.glb", "chopped_item": ""}
+    },
+    "iron": {
+      "display_name": "铁矿",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "从铁矿石中开采的金属原料，是制作工具、建筑构件和载具部件的基础材料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_iron_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_iron_ore.glb", "chopped_item": ""}
+    },
+    "copper": {
+      "display_name": "铜矿",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "含铜的金属矿物，可用于制作导电部件、机械零件和更高级的工艺品。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_copper_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_copper_ore.glb", "chopped_item": ""}
+    },
+    "limestone": {
+      "display_name": "石灰石",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "常见的建筑与工业矿物，可加工成砌筑材料、石灰和其他生产原料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_limestone_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_limestone_ore.glb", "chopped_item": ""}
+    }
+  }
+}

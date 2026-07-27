@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://cflp1y4wbc8xq"]
+
+[ext_resource type="PackedScene" uid="uid://bsdqwjghkvy8i" path="res://assets/plants/Walnut.glb" id="1_walnut"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_walnut"]
+radius = 1.5
+height = 3.2
+
+[node name="Walnut" type="StaticBody3D" unique_id=368590639]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1217507193]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7488228, 0)
+shape = SubResource("CapsuleShape3D_walnut")
+
+[node name="Walnut" parent="." unique_id=1856044751 instance=ExtResource("1_walnut")]

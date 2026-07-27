@@ -1,0 +1,52 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/Oven.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/oven.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_oven"]
+size = Vector3(1.15, 1.1, 0.925)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(1, 0.52, 0.18, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[node name="Oven" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "烤箱"
+
+[node name="Oven" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.0625)
+shape = SubResource("BoxShape3D_oven")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.58, 0)
+billboard = 1
+text = "按 [E] 使用烤箱"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.38, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="."]
+position = Vector3(-0.75, 1.38, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")

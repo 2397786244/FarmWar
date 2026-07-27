@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://d0ny0624qivxr"]
+
+[ext_resource type="PackedScene" uid="uid://c7p0w2gt0w2ts" path="res://assets/saved_glbs/engineering_plastic_chest_armor.tscn" id="1_xqpo3"]
+
+[node name="PlasticArmor" type="Node3D" unique_id=2077856030]
+
+[node name="EngineeringPlasticChestArmor" parent="." unique_id=621909954 instance=ExtResource("1_xqpo3")]

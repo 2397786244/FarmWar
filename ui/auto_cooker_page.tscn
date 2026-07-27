@@ -1,0 +1,251 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/auto_cooker_page.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_window"]
+bg_color = Color(0.09, 0.075, 0.04, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.88, 0.66, 0.26, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
+bg_color = Color(0.055, 0.065, 0.055, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.48, 0.4, 0.19, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="AutoCookerPage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Window" type="PanelContainer" parent="."]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 80.0
+offset_top = -330.0
+offset_right = 880.0
+offset_bottom = 330.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBox_window")
+mouse_filter = 0
+
+[node name="Margin" type="MarginContainer" parent="Window"]
+layout_mode = 2
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 20
+
+[node name="HBox" type="HBoxContainer" parent="Window/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="RecipePanel" type="PanelContainer" parent="Window/Margin/HBox"]
+custom_minimum_size = Vector2(310, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="Window/Margin/HBox/RecipePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Window/Margin/HBox/RecipePanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Window/Margin/HBox/RecipePanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(1, 0.86, 0.54, 1)
+text = "可制作料理"
+horizontal_alignment = 1
+
+[node name="RecipeListScroll" type="ScrollContainer" parent="Window/Margin/HBox/RecipePanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="RecipeList" type="VBoxContainer" parent="Window/Margin/HBox/RecipePanel/Margin/VBox/RecipeListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="DetailPanel" type="PanelContainer" parent="Window/Margin/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="Window/Margin/HBox/DetailPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="Window/Margin/HBox/DetailPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_color = Color(1, 0.88, 0.59, 1)
+text = "自动做菜机"
+horizontal_alignment = 1
+
+[node name="DetailTitle" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.76, 0.38, 1)
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Status" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 26)
+theme_override_font_sizes/font_size = 17
+theme_override_colors/font_color = Color(1, 0.76, 0.47, 1)
+horizontal_alignment = 1
+
+[node name="Process" type="HBoxContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+alignment = 1
+theme_override_constants/separation = 20
+
+[node name="InputSlots" type="VBoxContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process"]
+layout_mode = 2
+size_flags_vertical = 3
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="Slot0Panel" type="PanelContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots"]
+custom_minimum_size = Vector2(170, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Slot0" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots/Slot0Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Slot1Panel" type="PanelContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots"]
+custom_minimum_size = Vector2(170, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Slot1" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots/Slot1Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Slot2Panel" type="PanelContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots"]
+custom_minimum_size = Vector2(170, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Slot2" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots/Slot2Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Slot3Panel" type="PanelContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots"]
+custom_minimum_size = Vector2(170, 68)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Slot3" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/InputSlots/Slot3Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Arrow" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 50
+theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
+text = "->"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="OutputSlot" type="PanelContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process"]
+custom_minimum_size = Vector2(180, 122)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/OutputSlot"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/OutputSlot/Margin"]
+layout_mode = 2
+alignment = 1
+
+[node name="Caption" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/OutputSlot/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "料理产出"
+horizontal_alignment = 1
+
+[node name="ItemName" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/OutputSlot/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ItemQuantity" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox/Process/OutputSlot/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+horizontal_alignment = 1
+
+[node name="Progress" type="ProgressBar" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+show_percentage = true
+
+[node name="StartButton" type="Button" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "开始制作"
+
+[node name="CloseButton" type="Button" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "关闭"

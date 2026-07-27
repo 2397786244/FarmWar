@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3 uid="uid://c4b187meyccx6"]
+
+[ext_resource type="PackedScene" uid="uid://bovxykswc8ckc" path="res://assets/buildings/ChickenChopFrame.glb" id="1_e0xy5"]
+[ext_resource type="Script" path="res://src/livestock_chop.gd" id="2_script"]
+[ext_resource type="PackedScene" uid="uid://chk1myqr60qkf" path="res://assets/buildings/ChickenChopCompleted.glb" id="3_completed"]
+
+[node name="ChickenChopFrame" type="StaticBody3D" unique_id=97345210]
+collision_layer = 4096
+collision_mask = 0
+script = ExtResource("2_script")
+chop_kind = "chicken"
+construction_seconds = 120.0
+required_log_kg = 20.0
+required_iron_kg = 10.0
+completed_model_scene = ExtResource("3_completed")
+
+[node name="FrameModel" parent="." unique_id=866372714 instance=ExtResource("1_e0xy5")]

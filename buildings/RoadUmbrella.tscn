@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dmqxcfkb8i8n8"]
+
+[ext_resource type="PackedScene" uid="uid://by1nt1ytesu6h" path="res://assets/buildings/FTF_Prop_PinkPatioUmbrella_2_7m.glb" id="1_uqahj"]
+
+[node name="RoadUmbrella" type="StaticBody3D" unique_id=1545442695]
+
+[node name="FTF_Prop_PinkPatioUmbrella_2_7m2" parent="." unique_id=1031815087 instance=ExtResource("1_uqahj")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

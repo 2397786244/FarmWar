@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dgq75ektljxfb"]
+
+[ext_resource type="PackedScene" uid="uid://bxl43kshogk3d" path="res://assets/buildings/FTF_Building_BusShelter_3_5m.glb" id="1_qkmfd"]
+
+[node name="BusBooth" type="StaticBody3D" unique_id=1112595786]
+
+[node name="FTF_Building_BusShelter_3_5m2" parent="." unique_id=195295436 instance=ExtResource("1_qkmfd")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://k4cpkle6y8i4"]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/IngredientExtractor.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/ingredient_extractor.gd" id="2_script"]
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+albedo_color = Color(0.08, 0.06, 0.025, 0.92)
+shading_mode = 0
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+albedo_color = Color(1, 0.7, 0.18, 1)
+emission_enabled = true
+emission = Color(1, 0.42, 0.04, 1)
+shading_mode = 0
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.05, 0.055)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_extractor"]
+size = Vector3(1.34, 1.74, 1.14)
+
+[node name="IngredientExtractor" type="StaticBody3D" unique_id=735679264]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "食材提取器"
+
+[node name="IngredientExtractor" parent="." unique_id=537074517 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1409272900]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.87, 0.05)
+shape = SubResource("BoxShape3D_extractor")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.95, 0)
+billboard = 1
+font_size = 40
+outline_size = 8
+text = "按 [E] 使用食材提取器"
+
+[node name="ProgressBack" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.75, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="."]
+position = Vector3(-0.72, 1.75, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")

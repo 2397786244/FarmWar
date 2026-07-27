@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/wild_animal_generator.gd" id="1_generator"]
+[ext_resource type="PackedScene" uid="uid://b8kice1gwtdfw" path="res://items/BlackBear.tscn" id="2_bear"]
+
+[node name="WildAnimalGenerator" type="Marker3D"]
+script = ExtResource("1_generator")
+animal_scene = ExtResource("2_bear")

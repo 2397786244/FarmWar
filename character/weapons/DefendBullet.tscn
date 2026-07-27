@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://cyj0hyuc8o0bv"]
+
+[ext_resource type="Script" uid="uid://yyhuc8dp3njv" path="res://src/defend_bullet.gd" id="1_dakya"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
+albedo_color = Color(0.95361775, 0.9559166, 0.96263593, 1)
+roughness = 0.9
+
+[sub_resource type="SphereMesh" id="SphereMesh_7px7w"]
+material = SubResource("StandardMaterial3D_744bm")
+radius = 0.1
+height = 0.2
+radial_segments = 8
+rings = 4
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_dakya"]
+radius = 0.065
+
+[node name="DefendBullet" type="CharacterBody3D" unique_id=1629214528]
+collision_layer = 0
+collision_mask = 4131
+script = ExtResource("1_dakya")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1654736965]
+mesh = SubResource("SphereMesh_7px7w")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=507111884]
+shape = SubResource("SphereShape3D_dakya")

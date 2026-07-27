@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://c0ts8y2yybl2i"]
+
+[ext_resource type="PackedScene" uid="uid://bbrg3ubxmecah" path="res://assets/characters/Apothecary_Blue.glb" id="1_6s6qj"]
+
+[node name="Apothecary_Blue" unique_id=1884677286 instance=ExtResource("1_6s6qj")]
+
+[node name="Skeleton3D" parent="FTF_Character_Apothecary_Blue/CharacterSkeleton" parent_id_path=PackedInt32Array(408739061) index="0" unique_id=102611839]
+bones/1/position = Vector3(0, 0.265, 0.095)
+bones/1/rotation = Quaternion(0.6883546, 0, 0, 0.7253744)
+bones/2/rotation = Quaternion(-0.034899496, 0, 0, 0.99939084)
+bones/3/rotation = Quaternion(0.017452406, 0, 0, 0.9998477)
+bones/4/rotation = Quaternion(0.04361939, 0, 0, 0.99904823)
+bones/5/rotation = Quaternion(0.06971398, 0.002434466, 0.034814477, 0.9969564)
+bones/6/rotation = Quaternion(0.5201113, -0.82134354, -0.21648426, 0.08951931)
+bones/7/rotation = Quaternion(-0.01596195, -0.46454972, 0.8551695, 0.22939943)
+bones/8/rotation = Quaternion(-0.07518972, 0.20952928, -0.20091513, 0.9539796)
+bones/9/rotation = Quaternion(0.56206274, 0.78764486, 0.22710538, 0.11011046)
+bones/10/rotation = Quaternion(-0.0003200099, 0.45639485, -0.88293517, 0.11013259)
+bones/11/rotation = Quaternion(-0.07518972, -0.20952928, 0.20091513, 0.9539796)
+bones/12/rotation = Quaternion(0.98868114, -0.12455862, -0.06512538, 0.052474402)
+bones/13/rotation = Quaternion(-0.15928133, 0.06684025, -0.048561588, 0.98377013)
+bones/15/rotation = Quaternion(0.98868114, 0.12455862, 0.06512538, 0.052474402)
+bones/16/rotation = Quaternion(-0.15928133, -0.06684025, 0.048561588, 0.98377013)

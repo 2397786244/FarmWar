@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cm0l04lqojujb"]
+
+[ext_resource type="PackedScene" uid="uid://c48ic4y85ac7v" path="res://assets/tools/CineCrane.glb" id="1_52u2y"]
+
+[node name="CineCrane" unique_id=1660741793 instance=ExtResource("1_52u2y")]
+
+[node name="BoomDiagonalSupport" parent="FTF_Deployable_CineCraneTurret/PlatformYawPivot/BoomPitchPivot" parent_id_path=PackedInt32Array(999381183) index="3" unique_id=1482303517]
+visible = false

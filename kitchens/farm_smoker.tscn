@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://petpktymnucj"]
+
+[ext_resource type="PackedScene" uid="uid://dbulfpqlagx1x" path="res://assets/kitchen/FarmSmoker.tscn" id="1_model"]
+[ext_resource type="Script" uid="uid://5wqvegfqeue" path="res://src/farm_smoker.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_smoker"]
+size = Vector3(1.46, 2.075, 0.985)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(0.58, 0.38, 0.18, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[node name="FarmSmoker" type="StaticBody3D" unique_id=1805026849]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+
+[node name="FarmSmoker" parent="." unique_id=151440746 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1911397788]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0375, 0.0225)
+shape = SubResource("BoxShape3D_smoker")
+
+[node name="StatusLabel" type="Label3D" parent="." unique_id=1529571533]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.48, 0)
+billboard = 1
+text = "按 [E] 使用烟熏炉"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="." unique_id=1104962739]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.27, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="." unique_id=1216495201]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 2.27, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")

@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://c1y4fm7lr1wmm"]
+
+[ext_resource type="Script" uid="uid://bcm4hgqhu7dwg" path="res://src/signal_augment.gd" id="1_066lk"]
+[ext_resource type="PackedScene" uid="uid://7yyvro8vi7do" path="res://assets/tools/SignalAugment.glb" id="1_kitsp"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_066lk"]
+size = Vector3(1.2, 4, 1.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ek2ex"]
+size = Vector3(1, 3.8, 1)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_ek2ex"]
+radius = 25.0
+
+[node name="SignalAugment" type="StaticBody3D" unique_id=644569419]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("1_066lk")
+
+[node name="Mesh" parent="." unique_id=263811261 instance=ExtResource("1_kitsp")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1265114962]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0679026, 0)
+shape = SubResource("BoxShape3D_066lk")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1366251314]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7786002, 0)
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1135419220]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12758398, 0)
+shape = SubResource("BoxShape3D_ek2ex")
+debug_color = Color(0.9615422, 0.014600945, 0.50433743, 0.41960785)
+
+[node name="Aug3D" type="Area3D" parent="." unique_id=1433213214]
+collision_layer = 0
+collision_mask = 128
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Aug3D" unique_id=1464480488]
+shape = SubResource("SphereShape3D_ek2ex")
+
+[node name="Label3D" type="Label3D" parent="."]
+position = Vector3(0, 4.5, 0)
+visible = false
+billboard = 1
+pixel_size = 0.005
+outline_size = 4
+text = "500"
+
+[connection signal="body_entered" from="Aug3D" to="." method="_on_augment_3d_body_entered"]
+[connection signal="body_exited" from="Aug3D" to="." method="_on_augment_3d_body_exited"]
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://bf4ytufwsbwo0"]
+
+[ext_resource type="PackedScene" uid="uid://dv7ktyvdwob37" path="res://assets/plants/Cotton.glb" id="1_cotton"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cotton"]
+radius = 0.7
+height = 1.8
+
+[node name="Cotton" type="StaticBody3D" unique_id=464531048]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=173760328]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.7932461, -0.14)
+shape = SubResource("CapsuleShape3D_cotton")
+
+[node name="Cotton" parent="." unique_id=1998124883 instance=ExtResource("1_cotton")]

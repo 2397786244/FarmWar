@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="VehicleConfig" format=3 uid="uid://5x8csnxyldgq"]
+
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="1_vehicle_config"]
+[ext_resource type="PackedScene" uid="uid://nsda8tilco0m" path="res://assets/saved_glbs/red_team_cargo_car.tscn" id="2_cargo_visual"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="3_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("3_vehicle_seat")
+anchor_name = "DriverSeatPoint"
+
+[resource]
+script = ExtResource("1_vehicle_config")
+visual_scene = ExtResource("2_cargo_visual")
+open_cabin = true
+animate_steering_wheel = true
+forward_axis = Vector3(0, 0, 1)
+seats = Array[ExtResource("3_vehicle_seat")]([SubResource("VehicleSeatConfig_driver")])
+collision_size = Vector3(3.8, 2.2, 8)
+collision_offset = Vector3(0, 1.1, 0.15)
+hitbox_size = Vector3(4, 2.4, 8.2)
+hitbox_offset = Vector3(0, 1.2, 0.15)
+wheel_radius = 0.76
+wheel_base = 3.0
+wheel_track = 3.44
+max_forward_speed = 4.0
+max_reverse_speed = 3.0
+acceleration = 1.5
+brake_deceleration = 13.0
+rolling_deceleration = 2.5
+max_steering_angle_degrees = 36.0
+min_steering_angle_degrees = 8.0
+steering_response = 3.5
+max_hp = 6000.0
+cargo_capacity_kg = 480.0
+cargo_placement_origin = Vector3(0, 1.2, 0)
+cargo_columns = 2
+cargo_rows = 3

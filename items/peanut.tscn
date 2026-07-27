@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/plants/Peanut.glb" id="1_peanut"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_peanut"]
+radius = 0.45
+
+[node name="Peanut" type="StaticBody3D"]
+collision_layer = 16
+collision_mask = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0.05, 0.29, 0)
+shape = SubResource("SphereShape3D_peanut")
+
+[node name="Peanut" parent="." instance=ExtResource("1_peanut")]

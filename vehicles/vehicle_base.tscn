@@ -1,0 +1,47 @@
+[gd_scene format=3 uid="uid://duifrvcaajix2"]
+
+[ext_resource type="Script" uid="uid://cj1unv4ruy11s" path="res://src/vehicle_base.gd" id="1_vehicle_base"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vehicle"]
+size = Vector3(1.8, 1.2, 3.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(2, 1.5, 3.8)
+
+[node name="VehicleBase" type="CharacterBody3D" unique_id=1934463324]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("1_vehicle_base")
+
+[node name="VehicleShape" type="CollisionShape3D" parent="." unique_id=816611621]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65, 0)
+shape = SubResource("BoxShape3D_vehicle")
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=1750656545]
+target_position = Vector3(0, -1.8, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1673994768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.3)
+
+[node name="CameraOrbitYaw" type="Node3D" parent="."]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw"]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=1221469691]
+position = Vector3(0, 3.2, 7)
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=1947967402]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 0.15, 0)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1201233663]
+collision_layer = 0
+collision_mask = 32
+monitoring = true
+monitorable = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=922387738]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

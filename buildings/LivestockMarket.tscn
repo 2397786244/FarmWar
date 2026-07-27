@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dt4hfhnqky4l2"]
+
+[ext_resource type="PackedScene" uid="uid://cijb62l1hvqgi" path="res://assets/buildings/LivestockMarket.glb" id="1_cthxv"]
+
+[node name="LivestockMarket" type="Node3D" unique_id=1307688524]
+
+[node name="Mesh" parent="." unique_id=1997333901 instance=ExtResource("1_cthxv")]

@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://4bj4s7coiitg"]
+
+[ext_resource type="PackedScene" uid="uid://wxa21tpo4i7p" path="res://assets/nature/GiantPumpkin.glb" id="1_fjt7n"]
+[ext_resource type="Script" uid="uid://birjd3q0wh75r" path="res://src/giant_plants.gd" id="1_uil7i"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_uil7i"]
+radius = 2.3
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_tii6r"]
+radius = 2.6
+
+[node name="GiantPumpkin" type="StaticBody3D" unique_id=2030028781]
+collision_layer = 16384
+collision_mask = 12427
+script = ExtResource("1_uil7i")
+resource_id = "giant_pumpkin"
+drop_item_id = "pumpkin"
+drop_count = 6
+drops = Array[Dictionary]([{
+"count": 6,
+"item_id": "pumpkin",
+"kind": "ingredient",
+"weight_kg": 5.0
+}, {
+"count": 1,
+"equipment_id": "chest_armor_pumpkin",
+"kind": "equipment"
+}])
+
+[node name="Mesh" parent="." unique_id=640913036 instance=ExtResource("1_fjt7n")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=542742238]
+transform = Transform3D(-4.3711385e-08, -0.99999994, 0, 0.99999994, -4.3711385e-08, 0, 0, 0, 1, 0, 2.252953, 0)
+shape = SubResource("SphereShape3D_uil7i")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=425269904]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=606784212]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0, 2.2984295, 0)
+shape = SubResource("SphereShape3D_tii6r")
+debug_color = Color(0.9253302, 0.2127249, 0.44138178, 0.41960785)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1196706868]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7, 0)
+billboard = 1
+no_depth_test = true
+text = "1000"
+font_size = 40
+outline_size = 8

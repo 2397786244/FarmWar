@@ -1,0 +1,41 @@
+[gd_scene format=3 uid="uid://dervt76nht5en"]
+
+[ext_resource type="Script" uid="uid://c5byscxkatv43" path="res://src/revolver.gd" id="1_revolver"]
+[ext_resource type="PackedScene" uid="uid://dtld4nxm6drv7" path="res://assets/tools/LowPoly_Revolver.glb" id="2_model"]
+
+[sub_resource type="ParticleProcessMaterial" id="MuzzleParticles"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 18.0
+initial_velocity_min = 5.0
+initial_velocity_max = 10.0
+scale_min = 0.45
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_s0hxj"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0.55, 0.08, 1)
+
+[sub_resource type="QuadMesh" id="MuzzleMesh"]
+material = SubResource("StandardMaterial3D_s0hxj")
+size = Vector2(0.18, 0.18)
+
+[node name="Revolver" type="Node3D" unique_id=1834284642]
+script = ExtResource("1_revolver")
+
+[node name="LowPoly_Revolver" parent="." unique_id=1967574542 instance=ExtResource("2_model")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.12622663, -0.255)
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=379971322]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.24016729, -1.5354649)
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1631133476]
+emitting = false
+amount = 7
+lifetime = 0.2
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("MuzzleParticles")
+draw_pass_1 = SubResource("MuzzleMesh")

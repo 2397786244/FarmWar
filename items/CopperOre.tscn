@@ -1,0 +1,47 @@
+[gd_scene format=3 uid="uid://ctibf56m1nuol"]
+
+[ext_resource type="PackedScene" uid="uid://k2hjoir3xbvv" path="res://assets/other_items/Material/FTF_Resource_CopperOre_Node.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ht232"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mj1a8"]
+
+[node name="CopperOre" type="StaticBody3D" unique_id=1749454948]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_script")
+resource_type = "copper"
+display_name = "铜矿"
+max_hp = 450.0
+drops = Array[Dictionary]([{
+"count": 4,
+"item_id": "copper",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_copper_ore.glb",
+"weight_kg": 1.0
+}])
+
+[node name="Mesh" parent="." unique_id=84720557 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2008869173]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4874305, 0)
+shape = SubResource("BoxShape3D_ht232")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=822849989]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1008591731]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4841985, 0)
+shape = SubResource("BoxShape3D_mj1a8")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1669999125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "450"
+outline_size = 6
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

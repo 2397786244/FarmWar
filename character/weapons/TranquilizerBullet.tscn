@@ -1,0 +1,39 @@
+[gd_scene load_steps=6 format=3 uid="uid://e4ajtj33qfv6"]
+
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="1_0le67"]
+[ext_resource type="Script" path="res://src/tranquilizer_bullet.gd" id="1_tranquilizer"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
+albedo_color = Color(0, 0, 0, 1)
+roughness = 0.9
+emission_enabled = true
+emission = Color(0.8745098, 0, 1, 1)
+emission_energy_multiplier = 12.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_0ioqv"]
+material = SubResource("StandardMaterial3D_744bm")
+radius = 0.065
+height = 0.13
+radial_segments = 8
+rings = 4
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_caq5a"]
+radius = 0.065
+
+[node name="TranquilizerBullet" type="CharacterBody3D" unique_id=2006002169]
+collision_layer = 32
+collision_mask = 4099
+script = ExtResource("1_tranquilizer")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=614079224]
+mesh = SubResource("SphereMesh_0ioqv")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=835211448]
+shape = SubResource("SphereShape3D_caq5a")
+
+[node name="Trace" type="MeshInstance3D" parent="." unique_id=1112170787]
+script = ExtResource("1_0le67")
+tracer_color = Color(0.86754835, 0.6122746, 0.94590384, 1)
+radius = 0.1
+minimum_length = 2.0
+maximum_length = 4.0

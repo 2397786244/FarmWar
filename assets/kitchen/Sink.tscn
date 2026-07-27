@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://ba54k4gxwcaf4"]
+
+[ext_resource type="PackedScene" uid="uid://dmmaychue3tbt" path="res://assets/kitchen/Sink.glb" id="1_bpdck"]
+
+[node name="Sink" unique_id=1639559130 instance=ExtResource("1_bpdck")]

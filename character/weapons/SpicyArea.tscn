@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://u2eionrw3pqx"]
+
+[ext_resource type="Script" uid="uid://cnvs62y4k4sfl" path="res://src/spicy_area.gd" id="1_spicy_area"]
+[ext_resource type="Shader" uid="uid://bp6nejhde25ty" path="res://character/weapons/spicy_area.gdshader" id="2_spicy_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_spicy"]
+render_priority = 0
+shader = ExtResource("2_spicy_shader")
+shader_parameter/opacity = 1.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_spicy"]
+material = SubResource("ShaderMaterial_spicy")
+size = Vector2(1, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_spicy"]
+
+[node name="SpicyArea" type="Node3D" unique_id=1231790812]
+script = ExtResource("1_spicy_area")
+
+[node name="AreaMesh" type="MeshInstance3D" parent="." unique_id=648244175]
+material_override = SubResource("ShaderMaterial_spicy")
+mesh = SubResource("PlaneMesh_spicy")
+
+[node name="EffectCast" type="ShapeCast3D" parent="." unique_id=244235108]
+shape = SubResource("BoxShape3D_spicy")
+target_position = Vector3(0, 0, 0)

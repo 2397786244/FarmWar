@@ -1,0 +1,37 @@
+[gd_scene format=3 uid="uid://bt8rb5ooo2y6g"]
+
+[ext_resource type="Script" uid="uid://jpvk5kl4ydvn" path="res://src/cargo_delivery_building.gd" id="2_cargo_delivery"]
+[ext_resource type="PackedScene" uid="uid://m0cige01jsix" path="res://assets/buildings/Warehouse_Red.glb" id="2_fjsqu"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_warehouse"]
+size = Vector3(16, 9, 12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cargo"]
+size = Vector3(14, 1, 8)
+
+[node name="WarehouseRed" type="StaticBody3D" unique_id=1443015091]
+script = ExtResource("2_cargo_delivery")
+building_id = "red_warehouse"
+display_name = "红队仓库"
+building_type = "warehouse"
+owner_team = "red"
+accepted_delivery_categories = PackedStringArray("Cooked Dish Delivery", "Farm Produce Delivery", "Material Collection")
+line_color = Color(1, 0.16, 0.12, 1)
+glow_color = Color(1, 0.52, 0.48, 0.25)
+outer_glow_color = Color(1, 0.68, 0.64, 0.11)
+glow_emission = Color(1, 0.3, 0.24, 1)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1132700476]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.6067877, 0)
+shape = SubResource("BoxShape3D_warehouse")
+
+[node name="CargoArea" type="Area3D" parent="." unique_id=1205541318]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10.088642)
+collision_layer = 512
+collision_mask = 8200
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CargoArea" unique_id=1985131531]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5571017, 0)
+shape = SubResource("BoxShape3D_cargo")
+
+[node name="Warehouse_Red" parent="." unique_id=1175028981 instance=ExtResource("2_fjsqu")]

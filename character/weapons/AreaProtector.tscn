@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://cd1mlldgfseop"]
+
+[ext_resource type="PackedScene" uid="uid://b8a4jbvp7pjos" path="res://assets/tools/AreaProtector.glb" id="1_sagmg"]
+[ext_resource type="Script" uid="uid://c5rytodpa1td7" path="res://src/area_protector.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(2.2, 1.4, 2.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(2.5, 1.7, 2.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_field"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.9254902, 0.57254905, 0.078431375)
+
+[sub_resource type="BoxMesh" id="BoxMesh_field"]
+material = SubResource("StandardMaterial3D_field")
+size = Vector3(12, 6, 8)
+
+[node name="AreaProtector" type="StaticBody3D" unique_id=964957624]
+collision_layer = 128
+collision_mask = 12427
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=1605409267 instance=ExtResource("1_sagmg")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=506263629]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+shape = SubResource("BoxShape3D_body")
+disabled = true
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1202442466]
+collision_layer = 128
+collision_mask = 32
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1473500555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("BoxShape3D_hit")
+disabled = true
+
+[node name="ProtectionVisual" type="MeshInstance3D" parent="." unique_id=1481895043]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.1, 0)
+visible = false
+cast_shadow = 0
+mesh = SubResource("BoxMesh_field")
+
+[node name="ProtectionBorder" type="Node3D" parent="ProtectionVisual" unique_id=2066101083]

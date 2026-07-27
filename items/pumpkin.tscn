@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://b44vudh5bo3xc"]
+
+[ext_resource type="PackedScene" uid="uid://cu8kdaamvd0gj" path="res://assets/plants/Pumpkin.glb" id="1_08tr3"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_08tr3"]
+radius = 0.8
+
+[node name="Pumpkin_tscn" type="StaticBody3D" unique_id=1505251927]
+collision_layer = 16
+collision_mask = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1637744877]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5215593, 0)
+shape = SubResource("SphereShape3D_08tr3")
+
+[node name="Pumpkin" parent="." unique_id=1150676482 instance=ExtResource("1_08tr3")]

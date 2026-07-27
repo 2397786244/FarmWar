@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://but47rv20idsf"]
+
+[ext_resource type="PackedScene" uid="uid://bp3m43l0twlnv" path="res://assets/vehicles/FTF_Vehicle_PoliceCar_Black_RedBlueLights_4_6m.glb" id="1_akjkp"]
+
+[node name="PoliceCar" type="StaticBody3D" unique_id=777459595]
+
+[node name="FTF_Vehicle_PoliceCar_Black_RedBlueLights_4_6m2" parent="." unique_id=682190986 instance=ExtResource("1_akjkp")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

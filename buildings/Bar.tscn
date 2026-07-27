@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://cgx0k8far62b5"]
+
+[ext_resource type="PackedScene" uid="uid://7d7l3fly6kuy" path="res://assets/saved_glbs/bar.tscn" id="1_er3jc"]
+[ext_resource type="PackedScene" uid="uid://crc8mdvs3r4uv" path="res://assets/tools/AutomaticCook.glb" id="2_opape"]
+[ext_resource type="PackedScene" uid="uid://vbt3y2bpauco" path="res://assets/kitchen/StandMixer.glb" id="3_xwuow"]
+[ext_resource type="PackedScene" uid="uid://bfxvyqtbqmmgq" path="res://assets/kitchen/PlatingStation.glb" id="4_xwuow"]
+[ext_resource type="Script" path="res://src/cargo_delivery_building.gd" id="5_cargo_delivery"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_thtex"]
+size = Vector3(8, 1, 8)
+
+[node name="Bar" type="StaticBody3D" unique_id=1082154414]
+collision_layer = 4096
+collision_mask = 12971
+script = ExtResource("5_cargo_delivery")
+building_id = "creston_bar"
+display_name = "克勒斯顿酒吧"
+building_type = "bar"
+accepted_delivery_categories = PackedStringArray("Farm Produce Delivery")
+line_color = Color(0.12, 1, 0.24, 1)
+glow_color = Color(0.48, 1, 0.56, 0.28)
+outer_glow_color = Color(0.66, 1, 0.7, 0.12)
+glow_emission = Color(0.24, 1, 0.34, 1)
+
+[node name="Bar" parent="." unique_id=1989840627 instance=ExtResource("1_er3jc")]
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1083826473]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 2.2950459, -0.12726784)
+depth = 5.0
+polygon = PackedVector2Array(5.255309, 5.3852863, 0.6834707, 5.428214, -5.2191353, -0.60317636, -5.197671, -5.067693, 5.2123804, -5.0891576)
+
+[node name="CargoArea" type="Area3D" parent="." unique_id=343362815]
+collision_layer = 512
+collision_mask = 8200
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CargoArea" unique_id=750087238]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.50456, 0.52460384, 2.4711127)
+shape = SubResource("BoxShape3D_thtex")
+debug_color = Color(0.96026033, 0.11664959, 0.41695195, 0.41960785)
+
+[node name="AutomaticCook" parent="." unique_id=546161672 instance=ExtResource("2_opape")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8656523, 0.32833076, -4.134262)
+
+[node name="StandMixer" parent="." unique_id=41773587 instance=ExtResource("3_xwuow")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.378598, 0.334023, -4.295335)
+
+[node name="PlatingStation" parent="." unique_id=454375648 instance=ExtResource("4_xwuow")]
+transform = Transform3D(0.051551625, 0, 0.99867034, 0, 1, 0, -0.99867034, 0, 0.051551625, -4.304429, 0.50372314, -2.1615915)

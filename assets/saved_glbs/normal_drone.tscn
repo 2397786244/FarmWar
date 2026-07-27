@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://s2b7lmydxwar"]
+
+[ext_resource type="PackedScene" uid="uid://bl86o4ol1hl1j" path="res://assets/tools/NormalDrone.glb" id="1_0e7we"]
+
+[node name="NormalDrone" unique_id=2007986086 instance=ExtResource("1_0e7we")]

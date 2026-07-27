@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/animals/FTF_Animal_Pig_Pink.glb" id="1_model"]
+
+[node name="PigSpawner" type="Node3D"]
+
+[node name="Mesh" parent="." instance=ExtResource("1_model")]

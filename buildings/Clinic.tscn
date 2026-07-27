@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://d1vaj8dv5mig"]
+
+[ext_resource type="PackedScene" uid="uid://diwc2c3jvcky2" path="res://assets/buildings/Clinic.glb" id="1_qa5xe"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_qlsme"]
+size = Vector3(9, 4, 7)
+
+[node name="Clinic" type="StaticBody3D" unique_id=1873536326]
+collision_layer = 4096
+collision_mask = 12971
+
+[node name="Clinic" parent="." unique_id=513992224 instance=ExtResource("1_qa5xe")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=932598103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1078486, 0)
+shape = SubResource("BoxShape3D_qlsme")

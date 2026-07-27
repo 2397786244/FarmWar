@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://diehvk8nucgl3"]
+
+[ext_resource type="PackedScene" uid="uid://bmh0x0msvafqn" path="res://assets/plants/Tobacco.glb" id="1_tobacco"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_tobacco"]
+radius = 0.45
+height = 1.8
+
+[node name="Tobacco" type="StaticBody3D" unique_id=1146627299]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1516378104]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.9324882, 0.04)
+shape = SubResource("CapsuleShape3D_tobacco")
+
+[node name="Tobacco" parent="." unique_id=1691647264 instance=ExtResource("1_tobacco")]

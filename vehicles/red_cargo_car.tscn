@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://duifrvcaajix2" path="res://vehicles/vehicle_base.tscn" id="1_vehicle_base"]
+[ext_resource type="Resource" path="res://vehicles/red_cargo_car_config.tres" id="2_cargo_config"]
+
+[node name="RedCargoCar" instance=ExtResource("1_vehicle_base")]
+vehicle_config = ExtResource("2_cargo_config")
+owner_team = "red"
+initial_cargo_weight_kg = 0.0
+
+[node name="VehicleShape" parent="." index="0"]
+debug_color = Color(0.967213, 0, 0.47868943, 0.41960785)
+
+[node name="VehicleCamera" type="Camera3D" parent="." index="3"]
+transform = Transform3D(1, 0, 0, 0, 0.9781476, 0.2079117, 0, -0.2079117, 0.9781476, 0, 3.2, 7)
+fov = 72.0

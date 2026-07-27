@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://ln20y2jyjn4o"]
+
+[ext_resource type="PackedScene" uid="uid://c5wdg1py5q83b" path="res://assets/saved_glbs/rift_book.tscn" id="1_b0hge"]
+[ext_resource type="Script" path="res://src/rift_book.gd" id="2_script"]
+
+[node name="RiftBook" type="Node3D" unique_id=562540067]
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=1889602268 instance=ExtResource("1_b0hge")]

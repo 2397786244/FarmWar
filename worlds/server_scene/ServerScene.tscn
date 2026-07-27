@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://bhttvhw86h5kw"]
+
+[ext_resource type="Script" uid="uid://dx1hlm1xcvwb2" path="res://src/server_src/DedicatedServerManager.gd" id="1_hr1pc"]
+[ext_resource type="Script" uid="uid://c2eb3fmh3odja" path="res://src/server_src/StatusQueryServer.gd" id="2_hvc87"]
+
+[node name="ServerScene" type="Node3D" unique_id=954143804]
+script = ExtResource("1_hr1pc")
+
+[node name="StatusQueryServer" type="Node" parent="." unique_id=210182118 node_paths=PackedStringArray("server_manager")]
+script = ExtResource("2_hvc87")
+server_manager = NodePath("..")
+metadata/_custom_type_script = "uid://c2eb3fmh3odja"

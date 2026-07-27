@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://cmhxh57ujwdlv"]
+
+[ext_resource type="PackedScene" uid="uid://cdidita4ghb36" path="res://assets/buildings/Lottery.glb" id="1_b3c0l"]
+
+[node name="Lottery" type="Node3D" unique_id=973781757]
+
+[node name="Mesh" parent="." unique_id=2060755088 instance=ExtResource("1_b3c0l")]

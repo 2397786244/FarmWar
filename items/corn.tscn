@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://dks61rvylwdqt"]
+
+[ext_resource type="PackedScene" uid="uid://dpavxcwfwd6px" path="res://assets/plants/Corn.glb" id="1_cm14c"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_hbaal"]
+radius = 0.4
+height = 3.0
+
+[node name="Corn" type="StaticBody3D" unique_id=186681478]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=625222884]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.48219, 0)
+shape = SubResource("CapsuleShape3D_hbaal")
+
+[node name="Corn" parent="." unique_id=1127300481 instance=ExtResource("1_cm14c")]

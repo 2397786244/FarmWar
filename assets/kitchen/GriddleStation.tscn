@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://5lgkegksotkx"]
+
+[ext_resource type="PackedScene" uid="uid://duro4c1ak4y11" path="res://assets/kitchen/GriddleStation.glb" id="1_t3v6t"]
+
+[node name="GriddleStation" unique_id=1238474780 instance=ExtResource("1_t3v6t")]
+
+[node name="LowerDoorGap" parent="FTF_Kitchen_GriddleStation" parent_id_path=PackedInt32Array(1932204446) index="9" unique_id=1121925788]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.42, 0.34324753)

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "recipe_order": [
+    "wheat_to_flour",
+    "peanut_to_oil",
+    "soybean_to_oil",
+    "corn_to_oil",
+    "beet_to_sugar",
+    "sugarcane_to_sugar",
+    "grape_to_yeast"
+  ],
+  "recipes": {
+    "wheat_to_flour": {
+      "inputs": [{"ingredient_id": "wheat", "weight_kg": 1.0}],
+      "output_ingredient_id": "wheat_flour",
+      "output_weight_kg": 0.75,
+      "duration_seconds": 12.0
+    },
+    "peanut_to_oil": {
+      "inputs": [{"ingredient_id": "peanut", "weight_kg": 1.0}],
+      "output_ingredient_id": "oil",
+      "output_weight_kg": 0.3,
+      "duration_seconds": 15.0
+    },
+    "soybean_to_oil": {
+      "inputs": [{"ingredient_id": "soybean", "weight_kg": 1.0}],
+      "output_ingredient_id": "oil",
+      "output_weight_kg": 0.3,
+      "duration_seconds": 15.0
+    },
+    "corn_to_oil": {
+      "inputs": [{"ingredient_id": "corn", "weight_kg": 1.0}],
+      "output_ingredient_id": "oil",
+      "output_weight_kg": 0.3,
+      "duration_seconds": 15.0
+    },
+    "beet_to_sugar": {
+      "inputs": [{"ingredient_id": "beet", "weight_kg": 1.0}],
+      "output_ingredient_id": "sugar",
+      "output_weight_kg": 0.5,
+      "duration_seconds": 12.0
+    },
+    "sugarcane_to_sugar": {
+      "inputs": [{"ingredient_id": "sugarcane", "weight_kg": 1.0}],
+      "output_ingredient_id": "sugar",
+      "output_weight_kg": 0.5,
+      "duration_seconds": 12.0
+    },
+    "grape_to_yeast": {
+      "inputs": [
+        {"ingredient_id": "grape", "weight_kg": 1.0},
+        {"ingredient_id": "water", "weight_kg": 0.5},
+        {"ingredient_id": "sugar", "weight_kg": 0.25}
+      ],
+      "output_ingredient_id": "yeast",
+      "output_weight_kg": 0.02,
+      "duration_seconds": 18.0
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cy85ohthnujem"]
+
+[ext_resource type="PackedScene" uid="uid://cw3aujf5rg5wp" path="res://assets/equipments/BackpackBrown.glb" id="1_8a87x"]
+
+[node name="BackpackBrown" unique_id=1801658258 instance=ExtResource("1_8a87x")]
+
+[node name="FTF_Equipment_Backpack_AnimalHideBrown" parent="." index="0" unique_id=619196271]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+
+[node name="BrassStud" parent="FTF_Equipment_Backpack_AnimalHideBrown" index="2" unique_id=729224569]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.1169297, 1.020577, -0.5529537)
+
+[node name="BrassStud_001" parent="FTF_Equipment_Backpack_AnimalHideBrown" index="3" unique_id=1514678772]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.10222852, 1.0136263, -0.55666804)

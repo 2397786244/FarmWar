@@ -1,0 +1,65 @@
+[gd_scene format=3 uid="uid://ckex5mbap48mx"]
+
+[ext_resource type="PackedScene" uid="uid://cciw2rbnwvru0" path="res://assets/tools/FarmRunner.glb" id="1_lrgn5"]
+[ext_resource type="Script" uid="uid://bsfpufrjupumt" path="res://src/farm_runner.gd" id="1_mhmxs"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lrgn5"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mhmxs"]
+size = Vector3(1, 0.8, 1)
+
+[node name="FarmRunner" type="CharacterBody3D" unique_id=1786034561]
+collision_layer = 0
+collision_mask = 12491
+script = ExtResource("1_mhmxs")
+max_hp = 300.0
+hover_height = 1.5
+work_move_speed = 3.5
+action_duration = 0.2
+cycle_pause_duration = 0.3
+print_block_debug = false
+
+[node name="Mesh" parent="." unique_id=1258606505 instance=ExtResource("1_lrgn5")]
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1882889737]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1101281957]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.40340865, 0)
+shape = SubResource("BoxShape3D_lrgn5")
+debug_color = Color(0.85046726, 0.1410313, 0.8369499, 0.41960785)
+
+[node name="center_cast" type="RayCast3D" parent="." unique_id=184683828]
+target_position = Vector3(0, -3, 0)
+collision_mask = 64
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1242473099]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+visible = false
+billboard = 1
+text = "220"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1642571724]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4073959, 0)
+shape = SubResource("BoxShape3D_mhmxs")
+
+[node name="forward_cast" type="RayCast3D" parent="." unique_id=530709490]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.5)
+target_position = Vector3(0, -3, 0)
+collision_mask = 64
+
+[node name="backward_cast" type="RayCast3D" parent="." unique_id=1666639498]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.5)
+target_position = Vector3(0, -3, 0)
+collision_mask = 64
+
+[node name="left_cast" type="RayCast3D" parent="." unique_id=457815039]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 0, 0)
+target_position = Vector3(0, -3, 0)
+collision_mask = 64
+
+[node name="right_cast" type="RayCast3D" parent="." unique_id=1979039281]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 0, 0)
+target_position = Vector3(0, -3, 0)
+collision_mask = 64

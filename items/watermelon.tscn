@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://bqquhq5gqv4sj"]
+
+[ext_resource type="PackedScene" uid="uid://brwha8smj4etc" path="res://assets/plants/Watermelon.glb" id="1_2r8wl"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_2r8wl"]
+size = Vector3(1.8, 0.4, 1)
+
+[node name="Watermelon" type="StaticBody3D" unique_id=617994936]
+collision_layer = 16
+collision_mask = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1651179944]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.19927669, 0.21307969, 0)
+shape = SubResource("BoxShape3D_2r8wl")
+
+[node name="Watermelon" parent="." unique_id=1025083481 instance=ExtResource("1_2r8wl")]

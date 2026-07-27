@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://dlbdjeljjnfl6"]
+
+[ext_resource type="PackedScene" uid="uid://dun5j5k7cujju" path="res://assets/plants/Eggplant.glb" id="1_h4twc"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_h4twc"]
+radius = 0.8
+
+[node name="Eggplant" type="StaticBody3D" unique_id=452419561]
+collision_layer = 16
+collision_mask = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1449403323]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.767963, 0)
+shape = SubResource("SphereShape3D_h4twc")
+
+[node name="Eggplant" parent="." unique_id=164141178 instance=ExtResource("1_h4twc")]

@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://c6twi0lr8yi5r"]
+
+[ext_resource type="PackedScene" uid="uid://xa4cpeikhnrm" path="res://assets/saved_glbs/police_ballistic_vest.tscn" id="1_l2xwo"]
+
+[node name="PoliceVest" type="Node3D" unique_id=2111050230]
+
+[node name="PoliceBallisticVest" parent="." unique_id=909905445 instance=ExtResource("1_l2xwo")]

@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://b6qlvojhlmpyc"]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/PlatingStation.tscn" id="1_model"]
+[ext_resource type="Script" uid="uid://bsax76gfbpl8b" path="res://src/plating_station.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_plating"]
+size = Vector3(1.6, 1.1, 0.95)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(1, 0.72, 0.25, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[node name="PlatingStation" type="StaticBody3D" unique_id=94228294]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "配餐台"
+
+[node name="PlatingStation" parent="." unique_id=14685396 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1562295198]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+shape = SubResource("BoxShape3D_plating")
+
+[node name="StatusLabel" type="Label3D" parent="." unique_id=1890687160]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.62, 0)
+billboard = 1
+text = "按 [E] 使用配餐台"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="." unique_id=1535489006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="." unique_id=1689516861]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 1.4, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")

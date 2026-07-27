@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://x56lwv6qx8dp"]
+
+[ext_resource type="PackedScene" uid="uid://dop3mcvmq787j" path="res://assets/plants/Hazelnut.glb" id="1_hazelnut"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_hazelnut"]
+height = 2.5
+
+[node name="Hazelnut" type="StaticBody3D" unique_id=1955668231]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=494086905]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.103369, 0)
+shape = SubResource("CapsuleShape3D_hazelnut")
+
+[node name="Hazelnut" parent="." unique_id=1148649218 instance=ExtResource("1_hazelnut")]

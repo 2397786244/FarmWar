@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://dbn43rafgw3f7"]
+
+[ext_resource type="Script" uid="uid://dn62n7osp58a7" path="res://src/farm_tile.gd" id="1_fal0d"]
+[ext_resource type="Shader" uid="uid://dmqkg4hidmajl" path="res://src/farm_owner_tint.gdshader" id="3_owner_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_owner_tint"]
+render_priority = 1
+shader = ExtResource("3_owner_shader")
+shader_parameter/owner_color = Color(0, 0, 0, 0)
+shader_parameter/use_instance_custom_data = false
+shader_parameter/border_width = 0.08
+shader_parameter/fill_alpha = 0.1
+shader_parameter/border_alpha = 0.78
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_owner_tint"]
+material = SubResource("ShaderMaterial_owner_tint")
+size = Vector2(1.96, 1.96)
+
+[node name="FarmTile" type="Node3D" unique_id=1274494576]
+script = ExtResource("1_fal0d")
+
+[node name="OwnerTint" type="MeshInstance3D" parent="." unique_id=1530570076]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_owner_tint")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1283389243]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0583594, 0)
+visible = false
+text = "0%"

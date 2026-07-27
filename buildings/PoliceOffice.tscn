@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://bv2r73htvtfag"]
+
+[ext_resource type="PackedScene" uid="uid://b5iv2ars53ky4" path="res://assets/buildings/Police.glb" id="1_8xkgh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_8xkgh"]
+size = Vector3(10, 4, 8)
+
+[node name="PoliceOffice" type="StaticBody3D" unique_id=1463757153]
+collision_layer = 4096
+collision_mask = 12971
+
+[node name="Police" parent="." unique_id=512288952 instance=ExtResource("1_8xkgh")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1847841903]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1197796, 0)
+shape = SubResource("BoxShape3D_8xkgh")

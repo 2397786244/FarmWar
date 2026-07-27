@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://cx2s5egds7b23"]
+
+[ext_resource type="Script" uid="uid://dfhed04vguk7x" path="res://src/medicine_boom.gd" id="1_5065k"]
+[ext_resource type="Shader" uid="uid://42kjbap37nrw" path="res://character/weapons/boom.gdshader" id="1_hjupg"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_5065k"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_h6kb2"]
+render_priority = 0
+shader = ExtResource("1_hjupg")
+shader_parameter/core_color = Color(0.7490196, 0.17254902, 0.12156863, 1)
+shader_parameter/energy_color = Color(0.9434309, 0.59765047, 0.8196519, 1)
+shader_parameter/hot_color = Color(0.9882353, 0.6862745, 0.40784314, 1)
+shader_parameter/emission_strength = 5.0000002375
+shader_parameter/pulse_speed = 3.2
+shader_parameter/pulse_amount = 0.50000002375
+shader_parameter/fresnel_power = 2.4
+shader_parameter/band_density = 10.0
+shader_parameter/band_speed = 3.5
+shader_parameter/band_strength = 0.800000038
+
+[sub_resource type="SphereMesh" id="SphereMesh_5npi4"]
+material = SubResource("ShaderMaterial_h6kb2")
+radius = 0.3
+height = 0.6
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_u1yjd"]
+radius = 0.35
+
+[node name="MedicineBoom" type="CharacterBody3D" unique_id=323953453]
+collision_layer = 32
+collision_mask = 3
+script = ExtResource("1_5065k")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=2049599321]
+mesh = SubResource("SphereMesh_5npi4")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=960514342]
+shape = SubResource("SphereShape3D_u1yjd")
+
+[node name="Trace" type="MeshInstance3D" parent="." unique_id=744032695]
+script = ExtResource("2_5065k")
+tracer_color = Color(0.9580074, 0.7450242, 0.7778261, 1)
+radius = 0.2
+minimum_length = 3.0
+maximum_length = 5.0
+emission_energy = 10.0

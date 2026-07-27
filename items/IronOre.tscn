@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://316bb4imf1bb"]
+
+[ext_resource type="PackedScene" uid="uid://5gnx7g7cwyti" path="res://assets/other_items/Material/FTF_Resource_IronOre_Node.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_2t8vj"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fjhc8"]
+
+[node name="IronOre" type="StaticBody3D" unique_id=643918651]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_script")
+resource_type = "iron"
+display_name = "铁矿"
+max_hp = 550.0
+respawn_seconds = 105.0
+drops = Array[Dictionary]([{
+"count": 4,
+"item_id": "iron",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_iron_ore.glb",
+"weight_kg": 1.0
+}])
+
+[node name="Mesh" parent="." unique_id=1731536942 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=968763652]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4874305, 0)
+shape = SubResource("BoxShape3D_2t8vj")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1967976331]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1418336897]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4841985, 0)
+shape = SubResource("BoxShape3D_fjhc8")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1301357959]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "550"
+outline_size = 6
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

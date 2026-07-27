@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://d1ibei7a2yep1"]
+
+[ext_resource type="Script" uid="uid://cn78nqb30xjuo" path="res://src/repair_laser.gd" id="1_1lwgw"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="1_oquld"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_1lwgw"]
+radius = 0.065
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
+albedo_color = Color(0, 0, 0, 1)
+roughness = 0.9
+emission_enabled = true
+emission = Color(0.5060613, 0.6656137, 1, 1)
+emission_energy_multiplier = 12.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_fkh5y"]
+material = SubResource("StandardMaterial3D_744bm")
+radius = 0.1
+height = 0.2
+radial_segments = 8
+rings = 4
+
+[node name="RepairLaser" type="CharacterBody3D" unique_id=1723760187]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("1_1lwgw")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1829314094]
+shape = SubResource("SphereShape3D_1lwgw")
+
+[node name="tracer" type="MeshInstance3D" parent="." unique_id=760188479]
+script = ExtResource("1_oquld")
+tracer_color = Color(0.183938, 0.13728982, 0.67060494, 1)
+radius = 0.15
+minimum_length = 2.0
+maximum_length = 4.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1570256272]
+mesh = SubResource("SphereMesh_fkh5y")

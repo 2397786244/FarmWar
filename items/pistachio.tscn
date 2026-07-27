@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://css6dfts761us"]
+
+[ext_resource type="PackedScene" uid="uid://8ioiik443wil" path="res://assets/plants/Pistachio.glb" id="1_pistachio"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_pistachio"]
+radius = 1.2
+height = 3.2
+
+[node name="Pistachio" type="StaticBody3D" unique_id=1880961408]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=279122105]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6906472, 0)
+shape = SubResource("CapsuleShape3D_pistachio")
+
+[node name="Pistachio" parent="." unique_id=594314022 instance=ExtResource("1_pistachio")]

@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://ddfjtfklml27c"]
+
+[ext_resource type="PackedScene" uid="uid://d3hx410pcbp22" path="res://assets/tools/SurveyRider.glb" id="1_nd0n7"]
+
+[node name="SurveyRider" unique_id=44618717 instance=ExtResource("1_nd0n7")]
+
+[node name="Prospector_Seated_Blue" parent="FTF_Vehicle_Prospector_AI_AssistedRider" parent_id_path=PackedInt32Array(570055329) index="1" unique_id=883185557]
+visible = false
+
+[node name="Skeleton3D" parent="FTF_Vehicle_Prospector_AI_AssistedRider/Prospector_Seated_Blue/CharacterSkeleton" parent_id_path=PackedInt32Array(1625352302) index="0" unique_id=1566832267]
+bones/6/rotation = Quaternion(0.8796283, -0.32539564, -0.32539576, -0.12037175)
+bones/9/rotation = Quaternion(0.8796283, 0.32539564, 0.32539576, -0.12037175)
+bones/12/rotation = Quaternion(0.7192552, -0.0014424911, -0.08260665, 0.68981594)
+bones/13/rotation = Quaternion(0.7383082, -0.004323367, -0.08250547, 0.6693842)
+bones/14/rotation = Quaternion(-0.68347573, -5.8808837e-07, -5.5821437e-07, 0.7299733)
+bones/15/rotation = Quaternion(0.7192552, 0.0014424911, 0.08260665, 0.68981594)
+bones/16/rotation = Quaternion(0.7383082, 0.004323367, 0.08250547, 0.6693842)
+bones/17/rotation = Quaternion(-0.68347573, 5.8808837e-07, 5.5821437e-07, 0.7299733)

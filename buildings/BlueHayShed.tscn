@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://dsijnfl21n7cs"]
+
+[ext_resource type="PackedScene" uid="uid://dipnrimn4e84e" path="res://assets/buildings/FTF_Building_HayShed_Open_4m_BlueRoof.glb" id="1_g6u1j"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_g6u1j"]
+size = Vector3(5, 4, 3.5)
+
+[node name="BlueHayShed" type="StaticBody3D" unique_id=64280774]
+
+[node name="FTF_Building_HayShed_Open_4m_BlueRoof2" parent="." unique_id=733666503 instance=ExtResource("1_g6u1j")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=396992408]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0723257, 0)
+shape = SubResource("BoxShape3D_g6u1j")

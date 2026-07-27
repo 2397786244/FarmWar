@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://i3kjjd73oc8q"]
+
+[ext_resource type="Script" uid="uid://ch5k3wojpoy76" path="res://src/spicy_bullet.gd" id="1_4bwmu"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_chclr"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sogny"]
+albedo_color = Color(0.89411765, 0.039215688, 0.02745098, 1)
+emission_enabled = true
+emission = Color(0.87434953, 0.21638393, 0.21441194, 1)
+emission_energy_multiplier = 6.0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ecmwd"]
+material = SubResource("StandardMaterial3D_sogny")
+top_radius = 0.03
+bottom_radius = 0.05
+height = 0.15
+radial_segments = 8
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_hib2i"]
+radius = 0.065
+
+[node name="SpicyBullet" type="CharacterBody3D" unique_id=1573410995]
+collision_layer = 32
+script = ExtResource("1_4bwmu")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1762332528]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0)
+mesh = SubResource("CylinderMesh_ecmwd")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1114583748]
+shape = SubResource("SphereShape3D_hib2i")
+
+[node name="tracer" type="MeshInstance3D" parent="." unique_id=233747363]
+script = ExtResource("2_chclr")
+tracer_color = Color(0.8666667, 0.7764706, 0.15686275, 1)
+radius = 0.1
+minimum_length = 0.7999999999999999
+maximum_length = 2.5
+emission_energy = 8.0

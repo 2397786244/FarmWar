@@ -1,0 +1,127 @@
+[gd_scene format=3 uid="uid://cinxdlne1yqwm"]
+
+[ext_resource type="Script" uid="uid://c43k6x67g2gy4" path="res://src/kitchen_car.gd" id="1_kitchen_car"]
+[ext_resource type="PackedScene" uid="uid://bc2jr5yusxhq4" path="res://assets/tools/KitchenCar.glb" id="2_kitchen_visual"]
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="3_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="4_vehicle_seat"]
+[ext_resource type="Script" uid="uid://did6fssikk7f5" path="res://src/mobile_induction_counter.gd" id="5_kitchen_station"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("4_vehicle_seat")
+anchor_name = "DriverSeatPoint"
+
+[sub_resource type="Resource" id="VehicleConfig_kitchen_car"]
+script = ExtResource("3_vehicle_config")
+open_cabin = true
+animate_steering_wheel = true
+seats = Array[ExtResource("4_vehicle_seat")]([SubResource("VehicleSeatConfig_driver")])
+camera_offset = Vector3(0, 3.4, 7.6)
+camera_orbit_target_height = 1.25
+collision_size = Vector3(3.7, 2.15, 5.8)
+collision_offset = Vector3(0, 1.05, 0)
+hitbox_size = Vector3(3.9, 2.4, 6)
+hitbox_offset = Vector3(0, 1.15, 0)
+wheel_radius = 0.7
+wheel_base = 3.15
+wheel_track = 3.24
+max_forward_speed = 7.0
+max_reverse_speed = 3.5
+acceleration = 2.5
+brake_deceleration = 14.0
+rolling_deceleration = 2.8
+max_steering_angle_degrees = 34.0
+steering_response = 4.0
+max_hp = 1200.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vehicle"]
+size = Vector3(3.7, 2.15, 5.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(3.9, 2.4, 6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kitchen_interaction"]
+size = Vector3(3.2, 1.8, 2.8)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(0.25, 0.7, 1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[node name="KitchenCar" type="CharacterBody3D" unique_id=1858318856]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("1_kitchen_car")
+vehicle_config = SubResource("VehicleConfig_kitchen_car")
+
+[node name="VehicleShape" type="CollisionShape3D" parent="." unique_id=1926990703]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
+shape = SubResource("BoxShape3D_vehicle")
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=1556557757]
+target_position = Vector3(0, -2.1, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1937000889]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, -1)
+
+[node name="CameraOrbitYaw" type="Node3D" parent="." unique_id=63967724]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=658607844]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=416786496]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.4, 7.6)
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=231173519]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.15, 0.15, -1.1)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=483635161]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1181965325]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[node name="BodyVisual" parent="." unique_id=1408425302 instance=ExtResource("2_kitchen_visual")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="MobileInductionCounter" type="StaticBody3D" parent="." unique_id=2004847599 groups=["induction_counters"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12727904, 0.4570241, -2.0119352)
+collision_layer = 512
+collision_mask = 0
+script = ExtResource("5_kitchen_station")
+
+[node name="InteractionShape" type="CollisionShape3D" parent="MobileInductionCounter" unique_id=1166561031]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.15258121, 0.85, -0.29946947)
+shape = SubResource("BoxShape3D_kitchen_interaction")
+debug_color = Color(0.9313427, 2.878219e-05, 0.6551745, 0.41960785)
+
+[node name="StatusLabel" type="Label3D" parent="MobileInductionCounter" unique_id=2100069835]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, 0)
+billboard = 1
+text = "按 [E] 使用野战厨房"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="MobileInductionCounter" unique_id=768493891]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="MobileInductionCounter" unique_id=308990622]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 1.7, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

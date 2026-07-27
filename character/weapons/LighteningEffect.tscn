@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://dvqesqvpvevfc"]
+
+[ext_resource type="Script" uid="uid://db7vysp1wf8rr" path="res://src/lightening_effect.gd" id="1_m48l0"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_m48l0"]
+transparency = 1
+blend_mode = 1
+albedo_color = Color(0.33333334, 0.18431373, 1, 0.47058824)
+emission_enabled = true
+emission = Color(0.3529412, 0, 0.8745098, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ni18i"]
+transparency = 1
+blend_mode = 1
+emission_enabled = true
+emission = Color(0.4703402, 0.640011, 1, 1)
+emission_energy_multiplier = 8.0
+
+[node name="LighteningEffect" type="Node3D" unique_id=1882261622]
+script = ExtResource("1_m48l0")
+segment_count = 15
+outer_material = SubResource("StandardMaterial3D_m48l0")
+core_material = SubResource("StandardMaterial3D_ni18i")

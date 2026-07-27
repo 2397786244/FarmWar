@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://bed3gl3e2k37m"]
+
+[ext_resource type="PackedScene" uid="uid://x61gh724x8d7" path="res://assets/buildings/FTF_Building_SupermarketBillboard_Giant_7m.glb" id="1_ni7u8"]
+
+[node name="MarketBillboard" type="StaticBody3D" unique_id=1127858276]
+
+[node name="FTF_Building_SupermarketBillboard_Giant_7m2" parent="." unique_id=1495987896 instance=ExtResource("1_ni7u8")]

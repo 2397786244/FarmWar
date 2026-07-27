@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://dfvkb41pwctp7"]
+
+[ext_resource type="PackedScene" uid="uid://bc33ywd6rmbil" path="res://assets/plants/Mint.glb" id="1_mint"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_mint"]
+radius = 0.3
+height = 1.0
+
+[node name="Mint" type="StaticBody3D" unique_id=497180317]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1733510414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04382638, 0.44921416, 0)
+shape = SubResource("CapsuleShape3D_mint")
+
+[node name="Mint" parent="." unique_id=976956995 instance=ExtResource("1_mint")]

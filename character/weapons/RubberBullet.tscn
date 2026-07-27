@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://b48aa314n23cl"]
+
+[ext_resource type="Script" uid="uid://cc8wk46cgh5v5" path="res://src/rubber_bullet.gd" id="1_bullet"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_l0yde"]
+
+[sub_resource type="StandardMaterial3D" id="RubberMaterial"]
+albedo_color = Color(0.055, 0.06, 0.07, 1)
+roughness = 0.9
+emission_enabled = true
+emission = Color(0.14586785, 0.14586785, 0.14586785, 1)
+emission_energy_multiplier = 10.0
+
+[sub_resource type="SphereMesh" id="RubberMesh"]
+material = SubResource("RubberMaterial")
+radius = 0.065
+height = 0.13
+radial_segments = 8
+rings = 4
+
+[sub_resource type="SphereShape3D" id="RubberShape"]
+radius = 0.065
+
+[node name="RubberBullet" type="CharacterBody3D" unique_id=876729456]
+collision_layer = 32
+collision_mask = 20483
+script = ExtResource("1_bullet")
+max_distance = 60.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1420470696]
+mesh = SubResource("RubberMesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1294511378]
+shape = SubResource("RubberShape")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="." unique_id=564236548]
+script = ExtResource("2_l0yde")
+tracer_color = Color(1, 0.6901961, 0.29803923, 1)
+radius = 0.04999999999999999

@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://fxv5qwg5lblq"]
+
+[ext_resource type="PackedScene" uid="uid://dm7hylewvllr4" path="res://assets/environment/CigaretteButt.glb" id="1_120x4"]
+
+[node name="DebrisCiggrate" type="Node3D" unique_id=803727080]
+
+[node name="CigaretteButt" parent="." unique_id=511547252 instance=ExtResource("1_120x4")]

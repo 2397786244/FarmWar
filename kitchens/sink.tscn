@@ -1,0 +1,19 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/Sink.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/kitchen_appliance.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sink"]
+size = Vector3(1.26, 1.32, 0.878)
+
+[node name="Sink" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "水槽"
+
+[node name="Sink" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.66, 0.009)
+shape = SubResource("BoxShape3D_sink")

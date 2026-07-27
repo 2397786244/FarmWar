@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://5irg7pvivo4b"]
+
+[ext_resource type="PackedScene" uid="uid://bqgd3ujhvolfd" path="res://assets/kitchen/Freezer.glb" id="1_h1afy"]
+
+[node name="Freezer" unique_id=224957667 instance=ExtResource("1_h1afy")]
+
+[node name="DoorGlass" parent="FTF_Kitchen_DoubleDoorFreezer" parent_id_path=PackedInt32Array(22156846) index="2" unique_id=1745685546]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 1.07, 0.31457114)
+
+[node name="DoorGlass_001" parent="FTF_Kitchen_DoubleDoorFreezer" parent_id_path=PackedInt32Array(22156846) index="3" unique_id=697143811]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, 1.07, 0.31457114)
+
+[node name="FreezerGlow" parent="FTF_Kitchen_DoubleDoorFreezer/FreezerInteriorGlow" parent_id_path=PackedInt32Array(1945669883) index="0" unique_id=1494457607]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 1.07, 0.32657114)
+
+[node name="FreezerGlow_001" parent="FTF_Kitchen_DoubleDoorFreezer/FreezerInteriorGlow" parent_id_path=PackedInt32Array(1945669883) index="1" unique_id=1499847985]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, 1.07, 0.32657114)
+
+[node name="Handle_001" parent="FTF_Kitchen_DoubleDoorFreezer" parent_id_path=PackedInt32Array(22156846) index="5" unique_id=737976271]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.51, 1.08, 0.35757113)
+
+[node name="Handle_002" parent="FTF_Kitchen_DoubleDoorFreezer" parent_id_path=PackedInt32Array(22156846) index="6" unique_id=717740541]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.51, 1.08, 0.35757113)

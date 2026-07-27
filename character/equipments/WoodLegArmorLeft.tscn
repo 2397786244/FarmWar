@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/equipments/FTF_Equipment_WoodLegArmor_Left.glb" id="1"]
+
+[node name="WoodLegArmorLeft" type="Node3D"]
+
+[node name="Mesh" parent="." instance=ExtResource("1")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.20974651, -0.47788244, 0.05978877)

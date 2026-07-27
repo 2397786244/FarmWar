@@ -1,0 +1,99 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/GriddleStation.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/griddle_station.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_griddle"]
+size = Vector3(1.32, 1.44, 0.88)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(1, 0.43, 0.12, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[sub_resource type="Curve" id="Curve_smoke_scale"]
+_data = [Vector2(0, 0.35), 0.0, 1.8, 0, 0, Vector2(0.25, 0.75), 1.0, 1.0, 0, 0, Vector2(1, 1.4), 0.7, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_smoke_scale"]
+curve = SubResource("Curve_smoke_scale")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_smoke"]
+emission_shape = 3
+emission_box_extents = Vector3(0.38, 0.025, 0.28)
+direction = Vector3(0, 1, 0)
+spread = 18.0
+initial_velocity_min = 0.16
+initial_velocity_max = 0.32
+gravity = Vector3(0, 0.08, 0)
+damping_min = 0.12
+damping_max = 0.28
+scale_min = 0.32
+scale_max = 0.52
+scale_curve = SubResource("CurveTexture_smoke_scale")
+color = Color(0.26, 0.25, 0.22, 0.42)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_smoke"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.72, 0.7, 0.64, 0.36)
+cull_mode = 2
+billboard_mode = 1
+billboard_keep_scale = true
+depth_draw_mode = 3
+
+[sub_resource type="QuadMesh" id="QuadMesh_smoke"]
+material = SubResource("StandardMaterial_smoke")
+size = Vector2(0.7, 0.7)
+
+[node name="GriddleStation" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "煎台"
+
+[node name="GriddleStation" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.72, 0)
+shape = SubResource("BoxShape3D_griddle")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.78, 0)
+billboard = 1
+text = "按 [E] 使用煎台"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.58, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="."]
+position = Vector3(-0.75, 1.58, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")
+
+[node name="CookingSmoke" type="GPUParticles3D" parent="."]
+position = Vector3(0, 1.14, 0)
+emitting = false
+amount = 18
+lifetime = 2.6
+preprocess = 0.8
+randomness = 0.45
+visibility_aabb = AABB(-0.8, -0.15, -0.7, 1.6, 2.5, 1.4)
+process_material = SubResource("ParticleProcessMaterial_smoke")
+draw_pass_1 = SubResource("QuadMesh_smoke")

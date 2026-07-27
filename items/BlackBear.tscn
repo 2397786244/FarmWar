@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://b8kice1gwtdfw"]
+
+[ext_resource type="PackedScene" uid="uid://b38kankeuxfnj" path="res://assets/animals/FTF_WildAnimal_BlackBear.glb" id="1_0pvx4"]
+[ext_resource type="Script" uid="uid://buswb876hiqii" path="res://src/black_bear.gd" id="2_bear"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4mil8"]
+size = Vector3(1.2, 1.5, 2.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0pvx4"]
+size = Vector3(1, 1.5, 2.2)
+
+[node name="BlackBear" type="CharacterBody3D" unique_id=2020114467]
+collision_layer = 32768
+collision_mask = 61579
+script = ExtResource("2_bear")
+
+[node name="Mesh" parent="." unique_id=488796495 instance=ExtResource("1_0pvx4")]
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1545303743]
+collision_layer = 32768
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1360999951]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01602751, 0.7703022, 0.40274322)
+shape = SubResource("BoxShape3D_4mil8")
+debug_color = Color(0.95294017, 0.15322512, 0.40005437, 0.41960785)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=485623378]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7831298, 0.36210865)
+shape = SubResource("BoxShape3D_0pvx4")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=284889698]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.25, 0)
+billboard = 1
+no_depth_test = true
+text = "BlackBear [IDLE]
+HP: 1000 / 1000"
+outline_size = 8
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

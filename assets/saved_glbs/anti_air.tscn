@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://ccimq65ki4vsl"]
+
+[ext_resource type="PackedScene" uid="uid://cep6ekfmxjqhm" path="res://assets/tools/AntiAir.glb" id="1_4fm52"]
+
+[node name="AntiAir" unique_id=1798471583 instance=ExtResource("1_4fm52")]
+
+[node name="LeftRoadWheel1" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="2" unique_id=2054464193]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, -1.2366585, 0.25, 0.68)
+
+[node name="LeftRoadWheel2" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="3" unique_id=913608551]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, -1.2366585, 0.25, 0)
+
+[node name="LeftRoadWheel3" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="4" unique_id=2052611703]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, -1.2366585, 0.25, -0.68)
+
+[node name="RightRoadWheel1" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="6" unique_id=1047613080]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 1.186222, 0.25, 0.68)
+
+[node name="RightRoadWheel2" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="7" unique_id=1608077332]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 1.186222, 0.25, 0)
+
+[node name="RightRoadWheel3" parent="FTF_Vehicle_Anti_Air_2m" parent_id_path=PackedInt32Array(1409507122) index="8" unique_id=1801975898]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 1.186222, 0.25, -0.68)
+
+[node name="RadarDish" parent="FTF_Vehicle_Anti_Air_2m/TurretYawPivot/RadarYawPivot/RadarPitchPivot" parent_id_path=PackedInt32Array(355349326) index="0" unique_id=1319319377]
+transform = Transform3D(0.9902267, -0.13946691, 0, 0, 0, -1, 0.13946691, 0.9902267, 0, 0, 0, 0.034999996)

@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://c828g2080b2tb"]
+
+[ext_resource type="PackedScene" uid="uid://ct8de7hqsjgal" path="res://assets/nature/CottonWood.glb" id="1_hn30i"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hn30i"]
+size = Vector3(1, 10, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(1.3, 10.4, 1.3)
+
+[node name="CottonWood" type="StaticBody3D" unique_id=116037043]
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "cottonwood"
+
+[node name="Mesh" parent="." unique_id=1021935418 instance=ExtResource("1_hn30i")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=751040395]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.097039, 0)
+shape = SubResource("BoxShape3D_hn30i")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=957819621]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.8, 0)
+billboard = 1
+no_depth_test = true
+text = "500"
+outline_size = 6
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=418996222]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1844698298]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.2899227, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

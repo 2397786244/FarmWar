@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://g522kdvnhxbk"]
+
+[ext_resource type="PackedScene" uid="uid://bl86o4ol1hl1j" path="res://assets/tools/NormalDrone.glb" id="1_fnx04"]
+[ext_resource type="Script" uid="uid://bl8np6hq001mv" path="res://src/normal_drone.gd" id="1_v1udu"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_v1udu"]
+size = Vector3(1, 0.6, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_j0o67"]
+size = Vector3(1.2, 0.6, 1.2)
+
+[node name="NormalDrone" type="CharacterBody3D" unique_id=1505902297]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("1_v1udu")
+
+[node name="DroneVisual" parent="." unique_id=2007986086 instance=ExtResource("1_fnx04")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2144908930]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15365946, 0)
+shape = SubResource("BoxShape3D_v1udu")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=32271820]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1220779060]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.117020905, 0)
+shape = SubResource("BoxShape3D_j0o67")
+debug_color = Color(0.6250952, 0.53107375, 0.100124426, 0.41960785)
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=294774589]
+transform = Transform3D(1, 0, 0, 0, 0.94145876, 0.33712813, 0, -0.33712813, 0.94145876, 0, -0.2844732, 0.1366818)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=731631595]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.009646118, 0.09186748)
+
+[node name="BulletMountSlot" type="Node3D" parent="." unique_id=186774611]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.19414377, 0)
+
+[node name="CargoMountPos" type="Node3D" parent="." unique_id=1758822115]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.21279192, -0.19399619)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=2019541325]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+visible = false
+billboard = 1
+outline_size = 4
+modulate = Color(1, 0.3, 0.3, 1)
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

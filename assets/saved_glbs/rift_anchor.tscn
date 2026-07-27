@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dnfsra2sjseke"]
+
+[ext_resource type="PackedScene" uid="uid://cx1wc87s22bpx" path="res://assets/tools/RiftAnchor.glb" id="1_6j8fs"]
+
+[node name="RiftAnchor" unique_id=1376057821 instance=ExtResource("1_6j8fs")]
+
+[node name="TeleportBeam" parent="MageTeleportPad" parent_id_path=PackedInt32Array(510994622) index="8" unique_id=1597436448]
+visible = false

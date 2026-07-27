@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://dtp1nxpaihkl7"]
+
+[ext_resource type="PackedScene" uid="uid://df0wruag38d8p" path="res://assets/buildings/FTF_Prop_HayBale_Square_2m.glb" id="1_xs8rw"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_xs8rw"]
+size = Vector3(2, 1.5, 1.2)
+
+[node name="HayPile" type="StaticBody3D" unique_id=698454119]
+collision_layer = 4097
+
+[node name="FTF_Prop_HayBale_Square_2m2" parent="." unique_id=1365975550 instance=ExtResource("1_xs8rw")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=820336373]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6807821, 0)
+shape = SubResource("BoxShape3D_xs8rw")

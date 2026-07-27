@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://r2tlkgg3e4uf"]
+
+[ext_resource type="PackedScene" uid="uid://db02l7cbuw4mi" path="res://assets/tools/RepairWelder.glb" id="1_s21j3"]
+
+[node name="RepairWelder" unique_id=1001991444 instance=ExtResource("1_s21j3")]
+
+[node name="BlackPistolGrip" parent="FTF_Tool_RepairWelder" parent_id_path=PackedInt32Array(266124092) index="1" unique_id=1175018974]
+transform = Transform3D(1, 0, 0, 0, 0.97814757, 0.20791173, 0, -0.20791173, 0.97814757, 0, 0.37941474, -0.1)
+
+[node name="GoldTrigger" parent="FTF_Tool_RepairWelder" parent_id_path=PackedInt32Array(266124092) index="6" unique_id=1943690041]
+transform = Transform3D(1, 0, 0, 0, 0.97814757, 0.20791173, 0, -0.20791173, 0.97814757, 0, 0.5007391, 0.03564836)
+
+[node name="ValveWheel" parent="FTF_Tool_RepairWelder" parent_id_path=PackedInt32Array(266124092) index="11" unique_id=1345302000]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0.22489703, 0.76, -0.13)

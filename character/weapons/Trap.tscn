@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://dt1hvi6bjjage"]
+
+[ext_resource type="PackedScene" uid="uid://doyp8utkxdev2" path="res://assets/saved_glbs/trap.tscn" id="1_segcd"]
+[ext_resource type="Script" uid="uid://de8va335p07p" path="res://src/trap.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_trap"]
+size = Vector3(1.5, 0.25, 1.5)
+
+[node name="Trap" type="StaticBody3D" unique_id=1467725759]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("2_script")
+close_duration = 0.2
+
+[node name="Mesh" parent="." unique_id=1318622128 instance=ExtResource("1_segcd")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=974024300]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.125, 0)
+shape = SubResource("BoxShape3D_trap")
+disabled = true
+
+[node name="TriggerArea" type="Area3D" parent="." unique_id=1110233603]
+collision_layer = 0
+collision_mask = 40968
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TriggerArea" unique_id=59651007]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+shape = SubResource("BoxShape3D_trap")
+
+[connection signal="body_entered" from="TriggerArea" to="." method="_on_body_entered"]

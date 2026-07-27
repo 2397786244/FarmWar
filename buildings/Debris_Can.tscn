@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://cjk1ok68jfqca"]
+
+[ext_resource type="PackedScene" uid="uid://dw5ecsuadbsf0" path="res://assets/environment/CrushedColaCan.glb" id="1_rmg8c"]
+
+[node name="DebrisCan" type="Node3D" unique_id=520668157]
+
+[node name="CrushedColaCan" parent="." unique_id=1181676741 instance=ExtResource("1_rmg8c")]

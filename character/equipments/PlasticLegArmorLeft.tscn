@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dpai56rftbmss"]
+
+[ext_resource type="PackedScene" uid="uid://1mb70j3qtj1j" path="res://assets/equipments/FTF_Equipment_EngineeringPlasticLegArmor_Left.glb" id="1"]
+
+[node name="PlasticLegArmorLeft" type="Node3D" unique_id=1211832002]
+
+[node name="Mesh" parent="." unique_id=2007288787 instance=ExtResource("1")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.20974651, -0.47788244, 0.05978877)

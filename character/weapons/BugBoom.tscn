@@ -1,0 +1,71 @@
+[gd_scene format=3 uid="uid://dko3r0oe1saay"]
+
+[ext_resource type="Script" uid="uid://br6rnwqh484ht" path="res://src/bug_boom.gd" id="1_wmm4w"]
+[ext_resource type="Shader" uid="uid://42kjbap37nrw" path="res://character/weapons/boom.gdshader" id="2_biyf1"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="3_biyf1"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_biyf1"]
+render_priority = 0
+shader = ExtResource("2_biyf1")
+shader_parameter/core_color = Color(0.4994765, 0.86279386, 0.27812302, 1)
+shader_parameter/energy_color = Color(0.13031831, 0.8294318, 0.8003394, 1)
+shader_parameter/hot_color = Color(0.9882353, 0, 0.40784314, 1)
+shader_parameter/emission_strength = 5.0000002375
+shader_parameter/pulse_speed = 3.2
+shader_parameter/pulse_amount = 0.50000002375
+shader_parameter/fresnel_power = 2.4
+shader_parameter/band_density = 10.0
+shader_parameter/band_speed = 3.5
+shader_parameter/band_strength = 0.800000038
+
+[sub_resource type="SphereMesh" id="SphereMesh_uf032"]
+material = SubResource("ShaderMaterial_biyf1")
+radius = 0.3
+height = 0.6
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_int5i"]
+radius = 0.35
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_xk8ut"]
+spread = 25.0
+initial_velocity_min = 5.0
+initial_velocity_max = 30.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_uqqm6"]
+albedo_color = Color(0.25882354, 0.09411765, 0.29803923, 1)
+emission_enabled = true
+emission = Color(0.6235599, 0.62355983, 0.62355983, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_b2iwg"]
+material = SubResource("StandardMaterial3D_uqqm6")
+radius = 0.06
+height = 0.12
+
+[node name="BugBoom" type="CharacterBody3D" unique_id=580445239]
+collision_layer = 32
+collision_mask = 3
+script = ExtResource("1_wmm4w")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1232601323]
+mesh = SubResource("SphereMesh_uf032")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2095511021]
+shape = SubResource("SphereShape3D_int5i")
+
+[node name="GPUParticles3D" type="GPUParticles3D" parent="." unique_id=596947573]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.18431365, 0, 0)
+visible = false
+amount = 20
+lifetime = 1.2
+explosiveness = 0.1
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_xk8ut")
+draw_pass_1 = SubResource("SphereMesh_b2iwg")
+
+[node name="Trace" type="MeshInstance3D" parent="." unique_id=1113908784]
+script = ExtResource("3_biyf1")
+tracer_color = Color(0.8506331, 0.8133207, 0.6512003, 1)
+radius = 0.2
+minimum_length = 3.0
+maximum_length = 5.0
+emission_energy = 10.0

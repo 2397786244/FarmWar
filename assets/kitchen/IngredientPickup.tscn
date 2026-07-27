@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://dv4sri1sheda3"]
+
+[ext_resource type="PackedScene" uid="uid://2keaatpunjy3" path="res://assets/kitchen/IngredientPickup.glb" id="1_t0x82"]
+
+[node name="IngredientPickup" unique_id=1464010140 instance=ExtResource("1_t0x82")]
+
+[node name="DeliverySlot" parent="FTF_Kitchen_IngredientPickup" parent_id_path=PackedInt32Array(2035241000) index="3" unique_id=1874225759]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.48, 0.39622968)
+
+[node name="PickupReadyGlow" parent="FTF_Kitchen_IngredientPickup" parent_id_path=PackedInt32Array(2035241000) index="4" unique_id=1302561300]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.038770318)

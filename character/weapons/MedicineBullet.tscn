@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://dpe3gk01i3ar3"]
+
+[ext_resource type="Script" uid="uid://da4o6qgnd1ia" path="res://src/medicine_bullet.gd" id="1_itufi"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="1_vspxp"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_itufi"]
+radius = 0.2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_itufi"]
+albedo_color = Color(0.08627451, 0.34117648, 1, 1)
+emission_enabled = true
+emission = Color(0.22352941, 0.827451, 0.91764706, 1)
+emission_energy_multiplier = 8.0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_itufi"]
+material = SubResource("StandardMaterial3D_itufi")
+top_radius = 0.05
+bottom_radius = 0.05
+height = 0.2
+
+[node name="MedicineBullet" type="CharacterBody3D" unique_id=1839877058]
+collision_layer = 32
+collision_mask = 4099
+script = ExtResource("1_itufi")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1985787569]
+shape = SubResource("SphereShape3D_itufi")
+
+[node name="tracer" type="MeshInstance3D" parent="." unique_id=445133444]
+script = ExtResource("1_vspxp")
+tracer_color = Color(0.8156863, 0.4392157, 0.67058825, 1)
+radius = 0.15
+minimum_length = 1.0
+maximum_length = 3.0
+emission_energy = 10.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=928636596]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+mesh = SubResource("CylinderMesh_itufi")

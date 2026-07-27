@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://dsvt4bhmitvxo"]
+
+[ext_resource type="PackedScene" uid="uid://bh0utn0u0gla2" path="res://assets/nature/Redcedar.glb" id="1_7km2m"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7km2m"]
+size = Vector3(1, 6, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(1.3, 6.4, 1.3)
+
+[node name="Redcedar" type="StaticBody3D" unique_id=41945149]
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "redcedar"
+
+[node name="Mesh" parent="." unique_id=2053486132 instance=ExtResource("1_7km2m")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=544417300]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.0031128, 0)
+shape = SubResource("BoxShape3D_7km2m")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1978131968]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.6, 0)
+billboard = 1
+text = "500"
+no_depth_test = true
+outline_size = 6
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1005881350]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=10692421]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2165318, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

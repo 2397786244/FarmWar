@@ -1,0 +1,41 @@
+[gd_scene load_steps=4 format=3 uid="uid://bb5s5t2told6m"]
+
+[ext_resource type="PackedScene" uid="uid://crc8mdvs3r4uv" path="res://assets/tools/AutomaticCook.glb" id="1_bgqd6"]
+[ext_resource type="Script" uid="uid://7peg0a4y07lg" path="res://src/auto_cooker.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="1_collision"]
+size = Vector3(1.8, 2.2, 1.8)
+
+[sub_resource type="BoxShape3D" id="2_hit"]
+size = Vector3(1.6, 2.0, 1.6)
+
+[node name="AutomaticCook" type="StaticBody3D" unique_id=549586277]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("2_script")
+display_name = "自动做菜机"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1228093424]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+shape = SubResource("1_collision")
+
+[node name="Hit3D" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+shape = SubResource("2_hit")
+
+[node name="HealthLabel" type="Label3D" parent="."]
+position = Vector3(0, 2.5, 0)
+visible = false
+billboard = 1
+pixel_size = 0.005
+outline_size = 4
+text = "500"
+
+[node name="Mesh" parent="." unique_id=546161672 instance=ExtResource("1_bgqd6")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

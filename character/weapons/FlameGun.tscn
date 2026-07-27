@@ -1,0 +1,55 @@
+[gd_scene format=3 uid="uid://bd261u526i2wv"]
+
+[ext_resource type="Script" uid="uid://cmwi31uhawj5v" path="res://src/flame_gun.gd" id="1_q3oas"]
+[ext_resource type="PackedScene" uid="uid://bt52jly3wkkh1" path="res://assets/saved_glbs/flame_gun.tscn" id="2_q3oas"]
+
+[sub_resource type="Curve" id="Curve_q3oas"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.22152042), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_q3oas"]
+curve = SubResource("Curve_q3oas")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_q3oas"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 40.0
+damping_min = 10.0
+damping_max = 30.000002
+scale_max = 2.0
+scale_curve = SubResource("CurveTexture_q3oas")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_q115i"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0.55, 0.08, 1)
+grow_amount = 1.326
+
+[sub_resource type="QuadMesh" id="QuadMesh_q115i"]
+material = SubResource("StandardMaterial3D_q115i")
+size = Vector2(0.18, 0.18)
+
+[node name="FlameGun" type="Node3D" unique_id=1223556454]
+script = ExtResource("1_q3oas")
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=1831571205]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25279367, -1.1802322)
+gizmo_extents = 0.5
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1699981915]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.061671972)
+emitting = false
+amount = 30
+lifetime = 0.6
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_q3oas")
+draw_pass_1 = SubResource("QuadMesh_q115i")
+
+[node name="FlameGun" parent="." unique_id=2114166248 instance=ExtResource("2_q3oas")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.15234971, -0.033238053)

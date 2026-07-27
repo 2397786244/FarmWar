@@ -1,0 +1,52 @@
+[gd_scene load_steps=8 format=3 uid="uid://b6a7fr6y0rup8"]
+
+[ext_resource type="PackedScene" uid="uid://tbus1mvc71nt" path="res://assets/tools/TranquilizerPistol.glb" id="1_iangm"]
+[ext_resource type="Script" path="res://src/tranquilizer_pistol.gd" id="1_tranquilizer"]
+
+[sub_resource type="Curve" id="Curve_tranquilizer"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.22152042), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_tranquilizer"]
+curve = SubResource("Curve_tranquilizer")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_tranquilizer"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 40.0
+damping_min = 10.0
+damping_max = 30.0
+scale_max = 2.0
+scale_curve = SubResource("CurveTexture_tranquilizer")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tranquilizer"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.78, 0.2, 1, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_tranquilizer"]
+material = SubResource("StandardMaterial3D_tranquilizer")
+size = Vector2(0.18, 0.18)
+
+[node name="TranquilizerPistol" type="Node3D" unique_id=1442131495]
+script = ExtResource("1_tranquilizer")
+
+[node name="Mesh" parent="." unique_id=705369415 instance=ExtResource("1_iangm")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0.13797522)
+
+[node name="Muzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.22, -0.96)
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle"]
+emitting = false
+amount = 30
+lifetime = 0.6
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_tranquilizer")
+draw_pass_1 = SubResource("QuadMesh_tranquilizer")

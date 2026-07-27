@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://dwmhgvlxut8dm"]
+
+[ext_resource type="PackedScene" uid="uid://cj3mnoep2jmpv" path="res://assets/food/GiantPepper.glb" id="1_7wuba"]
+[ext_resource type="Script" uid="uid://birjd3q0wh75r" path="res://src/giant_plants.gd" id="1_txya7"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_7wuba"]
+height = 9.0
+radius = 1.8
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_txya7"]
+height = 9.0
+radius = 1.5
+
+[node name="GiantPepper" type="StaticBody3D" unique_id=840570455]
+collision_layer = 16384
+collision_mask = 12427
+script = ExtResource("1_txya7")
+resource_id = "giant_pepper"
+display_name = "巨大辣椒"
+drop_count = 6
+drops = Array[Dictionary]([{
+"count": 1,
+"kind": "tool",
+"tool_id": "flame_gun"
+}, {
+"count": 6,
+"item_id": "pepper",
+"kind": "ingredient",
+"weight_kg": 5
+}])
+
+[node name="Mesh" parent="." unique_id=1527467043 instance=ExtResource("1_7wuba")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=867865677]
+transform = Transform3D(-4.3711385e-08, -0.99999994, 0, 0.99999994, -4.3711385e-08, 0, 0, 0, 1, 0, 2.0394077, 0)
+shape = SubResource("CylinderShape3D_7wuba")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1189561356]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1485218501]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0, 1.8189754, 0)
+shape = SubResource("CylinderShape3D_txya7")
+debug_color = Color(0.9253302, 0.2127249, 0.44138178, 0.41960785)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1577591088]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7, 0)
+billboard = 1
+no_depth_test = true
+text = "1000"
+font_size = 40
+outline_size = 8

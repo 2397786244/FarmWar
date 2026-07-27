@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://b48t82ltrunmx"]
+
+[ext_resource type="PackedScene" uid="uid://8sgtnjjjmg40" path="res://tools/generated_farmtown_houses/FTF_House_Large_PorchTerrace_BrownRed_v4.glb" id="1_dwlf1"]
+
+[node name="VillageLargeHouse" type="StaticBody3D" unique_id=2014752235]
+collision_layer = 4096
+collision_mask = 45739
+
+[node name="Mesh" parent="." unique_id=2092145993 instance=ExtResource("1_dwlf1")]
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1218673856]
+depth = 9.0
+polygon = PackedVector2Array(-8.474493, 0.04396987, -8.491847, 3.740454, -2.4525218, 5.840334, -0.66502035, 6.3089027, 0.2026993, 6.3262568, 0.18534434, 5.0073237, 3.6735759, 3.8619347, 4.6454206, 3.8792892, 8.151008, 3.9313521, 8.133653, 5.979169, 10.21618, 6.0312324, 10.21618, 3.8792892, 10.979772, 3.8792892, 11.083898, 0.04396987, -8.283594, -0.04280138)

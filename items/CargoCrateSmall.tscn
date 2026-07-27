@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://wl5xxfoy4hr0"]
+
+[ext_resource type="PackedScene" uid="uid://dakbaskjgwy7c" path="res://assets/other_items/crates/FTF_Prop_WoodenCrate_0_2m_Cube.glb" id="1_av5ck"]
+[ext_resource type="Script" path="res://src/cargo_crate.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_btk66"]
+size = Vector3(0.2, 0.2, 0.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_av5ck"]
+size = Vector3(0.22, 0.22, 0.22)
+
+[node name="CargoCrateSmall" type="StaticBody3D" unique_id=1438756855]
+collision_layer = 128
+collision_mask = 41099
+script = ExtResource("2_script")
+crate_size = "small"
+
+[node name="Mesh" parent="." unique_id=905550434 instance=ExtResource("1_av5ck")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=189546181]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09671745, 0)
+shape = SubResource("BoxShape3D_btk66")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=2066522177]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1996221693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09601045, 0)
+shape = SubResource("BoxShape3D_av5ck")
+
+[node name="HealthLabel" type="Label3D" parent="."]
+position = Vector3(0, 0.55, 0)
+billboard = 1
+no_depth_test = true
+font_size = 26
+outline_size = 7
+text = "HP: 500 / 500"

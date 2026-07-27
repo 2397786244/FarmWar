@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://bag2u7ajij2hd"]
+
+[ext_resource type="Script" uid="uid://6fjioso5u6im" path="res://src/tech_drone.gd" id="1_hayiy"]
+[ext_resource type="PackedScene" uid="uid://couheiv7vcyrg" path="res://assets/tools/TechDrone.glb" id="1_itsi3"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_itsi3"]
+size = Vector3(1, 0.5, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hayiy"]
+size = Vector3(1, 0.5, 1)
+
+[node name="TechDrone" type="CharacterBody3D" unique_id=453634203]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("1_hayiy")
+
+[node name="DroneVisual" parent="." unique_id=516462855 instance=ExtResource("1_itsi3")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1754784421]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1511454, -0.007635221)
+shape = SubResource("BoxShape3D_itsi3")
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=1746958752]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.47845602)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=1429852127]
+fov = 100.0
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=342545242]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=188029073]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12886989, 0)
+shape = SubResource("BoxShape3D_hayiy")
+debug_color = Color(0.9331581, 0.17185432, 0.4917506, 0.41960785)
+
+[node name="ActionPoint" type="Marker3D" parent="." unique_id=1123438194]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.6603335)
+
+[node name="BulletMountSlot" type="Marker3D" parent="." unique_id=1123438195]
+
+[node name="CargoMountPos" type="Marker3D" parent="." unique_id=1123438196]
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1123438197]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+visible = false
+billboard = 1
+modulate = Color(0.3, 0.9, 1, 1)
+outline_size = 4
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

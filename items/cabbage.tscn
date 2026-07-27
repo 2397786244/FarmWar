@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://u2fpiqqnntkt"]
+
+[ext_resource type="PackedScene" uid="uid://h4cf4j4oocmc" path="res://assets/plants/Cabbage.glb" id="1_cabbage"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_cabbage"]
+
+[node name="Cabbage" type="StaticBody3D" unique_id=964559961]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1544388248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0.32, 0)
+shape = SubResource("SphereShape3D_cabbage")
+
+[node name="Cabbage" parent="." unique_id=2020695526 instance=ExtResource("1_cabbage")]

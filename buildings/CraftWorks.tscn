@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://c4wxf0hducbvp"]
+
+[ext_resource type="PackedScene" uid="uid://cqx5uuei5je8p" path="res://assets/buildings/CraftWorks.glb" id="1_hp2h5"]
+
+[node name="CraftWorks" type="StaticBody3D" unique_id=1105516197]
+
+[node name="CraftWorks" parent="." unique_id=428734447 instance=ExtResource("1_hp2h5")]

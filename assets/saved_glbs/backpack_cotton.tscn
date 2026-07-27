@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cakpnbhmh1qhv"]
+
+[ext_resource type="PackedScene" uid="uid://n7cmh2uktl82" path="res://assets/equipments/BackpackCotton.glb" id="1_d82km"]
+
+[node name="BackpackCotton" unique_id=713246722 instance=ExtResource("1_d82km")]
+
+[node name="FTF_Equipment_Backpack_CottonWhite" parent="." index="0" unique_id=100465696]
+transform = Transform3D(0.9998477, 0, 0.017452406, 0, 1, 0, -0.017452406, 0, 0.9998477, 0, -1, 0)

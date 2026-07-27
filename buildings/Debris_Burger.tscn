@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://b2vdbrxjgw0ec"]
+
+[ext_resource type="PackedScene" uid="uid://vd3hmsyo141i" path="res://assets/environment/BurgerLettuceScraps.glb" id="1_jkt5a"]
+
+[node name="DebrisBurger" type="Node3D" unique_id=804064569]
+
+[node name="BurgerLettuceScraps" parent="." unique_id=1562270773 instance=ExtResource("1_jkt5a")]

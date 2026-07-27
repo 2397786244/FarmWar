@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://l3qxkym6y2ci"]
+
+[ext_resource type="Script" uid="uid://c1rup4jqmolvg" path="res://src/shop.gd" id="1_3r1eo"]
+[ext_resource type="PackedScene" uid="uid://drf2627sn83y" path="res://assets/FTF_Trade_Terminal.glb" id="1_dikk3"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3r1eo"]
+size = Vector3(1.8, 2, 1)
+
+[node name="Shop" type="StaticBody3D" unique_id=1756225059]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("1_3r1eo")
+
+[node name="FTF_Trade_Terminal" parent="." unique_id=1814596043 instance=ExtResource("1_dikk3")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=484059976]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1230178, 0.10858798)
+shape = SubResource("BoxShape3D_3r1eo")

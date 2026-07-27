@@ -1,0 +1,43 @@
+[gd_scene load_steps=6 format=3 uid="uid://d4acxd8qgm7en"]
+
+[ext_resource type="PackedScene" uid="uid://c56deovp2mcfm" path="res://assets/tools/VehicleShieldShooter.glb" id="1_etvv3"]
+[ext_resource type="Script" path="res://src/vehicle_shield_shooter.gd" id="2_script"]
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_muzzle"]
+direction = Vector3(0, 0, -1)
+spread = 10.0
+initial_velocity_min = 4.0
+initial_velocity_max = 7.0
+scale_min = 0.35
+scale_max = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Material_muzzle"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 1)
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="QuadMesh" id="Quad_muzzle"]
+material = SubResource("Material_muzzle")
+size = Vector2(0.1, 0.1)
+
+[node name="VehicleShieldShooter" type="Node3D" unique_id=985399584]
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=985613382 instance=ExtResource("1_etvv3")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, -0.09299183, 0.2353282)
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=238533886]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25279367, -0.96104276)
+gizmo_extents = 0.5
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle"]
+emitting = false
+amount = 14
+lifetime = 0.16
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("Particle_muzzle")
+draw_pass_1 = SubResource("Quad_muzzle")

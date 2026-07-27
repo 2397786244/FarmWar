@@ -1,0 +1,25 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/environment/cloud_system_3d.gd" id="1_cloud_system"]
+[ext_resource type="PackedScene" path="res://assets/environment/FTF_SkyCloud_LargeTower.glb" id="2_large"]
+[ext_resource type="PackedScene" path="res://assets/environment/FTF_SkyCloud_LongWispy.glb" id="3_long"]
+[ext_resource type="PackedScene" path="res://assets/environment/FTF_SkyCloud_MediumLayered.glb" id="4_medium"]
+[ext_resource type="PackedScene" path="res://assets/environment/FTF_SkyCloud_SmallPuff.glb" id="5_small"]
+
+[node name="CloudSystem" type="Node3D"]
+script = ExtResource("1_cloud_system")
+large_tower_scene = ExtResource("2_large")
+long_wispy_scene = ExtResource("3_long")
+medium_layered_scene = ExtResource("4_medium")
+small_puff_scene = ExtResource("5_small")
+large_tower_count = 48
+long_wispy_count = 4
+medium_layered_count = 12
+small_puff_count = 12
+coverage_size = Vector2(768, 768)
+core_map_size = Vector2(256, 256)
+core_cloud_ratio = 0.5
+cloud_height_range = Vector2(60, 100)
+cloud_color = Color(1, 1, 1, 0.68)
+minimum_cloud_opacity = 0.78
+cloud_visibility_distance = 900.0

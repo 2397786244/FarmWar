@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://b5cyf3av1ietb"]
+
+[ext_resource type="Script" uid="uid://5hysv682yngr" path="res://src/wreck_ai.gd" id="1_d0erd"]
+
+[node name="WreckAi" type="CharacterBody3D" unique_id=1934044171]
+collision_layer = 8
+collision_mask = 519
+script = ExtResource("1_d0erd")
+selected_hero = "rider"

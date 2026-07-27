@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://c7vmvq4vrl77a"]
+
+[ext_resource type="PackedScene" uid="uid://bfxvyqtbqmmgq" path="res://assets/kitchen/PlatingStation.glb" id="1_nf0py"]
+
+[node name="PlatingStation" unique_id=454375648 instance=ExtResource("1_nf0py")]
+
+[node name="DrawerKnob" parent="FTF_Kitchen_PlatingStation" parent_id_path=PackedInt32Array(1311246529) index="7" unique_id=760791397]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.341284, 0.71, 0.40951815)
+
+[node name="DrawerKnob_001" parent="FTF_Kitchen_PlatingStation" parent_id_path=PackedInt32Array(1311246529) index="8" unique_id=710459126]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.71, 0.40951815)
+
+[node name="DrawerKnob_002" parent="FTF_Kitchen_PlatingStation" parent_id_path=PackedInt32Array(1311246529) index="9" unique_id=116938219]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.34, 0.71, 0.40951815)
+
+[node name="ServiceStrip" parent="FTF_Kitchen_PlatingStation" parent_id_path=PackedInt32Array(1311246529) index="11" unique_id=783863069]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.71, 0.38251814)

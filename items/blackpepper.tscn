@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://d0uqtldddtiyn"]
+
+[ext_resource type="PackedScene" uid="uid://5ysgkon08ycx" path="res://assets/plants/BlackPepper.glb" id="1_model"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_blackpepper"]
+size = Vector3(1.099128, 1.28905, 1.010949)
+
+[node name="BlackPepper" type="StaticBody3D" unique_id=1202563371]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1577050848]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.068691, 0.644525, 0.0051385)
+shape = SubResource("BoxShape3D_blackpepper")
+
+[node name="BlackPepper" parent="." unique_id=1865386764 instance=ExtResource("1_model")]

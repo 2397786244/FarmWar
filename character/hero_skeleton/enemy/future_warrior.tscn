@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://dar58wmlp1d3q"]
+
+[ext_resource type="PackedScene" uid="uid://b6lmbk3tu3wmk" path="res://assets/characters/FutureWarrior.glb" id="1_dr3l4"]
+
+[node name="FutureWarrior" unique_id=1138770013 instance=ExtResource("1_dr3l4")]

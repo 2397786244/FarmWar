@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://b0aji7qlxav8"]
+
+[ext_resource type="PackedScene" uid="uid://baf08v2sycb6n" path="res://assets/equipments/PumpkinChestArmor.glb" id="1_ou0ku"]
+
+[node name="PumpkinChestArmor" unique_id=1641719717 instance=ExtResource("1_ou0ku")]
+
+[node name="FTF_Equipment_PumpkinChestArmor" parent="." index="0" unique_id=707308666]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+
+[node name="ChestBottomRim" parent="FTF_Equipment_PumpkinChestArmor" index="0" unique_id=588175962]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.81590474, 0.32374564)
+
+[node name="ChestTopRim" parent="FTF_Equipment_PumpkinChestArmor" index="6" unique_id=869391926]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4330312, 0.3377309)
+
+[node name="PumpkinCrownPlate" parent="FTF_Equipment_PumpkinChestArmor" index="7" unique_id=1342298639]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0.35432696)

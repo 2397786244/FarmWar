@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "equipment_types": ["backpack", "chest_armor", "legwear"],
+  "equipment": [
+	{
+	  "id": "backpack_brown",
+	  "equipment_type": "backpack",
+	  "name": "棕色皮革背包",
+	  "description": "由动物皮制作的牢固背包。",
+	  "scene_path": "res://character/equipments/BackpackBrown.tscn",
+	  "extra_slots": 6,
+	  "extra_weight_kg": 20.0
+	},
+	{
+	  "id": "backpack_cotton",
+	  "equipment_type": "backpack",
+	  "name": "棉布背包",
+	  "description": "由厚实棉布缝制的轻便背包，适合日常采集和运输。",
+	  "scene_path": "res://character/equipments/BackpackCotton.tscn",
+	  "extra_slots": 6,
+	  "extra_weight_kg": 20.0
+	},
+	{
+	  "id": "backpack_military",
+	  "equipment_type": "backpack",
+	  "name": "军用背包",
+	  "description": "结构坚固的大容量军用背包，能够携带更多物资。",
+	  "scene_path": "res://character/equipments/BackpackMilitary.tscn",
+	  "extra_slots": 12,
+	  "extra_weight_kg": 40.0
+	},
+	{
+	  "id": "chest_armor_plant_fiber",
+	  "equipment_type": "chest_armor",
+	  "name": "植物纤维胸甲",
+	  "description": "由紧密编织的植物纤维制成，能够抵挡少量伤害。",
+	  "scene_path": "res://character/equipments/FiberArmor.tscn",
+	  "max_hp": 70.0
+	},
+	{
+	  "id": "chest_armor_cotton",
+	  "equipment_type": "chest_armor",
+	  "name": "棉布胸甲",
+	  "description": "多层厚棉布缝制的轻型胸甲，兼顾活动性与基础防护。",
+	  "scene_path": "res://character/equipments/CottonArmor.tscn",
+	  "max_hp": 90.0
+	},
+	{
+	  "id": "chest_armor_pumpkin",
+	  "equipment_type": "chest_armor",
+	  "name": "南瓜胸甲",
+	  "description": "使用坚硬南瓜外壳制作的胸甲，轻便但耐久有限。",
+	  "scene_path": "res://character/equipments/PumpkinArmor.tscn",
+	  "max_hp": 120.0
+	},
+	{
+	  "id": "chest_armor_wood",
+	  "equipment_type": "chest_armor",
+	  "name": "木制胸甲",
+	  "description": "由加固木板拼接而成，能够承受较强的正面冲击。",
+	  "scene_path": "res://character/equipments/WoodArmor.tscn",
+	  "max_hp": 160.0
+	},
+	{
+	  "id": "chest_armor_engineering_plastic",
+	  "equipment_type": "chest_armor",
+	  "name": "工程塑料胸甲",
+	  "description": "采用高强度工程塑料制造，在重量和防护之间取得平衡。",
+	  "scene_path": "res://character/equipments/PlasticArmor.tscn",
+	  "max_hp": 220.0
+	},
+	{
+	  "id": "chest_armor_police_vest",
+	  "equipment_type": "chest_armor",
+	  "name": "警用防弹背心",
+	  "description": "可靠的警用防弹背心，能够吸收大量枪弹与爆炸伤害。",
+	  "scene_path": "res://character/equipments/PoliceVest.tscn",
+	  "max_hp": 300.0
+	},
+	{
+	  "id": "chest_armor_military_vest",
+	  "equipment_type": "chest_armor",
+	  "name": "军用防弹背心",
+	  "description": "重型军用防弹背心，为高强度战斗提供最可靠的胸部防护。",
+	  "scene_path": "res://character/equipments/MilitaryVest.tscn",
+	  "max_hp": 380.0
+	},
+	{
+	  "id": "legwear_plant_fiber",
+	  "equipment_type": "legwear",
+	  "name": "植物纤维护腿",
+	  "description": "由轻韧植物纤维编织成的成对护腿，防护有限，但非常利于快速移动。",
+	  "scene_path": "res://character/equipments/FiberLegArmorLeft.tscn",
+	  "left_scene_path": "res://character/equipments/FiberLegArmorLeft.tscn",
+	  "right_scene_path": "res://character/equipments/FiberLegArmorRight.tscn",
+	  "max_hp": 45.0,
+	  "movement_speed_multiplier": 1.15
+	},
+	{
+	  "id": "legwear_cotton",
+	  "equipment_type": "legwear",
+	  "name": "棉布护腿",
+	  "description": "柔软而轻便的成对棉布护腿，牺牲部分防护以获得最灵活的移动能力。",
+	  "scene_path": "res://character/equipments/CottonLegArmorLeft.tscn",
+	  "left_scene_path": "res://character/equipments/CottonLegArmorLeft.tscn",
+	  "right_scene_path": "res://character/equipments/CottonLegArmorRight.tscn",
+	  "max_hp": 55.0,
+	  "movement_speed_multiplier": 1.20
+	},
+	{
+	  "id": "legwear_pumpkin",
+	  "equipment_type": "legwear",
+	  "name": "南瓜护腿",
+	  "description": "由坚硬南瓜外壳制成的成对护腿，兼顾基础防护和灵活移动。",
+	  "scene_path": "res://character/equipments/PumpkinLegArmorLeft.tscn",
+	  "left_scene_path": "res://character/equipments/PumpkinLegArmorLeft.tscn",
+	  "right_scene_path": "res://character/equipments/PumpkinLegArmorRight.tscn",
+	  "max_hp": 65.0,
+	  "movement_speed_multiplier": 1.12
+	},
+	{
+	  "id": "legwear_wood",
+	  "equipment_type": "legwear",
+	  "name": "木制护腿",
+	  "description": "由加固木板制成的成对护腿，防护可靠，但会稍微限制移动。",
+	  "scene_path": "res://character/equipments/WoodLegArmorLeft.tscn",
+	  "left_scene_path": "res://character/equipments/WoodLegArmorLeft.tscn",
+	  "right_scene_path": "res://character/equipments/WoodLegArmorRight.tscn",
+	  "max_hp": 85.0,
+	  "movement_speed_multiplier": 1.05
+	},
+	{
+	  "id": "legwear_engineering_plastic",
+	  "equipment_type": "legwear",
+	  "name": "工程塑料护腿",
+	  "description": "高强度工程塑料制成的成对护腿，在优秀防护和机动性之间取得平衡。",
+	  "scene_path": "res://character/equipments/PlasticLegArmorLeft.tscn",
+	  "left_scene_path": "res://character/equipments/PlasticLegArmorLeft.tscn",
+	  "right_scene_path": "res://character/equipments/PlasticLegArmorRight.tscn",
+	  "max_hp": 100.0,
+	  "movement_speed_multiplier": 1.10
+	}
+  ]
+}

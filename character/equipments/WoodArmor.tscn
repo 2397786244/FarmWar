@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://b15q28le3dkki"]
+
+[ext_resource type="PackedScene" uid="uid://cee6n7iwyuga5" path="res://assets/saved_glbs/wood_chest_armor.tscn" id="1_jng40"]
+
+[node name="WoodArmor" type="Node3D" unique_id=1084363862]
+
+[node name="WoodChestArmor" parent="." unique_id=1349010378 instance=ExtResource("1_jng40")]

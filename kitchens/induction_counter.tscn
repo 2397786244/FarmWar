@@ -1,0 +1,105 @@
+[gd_scene format=3 uid="uid://bqhr7v7svog3p"]
+
+[ext_resource type="PackedScene" uid="uid://dd1tyauou5fkj" path="res://assets/kitchen/InductionCounter.tscn" id="1_model"]
+[ext_resource type="Script" uid="uid://bwjlwoi60dipw" path="res://src/induction_counter.gd" id="2_script"]
+[ext_resource type="PackedScene" path="res://kitchens/pot.tscn" id="3_pot"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_induction"]
+size = Vector3(1.26, 1.0325, 0.9225)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(0.25, 0.7, 1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[sub_resource type="Curve" id="Curve_pot_smoke_scale"]
+_data = [Vector2(0, 0.3), 0.0, 1.8, 0, 0, Vector2(0.25, 0.7), 1.0, 1.0, 0, 0, Vector2(1, 1.3), 0.7, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_pot_smoke_scale"]
+curve = SubResource("Curve_pot_smoke_scale")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_pot_smoke"]
+emission_shape = 3
+emission_box_extents = Vector3(0.18, 0.02, 0.18)
+direction = Vector3(0, 1, 0)
+spread = 16.0
+initial_velocity_min = 0.14
+initial_velocity_max = 0.28
+gravity = Vector3(0, 0.07, 0)
+damping_min = 0.1
+damping_max = 0.24
+scale_min = 0.28
+scale_max = 0.45
+scale_curve = SubResource("CurveTexture_pot_smoke_scale")
+color = Color(0.3, 0.29, 0.25, 0.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_pot_smoke"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 3
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.72, 0.7, 0.64, 0.34)
+billboard_mode = 1
+billboard_keep_scale = true
+
+[sub_resource type="QuadMesh" id="QuadMesh_pot_smoke"]
+material = SubResource("StandardMaterial_pot_smoke")
+size = Vector2(0.62, 0.62)
+
+[node name="InductionCounter" type="StaticBody3D" unique_id=983687736 groups=["induction_counters"]]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "电磁炉台"
+
+[node name="InductionCounter" parent="." unique_id=2051266184 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=76636680]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.51625, 0.03125)
+shape = SubResource("BoxShape3D_induction")
+
+[node name="Pot" parent="." unique_id=1107438035 instance=ExtResource("3_pot")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.251747, 0.9866035, 0)
+collision_layer = 0
+collision_mask = 0
+
+[node name="StatusLabel" type="Label3D" parent="." unique_id=562895346]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
+billboard = 1
+text = "按 [E] 使用电磁炉"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="." unique_id=618342811]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.36, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="." unique_id=482264714]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 1.36, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")
+
+[node name="PotCookingSmoke" type="GPUParticles3D" parent="." unique_id=1815759959]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.251747, 1.4, 0)
+emitting = false
+amount = 14
+lifetime = 2.4
+preprocess = 0.7
+randomness = 0.4
+visibility_aabb = AABB(-0.65, -0.15, -0.65, 1.3, 2.3, 1.3)
+process_material = SubResource("ParticleProcessMaterial_pot_smoke")
+draw_pass_1 = SubResource("QuadMesh_pot_smoke")

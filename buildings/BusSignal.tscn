@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://wgo584y0v2yr"]
+
+[ext_resource type="PackedScene" uid="uid://bqv1xyq3w1yau" path="res://assets/buildings/FTF_Street_BusStopSign_2_8m.glb" id="1_2mamk"]
+
+[node name="BusSignal" type="StaticBody3D" unique_id=1611882980]
+
+[node name="FTF_Street_BusStopSign_2_8m2" parent="." unique_id=2134944129 instance=ExtResource("1_2mamk")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://ej73iqgtkca7"]
+
+[ext_resource type="PackedScene" uid="uid://dp0hrrtpwdcaq" path="res://assets/kitchen/CanningStation.glb" id="1_57edc"]
+
+[node name="CanningStation" unique_id=1500448151 instance=ExtResource("1_57edc")]
+
+[node name="CannerHandle" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="0" unique_id=54561111]
+transform = Transform3D(0, 0.8633339, 0.5046331, -1, 0, 0, 0, -0.5046331, 0.8633339, -0.45900017, 1.3, 0.13138995)
+
+[node name="CannerHandle_001" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="1" unique_id=1227986676]
+transform = Transform3D(0, 0.8633339, 0.5046331, -1, 0, 0, 0, -0.5046331, 0.8633339, 0.059000164, 1.3, -0.17138992)
+
+[node name="CanningGauge" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="4" unique_id=189346393]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.73, 0.37928513)
+
+[node name="GaugeDial" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="8" unique_id=1746789825]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.73, 0.40228513)
+
+[node name="PressureCanner" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="11" unique_id=1940100189]
+transform = Transform3D(0.8633339, 0, 0.5046331, 0, 1, 0, -0.5046331, 0, 0.8633339, -0.2, 1.22, -0.019999992)
+
+[node name="PressureValve" parent="FTF_Kitchen_CanningStation" parent_id_path=PackedInt32Array(813331954) index="13" unique_id=835599565]
+transform = Transform3D(0.8633339, 0, 0.5046331, 0, 1, 0, -0.5046331, 0, 0.8633339, -0.2, 1.465, -0.019999992)

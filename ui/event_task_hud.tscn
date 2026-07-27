@@ -1,0 +1,99 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/event_task_hud.gd" id="1_script"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBox_transparent_global"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBox_transparent_team"]
+
+[node name="EventTaskHud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="GlobalEvents" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 138.0
+offset_right = 408.0
+offset_bottom = 446.0
+theme_override_styles/panel = SubResource("StyleBox_transparent_global")
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="GlobalEvents"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="GlobalEvents/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="GlobalEvents/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "公共事件"
+
+[node name="Separator" type="HSeparator" parent="GlobalEvents/Margin/VBox"]
+layout_mode = 2
+
+[node name="EventList" type="RichTextLabel" parent="GlobalEvents/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_font_color = Color(1, 1, 1, 1)
+theme_override_colors/default_font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/normal_font_size = 17
+bbcode_enabled = true
+fit_content = false
+
+[node name="TeamTasks" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 476.0
+offset_right = 408.0
+offset_bottom = 844.0
+theme_override_styles/panel = SubResource("StyleBox_transparent_team")
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="TeamTasks"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="TeamTasks/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="TeamTasks/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "队伍任务"
+
+[node name="Separator" type="HSeparator" parent="TeamTasks/Margin/VBox"]
+layout_mode = 2
+
+[node name="TaskList" type="RichTextLabel" parent="TeamTasks/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_font_color = Color(1, 1, 1, 1)
+theme_override_colors/default_font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/normal_font_size = 17
+bbcode_enabled = true
+fit_content = false

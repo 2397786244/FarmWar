@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://dbakuix8ba6v3"]
+
+[ext_resource type="Script" uid="uid://dhfmu5irpjbhs" path="res://src/shield_door.gd" id="1_1l630"]
+[ext_resource type="PackedScene" uid="uid://u5156yc5edao" path="res://assets/tools/ShieldDoor.glb" id="1_7rsuh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1l630"]
+size = Vector3(2, 4, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_k4v2x"]
+size = Vector3(2, 4, 1)
+
+[node name="ShieldDoor" type="StaticBody3D" unique_id=65702935]
+collision_layer = 0
+collision_mask = 139
+script = ExtResource("1_1l630")
+
+[node name="Mesh" parent="." unique_id=2015591193 instance=ExtResource("1_7rsuh")]
+transform = Transform3D(0.5, 0, 0, 0, 0.8, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="Area3D" type="Area3D" parent="." unique_id=589260345]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=10405381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0044312, 0)
+shape = SubResource("BoxShape3D_1l630")
+debug_color = Color(0.87479186, 0.29014167, 0.4893539, 0.41960785)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=348937299]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.3290396, 0)
+visible = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=471475006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.011595, 0)
+shape = SubResource("BoxShape3D_k4v2x")
+disabled = true
+debug_color = Color(0.76555276, 0.29195064, 0.8500696, 0.41960785)
+
+[connection signal="body_entered" from="Area3D" to="." method="_on_area_3d_body_entered"]

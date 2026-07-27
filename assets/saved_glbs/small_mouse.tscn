@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://dt2byfrqi8qgq"]
+
+[ext_resource type="PackedScene" uid="uid://v76hay33as8x" path="res://assets/tools/SmallMouse.glb" id="1_rpv6f"]
+
+[node name="SmallMouse2" unique_id=2102443961 instance=ExtResource("1_rpv6f")]

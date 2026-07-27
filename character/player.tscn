@@ -1,0 +1,393 @@
+[gd_scene format=3 uid="uid://dflvavrg0mi7f"]
+
+[ext_resource type="Script" uid="uid://dvncuknjvrpos" path="res://src/player.gd" id="1_2orxn"]
+[ext_resource type="Script" uid="uid://07g5rm3lknj4" path="res://src/shop_page.gd" id="2_monf5"]
+[ext_resource type="Shader" uid="uid://bryjrcv7otfeo" path="res://src/drone_camera.gdshader" id="3_aypkh"]
+[ext_resource type="Shader" uid="uid://o1bustn4vy8k" path="res://src/remote_lq.gdshader" id="4_hhoun"]
+[ext_resource type="PackedScene" path="res://ui/player_backpack.tscn" id="5_backpack"]
+[ext_resource type="PackedScene" path="res://ui/event_task_hud.tscn" id="6_event_task_hud"]
+[ext_resource type="PackedScene" path="res://ui/ingredient_pickup_page.tscn" id="7_ingredient_pickup"]
+[ext_resource type="PackedScene" path="res://ui/plating_station_page.tscn" id="8_plating_station"]
+[ext_resource type="PackedScene" path="res://ui/ingredient_extractor_page.tscn" id="9_extractor"]
+[ext_resource type="PackedScene" path="res://ui/auto_cooker_page.tscn" id="10_auto_cook"]
+[ext_resource type="PackedScene" path="res://ui/oven_page.tscn" id="10_oven"]
+[ext_resource type="PackedScene" path="res://ui/griddle_station_page.tscn" id="11_griddle"]
+[ext_resource type="PackedScene" path="res://ui/induction_counter_page.tscn" id="12_induction"]
+[ext_resource type="PackedScene" path="res://ui/farm_smoker_page.tscn" id="13_smoker"]
+[ext_resource type="PackedScene" path="res://ui/freezer_page.tscn" id="14_freezer"]
+[ext_resource type="PackedScene" path="res://ui/stand_mixer_page.tscn" id="15_mixer"]
+[ext_resource type="PackedScene" path="res://ui/vehicle_upgrade_page.tscn" id="16_vehicle_upgrade"]
+[ext_resource type="PackedScene" path="res://ui/team_chat_panel.tscn" id="17_team_chat"]
+[ext_resource type="PackedScene" path="res://ui/game_exit_dialog.tscn" id="18_exit_dialog"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_dkowc"]
+radius = 2.0
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_pbctf"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_2orxn"]
+bg_color = Color(0.32537556, 0.66111803, 0.68581444, 1)
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.9314227, 0.7315425, 0.85341847, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="Theme" id="Theme_2orxn"]
+PanelContainer/styles/panel = SubResource("StyleBoxFlat_2orxn")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_monf5"]
+bg_color = Color(0.21277738, 0.6795293, 0.6595979, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aypkh"]
+bg_color = Color(0, 0.66462946, 0.8311574, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hhoun"]
+bg_color = Color(0.4089916, 0.64320076, 0.69647175, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bdyh8"]
+bg_color = Color(0.56078434, 0.65882355, 0.46666667, 1)
+
+[sub_resource type="Theme" id="Theme_qe16m"]
+TabContainer/font_sizes/font_size = 24
+TabContainer/styles/panel = SubResource("StyleBoxFlat_monf5")
+TabContainer/styles/tab_selected = SubResource("StyleBoxFlat_aypkh")
+TabContainer/styles/tab_unselected = SubResource("StyleBoxFlat_hhoun")
+TabContainer/styles/tabbar_background = SubResource("StyleBoxFlat_bdyh8")
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_monf5"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hhoun"]
+shader = ExtResource("3_aypkh")
+shader_parameter/effect_strength = 1.0
+shader_parameter/signal_strength = 1.0
+shader_parameter/transmit_resolution = Vector2(1280, 960)
+shader_parameter/pixelation_scale = 1.0
+shader_parameter/barrel_distortion = 0.025
+shader_parameter/chroma_shift = 0.0025
+shader_parameter/brightness = 1.0
+shader_parameter/contrast = 1.08
+shader_parameter/saturation = 0.78
+shader_parameter/scanline_strength = 0.14
+shader_parameter/noise_amount = 0.30000001425
+shader_parameter/horizontal_jitter = 0.008
+shader_parameter/tear_strength = 0.025
+shader_parameter/packet_loss_amount = 0.50000002375
+shader_parameter/blackout_amount = 0.45
+shader_parameter/vignette_strength = 0.38
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bdyh8"]
+shader = ExtResource("4_hhoun")
+shader_parameter/effect_strength = 1.0
+shader_parameter/signal_strength = 1.0
+shader_parameter/transmit_resolution = Vector2(640, 480)
+shader_parameter/pixelation_scale = 0.9000000189999999
+shader_parameter/brightness = 1.0
+shader_parameter/contrast = 0.800000038
+shader_parameter/black_level = 0.0800000038
+shader_parameter/white_level = 1.0
+shader_parameter/monochrome_gamma = 1.10000002966454
+shader_parameter/grayscale_steps = 64.0
+shader_parameter/barrel_distortion = 0.025
+shader_parameter/scanline_strength = 0.14
+shader_parameter/noise_amount = 0.30000001425
+shader_parameter/horizontal_jitter = 0.008
+shader_parameter/tear_strength = 0.025
+shader_parameter/packet_loss_amount = 0.800000038
+shader_parameter/blackout_amount = 0.48
+shader_parameter/vignette_strength = 0.42
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_sod_crop"]
+radius = 1.5
+height = 3.0
+
+[node name="Player" type="CharacterBody3D" unique_id=1830909008]
+collision_layer = 8
+collision_mask = 12943
+script = ExtResource("1_2orxn")
+punch_hand_camera_offset = Vector3(0.15, 0.2, -1.4)
+
+[node name="Head" type="Node3D" parent="." unique_id=1094661074]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7080579, -0.45418245)
+
+[node name="Camera3D" type="Camera3D" parent="Head" unique_id=1269005610]
+near = 0.12
+
+[node name="UpperBodyLookTarget" type="Marker3D" parent="Head" unique_id=1183878644]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -3)
+
+[node name="RightHandIKTarget" type="Marker3D" parent="Head" unique_id=2039329542]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.28, -0.28, -0.42)
+gizmo_extents = 0.12
+
+[node name="LeftHandIKTarget" type="Marker3D" parent="Head" unique_id=1750055833]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.28, -0.28, -0.42)
+gizmo_extents = 0.12
+
+[node name="LeftElbowPole" type="Marker3D" parent="Head" unique_id=1012017446]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.65, -0.35, -0.35)
+gizmo_extents = 0.16
+
+[node name="LookAtTarget" type="RayCast3D" parent="Head" unique_id=229045559]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7953281)
+target_position = Vector3(0, 0, -30)
+collision_mask = 201
+
+[node name="InteractDetect" type="ShapeCast3D" parent="Head" unique_id=370112039]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5080579, -0.69581753)
+shape = SubResource("SphereShape3D_dkowc")
+target_position = Vector3(0, 0, -3)
+collision_mask = 9104
+collide_with_areas = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=69553552]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.98931706, -0.01983869)
+shape = SubResource("CapsuleShape3D_pbctf")
+
+[node name="RightHandSocket" type="BoneAttachment3D" parent="." unique_id=825678808]
+bone_name = "Hand.R"
+use_external_skeleton = true
+external_skeleton = NodePath("")
+
+[node name="ToolPivot" type="Node3D" parent="RightHandSocket" unique_id=1220781606]
+
+[node name="RightElbowPole" type="Marker3D" parent="." unique_id=501916709]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.65, 1.2, -0.1)
+gizmo_extents = 0.16
+
+[node name="SubViewport" type="CanvasLayer" parent="." unique_id=114640152]
+layer = 20
+
+[node name="Label" type="RichTextLabel" parent="SubViewport" unique_id=1223307196]
+texture_filter = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -494.0
+offset_top = -74.0
+offset_right = 529.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_font_sizes/normal_font_size = 48
+theme_override_font_sizes/bold_font_size = 48
+theme_override_font_sizes/bold_italics_font_size = 48
+theme_override_font_sizes/italics_font_size = 48
+theme_override_font_sizes/mono_font_size = 48
+bbcode_enabled = true
+text = "当前工具:  种子喷射器 |  破坏者 |  吸能枪"
+
+[node name="cooler" type="RichTextLabel" parent="SubViewport" unique_id=1884561603]
+visible = false
+texture_filter = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -228.0
+offset_top = -74.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_font_sizes/normal_font_size = 48
+theme_override_font_sizes/bold_font_size = 48
+theme_override_font_sizes/bold_italics_font_size = 48
+theme_override_font_sizes/italics_font_size = 48
+theme_override_font_sizes/mono_font_size = 48
+bbcode_enabled = true
+text = "冷却中..."
+
+[node name="GlobalStats" type="Label" parent="SubViewport" unique_id=1394362103]
+visible = false
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -360.0
+offset_right = 360.0
+offset_bottom = 23.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 50
+horizontal_alignment = 1
+
+[node name="GlobalStatsValue" type="RichTextLabel" parent="SubViewport" unique_id=84284309]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 8.0
+offset_right = 220.0
+offset_bottom = 72.0
+grow_horizontal = 2
+theme_override_font_sizes/normal_font_size = 40
+bbcode_enabled = true
+text = "[center][color=#FF5656]0[/color]             [color=#69A7FF]0[/color][/center]"
+
+[node name="RemoteDevicePanel" type="PanelContainer" parent="SubViewport" unique_id=1931146821]
+visible = false
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -360.0
+offset_top = 136.0
+offset_right = -28.0
+offset_bottom = 510.0
+grow_horizontal = 0
+theme = SubResource("Theme_2orxn")
+
+[node name="MarginContainer" type="MarginContainer" parent="SubViewport/RemoteDevicePanel" unique_id=1931146822]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SubViewport/RemoteDevicePanel/MarginContainer" unique_id=1931146823]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="SubViewport/RemoteDevicePanel/MarginContainer/VBoxContainer" unique_id=1931146824]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "REMOTE DEVICES"
+
+[node name="Separator" type="HSeparator" parent="SubViewport/RemoteDevicePanel/MarginContainer/VBoxContainer" unique_id=1931146825]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SubViewport/RemoteDevicePanel/MarginContainer/VBoxContainer" unique_id=1931146826]
+custom_minimum_size = Vector2(0, 284)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="DeviceList" type="VBoxContainer" parent="SubViewport/RemoteDevicePanel/MarginContainer/VBoxContainer/ScrollContainer" unique_id=1931146827]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ShopPage" type="PanelContainer" parent="SubViewport" unique_id=1206310127]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 80.0
+offset_top = -341.0
+offset_right = 840.0
+offset_bottom = 341.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = SubResource("Theme_2orxn")
+script = ExtResource("2_monf5")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SubViewport/ShopPage" unique_id=1076013086]
+layout_mode = 2
+alignment = 1
+
+[node name="Label" type="Label" parent="SubViewport/ShopPage/VBoxContainer" unique_id=1231851005]
+layout_mode = 2
+theme_override_font_sizes/font_size = 64
+text = "商店"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="SubViewport/ShopPage/VBoxContainer" unique_id=519041872]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TabContainer" type="TabContainer" parent="SubViewport/ShopPage/VBoxContainer" unique_id=1285524397]
+custom_minimum_size = Vector2(0, 600)
+layout_mode = 2
+theme = SubResource("Theme_qe16m")
+tab_alignment = 1
+current_tab = 0
+
+[node name="购买" type="Control" parent="SubViewport/ShopPage/VBoxContainer/TabContainer" unique_id=1551247564]
+layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SubViewport/ShopPage/VBoxContainer/TabContainer/购买" unique_id=1349932993]
+layout_mode = 0
+offset_right = 484.0
+offset_bottom = 556.5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SubViewport/ShopPage/VBoxContainer/TabContainer/购买/ScrollContainer" unique_id=422387598]
+layout_mode = 2
+alignment = 1
+
+[node name="Item1" type="HBoxContainer" parent="SubViewport/ShopPage/VBoxContainer/TabContainer/购买/ScrollContainer/VBoxContainer" unique_id=334412845]
+custom_minimum_size = Vector2(450, 50)
+layout_mode = 2
+
+[node name="出售" type="Control" parent="SubViewport/ShopPage/VBoxContainer/TabContainer" unique_id=242108047]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="PlayerBackpack" parent="SubViewport" unique_id=75944933 instance=ExtResource("5_backpack")]
+
+[node name="EventTaskHud" parent="SubViewport" unique_id=99973163 instance=ExtResource("6_event_task_hud")]
+
+[node name="IngredientPickupPage" parent="SubViewport" unique_id=418211500 instance=ExtResource("7_ingredient_pickup")]
+
+[node name="PlatingStationPage" parent="SubViewport" unique_id=1963438226 instance=ExtResource("8_plating_station")]
+
+[node name="OvenPage" parent="SubViewport" unique_id=1953857966 instance=ExtResource("10_oven")]
+
+[node name="GriddleStationPage" parent="SubViewport" unique_id=1969522129 instance=ExtResource("11_griddle")]
+
+[node name="InductionCounterPage" parent="SubViewport" unique_id=480054815 instance=ExtResource("12_induction")]
+
+[node name="FarmSmokerPage" parent="SubViewport" unique_id=1994068175 instance=ExtResource("13_smoker")]
+
+[node name="FreezerPage" parent="SubViewport" unique_id=1849193882 instance=ExtResource("14_freezer")]
+
+[node name="StandMixerPage" parent="SubViewport" unique_id=207960633 instance=ExtResource("15_mixer")]
+
+[node name="IngredientExtractorPage" parent="SubViewport" unique_id=1991647623 instance=ExtResource("9_extractor")]
+
+[node name="AutoCookerPage" parent="SubViewport" unique_id=31062107 instance=ExtResource("10_auto_cook")]
+
+[node name="VehicleUpgradePage" parent="SubViewport" unique_id=432483422 instance=ExtResource("16_vehicle_upgrade")]
+
+[node name="TeamChatPanel" parent="SubViewport" unique_id=2135798746 instance=ExtResource("17_team_chat")]
+
+[node name="GameExitDialog" parent="SubViewport" unique_id=697070335 instance=ExtResource("18_exit_dialog")]
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=696329736]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=267417292]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9641377, 0)
+shape = SubResource("CapsuleShape3D_monf5")
+debug_color = Color(0.798857, 0.22852543, 0.87126714, 0.41960785)
+
+[node name="EffectLayer" type="CanvasLayer" parent="." unique_id=1313000976]
+layer = 10
+
+[node name="RemoteEffect" type="ColorRect" parent="EffectLayer" unique_id=1725743387]
+visible = false
+material = SubResource("ShaderMaterial_hhoun")
+custom_minimum_size = Vector2(1920, 1080)
+
+[node name="RemoteLQEffect" type="ColorRect" parent="EffectLayer" unique_id=1827279140]
+visible = false
+material = SubResource("ShaderMaterial_bdyh8")
+custom_minimum_size = Vector2(1920, 1080)
+
+[node name="SODArea" type="ShapeCast3D" parent="." unique_id=403413185]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.32724392, -0.95)
+shape = SubResource("CapsuleShape3D_sod_crop")
+target_position = Vector3(0, 0, -1)
+collision_mask = 272
+collide_with_areas = true
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "heroes": [
+	{
+	  "id": "farmer",
+	  "name": "农夫",
+	  "role": "种地和农田保护",
+	  "blue_scene": "res://character/hero_skeleton/farmer_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/farmer_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "cook",
+	  "name": "厨师",
+	  "role": "食材制作",
+	  "blue_scene": "res://character/hero_skeleton/cook_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/cook_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "guard",
+	  "name": "守卫",
+	  "role": "农田守卫",
+	  "blue_scene": "res://character/hero_skeleton/guard_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/guard_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "apothecary",
+	  "name": "药剂师",
+	  "role": "治疗和净化",
+	  "blue_scene": "res://character/hero_skeleton/apothecary_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/apothecary_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "assistant",
+	  "name": "助手",
+	  "role": "运输辅助、防守护送",
+	  "blue_scene": "res://character/hero_skeleton/assistant_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/assistant_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "engineer",
+	  "name": "工程师",
+	  "role": "进攻和农田保护",
+	  "blue_scene": "res://character/hero_skeleton/engineer_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/engineer_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "mage",
+	  "name": "魔法师",
+	  "role": "魔法输出、虫害骚扰",
+	  "blue_scene": "res://character/hero_skeleton/mage_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/mage_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "prospector",
+	  "name": "调查员",
+	  "role": "信息侦察、目标标记、资源寻找",
+	  "blue_scene": "res://character/hero_skeleton/prospector_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/prospector_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "rider",
+	  "name": "车手",
+	  "role": "车辆维护、载具追踪、物流截击",
+	  "blue_scene": "res://character/hero_skeleton/rider_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/rider_red.tscn",
+	  "icon": "",
+	  "description": ""
+	},
+	{
+	  "id": "trickster",
+	  "name": "捣蛋鬼",
+	  "role": "埋伏、骗位、道路破坏",
+	  "blue_scene": "res://character/hero_skeleton/trickster_blue.tscn",
+	  "red_scene": "res://character/hero_skeleton/trickster_red.tscn",
+	  "icon": "",
+	  "description": ""
+	}
+  ]
+}

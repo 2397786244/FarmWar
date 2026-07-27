@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://c0miwnvmph4sv"]
+
+[ext_resource type="PackedScene" uid="uid://c22mh0re0ujuh" path="res://assets/kitchen/IngredientExtractor.glb" id="1_4c7b2"]
+
+[node name="IngredientExtractor" unique_id=670744134 instance=ExtResource("1_4c7b2")]
+
+[node name="ExtractorTank" parent="FTF_Kitchen_IngredientExtractor" parent_id_path=PackedInt32Array(1104389053) index="2" unique_id=84764206]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 1.1704946, -0.03)
+
+[node name="Hopper" parent="FTF_Kitchen_IngredientExtractor" parent_id_path=PackedInt32Array(1104389053) index="3" unique_id=154889560]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27, 1.1222776, -0.05)
+
+[node name="OutputTray" parent="FTF_Kitchen_IngredientExtractor" parent_id_path=PackedInt32Array(1104389053) index="4" unique_id=1372611842]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.979378, 0.35)

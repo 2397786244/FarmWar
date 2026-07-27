@@ -1,0 +1,26 @@
+# Godot generated data
+/.godot/
+/.mono/
+
+# Exported builds and local captures
+/builds/
+/captures/
+
+# C# build output
+bin/
+obj/
+
+# Temporary and backup files
+*.tmp
+*.temp
+*~
+*.bak
+*.codex-bak-*
+
+# macOS metadata and archive leftovers
+.DS_Store
+__MACOSX/
+
+# IDE-local settings
+.vscode/
+.idea/

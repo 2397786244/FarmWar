@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://dagnmcdabqnq0"]
+
+[ext_resource type="PackedScene" uid="uid://bqv272ippxlka" path="res://assets/tools/FTF_Trap_FakePlayer_Trickster_M1911.glb" id="1_iinm5"]
+[ext_resource type="Script" path="res://src/fake_player.gd" id="2_script"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_22y1m"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_iinm5"]
+radius = 0.6
+
+[node name="FakePlayer" type="StaticBody3D" unique_id=837719741]
+collision_layer = 128
+collision_mask = 12427
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=599610389 instance=ExtResource("1_iinm5")]
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1725246034]
+collision_layer = 128
+collision_mask = 32
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1082581832]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15677, 0)
+shape = SubResource("CylinderShape3D_22y1m")
+disabled = true
+debug_color = Color(0.91887665, 0.17939219, 0.55345726, 0.41960785)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1274891399]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0662057, 0)
+shape = SubResource("CylinderShape3D_iinm5")
+disabled = true
+
+[node name="Label3D" type="Label3D" parent="."]
+position = Vector3(0, 2.65, 0)
+visible = false
+billboard = 1
+no_depth_test = true
+text = "HP: 300 / 300"
+font_size = 32
+outline_size = 8
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

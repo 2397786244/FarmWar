@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://dnidktkuk2aq2"]
+
+[ext_resource type="Script" uid="uid://lmaknjqe0qvf" path="res://src/auto_shooter.gd" id="1_7xpkx"]
+[ext_resource type="PackedScene" uid="uid://c1xji03fcbg7a" path="res://assets/tools/AutoShooter.glb" id="2_yywe2"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_7xpkx"]
+radius = 1.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_yywe2"]
+radius = 1.0
+
+[node name="AutoShooter" type="StaticBody3D" unique_id=1678369115]
+collision_layer = 0
+collision_mask = 139
+script = ExtResource("1_7xpkx")
+
+[node name="Mesh" parent="." unique_id=1222060783 instance=ExtResource("2_yywe2")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="Area3D" type="Area3D" parent="." unique_id=1990658461]
+collision_layer = 2048
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1212604249]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9258212, 0)
+shape = SubResource("SphereShape3D_7xpkx")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1640074149]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0612192, 0)
+visible = false
+text = "HP:500"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1579644953]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.96229994, 0)
+shape = SubResource("SphereShape3D_yywe2")
+disabled = true
+
+[node name="ShootingLine" type="RayCast3D" parent="." unique_id=738101782]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1966155, 0)
+target_position = Vector3(0, 0, -5)
+
+[connection signal="body_entered" from="Area3D" to="." method="_on_area_3d_body_entered"]

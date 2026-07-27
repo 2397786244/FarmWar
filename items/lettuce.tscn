@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/plants/Lettuce.glb" id="1_lettuce"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_lettuce"]
+radius = 0.45
+
+[node name="Lettuce" type="StaticBody3D"]
+collision_layer = 16
+collision_mask = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.23, 0)
+shape = SubResource("SphereShape3D_lettuce")
+
+[node name="Lettuce" parent="." instance=ExtResource("1_lettuce")]

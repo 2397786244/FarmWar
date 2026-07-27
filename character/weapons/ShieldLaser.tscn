@@ -1,0 +1,35 @@
+[gd_scene format=3 uid="uid://cjqmutuhicnmw"]
+
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="1_y1gf8"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_arvg4"]
+radius = 0.065
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.9
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 12.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_c3x1l"]
+material = SubResource("StandardMaterial3D_744bm")
+radius = 0.1
+height = 0.2
+radial_segments = 8
+rings = 4
+
+[node name="ShieldLaser" type="CharacterBody3D" unique_id=1998667049]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=73966218]
+shape = SubResource("SphereShape3D_arvg4")
+
+[node name="tracer" type="MeshInstance3D" parent="." unique_id=1073647080]
+script = ExtResource("1_y1gf8")
+tracer_color = Color(1, 1, 1, 1)
+radius = 0.15
+minimum_length = 2.0
+maximum_length = 4.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=82093452]
+mesh = SubResource("SphereMesh_c3x1l")

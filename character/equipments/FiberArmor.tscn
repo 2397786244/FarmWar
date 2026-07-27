@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dgyhec6al2xaa"]
+
+[ext_resource type="PackedScene" uid="uid://b2xuilgahul3j" path="res://assets/saved_glbs/plant_fiber_chest_armor.tscn" id="1_13r7j"]
+
+[node name="FiberArmor" type="Node3D" unique_id=1166386612]
+
+[node name="PlantFiberChestArmor" parent="." unique_id=1783333041 instance=ExtResource("1_13r7j")]

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "servers": [
+	{
+	  "address": "103.236.96.79",
+	  "game_port": 2088,
+	  "query_port": 2089
+	},
+	{
+	  "address": "103.236.96.79",
+	  "game_port": 2012,
+	  "query_port": 2013
+	},
+	{
+	  "address": "192.168.1.14",
+	  "game_port": 2099,
+	  "query_port": 2100
+	}
+  ]
+}

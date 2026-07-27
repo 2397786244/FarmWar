@@ -1,0 +1,817 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "tomato",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/tomato.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tomato",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/tomato_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "corn",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/corn.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "corn",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/corn_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wheat",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/wheat.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pepper",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pepper.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pepper",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pepper_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "strawberry",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/strawberry.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "strawberry",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/strawberry_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "eggplant",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/eggplant.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "eggplant",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/eggplant_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pumpkin",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pumpkin.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pumpkin",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pumpkin_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "watermelon",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/watermelon.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "watermelon",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/watermelon_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "beet",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/beet.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "beet",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/beet_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cabbage",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/cabbage.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cabbage",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/cabbage_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cotton",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/cotton.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "lettuce",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/lettuce.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "lettuce",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/lettuce_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "mint",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/mint.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "peanut",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/peanut.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sugarcane",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/sugarcane.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sugarcane",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/sugarcane_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tobacco",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/tobacco.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "grape",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/grape.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "grape",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/grape_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "kiwi",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/kiwi.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "kiwi",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/kiwi_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "hazelnut",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/hazelnut.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pistachio",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pistachio.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "walnut",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/walnut.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "soybean",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/soybean.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "blackpepper",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/blackpepper.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "potato",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/potato.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "potato",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/potato_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chicken",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/chicken.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chicken",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/chicken_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pork",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pork.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pork",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/pork_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "beef",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/beef.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "beef",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/beef_chopped.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wheat_flour",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/wheat_flour.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sugar",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/sugar.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "oil",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/oil.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "yeast",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/yeast.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "yeast_dough",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/yeast_dough.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "puff_pastry_dough",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/puff_pastry_dough.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "water",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/water.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "garden_salad",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/garden_salad.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "corn_tomato_salad",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/corn_tomato_salad.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "summer_fruit_platter",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/summer_fruit_platter.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "skillet_eggplant",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/skillet_eggplant.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "crispy_potatoes",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/crispy_potatoes.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "black_pepper_beef_patty",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/black_pepper_beef_patty.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "farm_tomato_soup",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/farm_tomato_soup.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "corn_chicken_chowder",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/corn_chicken_chowder.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "beef_vegetable_stew",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/beef_vegetable_stew.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sweet_roast_pumpkin",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/sweet_roast_pumpkin.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "farm_cornbread",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/farm_cornbread.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "strawberry_pie",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/strawberry_pie.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "smoked_black_pepper_pork",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/smoked_black_pepper_pork.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "smoked_chili_beef",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/smoked_chili_beef.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "frozen_berry_smoothie",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/frozen_berry_smoothie.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "hazelnut_pie",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/hazelnut_pie.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "pistachio_ice_cream",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/pistachio_ice_cream.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "walnut_bread",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/walnut_bread.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "nut_energy_bar",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/nut_energy_bar.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "nut_fruit_salad",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/nut_fruit_salad.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "burnt_plate",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/burnt_plate.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ruined_soup",
+      "category": "dishes",
+      "icon": "res://assets/icons/items/dishes/ruined_soup.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "rubber_revolver",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/rubber_revolver.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "flame_gun",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/flame_gun.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "freeze_gun",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/freeze_gun.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "nail_gun",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/nail_gun.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "eater",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/eater.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sprout_blaster",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/sprout_blaster.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wreck",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/wreck.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "plant_protector",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/plant_protector.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "fertilizer",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/fertilizer.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "farm_runner",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/farm_runner.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "spicy_blaster",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/spicy_blaster.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "field_kitchen",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/field_kitchen.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "auto_cooker",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/auto_cooker.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "anti_air",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/anti_air.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "shield_door",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/shield_door.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "auto_shooter",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/auto_shooter.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "medicine_pistol",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/medicine_pistol.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "medicine_cannon",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/medicine_cannon.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tranquilizer_pistol",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tranquilizer_pistol.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "normal_drone",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/normal_drone.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wheat_sentry",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/wheat_sentry.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cargo_shield",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/cargo_shield.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "signal_jam",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/signal_jam.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "tech_drone",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tech_drone.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "small_mouse",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/small_mouse.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wand",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/wand.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "bug_cannon",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/bug_cannon.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "rift_book",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/rift_book.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "signal_augment",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/signal_augment.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "prospect_scanner",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/prospect_scanner.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "tool_kit",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tool_kit.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "vehicle_tracker",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/vehicle_tracker.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "boom_buggy",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/boom_buggy.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "big_mouth",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/big_mouth.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "trap",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/trap.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "fake_player",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/fake_player.png",
+      "status": "missing_model",
+      "error": ""
+    },
+    {
+      "id": "survey_rider",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/survey_rider.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "brick",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/brick.png",
+      "status": "rendered",
+      "error": ""
+	},
+	{
+	  "id": "animal_chicken",
+	  "category": "tools",
+	  "icon": "res://assets/icons/items/ingredients/chicken.png",
+	  "status": "fallback",
+	  "error": ""
+	},
+	{
+	  "id": "animal_pig",
+	  "category": "tools",
+	  "icon": "res://assets/icons/items/ingredients/pork.png",
+	  "status": "fallback",
+	  "error": ""
+	},
+	{
+	  "id": "animal_angus_cow",
+	  "category": "tools",
+	  "icon": "res://assets/icons/items/ingredients/beef.png",
+	  "status": "fallback",
+	  "error": ""
+	},
+	{
+	  "id": "egg",
+	  "category": "ingredients",
+	  "icon": "res://assets/icons/items/ingredients/chicken.png",
+	  "status": "fallback",
+	  "error": ""
+	},
+	{
+	  "id": "golden_egg",
+	  "category": "ingredients",
+	  "icon": "res://assets/icons/items/ingredients/chicken.png",
+	  "status": "fallback",
+	  "error": ""
+    }
+  ]
+}

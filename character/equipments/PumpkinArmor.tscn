@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dighxbtr16re0"]
+
+[ext_resource type="PackedScene" uid="uid://b0aji7qlxav8" path="res://assets/saved_glbs/pumpkin_chest_armor.tscn" id="1_0ud3w"]
+
+[node name="PumpkinArmor" type="Node3D" unique_id=1115019264]
+
+[node name="PumpkinChestArmor" parent="." unique_id=1641719717 instance=ExtResource("1_0ud3w")]

@@ -1,0 +1,45 @@
+[gd_scene format=3 uid="uid://5cbcmhx1aaj5"]
+
+[ext_resource type="PackedScene" uid="uid://vj2x6wfy5tmp" path="res://assets/saved_glbs/big_mouth.tscn" id="1_j6y68"]
+[ext_resource type="Script" uid="uid://yu3crwbgc54p" path="res://src/big_mouth.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(3, 3, 2.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_detection"]
+size = Vector3(2, 3, 0.2)
+
+[node name="BigMouth" type="StaticBody3D" unique_id=50544417]
+collision_layer = 0
+collision_mask = 12427
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=617573737 instance=ExtResource("1_j6y68")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1784549958]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape3D_body")
+disabled = true
+debug_color = Color(0.90060806, 0.18327028, 0.6282737, 0.41960785)
+
+[node name="DetectionCast" type="ShapeCast3D" parent="." unique_id=936326799]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+enabled = false
+shape = SubResource("BoxShape3D_detection")
+target_position = Vector3(0, 0, -15)
+max_results = 8
+collision_mask = 8
+
+[node name="CaptureRay" type="RayCast3D" parent="." unique_id=1246171999]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5091486, -0.2)
+enabled = false
+target_position = Vector3(0, 0, -15)
+collision_mask = 8
+
+[node name="HealthLabel" type="Label3D" parent="." unique_id=19702513]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.25, 0)
+billboard = 1
+no_depth_test = true
+text = "HP: 200 / 200"
+outline_size = 8

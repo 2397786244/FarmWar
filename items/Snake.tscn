@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://bkim7uxjw0lwx"]
+
+[ext_resource type="PackedScene" uid="uid://13ibcnob36vi" path="res://assets/animals/FTF_WildAnimal_GreenSnake.glb" id="1_3qnj2"]
+
+[node name="Snake" type="Node3D" unique_id=1754471778]
+
+[node name="Mesh" parent="." unique_id=1837685964 instance=ExtResource("1_3qnj2")]

@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://c371appwvneh2"]
+
+[ext_resource type="Script" uid="uid://nkx2nbmpbfi3" path="res://src/bug_storm.gd" id="1_n2osk"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_n2osk"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_n2osk"]
+radius = 10.0
+
+[node name="BugStorm" type="Node3D" unique_id=911361575]
+script = ExtResource("1_n2osk")
+effect_distance = 10.0
+
+[node name="StormVisual" type="MeshInstance3D" parent="." unique_id=1122699925]
+mesh = SubResource("SphereMesh_n2osk")
+
+[node name="BugParticles" type="GPUParticles3D" parent="." unique_id=1467555693]
+
+[node name="DamageCast" type="ShapeCast3D" parent="." unique_id=816902434]
+shape = SubResource("SphereShape3D_n2osk")
+target_position = Vector3(0, 0, 0)
+collision_mask = 64

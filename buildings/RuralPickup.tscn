@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://8nsr2sclpi1u"]
+
+[ext_resource type="PackedScene" uid="uid://bjod0nfs76e7x" path="res://assets/vehicles/FTF_Vehicle_RuralPickup_Cream_5_5m.glb" id="1_eyaf0"]
+
+[node name="RuralPickup" type="StaticBody3D" unique_id=1272101597]
+
+[node name="FTF_Vehicle_RuralPickup_Cream_5_5m2" parent="." unique_id=1927728956 instance=ExtResource("1_eyaf0")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://b7k46y7k11irv"]
+
+[ext_resource type="PackedScene" uid="uid://coveg7r6endj6" path="res://assets/tools/PlantProtector.glb" id="1_6bh1p"]
+[ext_resource type="Script" uid="uid://cyrcyic0n7eup" path="res://src/plant_protector.gd" id="1_s527w"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_6bh1p"]
+radius = 0.6
+height = 2.5
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_s527w"]
+height = 2.5
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_s527w"]
+size = Vector3(8.6, 1, 8.6)
+
+[node name="PlantProtector" type="StaticBody3D" unique_id=1295673308]
+collision_layer = 0
+collision_mask = 143
+script = ExtResource("1_s527w")
+
+[node name="Mesh" parent="." unique_id=2118571737 instance=ExtResource("1_6bh1p")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=915372629]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1371782, 0)
+shape = SubResource("CapsuleShape3D_6bh1p")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1697998197]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1661113727]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2658361, 0)
+shape = SubResource("CapsuleShape3D_s527w")
+debug_color = Color(0.89553416, 0.28199127, 0.39255643, 0.41960785)
+
+[node name="ShapeCast3D" type="ShapeCast3D" parent="." unique_id=1241311903]
+shape = SubResource("BoxShape3D_s527w")
+target_position = Vector3(0, 0, 0)
+collision_mask = 64
+
+[node name="Label3D" type="Label3D" parent="." unique_id=2042325023]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.743131, 0)
+billboard = 1
+text = "500"
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

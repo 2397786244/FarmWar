@@ -1,0 +1,57 @@
+[gd_scene format=3 uid="uid://bghyx5s88tm3n"]
+
+[ext_resource type="PackedScene" uid="uid://dt2byfrqi8qgq" path="res://assets/saved_glbs/small_mouse.tscn" id="1_8a3y0"]
+[ext_resource type="Script" uid="uid://rd1co6y4fqd1" path="res://src/small_mouse.gd" id="1_whfyh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_whfyh"]
+size = Vector3(0.6, 0.45, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lk7h8"]
+size = Vector3(0.75, 0.6, 1.15)
+
+[node name="SmallMouse" type="CharacterBody3D" unique_id=2113896006]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("1_whfyh")
+require_mouse_visual = true
+set_hp = 120.0
+use_distance = 100.0
+move_speed = 5.0
+acceleration = 21.0
+braking_acceleration = 30.0
+max_jump_height = 0.7999999999999999
+max_camera_pitch_degrees = 50.0
+primary_action_cooldown = 1.0
+aim_collision_mask = 4235
+
+[node name="MouseVisual" parent="." unique_id=2102443961 instance=ExtResource("1_8a3y0")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=667292956]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.225, 0.07725932)
+shape = SubResource("BoxShape3D_whfyh")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=489878424]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=2055361122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.26, 0.074127436)
+shape = SubResource("BoxShape3D_lk7h8")
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=1872895915]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.15275708, 0.6092851)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=741390599]
+fov = 100.0
+
+[node name="ActionMount" type="Marker3D" parent="." unique_id=133566294]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00013718009, 0.08565433, 0.7237486)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1120483323]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+visible = false
+billboard = 1
+text = "80"
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

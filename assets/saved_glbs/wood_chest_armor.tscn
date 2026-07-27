@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cee6n7iwyuga5"]
+
+[ext_resource type="PackedScene" uid="uid://doj8vy37h5moc" path="res://assets/equipments/WoodChestArmor.glb" id="1_11d6i"]
+
+[node name="WoodChestArmor" unique_id=1349010378 instance=ExtResource("1_11d6i")]
+
+[node name="FTF_Equipment_WoodChestArmor" parent="." index="0" unique_id=51420122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+
+[node name="ChestBottomRim" parent="FTF_Equipment_WoodChestArmor" index="0" unique_id=2046420844]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7959254, 0.3325359)
+
+[node name="ChestTopRim" parent="FTF_Equipment_WoodChestArmor" index="6" unique_id=890654041]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4474577, 0.31979927)

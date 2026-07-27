@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://dxh78qm272wh7"]
+
+[ext_resource type="PackedScene" uid="uid://cxvyy28h6gtt8" path="res://assets/saved_glbs/brick.tscn" id="1_4w708"]
+[ext_resource type="Script" uid="uid://bfx8tj41csdjs" path="res://src/brick.gd" id="1_b737s"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_b737s"]
+size = Vector3(2, 3, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_58l85"]
+size = Vector3(2, 3, 1)
+
+[node name="Brick" type="StaticBody3D" unique_id=501588283]
+collision_layer = 0
+collision_mask = 8331
+script = ExtResource("1_b737s")
+
+[node name="Mesh" parent="." unique_id=1697245015 instance=ExtResource("1_4w708")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=81682590]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6048592, 0)
+shape = SubResource("BoxShape3D_b737s")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1038814000]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=493240770]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5011461, 0)
+shape = SubResource("BoxShape3D_58l85")
+debug_color = Color(0.94327176, 0.11338466, 0.5275774, 0.41960785)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1632234760]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+visible = false
+billboard = 1
+text = "1000"
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_area_3d_body_entered"]

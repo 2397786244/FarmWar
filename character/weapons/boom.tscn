@@ -1,0 +1,47 @@
+[gd_scene format=3 uid="uid://brwwbwfxnfu5w"]
+
+[ext_resource type="Script" uid="uid://dfqfe810sbkfl" path="res://src/boom.gd" id="1_kyj65"]
+[ext_resource type="Shader" uid="uid://42kjbap37nrw" path="res://character/weapons/boom.gdshader" id="2_uqqm6"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="3_trace"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_h6kb2"]
+render_priority = 0
+shader = ExtResource("2_uqqm6")
+shader_parameter/core_color = Color(0.92156863, 0.7254902, 0.16470589, 1)
+shader_parameter/energy_color = Color(1, 1, 0, 1)
+shader_parameter/hot_color = Color(0.8352941, 0.69803923, 0, 1)
+shader_parameter/emission_strength = 3.0
+shader_parameter/pulse_speed = 3.2
+shader_parameter/pulse_amount = 0.22
+shader_parameter/fresnel_power = 2.4
+shader_parameter/band_density = 10.0
+shader_parameter/band_speed = 3.5
+shader_parameter/band_strength = 0.56800002698
+
+[sub_resource type="SphereMesh" id="SphereMesh_kyj65"]
+material = SubResource("ShaderMaterial_h6kb2")
+radius = 0.3
+height = 0.6
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_kyj65"]
+radius = 0.3
+
+[node name="Boom" type="CharacterBody3D" unique_id=887920279]
+transform = Transform3D(-0.087729424, 0.99614435, 0, -0.99614435, -0.087729424, 0, 0, 0, 1, 0, 0, 0)
+collision_layer = 32
+collision_mask = 4097
+script = ExtResource("1_kyj65")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=882198130]
+mesh = SubResource("SphereMesh_kyj65")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2037582038]
+shape = SubResource("SphereShape3D_kyj65")
+
+[node name="Trace" type="MeshInstance3D" parent="."]
+script = ExtResource("3_trace")
+tracer_color = Color(1, 0.69411767, 0.19607843, 1)
+radius = 0.2
+minimum_length = 3.0
+maximum_length = 5.0
+emission_energy = 10.0

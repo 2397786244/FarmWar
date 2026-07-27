@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cw7tcc6l5jmjv"]
+
+[ext_resource type="PackedScene" uid="uid://53vfw1ifq8mp" path="res://assets/buildings/FTF_Building_FarmFeedBin_3_8m.glb" id="1_dtcoh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_dtcoh"]
+size = Vector3(2.5, 4, 2)
+
+[node name="RedFeedBin" type="StaticBody3D" unique_id=731286778]
+collision_layer = 4096
+
+[node name="FTF_Building_FarmFeedBin_3_8m2" parent="." unique_id=1182570870 instance=ExtResource("1_dtcoh")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=231253231]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.179692, 0)
+shape = SubResource("BoxShape3D_dtcoh")

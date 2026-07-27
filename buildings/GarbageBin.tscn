@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://d1xce8w36slov"]
+
+[ext_resource type="PackedScene" uid="uid://c6vtenu8yj8a5" path="res://assets/buildings/garbage_bin.glb" id="1_qjmgl"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_qjmgl"]
+
+[node name="GarbageBin" type="StaticBody3D" unique_id=964684600]
+collision_layer = 4096
+collision_mask = 12971
+
+[node name="garbage_bin" parent="." unique_id=537350861 instance=ExtResource("1_qjmgl")]
+transform = Transform3D(0.8, 0, 0, 0, 0.8, 0, 0, 0, 0.8, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2065180304]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6094563, 0)
+shape = SubResource("BoxShape3D_qjmgl")

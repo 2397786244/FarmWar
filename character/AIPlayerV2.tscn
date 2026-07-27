@@ -1,0 +1,70 @@
+[gd_scene format=3 uid="uid://caipv2a1t7q0v"]
+
+[ext_resource type="Script" path="res://src/ai_player_v2.gd" id="1_ai_v2"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_hit"]
+radius = 0.45
+height = 1.9
+
+[node name="AIPlayerV2" type="CharacterBody3D"]
+collision_layer = 8
+collision_mask = 519
+script = ExtResource("1_ai_v2")
+
+[node name="Head" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7080579, -0.45418245)
+
+[node name="UpperBodyLookTarget" type="Marker3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -3)
+
+[node name="RightHandIKTarget" type="Marker3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.28, -0.28, -0.42)
+gizmo_extents = 0.12
+
+[node name="LookAtTarget" type="RayCast3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7953281)
+target_position = Vector3(0, 0, -30)
+collision_mask = 73
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8465799, -0.01983869)
+shape = SubResource("CapsuleShape3D_body")
+
+[node name="RightHandSocket" type="BoneAttachment3D" parent="."]
+bone_name = "Hand.R"
+use_external_skeleton = true
+external_skeleton = NodePath("")
+
+[node name="ToolPivot" type="Node3D" parent="RightHandSocket"]
+
+[node name="RightElbowPole" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.65, 1.2, -0.1)
+gizmo_extents = 0.16
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.5
+target_desired_distance = 2.0
+radius = 0.5
+
+[node name="RayCast3D" type="RayCast3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4506165, 0)
+target_position = Vector3(0, 0, -15)
+
+[node name="FrontProbe" type="RayCast3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+target_position = Vector3(0, 0, -1.6)
+collision_mask = 6
+
+[node name="Hit3D" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8376303, 0)
+shape = SubResource("CapsuleShape3D_hit")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

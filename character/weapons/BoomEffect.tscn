@@ -1,0 +1,185 @@
+[gd_scene load_steps=15 format=3 uid="uid://cekosc3mmp8aq"]
+
+[ext_resource type="Script" uid="uid://rg3jq0w5w6qn" path="res://src/boom_effect.gd" id="1_script"]
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_blast"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+gravity = Vector3(0, -8, 0)
+initial_velocity_min = 10.0
+initial_velocity_max = 22.0
+scale_min = 0.14
+scale_max = 0.38
+emission_shape = 3
+emission_sphere_radius = 0.22
+
+[sub_resource type="StandardMaterial3D" id="Material_blast"]
+shading_mode = 0
+albedo_color = Color(1, 0.34, 0.035, 1)
+emission_enabled = true
+emission = Color(1, 0.14, 0.008, 1)
+emission_energy_multiplier = 4.5
+
+[sub_resource type="SphereMesh" id="Mesh_blast"]
+material = SubResource("Material_blast")
+radius = 0.18
+height = 0.36
+radial_segments = 8
+rings = 4
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_sparks"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+gravity = Vector3(0, -14, 0)
+initial_velocity_min = 14.0
+initial_velocity_max = 30.0
+scale_min = 0.35
+scale_max = 0.9
+emission_shape = 3
+emission_sphere_radius = 0.16
+
+[sub_resource type="StandardMaterial3D" id="Material_sparks"]
+shading_mode = 0
+albedo_color = Color(1, 0.8, 0.18, 1)
+emission_enabled = true
+emission = Color(1, 0.44, 0.035, 1)
+emission_energy_multiplier = 6.0
+
+[sub_resource type="BoxMesh" id="Mesh_sparks"]
+material = SubResource("Material_sparks")
+size = Vector3(0.04, 0.04, 0.25)
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_smoke"]
+direction = Vector3(0, 1, 0)
+spread = 48.0
+gravity = Vector3(0, 0.65, 0)
+damping_min = 0.8
+damping_max = 1.7
+initial_velocity_min = 2.5
+initial_velocity_max = 6.0
+scale_min = 0.5
+scale_max = 1.25
+emission_shape = 3
+emission_sphere_radius = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Material_smoke"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.25, 0.235, 0.21, 0.58)
+
+[sub_resource type="SphereMesh" id="Mesh_smoke"]
+material = SubResource("Material_smoke")
+radius = 0.5
+height = 0.9
+radial_segments = 7
+rings = 4
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_debris"]
+direction = Vector3(0, 1, 0)
+spread = 145.0
+gravity = Vector3(0, -17, 0)
+initial_velocity_min = 6.0
+initial_velocity_max = 15.0
+angular_velocity_min = -650.0
+angular_velocity_max = 650.0
+scale_min = 0.4
+scale_max = 1.0
+emission_shape = 3
+emission_sphere_radius = 0.32
+
+[sub_resource type="StandardMaterial3D" id="Material_debris"]
+albedo_color = Color(0.12, 0.1, 0.075, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_debris"]
+material = SubResource("Material_debris")
+size = Vector3(0.11, 0.08, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="Material_flash"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.5, 0.08, 0.82)
+emission_enabled = true
+emission = Color(1, 0.18, 0.015, 1)
+emission_energy_multiplier = 3.8
+
+[sub_resource type="SphereMesh" id="Mesh_flash"]
+radius = 0.6
+height = 1.2
+radial_segments = 12
+rings = 6
+
+[sub_resource type="StandardMaterial3D" id="Material_shockwave"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.66, 0.18, 0.62)
+emission_enabled = true
+emission = Color(1, 0.3, 0.035, 1)
+emission_energy_multiplier = 2.6
+
+[sub_resource type="TorusMesh" id="Mesh_shockwave"]
+inner_radius = 0.38
+outer_radius = 0.46
+rings = 24
+ring_segments = 8
+
+[node name="BoomEffect" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Flash" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_flash")
+mesh = SubResource("Mesh_flash")
+
+[node name="Shockwave" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_shockwave")
+mesh = SubResource("Mesh_shockwave")
+
+[node name="BlastParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 40
+lifetime = 0.62
+one_shot = true
+explosiveness = 1.0
+randomness = 0.35
+visibility_aabb = AABB(-22, -14, -22, 44, 36, 44)
+process_material = SubResource("Particle_blast")
+draw_pass_1 = SubResource("Mesh_blast")
+
+[node name="SparkParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 62
+lifetime = 0.9
+one_shot = true
+explosiveness = 1.0
+randomness = 0.65
+visibility_aabb = AABB(-30, -18, -30, 60, 48, 60)
+process_material = SubResource("Particle_sparks")
+draw_pass_1 = SubResource("Mesh_sparks")
+
+[node name="SmokeParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 26
+lifetime = 1.55
+one_shot = true
+explosiveness = 0.88
+randomness = 0.9
+visibility_aabb = AABB(-9, -3, -9, 18, 17, 18)
+process_material = SubResource("Particle_smoke")
+draw_pass_1 = SubResource("Mesh_smoke")
+
+[node name="DebrisParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 30
+lifetime = 1.2
+one_shot = true
+explosiveness = 1.0
+randomness = 0.8
+visibility_aabb = AABB(-18, -10, -18, 36, 30, 36)
+process_material = SubResource("Particle_debris")
+draw_pass_1 = SubResource("Mesh_debris")
+
+[node name="BlastLight" type="OmniLight3D" parent="."]
+light_color = Color(1, 0.42, 0.1, 1)
+light_energy = 7.0
+omni_range = 9.0
+shadow_enabled = true

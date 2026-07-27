@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://dcv54owlghopr"]
+
+[ext_resource type="PackedScene" uid="uid://cydrbwntovkw5" path="res://assets/plants/Sugarcane.glb" id="1_sugarcane"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_sugarcane"]
+height = 3.3
+
+[node name="Sugarcane" type="StaticBody3D" unique_id=1448367862]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=984704533]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+shape = SubResource("CapsuleShape3D_sugarcane")
+
+[node name="Sugarcane" parent="." unique_id=1510899324 instance=ExtResource("1_sugarcane")]

@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://csguntfupgi2e"]
+
+[ext_resource type="PackedScene" uid="uid://brxdkikasynlc" path="res://assets/buildings/RuralChurch.glb" id="1_m4s70"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_m4s70"]
+size = Vector3(20, 20, 35)
+
+[node name="Church" type="StaticBody3D" unique_id=1279125218]
+collision_layer = 4096
+collision_mask = 12971
+
+[node name="RuralChurch" parent="." unique_id=635521231 instance=ExtResource("1_m4s70")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1206858362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.186554, 0)
+shape = SubResource("BoxShape3D_m4s70")

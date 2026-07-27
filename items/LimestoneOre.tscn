@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://bohktsixle855"]
+
+[ext_resource type="PackedScene" uid="uid://c4p0te4sdl3rc" path="res://assets/other_items/Material/FTF_Resource_LimestoneOre_Node.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_67l5l"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_23lwk"]
+
+[node name="LimestoneOre" type="StaticBody3D" unique_id=1264953912]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_script")
+resource_type = "limestone"
+display_name = "石灰石"
+max_hp = 300.0
+respawn_seconds = 60.0
+drops = Array[Dictionary]([{
+"count": 5,
+"item_id": "limestone",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_limestone_ore.glb",
+"weight_kg": 1.0
+}])
+
+[node name="Mesh" parent="." unique_id=2036083376 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=976879255]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4874305, 0)
+shape = SubResource("BoxShape3D_67l5l")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=686625035]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1651551617]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4841985, 0)
+shape = SubResource("BoxShape3D_23lwk")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1856886039]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "300"
+outline_size = 6
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

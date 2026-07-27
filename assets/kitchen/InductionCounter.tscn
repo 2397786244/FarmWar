@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://dd1tyauou5fkj"]
+
+[ext_resource type="PackedScene" uid="uid://b36tc4f2akdcw" path="res://assets/kitchen/InductionCounter.glb" id="1_model"]
+
+[node name="InductionCounter" unique_id=33920232 instance=ExtResource("1_model")]
+
+[node name="Controls" parent="FTF_Kitchen_InductionCounter" parent_id_path=PackedInt32Array(1004020028) index="1" unique_id=224803893]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.69, 0.3388733)
+
+[node name="Knob" parent="FTF_Kitchen_InductionCounter" parent_id_path=PackedInt32Array(1004020028) index="5" unique_id=1435197003]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.16, 0.69, 0.35887328)
+
+[node name="Knob_001" parent="FTF_Kitchen_InductionCounter" parent_id_path=PackedInt32Array(1004020028) index="6" unique_id=582726373]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.69, 0.35887328)
+
+[node name="Knob_002" parent="FTF_Kitchen_InductionCounter" parent_id_path=PackedInt32Array(1004020028) index="7" unique_id=679273680]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.16, 0.69, 0.35887328)

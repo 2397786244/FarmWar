@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://4by8qkwk6jee"]
+
+[ext_resource type="Script" uid="uid://l5hhfqoj4gel" path="res://src/color_bullet.gd" id="1_744bm"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_hc111"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
+albedo_color = Color(0, 0, 0, 1)
+roughness = 0.9
+emission_enabled = true
+emission = Color(0, 0, 1, 1)
+emission_energy_multiplier = 12.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_1me7p"]
+material = SubResource("StandardMaterial3D_744bm")
+radius = 0.065
+height = 0.13
+radial_segments = 8
+rings = 4
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_744bm"]
+radius = 0.065
+
+[node name="ColorBullet" type="CharacterBody3D" unique_id=2062321775]
+collision_layer = 32
+collision_mask = 20483
+script = ExtResource("1_744bm")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1007944311]
+mesh = SubResource("SphereMesh_1me7p")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=399858803]
+shape = SubResource("SphereShape3D_744bm")
+
+[node name="Trace" type="MeshInstance3D" parent="." unique_id=1180198516]
+script = ExtResource("2_hc111")
+tracer_color = Color(0.7166808, 0.81076443, 1, 1)
+radius = 0.1
+minimum_length = 2.0
+maximum_length = 4.0

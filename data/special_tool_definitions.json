@@ -1,0 +1,284 @@
+{
+  "version": 1,
+  "tools": [
+	{
+	"id": "plant_protector",
+	  "name": "植物保护器",
+	  "tool_scene": "res://character/weapons/PlantProtector.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "部署保护器，为附近农田、作物和农业设施抵御虫害与灾害。"
+	},
+	{
+	"id": "fertilizer",
+	  "name": "肥料发射器",
+	  "tool_scene": "res://character/weapons/Fertilizer.tscn",
+	  "icon": "",
+	  "cooldown": 1,
+	  "max_uses": 0,
+	  "description": "向己方作物施肥，加快生长，并有机会培育巨大变异作物。"
+	},
+	{
+	"id": "farm_runner",
+	  "name": "农场播种收获机",
+	  "tool_scene": "res://character/weapons/FarmRunner.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "部署自动农机，在指定农田播种、收获并补种普通作物。"
+	},
+	{
+	  "id": "spicy_blaster",
+	  "name": "辣椒喷射器",
+	  "tool_scene": "res://character/weapons/SpicyBlaster.tscn",
+	  "icon": "",
+	  "cooldown": 15,
+	  "max_uses": 0,
+	  "description": "向地面喷射辣椒液，形成持续伤害区域。"
+	},
+	{
+	"id": "field_kitchen",
+	  "name": "野战厨房",
+	  "tool_scene": "res://character/weapons/KitchenCar.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "部署可驾驶的野战厨房，可在车尾烹煮料理。"
+	},
+	{
+	"id": "auto_cooker",
+	  "name": "自动做菜机",
+	  "tool_scene": "res://character/weapons/AutomaticCook.tscn",
+	  "icon": "",
+	"cooldown": 60.0,
+	  "max_uses": 0,
+	  "description": "部署自动做菜机，按预设批量完成普通料理订单。"
+	},
+	{
+	"id": "anti_air",
+	  "name": "防空车",
+	  "tool_scene": "res://character/weapons/AntiAir.tscn",
+	  "icon": "",
+	  "cooldown": 2,
+	  "max_uses": 0,
+	  "description": "部署防空设备，自动拦截大型炮弹、无人机等空中威胁。"
+	},
+	{
+	"id": "shield_door",
+	  "name": "能量护盾",
+	  "tool_scene": "res://character/weapons/ShieldDoor.tscn",
+	  "icon": "",
+	  "cooldown": 2,
+	  "max_uses": 0,
+	  "description": "部署固定防护门，阻挡敌方推进并守住道路或入口。"
+	},
+	{
+	"id": "auto_shooter",
+	  "name": "自动射手",
+	  "tool_scene": "res://character/weapons/AutoShooter.tscn",
+	  "icon": "",
+	  "cooldown": 2,
+	  "max_uses": 0,
+	  "description": "部署自动炮台，攻击警戒范围内的敌方玩家和轻型目标。"
+	},
+	{
+	"id": "medicine_pistol",
+	  "name": "药物手枪",
+	  "tool_scene": "res://character/weapons/MedicinePistol.tscn",
+	  "icon": "",
+	  "cooldown": 30,
+	  "max_uses": 0,
+	  "description": "向友军发射药物针剂，进行精准治疗并缓解异常状态。"
+	},
+	{
+	"id": "medicine_cannon",
+	  "name": "药物大炮",
+	  "tool_scene": "res://character/weapons/MedicineCannon.tscn",
+	  "icon": "",
+	  "cooldown": 1,
+	  "max_uses": 0,
+	  "description": "发射药物气雾，在落点形成短暂范围治疗与净化区域。"
+	},
+	{
+	"id": "tranquilizer_pistol",
+	  "name": "镇静手枪",
+	  "tool_scene": "res://character/weapons/TranquilizerPistol.tscn",
+	  "icon": "",
+	  "cooldown": 30,
+	  "max_uses": 0,
+	  "description": "发射镇静弹，对敌方玩家造成5点伤害，并使其视野缓慢明暗闪烁8秒。"
+	},
+	{
+	"id": "normal_drone",
+	  "name": "普通无人机",
+	  "tool_scene": "res://character/weapons/NormalDrone.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "部署并遥控普通无人机，执行小批量运输、投递和轻度投弹。"
+	},
+	{
+	"id": "wheat_sentry",
+	  "name": "麦田守卫",
+	  "tool_scene": "res://character/weapons/WheatSentry.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "部署低成本警戒炮台，用于报警、拖延并守卫农田与道路。"
+	},
+	{
+	"id": "cargo_shield",
+	  "name": "移动货运护盾",
+	  "tool_scene": "",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "举起移动货运护盾，阻挡正面子弹与部分爆炸冲击。"
+	},
+	{
+	"id": "signal_jam",
+	  "name": "信号干扰器",
+	  "tool_scene": "",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "部署信号干扰器，削弱敌方追踪、无人机与远程设备协同。"
+	},
+	{
+	"id": "tech_drone",
+	  "name": "高级无人机",
+	  "tool_scene": "res://character/weapons/TechDrone.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "部署并遥控科技无人机，扫描、维修友方设备或干扰敌方设施。"
+	},
+	{
+	"id": "small_mouse",
+	  "name": "小老鼠",
+	  "tool_scene": "res://character/weapons/SmallMouse.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "遥控小型渗透单位，潜入狭窄区域干扰敌方设备并标记目标。"
+	},
+	{
+	"id": "wand",
+	  "name": "魔棒",
+	  "tool_scene": "res://character/weapons/Wand.tscn",
+	  "icon": "",
+	  "cooldown": 2,
+	  "max_uses": 0,
+	  "description": "施放中远距离闪电法术，命中敌方玩家并造成短暂失能。"
+	},
+	{
+	"id": "bug_cannon",
+	  "name": "虫虫大炮",
+	  "tool_scene": "res://character/weapons/BugCannon.tscn",
+	  "icon": "",
+	  "cooldown": 1,
+	  "max_uses": 0,
+	  "description": "发射虫云干扰敌人和设施，并使范围内作物停止生长。"
+	},
+	{
+	"id": "rift_book",
+	"name": "裂隙之书",
+	  "tool_scene": "res://character/weapons/RiftBook.tscn",
+	  "icon": "",
+	  "cooldown": 0.8,
+	  "max_uses": 0,
+	  "description": "先创建裂隙锚点，再次使用可传送至锚点并消耗该锚点。"
+	},
+	{
+	"id": "signal_augment",
+	  "name": "信号增强塔",
+	  "tool_scene": "",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "部署信号增强塔，提升附近己方追踪、无人机和设备协同。"
+	},
+	{
+	"id": "prospect_scanner",
+	  "name": "资源扫描器",
+	  "tool_scene": "",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "探测矿石、燃油、稀有食材与地图资源，显示方向和距离。"
+	},
+	{
+	  "id": "area_protector",
+	  "name": "区域保护器",
+	  "tool_scene": "res://character/weapons/AreaProtector.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "部署12×8×6米的弹道保护区域，使敌方炮弹在区域内减速90%，并使敌方子弹和炮弹在区域内的伤害降低50%。"
+	},
+	{
+	"id": "repair_welder",
+	  "name": "维修焊枪",
+	  "tool_scene": "res://character/weapons/RepairWelder.tscn",
+	  "icon": "",
+	  "cooldown": 0.1,
+	  "max_uses": 0,
+	  "description": "车手使用的近距离维修焊枪。按住左键持续喷出焊焰，为载具、测绘骑手和野战厨房恢复耐久。"
+	},
+	{
+	"id": "vehicle_shield_shooter",
+	  "name": "车载护盾发射器",
+	  "tool_scene": "res://character/weapons/VehicleShieldShooter.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "发射白色护盾激光，命中己方载具后生成持续30秒的全覆盖光球护盾。"
+	},
+	{
+	"id": "boom_buggy",
+	  "name": "爆爆小车",
+	  "tool_scene": "res://character/weapons/BoomBuggy.tscn",
+	  "icon": "",
+	  "cooldown": 10,
+	  "max_uses": 0,
+	  "description": "部署并遥控一次性自爆小车，突袭车辆、卸货区和道路节点。"
+	},
+	{
+	"id": "big_mouth",
+	  "name": "吞噬陷阱",
+	  "tool_scene": "res://character/weapons/BigMouth.tscn",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "部署可伪装的吞噬陷阱，触发后控制敌人并制造救援压力。"
+	},
+	{
+	"id": "trap",
+	  "name": "地刺陷阱",
+	  "tool_scene": "res://character/weapons/Trap.tscn",
+	  "icon": "",
+	  "cooldown": 0,
+	  "max_uses": 0,
+	  "description": "部署地刺陷阱，对人物和车辆造成伤害、减速或短时故障。"
+	},
+	{
+	  "id": "fake_player",
+	  "name": "假人诱饵",
+	  "tool_scene": "res://character/weapons/FakePlayer.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "部署一个外观接近诡术师的假人诱饵，用于吸引敌方注意和火力。"
+	},
+	{
+	  "id": "survey_rider",
+	  "name": "测绘骑手",
+	  "tool_scene": "res://character/weapons/SurveyRider.tscn",
+	  "icon": "",
+	  "cooldown": 60,
+	  "max_uses": 0,
+	  "description": "部署可驾驶的测绘骑手，用于快速侦察、资源测绘和短距离机动。"
+	}
+  ]
+}

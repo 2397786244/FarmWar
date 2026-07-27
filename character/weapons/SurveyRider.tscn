@@ -1,0 +1,83 @@
+[gd_scene format=3 uid="uid://bdpr5ybimn37d"]
+
+[ext_resource type="Script" uid="uid://c0441ui0027n8" path="res://src/two_wheel_vehicle_base.gd" id="1_two_wheel"]
+[ext_resource type="PackedScene" uid="uid://ddfjtfklml27c" path="res://assets/saved_glbs/survey_rider.tscn" id="2_visual"]
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="3_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="4_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("4_vehicle_seat")
+anchor_name = "ProspectorSeat"
+
+[sub_resource type="Resource" id="VehicleConfig_survey_rider"]
+script = ExtResource("3_vehicle_config")
+open_cabin = true
+forward_axis = Vector3(0, 0, 1)
+seats = Array[ExtResource("4_vehicle_seat")]([SubResource("VehicleSeatConfig_driver")])
+camera_offset = Vector3(0, 2.5, 5.4)
+camera_orbit_target_height = 0.9
+collision_size = Vector3(1, 1.1, 2.6)
+hitbox_size = Vector3(1.2, 1.6, 3)
+hitbox_offset = Vector3(0, 0.875, 0.07)
+wheel_radius = 0.36
+wheel_base = 1.55
+max_forward_speed = 12.0
+max_reverse_speed = 4.0
+acceleration = 4.0
+brake_deceleration = 18.0
+rolling_deceleration = 3.5
+max_steering_angle_degrees = 32.0
+min_steering_angle_degrees = 12.0
+steering_response = 6.0
+two_wheel_front_node_name = "FrontWheelPivot"
+two_wheel_rear_node_name = "RearWheelPivot"
+two_wheel_max_lean_degrees = 22.0
+two_wheel_lean_response = 8.0
+two_wheel_lean_sign = 1.0
+max_hp = 1000.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vehicle"]
+size = Vector3(1, 1.1, 2.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(1.2, 1.6, 3)
+
+[node name="SurveyRider" type="CharacterBody3D" unique_id=1730152642]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("1_two_wheel")
+vehicle_config = SubResource("VehicleConfig_survey_rider")
+
+[node name="VehicleShape" type="CollisionShape3D" parent="." unique_id=879988356]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65, 0)
+shape = SubResource("BoxShape3D_vehicle")
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=458155035]
+target_position = Vector3(0, -1.4, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1103878056]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -0.1)
+
+[node name="CameraOrbitYaw" type="Node3D" parent="." unique_id=102828459]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=647451312]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=1384587368]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 5.4)
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=1644869261]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.3, 0.1, -0.2)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1209744784]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=887467675]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0.07)
+shape = SubResource("BoxShape3D_hit")
+debug_color = Color(0.94342935, 0.16845238, 0.43428633, 0.41960785)
+
+[node name="BodyVisual" parent="." unique_id=645069600 instance=ExtResource("2_visual")]
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

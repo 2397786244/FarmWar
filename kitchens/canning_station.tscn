@@ -1,0 +1,19 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/CanningStation.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/kitchen_appliance.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_canning"]
+size = Vector3(1.22, 1.5, 0.92)
+
+[node name="CanningStation" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "罐装台"
+
+[node name="CanningStation" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, 0)
+shape = SubResource("BoxShape3D_canning")

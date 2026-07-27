@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://jgborfv3ld2g"]
+
+[ext_resource type="PackedScene" uid="uid://cgx5wn8wo7lon" path="res://assets/buildings/TwoStoryHouse.glb" id="1_whxc1"]
+
+[node name="TwoStoryHouse" unique_id=957517251 instance=ExtResource("1_whxc1")]
+
+[node name="Door_Back" parent="FTF_House_NorthAmerican_TwoStory_Ramp_v5" parent_id_path=PackedInt32Array(174339253) index="0" unique_id=1509954636]
+transform = Transform3D(0.31947201, 0, 0.9475957, 0, 1, 0, -0.9475957, 0, 0.31947201, -0.6750002, 1.39, -4.8)
+
+[node name="Door_Front" parent="FTF_House_NorthAmerican_TwoStory_Ramp_v5" parent_id_path=PackedInt32Array(174339253) index="1" unique_id=1153913606]
+transform = Transform3D(0.18604392, 0, -0.98254144, 0, 1, 0, 0.98254144, 0, 0.18604392, -0.8000002, 1.455, 4.8)

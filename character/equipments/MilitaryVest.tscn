@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://bwve2nctivgp1"]
+
+[ext_resource type="PackedScene" uid="uid://c7g0yt5xtlidn" path="res://assets/saved_glbs/military_ballistic_vest.tscn" id="1_1ali8"]
+
+[node name="MilitaryVest" type="Node3D" unique_id=865591769]
+
+[node name="MilitaryBallisticVest" parent="." unique_id=705857360 instance=ExtResource("1_1ali8")]

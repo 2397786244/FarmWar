@@ -1,0 +1,140 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/vehicle_upgrade_page.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_window"]
+bg_color = Color(0.055, 0.085, 0.11, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.33, 0.55, 0.64, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="VehicleUpgradePage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Window" type="PanelContainer" parent="."]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -470.0
+offset_top = -340.0
+offset_right = 470.0
+offset_bottom = 340.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+theme_override_styles/panel = SubResource("StyleBox_window")
+
+[node name="Margin" type="MarginContainer" parent="Window"]
+layout_mode = 2
+theme_override_constants/margin_left = 34
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 34
+theme_override_constants/margin_bottom = 30
+
+[node name="VBox" type="VBoxContainer" parent="Window/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="Header" type="HBoxContainer" parent="Window/Margin/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Window/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(0.94, 0.97, 1, 1)
+text = "载具配置"
+
+[node name="Team" type="Label" parent="Window/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.64, 0.84, 0.92, 1)
+text = "队伍专属货运车"
+horizontal_alignment = 1
+
+[node name="CloseButton" type="Button" parent="Window/Margin/VBox/Header"]
+custom_minimum_size = Vector2(96, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "关闭"
+
+[node name="Status" type="Label" parent="Window/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "状态：可用"
+horizontal_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="Window/Margin/VBox"]
+layout_mode = 2
+
+[node name="Stats" type="GridContainer" parent="Window/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+theme_override_constants/h_separation = 36
+theme_override_constants/v_separation = 24
+
+[node name="HPLabel" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+text = "耐久度（HP）"
+
+[node name="HPValue" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 26
+text = "0 / 0"
+horizontal_alignment = 2
+
+[node name="CargoLabel" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+text = "当前载货量 / 最大载货量"
+
+[node name="CargoValue" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "0 / 0 kg"
+horizontal_alignment = 2
+
+[node name="MaxSpeedLabel" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+text = "最大前进速度"
+
+[node name="MaxSpeedValue" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "0 m/s"
+horizontal_alignment = 2
+
+[node name="AccelerationLabel" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+text = "加速度"
+
+[node name="AccelerationValue" type="Label" parent="Window/Margin/VBox/Stats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "0 m/s²"
+horizontal_alignment = 2

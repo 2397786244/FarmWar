@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://bxjn2of8oxhc6"]
+
+[ext_resource type="Script" uid="uid://qh1lxypmdv30" path="res://src/spicy_blaster.gd" id="1_02pxv"]
+[ext_resource type="PackedScene" uid="uid://d2bkh8oafl2es" path="res://assets/tools/SpicyBlaster.glb" id="1_7fqns"]
+
+[sub_resource type="Curve" id="Curve_7fqns"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.22152042), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_q3oas"]
+curve = SubResource("Curve_7fqns")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_02pxv"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 40.0
+damping_min = 10.0
+damping_max = 30.000002
+scale_max = 2.0
+scale_curve = SubResource("CurveTexture_q3oas")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_q115i"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0.07058824, 0.078431375, 1)
+grow_amount = 1.326
+
+[sub_resource type="QuadMesh" id="QuadMesh_m3p6j"]
+material = SubResource("StandardMaterial3D_q115i")
+size = Vector2(0.18, 0.18)
+
+[node name="SpicyBlaster" type="Node3D" unique_id=1235595805]
+script = ExtResource("1_02pxv")
+
+[node name="Mesh" parent="." unique_id=443253135 instance=ExtResource("1_7fqns")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0.057531714)
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=173981362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4551648, -2.0238452)
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1026932705]
+emitting = false
+amount = 30
+lifetime = 0.6
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_02pxv")
+draw_pass_1 = SubResource("QuadMesh_m3p6j")

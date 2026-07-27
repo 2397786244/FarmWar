@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://dmk6cvntih0op"]
+
+[ext_resource type="PackedScene" uid="uid://cjrkbs1wm32hf" path="res://assets/buildings/FTF_Prop_WoodBulletinBoard_2_4m.glb" id="1_0tr15"]
+[ext_resource type="Script" uid="uid://bvifvl068ys3j" path="res://src/government_board.gd" id="2_board"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_board_interaction"]
+size = Vector3(4, 3, 3)
+
+[node name="Governmentboard" type="StaticBody3D" unique_id=691644752]
+collision_layer = 4096
+collision_mask = 45739
+script = ExtResource("2_board")
+
+[node name="FTF_Prop_WoodBulletinBoard_2_4m2" parent="." unique_id=533713239 instance=ExtResource("1_0tr15")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+
+[node name="InteractionArea" type="Area3D" parent="." unique_id=410525463]
+collision_layer = 512
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="InteractionArea" unique_id=1106235541]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape3D_board_interaction")
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=506094700]
+polygon = PackedVector2Array(-1.2743826, 0.07073116, -1.3056252, 3.326203, -0.0246813, 3.7073622, 1.2875049, 3.3137062, 1.2750084, 0.026991606)
+debug_color = Color(0.97459465, 0.10128724, 0.32062137, 0.41960785)

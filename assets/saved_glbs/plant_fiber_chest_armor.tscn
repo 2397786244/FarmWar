@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://b2xuilgahul3j"]
+
+[ext_resource type="PackedScene" uid="uid://e5jxn44u2wvo" path="res://assets/equipments/PlantFiberChestArmor.glb" id="1_fgejf"]
+
+[node name="PlantFiberChestArmor" unique_id=1783333041 instance=ExtResource("1_fgejf")]
+
+[node name="FTF_Equipment_PlantFiberChestArmor" parent="." index="0" unique_id=1908277187]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+
+[node name="ChestBottomRim" parent="FTF_Equipment_PlantFiberChestArmor" index="0" unique_id=2092160693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.788, 0.3153527)
+
+[node name="ChestTopRim" parent="FTF_Equipment_PlantFiberChestArmor" index="6" unique_id=824642904]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.428589, 0.32960472)

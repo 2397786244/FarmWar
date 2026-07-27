@@ -1,0 +1,375 @@
+[gd_scene format=3 uid="uid://s8g4mjci0tdv"]
+
+[ext_resource type="Script" uid="uid://d3ri251wgrunu" path="res://src/farm_init.gd" id="1_61vy3"]
+[ext_resource type="Shader" uid="uid://ctj3vpwph0c5r" path="res://src/stream.gdshader" id="1_i8tya"]
+[ext_resource type="PackedScene" uid="uid://dshcnt8vs40sd" path="res://assets/FTF_Rock_Large.glb" id="3_afiug"]
+[ext_resource type="PackedScene" uid="uid://bf7eq2he5xumb" path="res://assets/FTF_Rock_Medium.glb" id="4_p3sp1"]
+[ext_resource type="PackedScene" uid="uid://b3n5doh08was1" path="res://assets/FTF_Apple_Tree_Two_Fruit.glb" id="5_dfxwe"]
+[ext_resource type="PackedScene" uid="uid://l3qxkym6y2ci" path="res://items/shop.tscn" id="8_2vqu8"]
+[ext_resource type="PackedScene" uid="uid://xdjvjejf4mld" path="res://assets/nature/FTF_Nature_Pine_Tall.glb" id="9_cj6no"]
+[ext_resource type="Script" uid="uid://nvk8q3oivqj2" path="res://src/screenshot_capture.gd" id="18_uc7wf"]
+[ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="19_farm_generator"]
+[ext_resource type="PackedScene" path="res://vehicles/red_cargo_car.tscn" id="20_red_cargo_car"]
+[ext_resource type="PackedScene" uid="uid://bp0g6b7lrrs45" path="res://vehicles/blue_cargo_car.tscn" id="21_blue_cargo_car"]
+[ext_resource type="PackedScene" path="res://kitchens/chopping_station.tscn" id="23_chopping"]
+[ext_resource type="PackedScene" uid="uid://petpktymnucj" path="res://kitchens/farm_smoker.tscn" id="24_smoker"]
+[ext_resource type="PackedScene" path="res://kitchens/freezer.tscn" id="25_freezer"]
+[ext_resource type="PackedScene" path="res://kitchens/griddle_station.tscn" id="26_griddle"]
+[ext_resource type="PackedScene" uid="uid://bqhr7v7svog3p" path="res://kitchens/induction_counter.tscn" id="27_induction"]
+[ext_resource type="PackedScene" uid="uid://k4cpkle6y8i4" path="res://kitchens/ingredient_extractor.tscn" id="28_extractor"]
+[ext_resource type="PackedScene" path="res://kitchens/ingredient_pickup.tscn" id="29_pickup"]
+[ext_resource type="PackedScene" path="res://kitchens/oven.tscn" id="30_oven"]
+[ext_resource type="PackedScene" uid="uid://bl85x4tinjod1" path="res://kitchens/stand_mixer.tscn" id="32_mixer"]
+[ext_resource type="Script" uid="uid://co8aixtxivwpa" path="res://src/creston_recipe_order_test.gd" id="33_order_test"]
+[ext_resource type="Script" uid="uid://fku8jye3r4vy" path="res://src/creston_backpack_test.gd" id="34_backpack_test"]
+[ext_resource type="PackedScene" uid="uid://b6qlvojhlmpyc" path="res://kitchens/plating_station.tscn" id="35_plating_station"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jksk5"]
+size = Vector3(60, 2, 60)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rw2io"]
+albedo_color = Color(0.6392157, 0.4509804, 0.27450982, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_jksk5"]
+material = SubResource("StandardMaterial3D_rw2io")
+size = Vector3(60, 2, 60)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vif8p"]
+size = Vector3(60, 10, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_i8tya"]
+size = Vector3(60, 10, 5)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_i8tya"]
+render_priority = 0
+shader = ExtResource("1_i8tya")
+shader_parameter/shallow_color = Color(0.12, 0.62, 0.72, 1)
+shader_parameter/deep_color = Color(0.025, 0.22, 0.34, 1)
+shader_parameter/crest_color = Color(0.65, 0.95, 1, 1)
+shader_parameter/flow_direction = Vector2(0, 1)
+shader_parameter/flow_speed = 0.55
+shader_parameter/wave_height = 0.0
+shader_parameter/wave_scale = 7.0
+shader_parameter/secondary_wave_scale = 12.0
+shader_parameter/ripple_scale = 5.00000019
+shader_parameter/ripple_strength = 0.32
+shader_parameter/normal_strength = 0.65
+shader_parameter/crest_strength = 0.23
+shader_parameter/water_alpha = 0.82
+shader_parameter/water_roughness = 0.16
+shader_parameter/fresnel_strength = 0.7
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_vif8p"]
+material = SubResource("ShaderMaterial_i8tya")
+size = Vector2(60, 5)
+subdivide_width = 20
+subdivide_depth = 100
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_vif8p"]
+sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
+sky_horizon_color = Color(0.8666667, 0.9372549, 0.7882353, 1)
+ground_bottom_color = Color(0.30588236, 0.43529412, 0.27058825, 1)
+ground_horizon_color = Color(0.7882353, 0.8352941, 0.65882355, 1)
+sun_angle_max = 20.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_ou4pv"]
+sky_material = SubResource("ProceduralSkyMaterial_vif8p")
+
+[sub_resource type="Environment" id="Environment_p3sp1"]
+background_mode = 2
+sky = SubResource("Sky_ou4pv")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+
+[node name="Node3D" type="Node3D" unique_id=164984066]
+script = ExtResource("1_61vy3")
+
+[node name="RecipeOrderTest" type="Node" parent="." unique_id=501828274]
+script = ExtResource("33_order_test")
+
+[node name="PlayerBackpackTest" type="Node" parent="." unique_id=2025570099]
+script = ExtResource("34_backpack_test")
+
+[node name="RedFarmField" type="Node3D" parent="." unique_id=1520216427]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.5, 0.9, 5)
+script = ExtResource("19_farm_generator")
+field_label = "red_side"
+width_tiles = 8
+generate_on_ready = false
+
+[node name="BlueFarmField" type="Node3D" parent="." unique_id=347301694]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 16.5, 0.9, -5)
+script = ExtResource("19_farm_generator")
+field_label = "blue_side"
+width_tiles = 8
+generate_on_ready = false
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=58269569]
+collision_mask = 59
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1999628235]
+shape = SubResource("BoxShape3D_jksk5")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=1596438128]
+mesh = SubResource("BoxMesh_jksk5")
+
+[node name="Wall" type="StaticBody3D" parent="." unique_id=1099333932]
+collision_layer = 2
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall" unique_id=874322951]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9436998, -30.449188)
+shape = SubResource("BoxShape3D_vif8p")
+
+[node name="Wall2" type="StaticBody3D" parent="." unique_id=446102920]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.002449, 30.523998)
+collision_layer = 2
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall2" unique_id=1524361797]
+shape = SubResource("BoxShape3D_vif8p")
+
+[node name="Wall3" type="StaticBody3D" parent="." unique_id=685672146]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -30.217363, 5.3580666, 0.3737774)
+collision_layer = 2
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall3" unique_id=1798915964]
+shape = SubResource("BoxShape3D_vif8p")
+
+[node name="Wall4" type="StaticBody3D" parent="." unique_id=584852784]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 30.044703, 5.3580666, 0.3737774)
+collision_layer = 2
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall4" unique_id=439938780]
+shape = SubResource("BoxShape3D_vif8p")
+
+[node name="River" type="StaticBody3D" parent="." unique_id=1241364029]
+collision_layer = 4
+collision_mask = 24
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="River" unique_id=1707110720]
+shape = SubResource("BoxShape3D_i8tya")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="River" unique_id=262237007]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.045845, 0)
+mesh = SubResource("PlaneMesh_vif8p")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1074229627]
+transform = Transform3D(0.8660254, 0.38302222, -0.32139382, 0, 0.64278764, 0.76604444, 0.5, -0.66341394, 0.5566704, 0, 33.850002, 0)
+light_color = Color(1, 0.94509804, 0.8156863, 1)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1745108409]
+environment = SubResource("Environment_p3sp1")
+
+[node name="FTF_Rock_Large" parent="." unique_id=376141324 instance=ExtResource("3_afiug")]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, -24.793339, -0.21738815, 9.290229)
+
+[node name="FTF_Rock_Large3" parent="." unique_id=695396949 instance=ExtResource("3_afiug")]
+transform = Transform3D(3.195802, 0, -2.4055872, 0, 4, 0, 2.4055872, 0, 3.195802, -24.793339, -0.21738815, 22.07558)
+
+[node name="FTF_Rock_Large4" parent="." unique_id=280786119 instance=ExtResource("3_afiug")]
+transform = Transform3D(0.9664684, 0, 3.8814867, 0, 4, 0, -3.8814867, 0, 0.9664684, -24.793339, -0.21738815, 16.014496)
+
+[node name="FTF_Rock_Large5" parent="." unique_id=689765258 instance=ExtResource("3_afiug")]
+transform = Transform3D(2.3968515, 0, -1.8041904, 0, 3, 0, 1.8041904, 0, 2.3968515, -26.286686, 3.2719822, 19.29635)
+
+[node name="FTF_Rock_Large6" parent="." unique_id=234127277 instance=ExtResource("3_afiug")]
+transform = Transform3D(-2.0225205, 0, -2.2157192, 0, 3, 0, 2.2157192, 0, -2.0225205, -26.286686, 3.2719822, 13.510502)
+
+[node name="FTF_Rock_Large7" parent="." unique_id=1191636612 instance=ExtResource("3_afiug")]
+transform = Transform3D(3.878602, 0, -0.97798055, 0, 4, 0, 0.97798055, 0, 3.878602, -23.16181, -0.21738815, -22.701544)
+
+[node name="FTF_Rock_Large8" parent="." unique_id=514924669 instance=ExtResource("3_afiug")]
+transform = Transform3D(2.5106566, 0, -3.113937, 0, 4, 0, 3.113937, 0, 2.5106566, -26.287766, -0.21738815, -10.304221)
+
+[node name="FTF_Rock_Large9" parent="." unique_id=97463970 instance=ExtResource("3_afiug")]
+transform = Transform3D(1.8861412, 0, 3.5273886, 0, 4, 0, -3.5273886, 0, 1.8861412, -24.80586, -0.21738815, -16.181356)
+
+[node name="FTF_Rock_Large10" parent="." unique_id=724761152 instance=ExtResource("3_afiug")]
+transform = Transform3D(1.8829925, 0, -2.3354528, 0, 3, 0, 2.3354528, 0, 1.8829925, -27.056282, 3.2719822, -11.51081)
+
+[node name="FTF_Rock_Large11" parent="." unique_id=733489155 instance=ExtResource("3_afiug")]
+transform = Transform3D(-2.5028706, 0, -1.6539768, 0, 3.0000005, 0, 1.6539768, 0, -2.5028706, -25.64167, 3.2719822, -18.974472)
+
+[node name="FTF_Rock_Large2" parent="." unique_id=646692559 instance=ExtResource("3_afiug")]
+transform = Transform3D(3.9826465, 0, 0.37219334, 0, 4, 0, -0.37219334, 0, 3.9826465, -27.14251, -0.21738815, -6.3217926)
+
+[node name="FTF_Rock_Large12" parent="." unique_id=744648279 instance=ExtResource("3_afiug")]
+transform = Transform3D(3.4057734, 0, -2.097787, 0, 4, 0, 2.097787, 0, 3.4057734, -25.952854, -0.21738815, 6.408091)
+
+[node name="FTF_Rock_Large13" parent="." unique_id=175813196 instance=ExtResource("3_afiug")]
+transform = Transform3D(0.6011096, 0, 3.9545758, 0, 4, 0, -3.9545758, 0, 0.6011096, -26.516829, -0.21738815, 0.37330163)
+
+[node name="FTF_Rock_Large14" parent="." unique_id=758893869 instance=ExtResource("3_afiug")]
+transform = Transform3D(2.55433, 0, -1.5733402, 0, 3, 0, 1.5733402, 0, 2.55433, -27.698324, 3.2719822, 6.1908484)
+
+[node name="FTF_Rock_Large15" parent="." unique_id=1773299890 instance=ExtResource("3_afiug")]
+transform = Transform3D(-1.807577, 0, -2.3942988, 0, 3.0000005, 0, 2.3942988, 0, -1.807577, -28.236689, 3.2719822, -2.019546)
+
+[node name="FTF_Rock_Medium" parent="." unique_id=1118010254 instance=ExtResource("4_p3sp1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.956669, 0.5514693, 10.295836)
+
+[node name="FTF_Rock_Medium2" parent="." unique_id=2137809077 instance=ExtResource("4_p3sp1")]
+transform = Transform3D(0.71075034, 0, 0.70344436, 0, 1, 0, -0.70344436, 0, 0.71075034, -19.128876, 0.6204314, 14.462762)
+
+[node name="FTF_Rock_Medium3" parent="." unique_id=1855581009 instance=ExtResource("4_p3sp1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.863504, 0.42912245, 4.120143)
+
+[node name="FTF_Rock_Medium4" parent="." unique_id=1234899890 instance=ExtResource("4_p3sp1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.863504, 0.42912245, -11.311602)
+
+[node name="FTF_Rock_Medium5" parent="." unique_id=1946139741 instance=ExtResource("4_p3sp1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.863504, 0.42912245, -5.7217054)
+
+[node name="FTF_Apple_Tree_Two_Fruit" parent="." unique_id=418923737 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.218048, 1.1382132, -13.441483)
+
+[node name="FTF_Apple_Tree_Two_Fruit2" parent="." unique_id=320281311 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.40177196, 0, 0.9157398, 0, 1, 0, -0.9157398, 0, 0.40177196, -19.218048, 0.5538025, 21.307014)
+
+[node name="FTF_Apple_Tree_Two_Fruit3" parent="." unique_id=314253151 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.14021005, 0, 0.99012184, 0, 1, 0, -0.99012184, 0, 0.14021005, -19.218048, 0.5538025, 17.085148)
+
+[node name="FTF_Apple_Tree_Two_Fruit4" parent="." unique_id=2135748549 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.14021005, 0, 0.99012184, 0, 1, 0, -0.99012184, 0, 0.14021005, -24.133743, 0.5538025, 26.31277)
+
+[node name="FTF_Apple_Tree_Two_Fruit5" parent="." unique_id=1754024684 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.87934, 1.1382132, -21.605474)
+
+[node name="FTF_Apple_Tree_Two_Fruit6" parent="." unique_id=1116694369 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.4479151, 0, -0.8940761, 0, 1, 0, 0.8940761, 0, 0.4479151, 25.302109, 1.1382132, -21.605474)
+
+[node name="FTF_Apple_Tree_Two_Fruit7" parent="." unique_id=1945352105 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.4479151, 0, -0.8940761, 0, 1, 0, 0.8940761, 0, 0.4479151, 25.302109, 1.1382132, -16.947638)
+
+[node name="FTF_Apple_Tree_Two_Fruit8" parent="." unique_id=1960567048 instance=ExtResource("5_dfxwe")]
+transform = Transform3D(0.4479151, 0, -0.8940761, 0, 1, 0, 0.8940761, 0, 0.4479151, 25.302109, 1.1382132, 8.047102)
+
+[node name="Shop" parent="." unique_id=1756225059 instance=ExtResource("8_2vqu8")]
+transform = Transform3D(-0.5567016, 0, -0.83071256, 0, 1, 0, 0.83071256, 0, -0.5567016, 20.382317, 0.9615965, 20.291002)
+
+[node name="Shop2" parent="." unique_id=1048335677 instance=ExtResource("8_2vqu8")]
+transform = Transform3D(0.3601923, 0, -0.93287814, 0, 1, 0, 0.93287814, 0, 0.3601923, 21.126642, 1.0011597, -24.906158)
+
+[node name="FTF_Nature_Pine_Tall2" parent="." unique_id=1993118241 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.169073, 1.0000005, 19.596653)
+
+[node name="FTF_Nature_Pine_Tall3" parent="." unique_id=1631679982 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.276861, 1, 22.426441)
+
+[node name="FTF_Nature_Pine_Tall4" parent="." unique_id=1871481065 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 23.66944, 1.0000005, 16.416325)
+
+[node name="FTF_Nature_Pine_Tall5" parent="." unique_id=932593667 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.783226, 1.0000005, 10.211039)
+
+[node name="FTF_Nature_Pine_Tall6" parent="." unique_id=1447809618 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.244053, 1.0000005, 25.176712)
+
+[node name="FTF_Nature_Pine_Tall7" parent="." unique_id=389729136 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.748478, 1.0000019, -18.963978)
+
+[node name="FTF_Nature_Pine_Tall8" parent="." unique_id=1441180526 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.168287, 1.0000005, -10.9221)
+
+[node name="FTF_Nature_Pine_Tall9" parent="." unique_id=579028903 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.318823, 1.0000005, -7.5792594)
+
+[node name="FTF_Nature_Pine_Tall10" parent="." unique_id=402811512 instance=ExtResource("9_cj6no")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22.67007, 1.0000005, -15.085075)
+
+[node name="Capture" type="Node3D" parent="." unique_id=541572530]
+script = ExtResource("18_uc7wf")
+
+[node name="SubViewport" type="SubViewport" parent="Capture" unique_id=432406633]
+size = Vector2i(1920, 1080)
+render_target_update_mode = 4
+
+[node name="CaptureCamera3D" type="Camera3D" parent="Capture/SubViewport" unique_id=1531023542]
+transform = Transform3D(0.31452265, 0, 0.94925, 0, 1, 0, -0.94925, 0, 0.31452265, 16.82598, 2.80189, 7.687415)
+fov = 40.8
+
+[node name="RedTeamSpawn" type="Marker3D" parent="." unique_id=190003440]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3290854, 15.118021)
+
+[node name="BlueTeamSpawn" type="Marker3D" parent="." unique_id=732536964]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4026823, -21.37055)
+
+[node name="RedCargoCar" parent="." unique_id=1515178721 instance=ExtResource("20_red_cargo_car")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -6, 1, 18)
+network_id = "red_cargo_car"
+initial_cargo_weight_kg = 480.0
+
+[node name="BlueCargoCar" parent="." unique_id=1877334008 instance=ExtResource("21_blue_cargo_car")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1, -18)
+network_id = "blue_cargo_car"
+initial_cargo_weight_kg = 480.0
+
+[node name="RedChoppingStation" parent="." unique_id=268734038 instance=ExtResource("23_chopping")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.5, 0.8522754, 11)
+
+[node name="RedPlatingStation" parent="." unique_id=1627883984 instance=ExtResource("35_plating_station")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.8522754, 11)
+
+[node name="RedFarmSmoker" parent="." unique_id=1600390551 instance=ExtResource("24_smoker")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.8522754, 20)
+
+[node name="RedFreezer" parent="." unique_id=223199134 instance=ExtResource("25_freezer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.8522754, 14)
+
+[node name="RedGriddleStation" parent="." unique_id=928473952 instance=ExtResource("26_griddle")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.5, 0.8522754, 14)
+
+[node name="RedInductionCounter" parent="." unique_id=2077177340 instance=ExtResource("27_induction")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.8522754, 14)
+
+[node name="RedIngredientExtractor" parent="." unique_id=1622139305 instance=ExtResource("28_extractor")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.8522754, 17)
+
+[node name="RedIngredientPickup" parent="." unique_id=1248201928 instance=ExtResource("29_pickup")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.5, 0.8522754, 17)
+
+[node name="RedOven" parent="." unique_id=2109998373 instance=ExtResource("30_oven")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.8522754, 17)
+
+[node name="RedStandMixer" parent="." unique_id=1776723251 instance=ExtResource("32_mixer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.5, 0.8522754, 20)
+
+[node name="BlueChoppingStation" parent="." unique_id=220830726 instance=ExtResource("23_chopping")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.5, 0.8522754, -17)
+owner_team = "blue"
+
+[node name="BluePlatingStation" parent="." unique_id=69618216 instance=ExtResource("35_plating_station")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.8522754, -17)
+owner_team = "blue"
+
+[node name="BlueFarmSmoker" parent="." unique_id=1359030720 instance=ExtResource("24_smoker")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.8522754, -26)
+
+[node name="BlueFreezer" parent="." unique_id=432509925 instance=ExtResource("25_freezer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.8522754, -20)
+
+[node name="BlueGriddleStation" parent="." unique_id=581295878 instance=ExtResource("26_griddle")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.5, 0.8522754, -20)
+
+[node name="BlueInductionCounter" parent="." unique_id=1992925129 instance=ExtResource("27_induction")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.8522754, -20)
+
+[node name="BlueIngredientExtractor" parent="." unique_id=401067928 instance=ExtResource("28_extractor")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.8522754, -23)
+owner_team = "blue"
+
+[node name="BlueIngredientPickup" parent="." unique_id=939032120 instance=ExtResource("29_pickup")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.5, 0.8522754, -23)
+owner_team = "blue"
+
+[node name="BlueOven" parent="." unique_id=1082027733 instance=ExtResource("30_oven")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.8522754, -23)
+
+[node name="BlueStandMixer" parent="." unique_id=1455678539 instance=ExtResource("32_mixer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.5, 0.8522754, -26)
+owner_team = "blue"

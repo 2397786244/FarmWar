@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://c1jqn8yv44mtp"]
+
+[ext_resource type="PackedScene" uid="uid://bpso81a7a264g" path="res://assets/characters/Bandit.glb" id="1_ntgox"]
+
+[node name="Bandit" unique_id=1247236783 instance=ExtResource("1_ntgox")]

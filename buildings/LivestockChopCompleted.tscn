@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3 uid="uid://bkn8kqb0lfsl7"]
+
+[ext_resource type="PackedScene" uid="uid://c1y6j4iyxlfc5" path="res://assets/buildings/LivestockChopCompleted.glb" id="1_3hoeo"]
+[ext_resource type="Script" path="res://src/livestock_chop.gd" id="2_script"]
+
+[node name="LivestockChopCompleted" type="StaticBody3D" unique_id=865056721]
+collision_layer = 4096
+collision_mask = 0
+script = ExtResource("2_script")
+chop_kind = "livestock"
+initially_completed = true
+
+[node name="LivestockChopCompleted" parent="." unique_id=1004931857 instance=ExtResource("1_3hoeo")]
+
+[node name="Slot1" type="Node3D" parent="." unique_id=1775297671]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1786263, 0, -0.14641237)
+
+[node name="Slot2" type="Node3D" parent="." unique_id=934977933]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.79503703, 0, -0.14641237)
+
+[node name="Slot3" type="Node3D" parent="." unique_id=1167183052]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7273617, 0, -0.14641237)
+
+[node name="Slot4" type="Node3D" parent="." unique_id=192429910]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1039107, 0, -0.14641237)

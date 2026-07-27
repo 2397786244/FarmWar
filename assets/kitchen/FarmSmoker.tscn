@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://dbulfpqlagx1x"]
+
+[ext_resource type="PackedScene" uid="uid://bdi4qjtef0fh4" path="res://assets/kitchen/FarmSmoker.glb" id="1_isce6"]
+
+[node name="FarmSmoker" unique_id=1987330581 instance=ExtResource("1_isce6")]
+
+[node name="SmokerHandle" parent="FTF_Kitchen_FarmSmoker" parent_id_path=PackedInt32Array(1682885630) index="10" unique_id=1100899773]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.35, 0.84, 0.4463792)
+
+[node name="SmokeStripe" parent="FTF_Kitchen_FarmSmoker" parent_id_path=PackedInt32Array(1682885630) index="13" unique_id=367580109]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07477671, 1.36, 0.4241276)
+
+[node name="TempGauge" parent="FTF_Kitchen_FarmSmoker" parent_id_path=PackedInt32Array(1682885630) index="14" unique_id=1478153076]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.32, 1.3258176, 0.42788592)

@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://b7ss3t7yq50tk"]
+
+[ext_resource type="PackedScene" uid="uid://de07y8m2ir21" path="res://assets/plants/Kiwi.glb" id="1_kiwi"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kiwi"]
+size = Vector3(1.7, 2.2, 0.5)
+
+[node name="Kiwi" type="StaticBody3D" unique_id=1886077284]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1157132140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1464537, 0)
+shape = SubResource("BoxShape3D_kiwi")
+
+[node name="Kiwi" parent="." unique_id=490884340 instance=ExtResource("1_kiwi")]

@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3 uid="uid://cpul2g488biee"]
+
+[ext_resource type="PackedScene" uid="uid://chk1myqr60qkf" path="res://assets/buildings/ChickenChopCompleted.glb" id="1_37pi4"]
+[ext_resource type="Script" path="res://src/livestock_chop.gd" id="2_script"]
+
+[node name="ChickenChopCompleted" type="StaticBody3D" unique_id=688361245]
+collision_layer = 4096
+collision_mask = 0
+script = ExtResource("2_script")
+chop_kind = "chicken"
+initially_completed = true
+
+[node name="Mesh" parent="." unique_id=1079783998 instance=ExtResource("1_37pi4")]

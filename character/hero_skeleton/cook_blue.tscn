@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://cntrq6qctyggi"]
+
+[ext_resource type="PackedScene" uid="uid://5123lojqopa8" path="res://assets/characters/Cook_Blue.glb" id="1_l3bw8"]
+
+[node name="Cook_Blue" unique_id=904171881 instance=ExtResource("1_l3bw8")]
+
+[node name="Skeleton3D" parent="FTF_Character_Cook_Blue_Rigged/CharacterSkeleton" parent_id_path=PackedInt32Array(746092956) index="0" unique_id=1521347607]
+bones/0/position = Vector3(0, 0.29, 0.105)
+bones/0/rotation = Quaternion(0.6818945, -0.011902512, -0.012763881, 0.7312423)
+bones/1/rotation = Quaternion(-0.034894172, -0.0006090804, 0.017441776, 0.99923867)
+bones/2/rotation = Quaternion(0.07844715, -0.0013693009, -0.017398609, 0.9967655)
+bones/3/rotation = Quaternion(-0.1564345, 8.7433e-10, 2.2099978e-11, 0.9876884)
+bones/4/rotation = Quaternion(-0.20788008, -0.0036285599, 0.017071033, 0.9779986)
+bones/5/rotation = Quaternion(0.2312786, -0.95953333, -0.14996068, 0.05759988)
+bones/6/rotation = Quaternion(-0.0745778, -0.28128695, 0.62763566, 0.7220729)
+bones/7/rotation = Quaternion(-0.07518971, 0.2095293, -0.20091517, 0.9539796)
+bones/8/rotation = Quaternion(0.37696928, 0.88669044, 0.24902941, 0.09827839)
+bones/9/rotation = Quaternion(0.059969667, 0.29266474, -0.93057644, 0.21160918)
+bones/10/rotation = Quaternion(-0.075189725, -0.2095293, 0.20091513, 0.9539796)
+bones/11/rotation = Quaternion(0.98516816, -0.14062212, -0.06847297, 0.07057387)
+bones/12/rotation = Quaternion(-0.107576534, 0.06420714, -0.051993176, 0.99075806)
+bones/14/rotation = Quaternion(0.99160475, 0.08885743, 0.06486094, 0.06795267)
+bones/15/rotation = Quaternion(-0.10757655, -0.06420714, 0.051993176, 0.99075806)

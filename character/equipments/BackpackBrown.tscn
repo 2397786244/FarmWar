@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://2f6jg2h46acp"]
+
+[ext_resource type="PackedScene" uid="uid://cy85ohthnujem" path="res://assets/saved_glbs/backpack_brown.tscn" id="1_uujos"]
+
+[node name="BackpackBrown" type="Node3D" unique_id=1635503586]
+
+[node name="BackpackBrown" parent="." unique_id=1801658258 instance=ExtResource("1_uujos")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.10991394)

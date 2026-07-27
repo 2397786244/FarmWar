@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dembq1dqxaq7b"]
+
+[ext_resource type="PackedScene" uid="uid://davs2uhpjigoa" path="res://assets/buildings/PlankBarnTall.glb" id="1_d1flb"]
+
+[node name="BarnTall" type="Node3D" unique_id=21392317]
+
+[node name="PlankBarnTall" parent="." unique_id=1770104375 instance=ExtResource("1_d1flb")]

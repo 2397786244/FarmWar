@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://b3tdfcndquwfw"]
+
+[ext_resource type="PackedScene" uid="uid://qtdqd12jc0dc" path="res://assets/saved_glbs/boom_buggy.tscn" id="1_fcanw"]
+[ext_resource type="Script" uid="uid://ccra1tvocofa6" path="res://src/boom_buggy.gd" id="1_y07t1"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_n46pg"]
+size = Vector3(1, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_y07t1"]
+size = Vector3(1, 0.4, 1)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_y07t1"]
+radius = 16.0
+
+[node name="BoomBuggy" type="CharacterBody3D" unique_id=1291655396]
+collision_layer = 0
+collision_mask = 4235
+script = ExtResource("1_y07t1")
+drive_speed = 6.0
+explosion_radius = 10.0
+explosion_strength = 200.0
+
+[node name="Mesh" parent="." unique_id=1803271861 instance=ExtResource("1_fcanw")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=887586973]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.30878282, 0)
+shape = SubResource("BoxShape3D_n46pg")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1996062080]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=87624908]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.26296347, 0)
+shape = SubResource("BoxShape3D_y07t1")
+
+[node name="ExplosionParticles" type="GPUParticles3D" parent="." unique_id=229662245]
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=1150633236]
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=333739241]
+transform = Transform3D(-1, 0, 8.742278e-08, 0, 1, 0, -8.742278e-08, 0, -1, 0, 0.28842205, 0.57044494)
+fov = 60.0
+
+[node name="ShapeCast3D" type="ShapeCast3D" parent="." unique_id=1053373498]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6237886, 0)
+enabled = false
+shape = SubResource("SphereShape3D_y07t1")
+target_position = Vector3(0, 0, 0)
+max_results = 64
+collision_mask = 136
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]
+
+[node name="Label3D" type="Label3D" parent="."]
+position = Vector3(0, 1.2, 0)
+billboard = 1
+pixel_size = 0.005
+text = "100"
+visible = false

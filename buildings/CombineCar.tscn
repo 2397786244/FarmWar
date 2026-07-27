@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cvwu16wqdn81l"]
+
+[ext_resource type="PackedScene" uid="uid://ncatbrqpbup7" path="res://assets/vehicles/FTF_Vehicle_CombineHarvester_BlackYellow_7m.glb" id="1_tyc17"]
+
+[node name="CombineCar" type="StaticBody3D" unique_id=598947128]
+collision_layer = 4096
+collision_mask = 45739
+
+[node name="FTF_Vehicle_CombineHarvester_BlackYellow_7m2" parent="." unique_id=810012108 instance=ExtResource("1_tyc17")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=110997364]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 7.0
+polygon = PackedVector2Array(-5.9674044, 0.09858847, -5.9783416, 2.6578593, -2.5987914, 2.635985, -2.6534765, 5.315563, 3.4822114, 5.260878, 3.4712737, 2.3625586, 3.963442, 2.2969365, 4.0509377, -0.021718979)

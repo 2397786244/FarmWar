@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://f474i6dp1yno"]
+
+[ext_resource type="PackedScene" uid="uid://dv4sri1sheda3" path="res://assets/kitchen/IngredientPickup.tscn" id="1_model"]
+[ext_resource type="Script" uid="uid://cpl46t5qmdmqc" path="res://src/ingredient_pickup.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pickup"]
+size = Vector3(1.74, 1.395, 1.1025)
+
+[node name="IngredientPickup" type="StaticBody3D" unique_id=872027429]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "库存存取台"
+
+[node name="IngredientPickup" parent="." unique_id=1879156669 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1601401668]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6975, -0.00875)
+shape = SubResource("BoxShape3D_pickup")
+
+[node name="StatusLabel" type="Label3D" parent="." unique_id=1093085179]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.72, 0)
+billboard = 1
+text = "按E 打开库存存取台"
+font_size = 40
+outline_size = 8

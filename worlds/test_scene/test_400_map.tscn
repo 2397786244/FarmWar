@@ -1,0 +1,63 @@
+[gd_scene format=3 uid="uid://wogwax8y71a6"]
+
+[ext_resource type="PackedScene" uid="uid://5qajpyua054j" path="res://assets/maps/creston_basin.glb" id="1_4vani"]
+[ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="2_evopc"]
+[ext_resource type="PackedScene" uid="uid://dflvavrg0mi7f" path="res://character/player.tscn" id="3_evopc"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4vani"]
+size = Vector3(400, 2, 400)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_evopc"]
+sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
+sky_horizon_color = Color(0.8666667, 0.9372549, 0.7882353, 1)
+ground_bottom_color = Color(0.30588236, 0.43529412, 0.27058825, 1)
+ground_horizon_color = Color(0.7882353, 0.8352941, 0.65882355, 1)
+sun_angle_max = 20.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_afiug"]
+sky_material = SubResource("ProceduralSkyMaterial_evopc")
+
+[sub_resource type="Environment" id="Environment_v8h77"]
+background_mode = 2
+sky = SubResource("Sky_afiug")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+
+[node name="Test400Map" type="Node3D" unique_id=250600699]
+
+[node name="creston_basin" parent="." unique_id=1411665412 instance=ExtResource("1_4vani")]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+
+[node name="RedFarmField" type="Node3D" parent="." unique_id=1599253825]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -74.861, 0.2, -105.493)
+script = ExtResource("2_evopc")
+field_label = "red_side"
+length_tiles = 20
+width_tiles = 10
+
+[node name="BlueFarmField" type="Node3D" parent="." unique_id=783847042]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 61.855, 0.2, 132.147)
+script = ExtResource("2_evopc")
+field_label = "blue_side"
+length_tiles = 20
+width_tiles = 10
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1936291977]
+collision_mask = 59
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=495435080]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0)
+shape = SubResource("BoxShape3D_4vani")
+
+[node name="Player" parent="." unique_id=1830909008 instance=ExtResource("3_evopc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 22.557838, 88.444565)
+selected_hero = "rider"
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=228018758]
+transform = Transform3D(0.8660254, 0.38302222, -0.32139382, 0, 0.64278764, 0.76604444, 0.5, -0.66341394, 0.5566704, 0, 33.850002, 0)
+light_color = Color(1, 0.94509804, 0.8156863, 1)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=512764369]
+environment = SubResource("Environment_v8h77")

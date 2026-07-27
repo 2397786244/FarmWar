@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c40k6pbi4fn4n"]
+
+[ext_resource type="PackedScene" uid="uid://b7jjlo3qa43f0" path="res://assets/equipments/BackpackMilitary.glb" id="1_004qn"]
+
+[node name="BackpackMilitary" unique_id=720408507 instance=ExtResource("1_004qn")]
+
+[node name="FTF_Equipment_Backpack_MilitaryCamouflageLarge" parent="." index="0" unique_id=1052964310]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)

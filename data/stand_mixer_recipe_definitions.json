@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "recipe_order": [
+    "yeast_dough",
+    "puff_pastry_dough"
+  ],
+  "recipes": {
+    "yeast_dough": {
+      "inputs": [
+        {"ingredient_id": "wheat_flour", "weight_kg": 0.5},
+        {"ingredient_id": "water", "weight_kg": 0.5},
+        {"ingredient_id": "yeast", "weight_kg": 0.01}
+      ],
+      "output_ingredient_id": "yeast_dough",
+      "output_weight_kg": 1.0,
+      "duration_seconds": 30.0
+    },
+    "puff_pastry_dough": {
+      "inputs": [
+        {"ingredient_id": "wheat_flour", "weight_kg": 0.5},
+        {"ingredient_id": "oil", "weight_kg": 0.15},
+        {"ingredient_id": "sugar", "weight_kg": 0.1}
+      ],
+      "output_ingredient_id": "puff_pastry_dough",
+      "output_weight_kg": 0.75,
+      "duration_seconds": 25.0
+    }
+  }
+}

@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://b7yjt8iyur4gh"]
+
+[ext_resource type="PackedScene" uid="uid://dtdsmvdcox88n" path="res://assets/environment/StreetLamp_Radial.glb" id="1_jgh1u"]
+[ext_resource type="Script" uid="uid://63sk61iveco0" path="res://src/environment/street_lamp.gd" id="2_street_lamp"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_jgh1u"]
+height = 4.0
+radius = 0.3
+
+[node name="StreetLampStraight" type="StaticBody3D" unique_id=525411482]
+script = ExtResource("2_street_lamp")
+night_light_energy = 8.0
+
+[node name="StreetLamp_Radial" parent="." unique_id=1850556250 instance=ExtResource("1_jgh1u")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=459143691]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8443055, 0)
+shape = SubResource("CylinderShape3D_jgh1u")
+
+[node name="NightLight" type="OmniLight3D" parent="." unique_id=96227226]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.0027955, 0)
+light_color = Color(1, 0.74, 0.38, 1)
+light_energy = 0.0
+light_indirect_energy = 0.0
+omni_range = 9.0
+omni_attenuation = 1.45

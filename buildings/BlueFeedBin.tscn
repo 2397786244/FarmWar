@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://df44i0efqn2yb"]
+
+[ext_resource type="PackedScene" uid="uid://dktg0iu12oyiu" path="res://assets/buildings/FTF_Building_FarmFeedBin_3_8m_BlueRoof.glb" id="1_wbrv4"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wbrv4"]
+size = Vector3(2.5, 4, 2)
+
+[node name="BlueFeedBin" type="StaticBody3D" unique_id=1667551899]
+
+[node name="FTF_Building_FarmFeedBin_3_8m_BlueRoof2" parent="." unique_id=1278572432 instance=ExtResource("1_wbrv4")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1059673604]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9756161, 0)
+shape = SubResource("BoxShape3D_wbrv4")

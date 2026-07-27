@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://bdasjltihaaet"]
+
+[ext_resource type="Script" uid="uid://dpdbqtaq2qfsu" path="res://src/medicine_storm.gd" id="1_medicine_storm"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_v2gmp"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_c5vg6"]
+radius = 20.0
+
+[node name="MedicineStorm" type="Node3D" unique_id=2000807646]
+script = ExtResource("1_medicine_storm")
+
+[node name="StormVisual" type="MeshInstance3D" parent="." unique_id=1681429296]
+mesh = SubResource("SphereMesh_v2gmp")
+
+[node name="EffectCast" type="ShapeCast3D" parent="." unique_id=452449965]
+shape = SubResource("SphereShape3D_c5vg6")
+target_position = Vector3(0, 0, 0)
+collision_mask = 8

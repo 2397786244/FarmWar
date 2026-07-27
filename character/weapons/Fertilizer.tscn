@@ -1,0 +1,45 @@
+[gd_scene format=3 uid="uid://ctpm17nwonogg"]
+
+[ext_resource type="PackedScene" uid="uid://d1txibajowo4u" path="res://assets/tools/Fertilizer.glb" id="1_4ugt4"]
+[ext_resource type="Script" uid="uid://bexjdsrx2tjjn" path="res://src/fertilizer.gd" id="1_y6ce4"]
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_y6ce4"]
+direction = Vector3(0, 0, -1)
+spread = 15.0
+initial_velocity_min = 10.0
+initial_velocity_max = 20.0
+gravity = Vector3(0, -9, 0)
+scale_min = 0.5
+scale_max = 0.79999995
+color = Color(0.7647059, 1, 0.23529412, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_178yl"]
+albedo_color = Color(0.7771044, 0.7747099, 0.77827525, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_p0g4d"]
+material = SubResource("StandardMaterial3D_178yl")
+radius = 0.1
+height = 0.1
+
+[node name="Fertilizer" type="Node3D" unique_id=872529934]
+script = ExtResource("1_y6ce4")
+
+[node name="Mesh" parent="." unique_id=716799049 instance=ExtResource("1_4ugt4")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0.29255867)
+
+[node name="Emitter" type="GPUParticles3D" parent="." unique_id=1426584208]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.44331175, -2.660712)
+emitting = false
+amount = 15
+lifetime = 0.8
+one_shot = true
+explosiveness = 0.8
+randomness = 0.3
+visibility_aabb = AABB(-3, -3, -16, 6, 6, 18)
+process_material = SubResource("ParticleProcessMaterial_y6ce4")
+draw_pass_1 = SubResource("SphereMesh_p0g4d")
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1396615264]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.41491556, -2.5623937)
+target_position = Vector3(0, 0, -10)
+collision_mask = 64

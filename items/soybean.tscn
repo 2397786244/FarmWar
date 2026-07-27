@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/plants/Soybean.glb" id="1_model"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_soybean"]
+size = Vector3(1.107375, 0.944531, 1.117265)
+
+[node name="Soybean" type="StaticBody3D"]
+collision_layer = 16
+collision_mask = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0333325, 0.4722655, -0.0418255)
+shape = SubResource("BoxShape3D_soybean")
+
+[node name="Soybean" parent="." instance=ExtResource("1_model")]

@@ -1,0 +1,69 @@
+[gd_scene format=3 uid="uid://dcsbbjbefcumm"]
+
+[ext_resource type="PackedScene" uid="uid://bheepfq00yrf1" path="res://assets/buildings/BlueGarage.glb" id="1_4vvga"]
+[ext_resource type="Script" uid="uid://7gh7vrbpfbw1" path="res://src/team_garage.gd" id="2_garage"]
+[ext_resource type="Script" uid="uid://dv2hnvdsfm8fo" path="res://src/garage_upgrade_terminal.gd" id="3_terminal"]
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.035, 0.055, 0.065, 0.92)
+billboard_mode = 1
+
+[sub_resource type="BoxMesh" id="Mesh_progress_back"]
+material = SubResource("Material_progress_back")
+size = Vector3(3.1, 0.22, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(0.28, 0.55, 0.95, 1)
+billboard_mode = 1
+
+[sub_resource type="BoxMesh" id="Mesh_progress_fill"]
+material = SubResource("Material_progress_fill")
+size = Vector3(3, 0.14, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape_terminal"]
+size = Vector3(2.5, 2.2, 3)
+
+[node name="BlueGarage" type="StaticBody3D" unique_id=1722609566]
+script = ExtResource("2_garage")
+owner_team = "blue"
+
+[node name="BlueGarage" parent="." unique_id=1278690716 instance=ExtResource("1_4vvga")]
+
+[node name="CargoCarSpawnPoint" type="Marker3D" parent="." unique_id=1325197625]
+transform = Transform3D(0.99978733, 0, -0.020610347, 0, 1, 0, 0.020610347, 0, 0.99978733, -3.1503956, 1, 1.1881613)
+
+[node name="RespawnDisplay" type="Node3D" parent="CargoCarSpawnPoint" unique_id=1372572404]
+
+[node name="RespawnLabel" type="Label3D" parent="CargoCarSpawnPoint/RespawnDisplay" unique_id=1049845790]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.25, 0)
+billboard = 1
+text = "货运车重生  60 秒"
+font_size = 42
+outline_size = 9
+
+[node name="ProgressBack" type="MeshInstance3D" parent="CargoCarSpawnPoint/RespawnDisplay" unique_id=2051477471]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.75, 0)
+mesh = SubResource("Mesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="CargoCarSpawnPoint/RespawnDisplay" unique_id=671856482]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.75, -0.02)
+mesh = SubResource("Mesh_progress_fill")
+
+[node name="UpgradeTerminal" type="StaticBody3D" parent="." unique_id=37160526]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.3236675, 1.1, 2.580377)
+collision_layer = 512
+collision_mask = 0
+script = ExtResource("3_terminal")
+owner_team = "blue"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="UpgradeTerminal" unique_id=989952489]
+shape = SubResource("BoxShape_terminal")
+
+[node name="InteractionLabel" type="Label3D" parent="UpgradeTerminal" unique_id=1915556969]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
+billboard = 1
+text = "按 [E] 升级载具"
+font_size = 40
+outline_size = 8

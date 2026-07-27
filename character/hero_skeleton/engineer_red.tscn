@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://df6mkqawdficx"]
+
+[ext_resource type="PackedScene" uid="uid://cxqycy42rxt0e" path="res://assets/characters/Engineer_Red.glb" id="1_gdci7"]
+
+[node name="Engineer_Red" unique_id=1712773130 instance=ExtResource("1_gdci7")]
+
+[node name="Skeleton3D" parent="FTF_Character_Engineer_Red/CharacterSkeleton" parent_id_path=PackedInt32Array(1375467171) index="0" unique_id=1801908054]
+bones/3/rotation = Quaternion(-0.034899496, 0, 0, 0.99939084)
+bones/4/rotation = Quaternion(3.7252907e-09, 0, 0, 1)
+bones/5/rotation = Quaternion(3.7252907e-09, 0, 0, 1)
+bones/6/rotation = Quaternion(0.2349751, -0.56222105, -0.76759803, -0.1987146)
+bones/7/rotation = Quaternion(-0.009430076, -0.17612009, 0.68954295, 0.70244104)
+bones/8/rotation = Quaternion(-0.06412078, 0.21317728, -0.15071237, 0.96318734)
+bones/9/rotation = Quaternion(0.2349751, 0.56222105, 0.76759803, -0.1987146)
+bones/10/rotation = Quaternion(-0.009430076, 0.17612009, -0.68954295, 0.70244104)
+bones/11/rotation = Quaternion(-0.06412078, -0.21317728, 0.15071237, 0.96318734)
+bones/12/rotation = Quaternion(0.9965753, -0.05842105, -0.05842062, -0.0034246983)
+bones/13/rotation = Quaternion(-0.0034247476, 0.05842062, -0.058419816, 0.99657536)
+bones/15/rotation = Quaternion(0.9965753, 0.05842105, 0.05842062, -0.0034246983)
+bones/16/rotation = Quaternion(-0.0034247476, -0.05842062, 0.058419816, 0.99657536)

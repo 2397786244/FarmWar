@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://nsda8tilco0m"]
+
+[ext_resource type="PackedScene" uid="uid://dlhghvpmaif25" path="res://assets/vehicles/FTF_Vehicle_NorthAmericanFarmTruck_Red_Open_7m.glb" id="1_qn5py"]
+
+[node name="FTF_Vehicle_NorthAmericanFarmTruck_Red_Open_7m2" unique_id=1954324097 instance=ExtResource("1_qn5py")]

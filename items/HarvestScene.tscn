@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cfpy7hv41op2d"]
+
+[ext_resource type="Script" uid="uid://dowrb7oo7uosb" path="res://src/harvest_scene.gd" id="1_mact3"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_6eifs"]
+
+[node name="HarvestScene" type="CharacterBody3D" unique_id=1143824086]
+collision_layer = 256
+collision_mask = 3
+script = ExtResource("1_mact3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1427201936]
+transform = Transform3D(0.83676434, 0, 0.5475632, 0, 1, 0, -0.5475632, 0, 0.83676434, 0, 0.32280278, 0)
+shape = SubResource("SphereShape3D_6eifs")

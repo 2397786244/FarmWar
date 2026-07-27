@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://ftjbs0gy4xc4"]
+
+[ext_resource type="Script" uid="uid://r6pil7wwoooi" path="res://src/eater.gd" id="1_fa5jt"]
+[ext_resource type="PackedScene" uid="uid://dkh55tdn3e0vc" path="res://assets/tools/Eater.glb" id="2_jdfmx"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_fa5jt"]
+radius = 3.0
+height = 10.0
+
+[node name="Eater" type="Node3D" unique_id=534532188]
+script = ExtResource("1_fa5jt")
+
+[node name="FTF_Tool_Absorption_Gun_YellowBlack" parent="." unique_id=116407341 instance=ExtResource("2_jdfmx")]
+transform = Transform3D(-0.5, 0, 7.54979e-08, 0, 0.5, 0, -7.54979e-08, 0, -0.5, 0, 0.12601495, -0.030588627)
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=212597267]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21804953, -0.8952296)
+target_position = Vector3(0, 0, -20)
+collision_mask = 32
+
+[node name="Area3D" type="Area3D" parent="." unique_id=1762041348]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.2581036)
+collision_layer = 128
+collision_mask = 96
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=2079891456]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0.3021989, -3.2325466)
+shape = SubResource("CapsuleShape3D_fa5jt")

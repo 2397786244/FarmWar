@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cx55sj0kju6qx"]
+
+[ext_resource type="PackedScene" uid="uid://c40k6pbi4fn4n" path="res://assets/saved_glbs/backpack_military.tscn" id="1_71hn4"]
+
+[node name="BackpackMilitary" type="Node3D" unique_id=2045440503]
+
+[node name="BackpackMilitary" parent="." unique_id=720408507 instance=ExtResource("1_71hn4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.11)

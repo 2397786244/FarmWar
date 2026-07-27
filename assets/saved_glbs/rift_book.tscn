@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c5wdg1py5q83b"]
+
+[ext_resource type="PackedScene" uid="uid://b3gc3uds8h0ly" path="res://assets/tools/RiftBook.glb" id="1_w20dq"]
+
+[node name="RiftBook" unique_id=1889602268 instance=ExtResource("1_w20dq")]
+
+[node name="FloatingRune" parent="FTF_Tool_Riftbook_Open_v5" parent_id_path=PackedInt32Array(1986726701) index="0" unique_id=1304604032]
+visible = false

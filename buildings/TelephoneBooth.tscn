@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://g8dxu15udk6p"]
+
+[ext_resource type="PackedScene" uid="uid://7a0v4tcvojto" path="res://assets/buildings/FTF_Building_PhoneBooth_Red_2_2m.glb" id="1_uyrbi"]
+
+[node name="TelephoneBooth" type="StaticBody3D" unique_id=917565843]
+
+[node name="FTF_Building_PhoneBooth_Red_2_2m2" parent="." unique_id=466966692 instance=ExtResource("1_uyrbi")]
+transform = Transform3D(1.8, 0, 0, 0, 1.8, 0, 0, 0, 1.8, 0, 0, 0)

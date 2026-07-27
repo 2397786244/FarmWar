@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://cxvyy28h6gtt8"]
+
+[ext_resource type="PackedScene" uid="uid://c3npy7oefc8li" path="res://assets/buildings/FTF_Building_Solid_Brick_Wall_2x3m.glb" id="1_n6c0e"]
+
+[node name="FTF_Building_Solid_Brick_Wall_2x3m2" unique_id=1697245015 instance=ExtResource("1_n6c0e")]

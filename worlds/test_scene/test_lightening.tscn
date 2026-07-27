@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://dmgl5ermvdfi0"]
+
+[ext_resource type="Script" uid="uid://bbpmd600jtasp" path="res://worlds/test_code/test_lightening.gd" id="1_em6ig"]
+[ext_resource type="PackedScene" uid="uid://dvqesqvpvevfc" path="res://character/weapons/LighteningEffect.tscn" id="2_em6ig"]
+
+[node name="TestLightening" type="Node3D" unique_id=1803131192]
+script = ExtResource("1_em6ig")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1206004999]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8524213, 7.0273)
+
+[node name="LighteningEffect" parent="." unique_id=1882261622 instance=ExtResource("2_em6ig")]

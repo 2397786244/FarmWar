@@ -1,0 +1,51 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/Freezer.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/freezer.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_freezer"]
+size = Vector3(1.52, 2.02, 0.9275)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_back"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.08, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_back"]
+size = Vector3(1.5, 0.08, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Material_progress_fill"]
+shading_mode = 0
+albedo_color = Color(0.38, 0.74, 1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_progress_fill"]
+size = Vector3(1.5, 0.08, 0.04)
+
+[node name="Freezer" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+
+[node name="Freezer" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.01, 0.08375)
+shape = SubResource("BoxShape3D_freezer")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 2.25, 0)
+billboard = 1
+text = "按 [E] 使用冷冻柜"
+font_size = 40
+outline_size = 8
+
+[node name="ProgressBack" type="MeshInstance3D" parent="."]
+position = Vector3(0, 2.05, 0)
+visible = false
+material_override = SubResource("Material_progress_back")
+mesh = SubResource("BoxMesh_progress_back")
+
+[node name="ProgressFill" type="MeshInstance3D" parent="."]
+position = Vector3(-0.75, 2.05, -0.005)
+visible = false
+material_override = SubResource("Material_progress_fill")
+mesh = SubResource("BoxMesh_progress_fill")

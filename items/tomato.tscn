@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://crf2w87otf21v"]
+
+[ext_resource type="PackedScene" uid="uid://nocfj7ftq3yr" path="res://assets/plants/Tomato.glb" id="1_pwrsf"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3s363"]
+
+[node name="Tomato" type="StaticBody3D" unique_id=1597893436]
+collision_layer = 16
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=219943855]
+transform = Transform3D(0.6, 0, 0, 0, 0.6, 0, 0, 0, 0.6, -0.0006541014, 0.50794345, 0)
+shape = SubResource("CapsuleShape3D_3s363")
+
+[node name="Tomato" parent="." unique_id=430384707 instance=ExtResource("1_pwrsf")]

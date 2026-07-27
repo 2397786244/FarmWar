@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://7d7l3fly6kuy"]
+
+[ext_resource type="PackedScene" uid="uid://cdy3yvdvkjpj" path="res://assets/buildings/Bar.glb" id="1_55uvm"]
+
+[node name="Bar" unique_id=1989840627 instance=ExtResource("1_55uvm")]
+
+[node name="Door_Back" parent="FTF_Bar_Pentagonal_RedBrick_Enterable_v2_1" parent_id_path=PackedInt32Array(1503877074) index="0" unique_id=1972439798]
+transform = Transform3D(0.98139, 0, 0.19202524, 0, 1, 0, -0.19202524, 0, 0.98139, -0.5, 1.335, -5.2)
+
+[node name="Door_Front" parent="FTF_Bar_Pentagonal_RedBrick_Enterable_v2_1" parent_id_path=PackedInt32Array(1503877074) index="1" unique_id=418639075]
+transform = Transform3D(0.86715764, 0, -0.49803373, 0, 1, 0, 0.49803373, 0, 0.86715764, -3.2201009, 1.435, 1.2798986)

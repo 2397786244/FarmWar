@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://xa4cpeikhnrm"]
+
+[ext_resource type="PackedScene" uid="uid://24i7mo61lktl" path="res://assets/equipments/PoliceBallisticVest.glb" id="1_3d47f"]
+
+[node name="PoliceBallisticVest" unique_id=909905445 instance=ExtResource("1_3d47f")]
+
+[node name="FTF_Equipment_PoliceBallisticVest" parent="." index="0" unique_id=1973793369]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)

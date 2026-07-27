@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://dx1ti4iybuiei"]
+
+[ext_resource type="PackedScene" uid="uid://bdr0xv7tu2h7a" path="res://assets/plants/Pepper.glb" id="1_ov625"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_ov625"]
+
+[node name="Pepper" type="StaticBody3D" unique_id=606993702]
+collision_layer = 16
+collision_mask = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1612136251]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5389819, 0)
+shape = SubResource("SphereShape3D_ov625")
+
+[node name="Pepper" parent="." unique_id=215990270 instance=ExtResource("1_ov625")]

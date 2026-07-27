@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://nhsndt5fusbk"]
+
+[ext_resource type="PackedScene" uid="uid://ghgqby5rm4fp" path="res://assets/kitchen/Oven.glb" id="1_qgchj"]
+
+[node name="Oven" unique_id=1961412607 instance=ExtResource("1_qgchj")]
+
+[node name="Button" parent="FTF_Kitchen_Oven" parent_id_path=PackedInt32Array(688426580) index="2" unique_id=2053149178]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.22, 0.8152492, 0.36122522)
+
+[node name="Button_001" parent="FTF_Kitchen_Oven" parent_id_path=PackedInt32Array(688426580) index="3" unique_id=1129986089]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.8152492, 0.36122522)
+
+[node name="Button_002" parent="FTF_Kitchen_Oven" parent_id_path=PackedInt32Array(688426580) index="4" unique_id=1545825875]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.22, 0.8152492, 0.36122522)
+
+[node name="Panel" parent="FTF_Kitchen_Oven" parent_id_path=PackedInt32Array(688426580) index="8" unique_id=1606194494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8152492, 0.33122522)

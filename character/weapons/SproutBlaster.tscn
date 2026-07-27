@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://7ujp34m6m4g5"]
+
+[ext_resource type="Script" uid="uid://jp8phat2c2l5" path="res://src/sprout_blaster.gd" id="1_rr2ca"]
+[ext_resource type="PackedScene" uid="uid://2u37pk5nt823" path="res://assets/tools/SproutBlaster.glb" id="2_178yl"]
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_rr2ca"]
+direction = Vector3(0, 0, -1)
+spread = 15.0
+initial_velocity_min = 5.0
+initial_velocity_max = 20.0
+gravity = Vector3(0, -9, 0)
+scale_min = 0.5
+scale_max = 0.79999995
+color = Color(0.7647059, 1, 0.23529412, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_178yl"]
+albedo_color = Color(0.60784316, 0.8666667, 0.33333334, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_4wtih"]
+material = SubResource("StandardMaterial3D_178yl")
+radius = 0.1
+height = 0.1
+
+[node name="SproutBlaster" type="Node3D" unique_id=1263434782]
+script = ExtResource("1_rr2ca")
+
+[node name="SeedEmitter" type="GPUParticles3D" parent="." unique_id=164948908]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12562042, -0.8538787)
+emitting = false
+amount = 15
+one_shot = true
+explosiveness = 0.8
+randomness = 0.3
+visibility_aabb = AABB(-3, -3, -16, 6, 6, 18)
+process_material = SubResource("ParticleProcessMaterial_rr2ca")
+draw_pass_1 = SubResource("SphereMesh_4wtih")
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1984461093]
+position = Vector3(0, 0.1469065, -0.72019833)
+target_position = Vector3(0, 0, -10)
+collision_mask = 64
+
+[node name="FTF_Tool_Seed_Sprayer_Teal" parent="." unique_id=1865895725 instance=ExtResource("2_178yl")]
+transform = Transform3D(-0.5, 0, -7.54979e-08, 0, 0.5, 0, 7.54979e-08, 0, -0.5, 0, 0.0742847, -0.033127725)

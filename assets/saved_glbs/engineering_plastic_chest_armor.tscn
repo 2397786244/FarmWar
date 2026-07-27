@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c7p0w2gt0w2ts"]
+
+[ext_resource type="PackedScene" uid="uid://derevyl6fpoj4" path="res://assets/equipments/EngineeringPlasticChestArmor.glb" id="1_l1ddd"]
+
+[node name="EngineeringPlasticChestArmor" unique_id=621909954 instance=ExtResource("1_l1ddd")]
+
+[node name="FTF_Equipment_EngineeringPlasticChestArmor" parent="." index="0" unique_id=1655713396]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)

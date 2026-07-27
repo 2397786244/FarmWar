@@ -1,0 +1,29 @@
+[gd_scene load_steps=4 format=3 uid="uid://burpjjy6srsr2"]
+
+[ext_resource type="PackedScene" uid="uid://dfinpac76yw1f" path="res://assets/buildings/LivestockChopFrame.glb" id="1_2nhk0"]
+[ext_resource type="Script" path="res://src/livestock_chop.gd" id="2_script"]
+[ext_resource type="PackedScene" uid="uid://c1y6j4iyxlfc5" path="res://assets/buildings/LivestockChopCompleted.glb" id="3_completed"]
+
+[node name="LivestockFrame" type="StaticBody3D" unique_id=1302022115]
+collision_layer = 4096
+collision_mask = 0
+script = ExtResource("2_script")
+chop_kind = "livestock"
+construction_seconds = 180.0
+required_log_kg = 30.0
+required_iron_kg = 10.0
+completed_model_scene = ExtResource("3_completed")
+
+[node name="FrameModel" parent="." unique_id=214463291 instance=ExtResource("1_2nhk0")]
+
+[node name="Slot1" type="Node3D" parent="."]
+position = Vector3(-2.1786263, 0, -0.14641237)
+
+[node name="Slot2" type="Node3D" parent="."]
+position = Vector3(-0.79503703, 0, -0.14641237)
+
+[node name="Slot3" type="Node3D" parent="."]
+position = Vector3(0.7273617, 0, -0.14641237)
+
+[node name="Slot4" type="Node3D" parent="."]
+position = Vector3(2.1039107, 0, -0.14641237)

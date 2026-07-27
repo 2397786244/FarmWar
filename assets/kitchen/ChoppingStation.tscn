@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://do3vifd0um150"]
+
+[ext_resource type="PackedScene" uid="uid://bvdxugf3shl55" path="res://assets/kitchen/ChoppingStation.glb" id="1_yg0vg"]
+
+[node name="ChoppingStation" unique_id=1676537271 instance=ExtResource("1_yg0vg")]
+
+[node name="Blade" parent="FTF_Kitchen_ChoppingStation" parent_id_path=PackedInt32Array(243568101) index="0" unique_id=1575224258]
+transform = Transform3D(0.59190065, 0, -0.80601096, 0, 1, 0, 0.80601096, 0, 0.59190065, 0.30876946, 1.055, 0.031358823)
+
+[node name="Handle" parent="FTF_Kitchen_ChoppingStation" parent_id_path=PackedInt32Array(243568101) index="3" unique_id=1350962741]
+transform = Transform3D(0.59190065, 0, -0.80601096, 0, 1, 0, 0.80601096, 0, 0.59190065, 0.42123055, 1.055, 0.1845009)

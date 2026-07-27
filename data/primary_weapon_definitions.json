@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "weapons": [
+	{
+	  "id": "rubber_revolver",
+	  "name": "橡胶左轮",
+	  "tool_scene": "res://character/weapons/Revolver.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 0.3,
+	  "description": "发射橡胶弹进行中近距离点射；左键射击，右键瞄准。"
+	},
+	{
+	  "id": "flame_gun",
+	  "name": "火焰枪",
+	  "tool_scene": "res://character/weapons/FlameGun.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 0.4,
+	  "description": "持续喷射火焰压制近距离敌人；左键喷火，右键瞄准。"
+	},
+	{
+	  "id": "freeze_gun",
+	  "name": "冰冻枪",
+	  "tool_scene": "res://character/weapons/FreezeGun.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 0.4,
+	  "description": "发射冰冻弹减速并干扰敌人；左键射击，右键瞄准。"
+	},
+	{
+	  "id": "nail_gun",
+	  "name": "射钉枪",
+	  "tool_scene": "res://character/weapons/NailGun.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 0.1,
+	  "description": "高速射出钉弹，适合连续压制；左键射击，右键瞄准。"
+	},
+	{
+	  "id": "suppressed_pistol",
+	  "loadout_selectable": false,
+	  "name": "消音手枪",
+	  "tool_scene": "res://character/weapons/SuppressedPistol.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10.0,
+	  "cooldown": 0.1,
+	  "description": "单手持握的快速射击武器，射程100米，单发伤害30。"
+	},
+	{
+	  "id": "shotgun",
+	  "name": "双管猎枪",
+	  "tool_scene": "res://character/weapons/Shotgun.tscn",
+	  "icon": "",
+	  "power": 120,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "双手持握，每次以小夹角同时发射两颗弹丸，每颗伤害60。"
+	},
+	{
+	  "id": "hunting_rifle",
+	  "name": "栓动猎枪",
+	  "tool_scene": "res://character/weapons/HuntingRifle.tscn",
+	  "icon": "",
+	  "power": 80,
+	  "fire_rate": 0.5,
+	  "cooldown": 2.0,
+	  "description": "双手持握的远距离栓动步枪，射程120米，单发伤害80。"
+	},
+	{
+	  "id": "m4",
+	  "loadout_selectable": false,
+	  "name": "M4卡宾枪",
+	  "tool_scene": "res://character/weapons/M4.tscn",
+	  "icon": "",
+	  "power": 45,
+	  "fire_rate": 8.33,
+	  "cooldown": 0.12,
+	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
+	},
+	{
+	  "id": "ar15",
+	  "loadout_selectable": false,
+	  "name": "AR15步枪",
+	  "tool_scene": "res://character/weapons/AR15.tscn",
+	  "icon": "",
+	  "power": 55,
+	  "fire_rate": 5.0,
+	  "cooldown": 0.2,
+	  "description": "双手持握的现代步枪，单发伤害和有效射程高于M4。"
+	},
+	{
+	  "id": "eater",
+	  "name": "吸能枪",
+	  "tool_scene": "res://character/weapons/Eater.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 2.0,
+	  "description": "吸收附近可回收的作物与投射物；靠近目标后左键使用。"
+	},
+	{
+	  "id": "sprout_blaster",
+	  "name": "种子播撒器",
+	  "tool_scene": "res://character/weapons/SproutBlaster.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 0.5,
+	  "description": "向己方农田播下选定种子；瞄准空农田后左键使用。"
+	},
+	{
+	  "id": "wreck",
+	  "name": "破坏者",
+	  "tool_scene": "res://character/weapons/Wreck.tscn",
+	  "icon": "",
+	  "power": 0,
+	  "fire_rate": 0,
+	  "cooldown": 2.0,
+	  "description": "发射爆炸炮弹破坏敌方设施与农田；瞄准目标后左键发射。"
+	}
+  ]
+}

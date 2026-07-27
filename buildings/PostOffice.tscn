@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://btjsxy8xp156v"]
+
+[ext_resource type="PackedScene" uid="uid://cblyvie50x28l" path="res://assets/buildings/PostOffice.glb" id="1_72pfc"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_72pfc"]
+size = Vector3(8, 4, 7)
+
+[node name="PostOffice" type="StaticBody3D" unique_id=1097236851]
+collision_layer = 4096
+collision_mask = 12971
+
+[node name="PostOffice" parent="." unique_id=614791234 instance=ExtResource("1_72pfc")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=661316602]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0570345, 0)
+shape = SubResource("BoxShape3D_72pfc")

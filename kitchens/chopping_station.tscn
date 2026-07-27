@@ -1,0 +1,26 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/kitchen/ChoppingStation.tscn" id="1_model"]
+[ext_resource type="Script" path="res://src/chopping_station.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_chopping"]
+size = Vector3(1.2, 1.053667, 0.8375)
+
+[node name="ChoppingStation" type="StaticBody3D"]
+collision_layer = 512
+collision_mask = 11
+script = ExtResource("2_script")
+display_name = "切菜台"
+
+[node name="ChoppingStation" parent="." instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5568335, 0.03875)
+shape = SubResource("BoxShape3D_chopping")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.55, 0)
+billboard = 1
+font_size = 40
+outline_size = 8
+text = "手持可切碎食材后按 [E] 放置"

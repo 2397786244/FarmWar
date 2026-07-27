@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://vj2x6wfy5tmp"]
+
+[ext_resource type="PackedScene" uid="uid://baho332v7bvfi" path="res://tools/generated_farmtown_traps/FTF_Trap_MimicCrate_MechTongue_3m_v7.glb" id="1_krti6"]
+
+[node name="FTF_Trap_MimicCrate_MechTongue_3m_v72" unique_id=617573737 instance=ExtResource("1_krti6")]
+
+[node name="VictimAnchor" parent="FTF_Trap_MimicCrate_MechTongue_3m_v7" parent_id_path=PackedInt32Array(1616503560) index="4" unique_id=1738558432]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4391384, 1.8260522)

@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://b26w47qnanl2h"]
+
+[ext_resource type="PackedScene" uid="uid://jjd8hlv3vynl" path="res://tools/generated_farmtown_houses/normal_house_2.glb" id="1_4upht"]
+
+[node name="NormalHouse2" type="StaticBody3D" unique_id=1065905147]
+
+[node name="normal_house_2" parent="." unique_id=2082174949 instance=ExtResource("1_4upht")]

@@ -1,0 +1,13 @@
+{
+  "server_name": "Farm Battle Server",
+  "map_id": "creston_town",
+  "map_name": "Creston Town",
+  "game_mode": "5v5_Battle",
+  "port": 2088,
+  "query_port": 2089,
+  "max_clients": 10,
+  "match_duration_minutes": 20,
+  "death_drop_mode": "save",
+  "metrics_log_enabled": true,
+  "metrics_log_interval_seconds": 10.0
+}

@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://diij0stcj73oh"]
+
+[ext_resource type="PackedScene" uid="uid://cbkxiua0rwcn5" path="res://assets/equipments/FTF_Equipment_PumpkinLegArmor_Left.glb" id="1_pcgbw"]
+
+[node name="PumpkinLegArmorLeft" type="Node3D" unique_id=1079791743]
+
+[node name="Mesh" parent="." unique_id=1461394504 instance=ExtResource("1_pcgbw")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.20974651, -0.47788244, 0.05978877)

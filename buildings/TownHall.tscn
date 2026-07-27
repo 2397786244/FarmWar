@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cjrag4kh54fkn"]
+
+[ext_resource type="PackedScene" uid="uid://46g036kdf2av" path="res://assets/buildings/FTF_Building_StoneTownHall_TwoStorey_14x10m.glb" id="1_7xiv6"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7xiv6"]
+size = Vector3(14, 10, 13)
+
+[node name="TownHall" type="StaticBody3D" unique_id=756730018]
+collision_layer = 4096
+
+[node name="FTF_Building_StoneTownHall_TwoStorey_14x10m2" parent="." unique_id=157646580 instance=ExtResource("1_7xiv6")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1207314021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.9956264, 0)
+shape = SubResource("BoxShape3D_7xiv6")

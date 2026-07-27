@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://bp5bfl7p3l84l"]
+
+[ext_resource type="PackedScene" uid="uid://u5156yc5edao" path="res://assets/tools/ShieldDoor.glb" id="1_gp4x4"]
+
+[node name="ShieldDoor" unique_id=2015591193 instance=ExtResource("1_gp4x4")]

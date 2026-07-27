@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://q8upfanb8fmv"]
+
+[ext_resource type="PackedScene" uid="uid://c2o6mhqmou1sy" path="res://assets/food/fast_food/FriedChickenNuggets.glb" id="1_3sju7"]
+
+[node name="FriedChickenNuggets" unique_id=330165384 instance=ExtResource("1_3sju7")]
