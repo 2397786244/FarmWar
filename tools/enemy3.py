@@ -1,15 +1,15 @@
 # Blender 4.x / 5.x
 # V3.9: FlavorTrickster vest / belt coplanar-surface fixes
-# Self-contained Food War character generator.
+# Self-contained FarmWar character generator.
 # Builds Rider (male, sunglasses) and Engineer (female, light-blue long hair)
 # stylized low-poly roles, each in Red and Blue variants. Includes rigid humanoid
 # rig, the same ten
-# animation clip names/poses as the existing Food War pipeline, GLB export,
+# animation clip names/poses as the existing FarmWar pipeline, GLB export,
 # re-import validation, and rendered pose checks.
 #
 # Run (macOS example):
 # "/Applications/Blender.app/Contents/MacOS/Blender" --background --factory-startup \
-#   --python generate_foodwar_female_roles_rigged.py -- --output /path/to/output
+#   --python generate_farmwar_female_roles_rigged.py -- --output /path/to/output
 #
 # WARNING: Script runs in factory startup scenes and clears its own scene.
 
@@ -253,7 +253,7 @@ try:
 except NameError:
     SCRIPT_DIR = os.getcwd()
 
-DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "generated_foodwar_enemies")
+DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "generated_farmwar_enemies")
 FPS = 30
 RENDER_POSE_CHECKS = True
 POSE_CHECKS = {
@@ -280,7 +280,7 @@ EXPRESSIONS = ("Calm", "Fierce", "Funny", "Happy", "Worried")
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Generate rigged Food War enemy villain characters with animations, GLB export, and pose checks."
+        description="Generate rigged FarmWar enemy villain characters with animations, GLB export, and pose checks."
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument(

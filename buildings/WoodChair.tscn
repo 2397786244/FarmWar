@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://2awybs5wtndb"]
+
+[ext_resource type="PackedScene" uid="uid://bp1vve57d7ssj" path="res://assets/buildings/FTF_Prop_WoodBench_RusticLog_2m.glb" id="1_nwqj5"]
+
+[node name="WoodChair" type="StaticBody3D" unique_id=1941240362]
+
+[node name="FTF_Prop_WoodBench_RusticLog_2m2" parent="." unique_id=156117946 instance=ExtResource("1_nwqj5")]

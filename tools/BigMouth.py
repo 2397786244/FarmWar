@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Mimic Crate Trap with Mechanical Tongue [REV4]
+# FarmWar / Farm Town - Mimic Crate Trap with Mechanical Tongue [REV4]
 #
 # Generates:
 #   generated_farmtown_traps/

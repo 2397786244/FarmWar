@@ -36,35 +36,65 @@ func _build_multimeshes() -> void:
 			child.queue_free()
 	multimeshes.clear()
 	var groups: Dictionary = {}
-	for resource in resources:
-		var visual: Node3D = resource.get("mesh_root") if _has_property(resource, "mesh_root") else null
-		var source := _find_first_mesh_instance(visual) if is_instance_valid(visual) else null
-		if source == null or source.mesh == null:
+	for resource_value in resources:
+		var resource := resource_value as Node3D
+		if resource == null:
 			continue
-		var key := str(source.mesh.resource_path) if not source.mesh.resource_path.is_empty() else str(resource.get_path())
-		if not groups.has(key):
-			groups[key] = {"mesh": source.mesh, "trees": []}
-		(groups[key]["trees"] as Array).append(resource)
+		var visual: Node3D = resource.get("mesh_root") if _has_property(resource, "mesh_root") else null
+		if not is_instance_valid(visual):
+			continue
+		resource.set_meta("forest_multimesh_bindings", [])
+		resource.remove_meta("forest_multimesh_key")
+		resource.remove_meta("forest_multimesh_index")
+		if _has_property(resource, "forest_manager"):
+			resource.set("forest_manager", self)
+		var sources: Array[MeshInstance3D] = []
+		_collect_mesh_instances(visual, sources)
+		for source in sources:
+			if source.mesh == null or not source.visible:
+				continue
+			var key := _mesh_group_key(resource, source)
+			if not groups.has(key):
+				groups[key] = {
+					"mesh": source.mesh,
+					"entries": [],
+					"cast_shadow": source.cast_shadow,
+					"material_override": source.material_override,
+				}
+			(groups[key]["entries"] as Array).append({
+				"resource": resource,
+				"source_path": resource.get_path_to(source),
+			})
+	var group_number := 0
 	for key: String in groups.keys():
 		var group: Dictionary = groups[key]
-		var group_trees: Array = group["trees"]
+		var entries: Array = group["entries"]
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
 		multi.mesh = group["mesh"]
-		multi.instance_count = group_trees.size()
-		for index in range(group_trees.size()):
-			var resource: Node3D = group_trees[index]
-			var source_transform: Transform3D = source_global_transform(resource, group["mesh"])
-			multi.set_instance_transform(index, source_transform)
-			resource.set_meta("forest_multimesh_key", key)
-			resource.set_meta("forest_multimesh_index", index)
-			if _has_property(resource, "forest_manager"):
-				resource.set("forest_manager", self)
+		multi.instance_count = entries.size()
+		for index in range(entries.size()):
+			var entry := entries[index] as Dictionary
+			var resource := entry.get("resource", null) as Node3D
+			var source_path := entry.get("source_path", NodePath()) as NodePath
+			var source := resource.get_node_or_null(source_path) as MeshInstance3D \
+				if resource != null else null
+			if source != null:
+				multi.set_instance_transform(index, source.global_transform)
+			var bindings := resource.get_meta("forest_multimesh_bindings", []) as Array
+			bindings.append({"key": key, "index": index, "source_path": source_path})
+			resource.set_meta("forest_multimesh_bindings", bindings)
 		var instance := MultiMeshInstance3D.new()
-		instance.name = "MultiMesh_%s" % key.get_file().get_basename()
+		instance.name = "ResourceMultiMesh_%03d_%s" % [
+			group_number, _safe_mesh_name(group["mesh"] as Mesh)
+		]
 		instance.multimesh = multi
+		instance.cast_shadow = int(group.get("cast_shadow", GeometryInstance3D.SHADOW_CASTING_SETTING_ON)) \
+			as GeometryInstance3D.ShadowCastingSetting
+		instance.material_override = group.get("material_override", null) as Material
 		add_child(instance)
 		multimeshes[key] = multi
+		group_number += 1
 
 
 func on_tree_destroyed(tree: HarvestTree) -> void:
@@ -125,18 +155,26 @@ func _set_instance_visible(tree: HarvestTree, visible: bool) -> void:
 
 
 func _set_resource_instance_visible(resource: Node, visible: bool) -> void:
-	var key := str(resource.get_meta("forest_multimesh_key", ""))
-	var index := int(resource.get_meta("forest_multimesh_index", -1))
-	var multi: MultiMesh = multimeshes.get(key, null)
-	if multi != null and index >= 0 and index < multi.instance_count:
-		var transform: Transform3D = source_global_transform(resource, multi.mesh) if visible else Transform3D(Basis.IDENTITY, Vector3(0, -10000, 0))
+	var bindings_value: Variant = resource.get_meta("forest_multimesh_bindings", [])
+	if not bindings_value is Array:
+		return
+	for binding_value: Variant in bindings_value as Array:
+		if not binding_value is Dictionary:
+			continue
+		var binding := binding_value as Dictionary
+		var key := str(binding.get("key", ""))
+		var index := int(binding.get("index", -1))
+		var multi := multimeshes.get(key, null) as MultiMesh
+		if multi == null or index < 0 or index >= multi.instance_count:
+			continue
+		var transform := Transform3D(Basis.IDENTITY, Vector3(0, -10000, 0))
+		if visible:
+			var source_path := binding.get("source_path", NodePath()) as NodePath
+			var source := resource.get_node_or_null(source_path) as MeshInstance3D
+			if source == null:
+				continue
+			transform = source.global_transform
 		multi.set_instance_transform(index, transform)
-
-
-func source_global_transform(resource: Node, mesh: Mesh) -> Transform3D:
-	var visual: Node3D = resource.get("mesh_root") if _has_property(resource, "mesh_root") else null
-	var source := _find_first_mesh_instance(visual) if is_instance_valid(visual) else null
-	return source.global_transform if source != null and source.mesh == mesh else resource.global_transform
 
 
 func _resource_id(resource: Node) -> String:
@@ -147,16 +185,29 @@ func _resource_id(resource: Node) -> String:
 	return str(resource.get_path())
 
 
-func _find_first_mesh_instance(node: Node) -> MeshInstance3D:
+func _collect_mesh_instances(node: Node, result: Array[MeshInstance3D]) -> void:
 	if node == null:
-		return null
+		return
 	for child in node.get_children():
 		if child is MeshInstance3D:
-			return child as MeshInstance3D
-		var nested := _find_first_mesh_instance(child)
-		if nested != null:
-			return nested
-	return null
+			result.append(child as MeshInstance3D)
+		_collect_mesh_instances(child, result)
+
+
+func _mesh_group_key(resource: Node3D, source: MeshInstance3D) -> String:
+	var scene_identity := resource.scene_file_path
+	if scene_identity.is_empty() and source.mesh != null:
+		scene_identity = source.mesh.resource_path
+	if scene_identity.is_empty() and source.mesh != null:
+		scene_identity = "mesh_%d" % source.mesh.get_instance_id()
+	return "%s::%s" % [scene_identity, str(resource.get_path_to(source))]
+
+
+func _safe_mesh_name(mesh: Mesh) -> String:
+	if mesh == null:
+		return "Mesh"
+	var result := mesh.resource_name.validate_node_name()
+	return result if not result.is_empty() else "Mesh"
 
 
 func _has_property(node: Object, property_name: String) -> bool:

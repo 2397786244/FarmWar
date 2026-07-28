@@ -72,14 +72,22 @@ func _run_validation() -> void:
 		if mesh == null or mesh.visible:
 			_fail("independent Mesh did not disappear: %s" % scene_path)
 			return
-		var multi_key := str(ore.get_meta("forest_multimesh_key", ""))
-		var multi: MultiMesh = multimeshes.get(multi_key, null) as MultiMesh
-		var multi_index := int(ore.get_meta("forest_multimesh_index", -1))
+		var bindings := ore.get_meta("forest_multimesh_bindings", []) as Array
+		var expected_mesh_count := mesh.find_children("*", "MeshInstance3D", true, false).size()
+		if bindings.size() != expected_mesh_count:
+			_fail("incomplete MultiMesh component bindings: %s (%d/%d)" % [
+				scene_path, bindings.size(), expected_mesh_count,
+			])
+			return
 		manager.call("on_resource_destroyed", ore)
 		await process_frame
-		if multi == null or multi_index < 0 or multi_index >= multi.instance_count:
-			_fail("invalid MultiMesh binding: %s" % scene_path)
-			return
+		for binding_value: Variant in bindings:
+			var binding := binding_value as Dictionary
+			var multi := multimeshes.get(str(binding.get("key", "")), null) as MultiMesh
+			var multi_index := int(binding.get("index", -1))
+			if multi == null or multi_index < 0 or multi_index >= multi.instance_count:
+				_fail("invalid MultiMesh binding: %s" % scene_path)
+				return
 		ore.call("respawn_from_forest")
 		if bool(ore.get("destroyed")) or mesh.visible:
 			_fail("respawn visibility failed: %s" % scene_path)

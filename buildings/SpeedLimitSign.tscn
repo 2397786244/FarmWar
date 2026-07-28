@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cv5u28bk6hstc"]
+
+[ext_resource type="PackedScene" uid="uid://65066c00lobj" path="res://assets/buildings/FTF_Street_SpeedLimitSign_2_4m.glb" id="1_unkd8"]
+
+[node name="SpeedLimitSign" type="StaticBody3D" unique_id=1068613549]
+
+[node name="FTF_Street_SpeedLimitSign_2_4m2" parent="." unique_id=123471440 instance=ExtResource("1_unkd8")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)

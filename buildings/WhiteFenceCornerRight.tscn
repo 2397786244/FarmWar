@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://d3s6tkn0ymhc1"]
+
+[ext_resource type="PackedScene" uid="uid://cwpmewdyymi6h" path="res://assets/buildings/FTF_GardenFence_WhiteTall_CornerRight_2m.glb" id="1_7ycfx"]
+
+[node name="WhiteFenceCornerRight" type="StaticBody3D" unique_id=1257393786]
+
+[node name="FTF_GardenFence_WhiteTall_CornerRight_2m2" parent="." unique_id=1341639682 instance=ExtResource("1_7ycfx")]

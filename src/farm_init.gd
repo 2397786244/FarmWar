@@ -10,6 +10,9 @@ signal map_initialization_completed
 
 var is_map_initialized := false
 
+const FUTURE_WARRIOR_AI_SCENE := preload("res://character/FutureWarriorAI.tscn")
+const FARMER_AI_SCENE := preload("res://character/FarmerAI.tscn")
+
 
 func _ready() -> void:
 	GlobalVar.gameworld = self
@@ -23,12 +26,17 @@ func _ready() -> void:
 	map_initialization_completed.emit()
 
 	var player := _create_pending_player()
+	var farmer_ai: FarmerAI
 	if player != null:
 		_set_loading_progress(0.99, "正在生成玩家")
 		await get_tree().process_frame
+		_spawn_singleplayer_future_warrior()
+		farmer_ai = _spawn_singleplayer_farmer_ai()
 	await MapLoading.finish_loading()
 	if is_instance_valid(player):
 		player.process_mode = Node.PROCESS_MODE_INHERIT
+	if is_instance_valid(farmer_ai):
+		farmer_ai.process_mode = Node.PROCESS_MODE_INHERIT
 
 
 func wait_until_initialized() -> void:
@@ -103,6 +111,48 @@ func _create_pending_player() -> GamePlayer:
 		)
 	GlobalVar.pending_player_selection = {}
 	return player
+
+
+func _spawn_singleplayer_future_warrior() -> void:
+	# 单人局由本地权威生成一名蓝方敌人。多人局只保留真实玩家，
+	# 不在客户端或专用服务器地图中额外生成这名 AI。
+	if not GameAuthority.is_local_authority():
+		return
+	if not get_tree().get_nodes_in_group("future_warrior_ai").is_empty():
+		return
+	var future_warrior := FUTURE_WARRIOR_AI_SCENE.instantiate() as FutureWarriorAI
+	if future_warrior == null:
+		push_error("无法实例化 FutureWarriorAI 场景。")
+		return
+	future_warrior.name = "FutureWarrior_Blue"
+	future_warrior.team_id = "blue"
+	add_child(future_warrior)
+	future_warrior.global_position = get_team_spawn_position(
+		"blue",
+		1,
+		GameAuthority.LOCAL_PLAYER_ID
+	)
+
+
+func _spawn_singleplayer_farmer_ai() -> FarmerAI:
+	if not GameAuthority.is_local_authority():
+		return null
+	if not get_tree().get_nodes_in_group("farmer_ai").is_empty():
+		return null
+	var farmer := FARMER_AI_SCENE.instantiate() as FarmerAI
+	if farmer == null:
+		push_error("无法实例化 FarmerAI 场景。")
+		return null
+	farmer.name = "FarmerAI_Blue"
+	farmer.team_id = "blue"
+	farmer.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(farmer)
+	farmer.global_position = get_team_spawn_position(
+		"blue",
+		2,
+		GameAuthority.LOCAL_PLAYER_ID
+	)
+	return farmer
 
 
 func get_team_spawn_position(team: String, player_index := 0, random_seed := 0) -> Vector3:

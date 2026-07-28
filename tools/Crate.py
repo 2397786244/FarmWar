@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Wooden Slat Crates (2m and 3m)
+# FarmWar / Farm Town - Wooden Slat Crates (2m and 3m)
 #
 # Generates:
 #   generated_farmtown_props/

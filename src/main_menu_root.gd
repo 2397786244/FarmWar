@@ -78,7 +78,7 @@ func _on_singleplayer_requested() -> void:
 		"peer_id": GameAuthority.LOCAL_PLAYER_ID,
 		"display_name": "LocalPlayer",
 		"team": "red",
-		"hero_id": "assistant",
+		"hero_id": "cook",
 		"primary_weapon_ids": ["sprout_blaster", "brick", "freeze_gun"],
 		"special_tool_ids": ["small_mouse", "wand"],
 		"ready": true,

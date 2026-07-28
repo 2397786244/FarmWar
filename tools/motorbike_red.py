@@ -1,4 +1,4 @@
-# Blender 4.x / 5.x - standalone Food War asset generator
+# Blender 4.x / 5.x - standalone FarmWar asset generator
 # This script creates a visual-only GLB and a 1100x700 PNG preview.
 # It clears the scene, generates the asset, validates it, exports it, then
 # clears the scene again and re-imports the GLB for final validation.
@@ -10,7 +10,7 @@ import os
 from mathutils import Vector
 
 ASSET_NAME = "FTF_Vehicle_Motorbike_Red"
-OUTPUT_FOLDER_NAME = "generated_foodwar_assets"
+OUTPUT_FOLDER_NAME = "generated_farmwar_assets"
 PREVIEW_SIZE = (1100, 700)
 
 try:
@@ -450,7 +450,7 @@ def main():
 
 
 
-# Food War vehicle asset: compact stylized motorbike, 1.5m tall.
+# FarmWar vehicle asset: compact stylized motorbike, 1.5m tall.
 EXPECTED_HEIGHT = 1.50
 HEIGHT_TOLERANCE = 0.08
 TEAM_COLOR_HEX = "#C9433F"
@@ -468,7 +468,7 @@ def build_asset():
     tire = make_material("BikeTire", "#242A2E", roughness=0.88)
     lamp = make_material("BikeLamp", "#E9B93F", roughness=0.45, metallic=0.08)
 
-    # Front is local -Y, as required by the Food War coordinate convention.
+    # Front is local -Y, as required by the FarmWar coordinate convention.
     # Wheels sit exactly on Z=0 and form the main readable silhouette.
     for prefix, y in (("Front", -0.78), ("Rear", 0.78)):
         add_cylinder(

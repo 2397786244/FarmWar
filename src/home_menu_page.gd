@@ -8,11 +8,11 @@ signal settings_requested
 signal quit_requested
 
 const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_PANEL_2 := Color("#22324A")
+const COLOR_PANEL_2 := Color("#171B1F")
 const COLOR_ACCENT := Color("#54D6A2")
 const COLOR_TEXT := Color("#F4F7FA")
 const COLOR_MUTED := Color("#AFC2D0")
+const START_SCENE := preload("res://ui/start_scene.tscn")
 
 
 func _ready() -> void:
@@ -27,48 +27,56 @@ func _build_interface() -> void:
 
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = COLOR_BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	var transition_shade := ColorRect.new()
+	transition_shade.color = Color(0.0, 0.0, 0.0, 0.0)
+	transition_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	transition_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	var studio := START_SCENE.instantiate() as StartSceneShowcase
+	studio.transition_alpha_changed.connect(
+		func(alpha: float) -> void:
+			transition_shade.color.a = alpha
+	)
+	add_child(studio)
 
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(760, 620)
-	panel.add_theme_stylebox_override("panel", _style_box(COLOR_PANEL, 30))
-	center.add_child(panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 54)
-	margin.add_theme_constant_override("margin_top", 48)
-	margin.add_theme_constant_override("margin_right", 54)
-	margin.add_theme_constant_override("margin_bottom", 48)
-	panel.add_child(margin)
+	var shade := ColorRect.new()
+	shade.color = Color(0.015, 0.02, 0.025, 0.16)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(shade)
+	add_child(transition_shade)
 
 	var box := VBoxContainer.new()
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 22)
-	margin.add_child(box)
+	box.anchor_top = 1.0
+	box.anchor_bottom = 1.0
+	box.offset_left = 58.0
+	box.offset_top = -520.0
+	box.offset_right = 398.0
+	box.offset_bottom = -48.0
+	box.alignment = BoxContainer.ALIGNMENT_END
+	box.add_theme_constant_override("separation", 13)
+	add_child(box)
 
 	var title := Label.new()
-	title.text = "FOOD WAR"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 72)
+	title.text = "农场大乱斗"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.add_theme_font_size_override("font_size", 58)
 	title.add_theme_color_override("font_color", COLOR_TEXT)
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	title.add_theme_constant_override("outline_size", 8)
 	box.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "农场厨房对抗游戏"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 28)
+	subtitle.text = "FarmWar"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	subtitle.add_theme_font_size_override("font_size", 20)
 	subtitle.add_theme_color_override("font_color", COLOR_MUTED)
+	subtitle.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	subtitle.add_theme_constant_override("outline_size", 5)
 	box.add_child(subtitle)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size.y = 24
+	spacer.custom_minimum_size.y = 10
 	box.add_child(spacer)
 
 	var single_button := _make_button("单人游戏")
@@ -101,12 +109,14 @@ func _on_multiplayer_pressed() -> void:
 func _make_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(360, 64)
-	button.add_theme_font_size_override("font_size", 28)
+	button.custom_minimum_size = Vector2(310, 52)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	button.add_theme_font_size_override("font_size", 22)
 	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 18))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 18))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_ACCENT, 18))
+	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 6))
+	button.add_theme_stylebox_override("hover", _style_box(Color("#C56D31"), 6))
+	button.add_theme_stylebox_override("pressed", _style_box(COLOR_ACCENT, 6))
+	button.add_theme_stylebox_override("focus", _style_box(Color("#28302D"), 6))
 	return button
 
 

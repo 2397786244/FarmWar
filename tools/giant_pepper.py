@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # ---------------------------------------------------------------------
-# Farm Town / Food War - Giant Red Lying Pepper Crop
+# Farm Town / FarmWar - Giant Red Lying Pepper Crop
 #
 # Generates one GLB:
 #   FTF_Crop_GiantRedPepper_Lying.glb

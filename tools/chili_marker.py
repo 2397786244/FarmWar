@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Chef Chili Marker Sprayer
+# FarmWar / Farm Town - Chef Chili Marker Sprayer
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_ChiliMarkerSprayer_RedBlack_v1.glb

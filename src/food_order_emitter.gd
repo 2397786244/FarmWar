@@ -17,6 +17,10 @@ const DELIVERY_MAX_DURATION_SECONDS := 1200.0
 const DELIVERY_MAX_WORKLOAD_TIME_FACTOR := 1.5
 const DELIVERY_RESULT_DISPLAY_SECONDS := 30.0
 const DELIVERY_NEXT_TASK_DELAY_SECONDS := 60.0
+const INITIAL_RESOURCE_TASK_PHASE_SECONDS := 360.0
+const DEFAULT_MATCH_DURATION_SECONDS := 48.0 * 60.0
+const MID_GAME_PROGRESS := 0.3
+const LATE_GAME_PROGRESS := 0.6
 const DELIVERY_CHAIN_CATEGORIES := [
 	COOKED_DISH_DELIVERY,
 	FARM_PRODUCE_DELIVERY,
@@ -46,6 +50,8 @@ var _material_collection_inventory: Array[Dictionary] = []
 var _inventory_ready := false
 var _rng := RandomNumberGenerator.new()
 var _chain_update_accumulator := 0.0
+var _local_match_elapsed_seconds := 0.0
+var _tracked_authority_mode := ""
 
 
 func _ready() -> void:
@@ -59,6 +65,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if GameAuthority.is_client_proxy():
 		return
+	_track_local_match_elapsed(delta)
 	_chain_update_accumulator += delta
 	if _chain_update_accumulator < 0.5:
 		return
@@ -109,9 +116,10 @@ func ensure_delivery_task_chains() -> void:
 			ready_for_next_task = false
 	if not ready_for_next_task:
 		return
-	var route: String = DELIVERY_CHAIN_CATEGORIES[
-		_rng.randi_range(0, DELIVERY_CHAIN_CATEGORIES.size() - 1)
-	]
+	var route_pool: Array = DELIVERY_CHAIN_CATEGORIES
+	if _get_match_elapsed_seconds() < INITIAL_RESOURCE_TASK_PHASE_SECONDS:
+		route_pool = [FARM_PRODUCE_DELIVERY, MATERIAL_COLLECTION]
+	var route: String = str(route_pool[_rng.randi_range(0, route_pool.size() - 1)])
 	var category := route
 	var competitive_location: Dictionary = {}
 	var order_profile := ""
@@ -157,7 +165,7 @@ func ensure_delivery_task_chains() -> void:
 			"managed_delivery_chain": true,
 		}
 		if category == MATERIAL_COLLECTION:
-			metadata["material_group"] = "ore"
+			metadata["material_group"] = "ore" if _rng.randf() < 0.5 else "wood"
 		emit_random_delivery_task(
 			team, category,
 			"hard" if category == COOKED_DISH_DELIVERY and _rng.randf() < 0.4 else "simple",
@@ -211,6 +219,39 @@ func _get_roadside_diner_delivery_location(category: String) -> Dictionary:
 	return {}
 
 
+func _track_local_match_elapsed(delta: float) -> void:
+	var mode_name := str(GameAuthority.mode)
+	if mode_name != _tracked_authority_mode:
+		_tracked_authority_mode = mode_name
+		_local_match_elapsed_seconds = 0.0
+	if GameAuthority.is_local_authority():
+		_local_match_elapsed_seconds += maxf(0.0, delta)
+
+
+func _get_match_elapsed_seconds() -> float:
+	var manager: Node = GameAuthority.server_manager
+	if is_instance_valid(manager) and manager.has_method("get_match_elapsed_seconds"):
+		return maxf(0.0, float(manager.call("get_match_elapsed_seconds")))
+	return _local_match_elapsed_seconds
+
+
+func _get_match_duration_seconds() -> float:
+	var manager: Node = GameAuthority.server_manager
+	if is_instance_valid(manager) and manager.has_method("get_match_duration_seconds"):
+		return maxf(60.0, float(manager.call("get_match_duration_seconds")))
+	return DEFAULT_MATCH_DURATION_SECONDS
+
+
+func _get_current_requirement_multiplier() -> int:
+	var duration := _get_match_duration_seconds()
+	var progress := clampf(_get_match_elapsed_seconds() / maxf(1.0, duration), 0.0, 1.0)
+	if progress >= LATE_GAME_PROGRESS:
+		return 3
+	if progress >= MID_GAME_PROGRESS:
+		return 2
+	return 1
+
+
 func _unix_msec() -> int:
 	return roundi(Time.get_unix_time_from_system() * 1000.0)
 
@@ -219,10 +260,10 @@ func _rebuild_delivery_inventory() -> void:
 	_cooked_dish_inventory.clear()
 	_farm_produce_inventory.clear()
 	_material_collection_inventory = [
-		{"material_id": "iron", "display_name": "铁矿", "material_group": "ore", "unit": "count", "rarity": "uncommon", "reward_weight": 1.25, "min_quantity": 30, "max_quantity": 70},
-		{"material_id": "copper", "display_name": "铜矿", "material_group": "ore", "unit": "count", "rarity": "rare", "reward_weight": 1.6, "min_quantity": 10, "max_quantity": 35},
-		{"material_id": "coal", "display_name": "煤矿", "material_group": "ore", "unit": "count", "rarity": "common", "reward_weight": 1.0, "min_quantity": 50, "max_quantity": 100},
-		{"material_id": "limestone", "display_name": "石灰石", "material_group": "ore", "unit": "count", "rarity": "common", "reward_weight": 1.0, "min_quantity": 45, "max_quantity": 90},
+		{"material_id": "iron", "display_name": "铁矿", "material_group": "ore", "unit": "count", "rarity": "uncommon", "reward_weight": 1.25, "min_quantity": 1, "max_quantity": 3},
+		{"material_id": "copper", "display_name": "铜矿", "material_group": "ore", "unit": "count", "rarity": "rare", "reward_weight": 1.6, "min_quantity": 1, "max_quantity": 3},
+		{"material_id": "coal", "display_name": "煤矿", "material_group": "ore", "unit": "count", "rarity": "common", "reward_weight": 1.0, "min_quantity": 1, "max_quantity": 3},
+		{"material_id": "limestone", "display_name": "石灰石", "material_group": "ore", "unit": "count", "rarity": "common", "reward_weight": 1.0, "min_quantity": 1, "max_quantity": 3},
 		{"material_id": "oak_log", "display_name": "橡木材", "material_group": "wood", "unit": "count"},
 		{"material_id": "pine_log", "display_name": "松木材", "material_group": "wood", "unit": "count"},
 		{"material_id": "birch_log", "display_name": "桦木材", "material_group": "wood", "unit": "count"},
@@ -320,7 +361,7 @@ func _emit_random_dish_delivery(target_team: String, difficulty: String, metadat
 	var items: Array[Dictionary] = []
 	for index in range(count):
 		var template: Dictionary = candidates[index]
-		var multiplier := _rng.randi_range(5, 10)
+		var multiplier := _get_current_requirement_multiplier()
 		var quantity := multiplier * int(template.get("base_quantity", 1))
 		items.append({
 			"dish_id": str(template.get("dish_id", "")),
@@ -362,7 +403,7 @@ func _emit_random_farm_delivery(target_team: String, metadata: Dictionary) -> Ar
 	if candidates.is_empty():
 		return []
 	var template: Dictionary = candidates[_rng.randi_range(0, candidates.size() - 1)]
-	var multiplier := _rng.randi_range(50, 100)
+	var multiplier := _get_current_requirement_multiplier()
 	var unit := float(template.get("pickup_unit_kg", 0.01))
 	var required_weight := unit * float(multiplier)
 	var task := _delivery_metadata(FARM_PRODUCE_DELIVERY, "simple", metadata, target_team)
@@ -412,9 +453,10 @@ func _emit_random_material_collection(target_team: String, metadata: Dictionary)
 	var items: Array[Dictionary] = []
 	for index in range(count):
 		var template: Dictionary = candidates[index]
-		var minimum := maxi(1, int(template.get("min_quantity", 50)))
-		var maximum := maxi(minimum, int(template.get("max_quantity", 200)))
-		var quantity := _rng.randi_range(minimum, maximum)
+		var multiplier := _get_current_requirement_multiplier()
+		var minimum := multiplier
+		var maximum := multiplier
+		var quantity := multiplier
 		items.append({
 			"material_id": template["material_id"],
 			"display_name": template["display_name"],
@@ -431,8 +473,8 @@ func _emit_random_material_collection(target_team: String, metadata: Dictionary)
 	task.merge({
 		"task_type": DELIVERY_TASK_TYPE,
 		"delivery_category": MATERIAL_COLLECTION,
-		"title": "矿石配送订单" if required_group == "ore" else "矿石与木材收集任务",
-		"description": "收集指定数量的矿石并交付到本队仓库。" if required_group == "ore" else "收集指定数量的矿石或木材并交付。",
+		"title": "矿石配送订单" if required_group == "ore" else "木材收集任务",
+		"description": "收集指定数量的矿石并交付到本队仓库。" if required_group == "ore" else "收集指定数量的木材并交付到本队仓库。",
 		"delivery_items": items,
 		"active": true,
 	}, true)
@@ -460,17 +502,17 @@ func _apply_scaled_delivery_duration(task: Dictionary, items: Array, category: S
 		var maximum := 1.0
 		match category:
 			COOKED_DISH_DELIVERY:
-				value = float(item.get("multiplier", 5))
-				minimum = 5.0
-				maximum = 10.0
+				value = float(item.get("multiplier", 1))
+				minimum = 1.0
+				maximum = 3.0
 			FARM_PRODUCE_DELIVERY:
-				value = float(item.get("multiplier", item.get("quantity", 50)))
-				minimum = 50.0
-				maximum = 100.0
+				value = float(item.get("multiplier", item.get("quantity", 1)))
+				minimum = 1.0
+				maximum = 3.0
 			MATERIAL_COLLECTION:
-				value = float(item.get("quantity", 50))
-				minimum = float(item.get("min_quantity", 50))
-				maximum = float(item.get("max_quantity", 200))
+				value = float(item.get("quantity", 1))
+				minimum = float(item.get("min_quantity", 1))
+				maximum = float(item.get("max_quantity", 3))
 		workload_ratio = maxf(
 			workload_ratio,
 			clampf((value - minimum) / maxf(1.0, maximum - minimum), 0.0, 1.0)
@@ -810,12 +852,23 @@ func _finalize_delivery_task(team: String, task: Dictionary, completed: bool, ti
 		summary_lines.append("任务结束：完成度 %.1f%%。" % (completion_ratio * 100.0))
 		summary_lines.append("实际交付：" + "、".join(delivered_lines))
 	if reward_money > 0:
-		summary_lines.append("结算奖励：%d 队伍金钱。" % reward_money)
+		summary_lines.append("结算奖励：%d 队伍金钱，同时增加同额队伍得分。" % reward_money)
 	else:
-		summary_lines.append("结算奖励：0 队伍金钱。")
+		summary_lines.append("结算奖励：0 队伍金钱和队伍得分。")
 	changes["result_summary"] = "\n".join(summary_lines)
 	if reward_money > 0:
-		GlobalVar.add_item(team, "money", reward_money)
+		GlobalVar.add_team_reward(team, reward_money)
+		var delivery_category := str(task.get("delivery_category", ""))
+		var stat_category := "mining"
+		if delivery_category == "cooked_dish":
+			stat_category = "cooking"
+		elif delivery_category == "farm_produce":
+			stat_category = "agriculture_livestock"
+		GlobalVar.add_match_stat(team, stat_category, reward_money)
+	if completed:
+		GlobalVar.add_match_stat(team, "completed_orders", 1)
+	elif total_delivered > 0.0001:
+		GlobalVar.add_match_stat(team, "partial_orders", 1)
 	EventBoard.update_team_task(team, int(task.get("task_id", 0)), changes)
 	return {
 		"completed": completed,
@@ -888,8 +941,7 @@ func _build_delivery_rewards(items: Array, category: String, task: Dictionary) -
 		money *= 1.15
 	money = clampf(money, 1000.0, 6000.0)
 	return {
-		# Score is a compatibility/display mirror. Team money is the only
-		# authoritative score and must never be awarded a second time.
+		# 任务奖励同时写入队伍资金和独立的累计队伍得分。
 		"score": roundi(money),
 		"money": roundi(money),
 		"team_items": [],

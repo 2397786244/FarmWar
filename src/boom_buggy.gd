@@ -1,7 +1,7 @@
 extends CharacterBody3D
 class_name BoomBuggy
 
-## Food-War：BoomBuggy 小型遥控自爆车（v2：自定义爆炸逻辑 + 纯水平控制）
+## FarmWar：BoomBuggy 小型遥控自爆车（v2：自定义爆炸逻辑 + 纯水平控制）
 ##
 ## 场景结构（节点名称必须一致）：
 ##

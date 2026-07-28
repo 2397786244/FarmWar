@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Tech Repair Wrench
+# FarmWar / Farm Town - Tech Repair Wrench
 #
 # Generates:
 #   generated_farmtown_tools/

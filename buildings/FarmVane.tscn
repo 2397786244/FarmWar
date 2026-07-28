@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://kpylbt2bci34"]
+
+[ext_resource type="PackedScene" uid="uid://cpvhnxops0o5b" path="res://assets/buildings/FTF_Prop_FarmWindVane_3m.glb" id="1_xwmwe"]
+
+[node name="FarmVane" type="StaticBody3D" unique_id=1715592418]
+
+[node name="FTF_Prop_FarmWindVane_3m2" parent="." unique_id=1782659801 instance=ExtResource("1_xwmwe")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)

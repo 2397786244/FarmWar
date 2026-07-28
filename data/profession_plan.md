@@ -58,7 +58,7 @@
 + Rider 车手  -> ToolKit,VehicleTracker，BoomBuggy（自爆遥控车） ｜ 进攻
 + Trickster 捣蛋鬼  -> BigMouth,Trap，FakePlayer（产生一个假人，会制作一个专属的假人外观，如果攻击假人，自己的位置会被标记）  ｜ 防护
 ## 详细的规划：
-# Food-War 职业专属工具规划（当前统一版）
+# FarmWar 职业专属工具规划（当前统一版）
 
 ## 一、装备规则
 
@@ -162,4 +162,4 @@
 
 
 # 版本号设定
-+ 当前是alpha版本，用日期记录，服务器就是FarmWarServer_a0709,客户端就是FarWar_a0709
++ 当前是alpha版本，用日期记录，服务器就是FarmWarServer_a0709,客户端就是FarmWar_a0709

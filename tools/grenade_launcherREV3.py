@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Handheld Olive Grenade Launcher
+# FarmWar / Farm Town - Handheld Olive Grenade Launcher
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_GrenadeLauncher_Olive_v2.glb

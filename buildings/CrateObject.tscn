@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://bi2jl8igkntds"]
+
+[ext_resource type="PackedScene" uid="uid://dx4hsewe5y4nu" path="res://tools/generated_farmtown_props/FTF_Prop_WoodenCrate_Sealed_3m_Dark_v1.glb" id="1_70mnt"]
+
+[node name="CrateObject" type="StaticBody3D" unique_id=1985016907]
+
+[node name="FTF_Prop_WoodenCrate_Sealed_3m_Dark_v12" parent="." unique_id=734621422 instance=ExtResource("1_70mnt")]

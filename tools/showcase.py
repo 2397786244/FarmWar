@@ -1,6 +1,6 @@
 # Blender 4.4+
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Standalone Roles + Tools Showcase
+# FarmWar / Farm Town - Standalone Roles + Tools Showcase
 #
 # ONE-FILE VERSION: no companion Python scripts and no pre-generated GLBs are
 # required. Character, tool and showcase builders are compressed into this
@@ -11,7 +11,7 @@
 #   generated_showcase/FTF_RolesAndTools_Showcase.png
 #
 # Run:
-#   blender --background --factory-startup --python foodwar_roles_tools_showcase_standalone.py
+#   blender --background --factory-startup --python farmwar_roles_tools_showcase_standalone.py
 # -----------------------------------------------------------------------------
 
 import base64
@@ -43,7 +43,7 @@ def load_bundled_module(bundle_key):
     encoded = BUNDLED_SOURCES[bundle_key].encode("ascii")
     source = zlib.decompress(base64.b85decode(encoded)).decode("utf-8")
 
-    module_name = "foodwar_bundle_" + bundle_key
+    module_name = "farmwar_bundle_" + bundle_key
     module = types.ModuleType(module_name)
     module.__file__ = os.path.join(SCRIPT_DIR, "<bundled_" + bundle_key + ".py>")
     module.__package__ = ""
@@ -55,7 +55,7 @@ def load_bundled_module(bundle_key):
 
 
 def main():
-    print("\n=== Loading Standalone Food War Showcase Bundle ===\n")
+    print("\n=== Loading Standalone FarmWar Showcase Bundle ===\n")
 
     modules = {
         key: load_bundled_module(key)

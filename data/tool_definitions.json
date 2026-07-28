@@ -334,7 +334,7 @@
 	  "cooldown": 0.2,
 	  "color": "#53634A",
 	  "hint": "左键投掷",
-	  "category": "utility",
+	  "category": "throwable",
 	  "consumed_on_use": true,
 	  "aimable": false,
 	  "show_crosshair": true

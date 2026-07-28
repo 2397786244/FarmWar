@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Handheld Medicine Cannon
+# FarmWar / Farm Town - Handheld Medicine Cannon
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_MedicineCannon_RedWhite_v1.glb

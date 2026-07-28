@@ -9,7 +9,7 @@ radius = 0.3
 
 [node name="StreetLampStraight" type="StaticBody3D" unique_id=525411482]
 script = ExtResource("2_street_lamp")
-night_light_energy = 8.0
+night_light_energy = 13.0
 
 [node name="StreetLamp_Radial" parent="." unique_id=1850556250 instance=ExtResource("1_jgh1u")]
 

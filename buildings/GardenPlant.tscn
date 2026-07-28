@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://bsfoogub3a02u"]
+
+[ext_resource type="PackedScene" uid="uid://ud5m1qce2tib" path="res://assets/environment/FTF_Garden_PlanterTall_Shrubs_2_5m.glb" id="1_7hewq"]
+
+[node name="GardenPlant" type="StaticBody3D" unique_id=578156402]
+
+[node name="FTF_Garden_PlanterTall_Shrubs_2_5m2" parent="." unique_id=450711222 instance=ExtResource("1_7hewq")]

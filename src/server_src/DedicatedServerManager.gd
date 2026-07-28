@@ -25,7 +25,7 @@ const DEFAULT_MAP_ID := "creston_town"
 const DEFAULT_MAP_NAME := "Creston Town"
 const DEFAULT_GAME_MODE := "5v5_Battle"
 const DEFAULT_METRICS_LOG_INTERVAL_SECONDS := 10.0
-const DEFAULT_MATCH_DURATION_MINUTES := 20.0
+const DEFAULT_MATCH_DURATION_MINUTES := 48.0
 const DEFAULT_DEATH_DROP_MODE := "save"
 const VALID_DEATH_DROP_MODES := ["all", "random", "save"]
 const SERVER_WORLD_SCENE_PATH := "res://worlds/creston_town.tscn"
@@ -893,6 +893,8 @@ func _connect_game_authority_signals() -> void:
 		GameAuthority.world_snapshot_ready.connect(_on_world_snapshot_ready)
 	if not GameAuthority.reliable_world_event_ready.is_connected(_on_reliable_world_event_ready):
 		GameAuthority.reliable_world_event_ready.connect(_on_reliable_world_event_ready)
+	if not GameAuthority.visual_world_event_ready.is_connected(_on_visual_world_event_ready):
+		GameAuthority.visual_world_event_ready.connect(_on_visual_world_event_ready)
 	if not GameAuthority.inventory_state_ready.is_connected(_on_inventory_state_ready):
 		GameAuthority.inventory_state_ready.connect(_on_inventory_state_ready)
 	if not GameAuthority.player_correction_ready.is_connected(_on_player_correction_ready):
@@ -979,6 +981,12 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 			})
 		return
 	receive_reliable_world_event.rpc(event)
+
+
+func _on_visual_world_event_ready(event: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null or match_state != MatchState.IN_GAME:
+		return
+	receive_visual_world_event.rpc(event)
 
 
 func _on_inventory_state_ready(state: Dictionary) -> void:
@@ -1216,6 +1224,11 @@ func receive_reliable_world_event(event: Dictionary) -> void:
 	pass
 
 
+@rpc("authority", "call_remote", "unreliable", 5)
+func receive_visual_world_event(event: Dictionary) -> void:
+	pass
+
+
 @rpc("authority", "call_remote", "reliable", 2)
 func receive_bulk_world_event(event: Dictionary) -> void:
 	pass
@@ -1343,6 +1356,7 @@ func start_match() -> void:
 	_on_inventory_state_ready({
 		"tick": GameAuthority.server_tick,
 		"teams": GlobalVar.team_storage.duplicate(true),
+		"scores": GlobalVar.get_team_scores(),
 	})
 
 	if multiplayer.multiplayer_peer != null:
@@ -1356,23 +1370,28 @@ func start_match() -> void:
 func _finish_match_due_to_time_limit() -> void:
 	if match_state != MatchState.IN_GAME:
 		return
-	print("战局倒计时结束，服务器结束战局并断开所有玩家。")
+	print("战局倒计时结束，发送结算结果并等待玩家返回。")
 	var final_info := get_server_public_info()
 	final_info["remaining_time_seconds"] = 0
+	var settlement := {
+		"scores": GlobalVar.get_team_scores(),
+		"money": {
+			"red": int(round(GlobalVar.check_team_item_amount("red", "money"))),
+			"blue": int(round(GlobalVar.check_team_item_amount("blue", "money"))),
+		},
+		"stats": GlobalVar.get_all_team_match_stats(),
+	}
 	if multiplayer.multiplayer_peer != null:
 		receive_reliable_world_event.rpc({
 			"type": "match_ended",
 			"reason": "time_limit",
 			"final_info": final_info,
+			"settlement": settlement,
 			"tick": GameAuthority.server_tick,
 		})
-		for peer_id in multiplayer.get_peers():
-			if peer != null:
-				peer.disconnect_peer(int(peer_id))
-	players.clear()
-	_reset_match_to_waiting_players()
+	# 等待客户端在结算页主动返回；不能立即断开，否则可靠事件可能尚未显示。
+	match_state = MatchState.WAITING_PLAYERS
 	_emit_and_broadcast_server_public_info()
-	_broadcast_lobby_players_public_info()
 
 
 # 作用：

@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Riftbook (Mage Tool) [REV3]
+# FarmWar / Farm Town - Riftbook (Mage Tool) [REV3]
 #
 # Generates:
 #   generated_farmtown_tools/

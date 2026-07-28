@@ -3,9 +3,11 @@ class_name HarvestOre
 
 const NatureResourceIdentity = preload("res://src/nature_resource_identity.gd")
 const CombatBalance = preload("res://src/combat_balance.gd")
+const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
 
 const NATURE_RESOURCE_LAYER := 16384
 const BULLET_LAYER := 32
+const HIT_FRAGMENT_COLOR := Color("858b90")
 
 @export var resource_id := ""
 @export var resource_type := "ore"
@@ -75,6 +77,15 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	_pending_attacker_peer_id = 0
 	current_hp = maxf(0.0, current_hp - strength)
 	_update_health_label()
+	if not GameAuthority.is_server_authority():
+		play_hit_effect()
+	else:
+		GameAuthority.visual_world_event_ready.emit({
+			"type": "nature_resource_hit",
+			"resource_id": resource_id,
+			"resource_kind": "ore",
+			"tick": GameAuthority.server_tick,
+		})
 	if GameAuthority.is_server_authority():
 		_emit_health_event(current_hp <= 0.0)
 	if current_hp <= 0.0:
@@ -86,6 +97,15 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 		)
 		_play_destroy(true)
 	return true
+
+
+func play_hit_effect() -> void:
+	var approximate_position := global_position + Vector3(
+		randf_range(-0.4, 0.4),
+		randf_range(0.2, 0.8),
+		randf_range(-0.4, 0.4)
+	)
+	NatureResourceHitEffect.spawn(get_tree().current_scene, approximate_position, HIT_FRAGMENT_COLOR)
 
 
 func impact_from_peer(effect: String, strength: float, attacker_team: String, attacker_peer_id: int) -> bool:

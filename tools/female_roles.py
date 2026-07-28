@@ -1,13 +1,13 @@
 # Blender 4.x / 5.x
-# Self-contained Food War character generator.
+# Self-contained FarmWar character generator.
 # Builds Mage, Apothecary and Assistant female adult stylized low-poly roles,
 # each in Red and Blue variants. Includes rigid humanoid rig, the same ten
-# animation clip names/poses as the existing Food War pipeline, GLB export,
+# animation clip names/poses as the existing FarmWar pipeline, GLB export,
 # re-import validation, and rendered pose checks.
 #
 # Run (macOS example):
 # "/Applications/Blender.app/Contents/MacOS/Blender" --background --factory-startup \
-#   --python generate_foodwar_female_roles_rigged.py -- --output /path/to/output
+#   --python generate_farmwar_female_roles_rigged.py -- --output /path/to/output
 #
 # WARNING: Script runs in factory startup scenes and clears its own scene.
 
@@ -251,7 +251,7 @@ try:
 except NameError:
     SCRIPT_DIR = os.getcwd()
 
-DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "generated_foodwar_characters")
+DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "generated_farmwar_characters")
 FPS = 30
 RENDER_POSE_CHECKS = True
 POSE_CHECKS = {
@@ -274,7 +274,7 @@ EXPRESSIONS = ("Calm", "Fierce", "Funny", "Happy", "Worried")
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Generate rigged Food War female character role variants."
+        description="Generate rigged FarmWar female character role variants."
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument(

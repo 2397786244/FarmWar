@@ -1,7 +1,31 @@
 [gd_scene format=3 uid="uid://dt4hfhnqky4l2"]
 
 [ext_resource type="PackedScene" uid="uid://cijb62l1hvqgi" path="res://assets/buildings/LivestockMarket.glb" id="1_cthxv"]
+[ext_resource type="Script" uid="uid://cgap600mb4fn7" path="res://src/livestock_market.gd" id="2_market"]
 
-[node name="LivestockMarket" type="Node3D" unique_id=1307688524]
+[sub_resource type="BoxShape3D" id="BoxShape3D_cthxv"]
+size = Vector3(7, 3, 5)
+
+[node name="LivestockMarket" type="StaticBody3D" unique_id=1307688524]
+collision_layer = 4096
+collision_mask = 12971
+script = ExtResource("2_market")
+shop_category = "livestock_market"
+shop_display_name = "牲畜市场"
+interaction_hint = "[E] 打开牲畜市场"
 
 [node name="Mesh" parent="." unique_id=1997333901 instance=ExtResource("1_cthxv")]
+
+[node name="ShopArea" type="Area3D" parent="." unique_id=1094034058]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0940397, 1.5, 5.393642)
+collision_layer = 512
+collision_mask = 8
+monitoring = true
+monitorable = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ShopArea" unique_id=2039007733]
+shape = SubResource("BoxShape3D_cthxv")
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1156254314]
+depth = 7.0
+polygon = PackedVector2Array(-5.0765967, 0.22859049, -5.0857778, 4.185856, -1.4131429, 5.746726, 2.3145826, 4.139948, 2.2962196, 3.4972365, 5.1884203, 3.0014307, 5.1700573, -0.02849412, -5.074193, 0.017670497)

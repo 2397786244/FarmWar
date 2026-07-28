@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Boar Spike Trap (Green)
+# FarmWar / Farm Town - Boar Spike Trap (Green)
 #
 # Generates:
 #   generated_farmtown_traps/

@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Hinged Leg Clamp Trap (Green) [REV5]
+# FarmWar / Farm Town - Hinged Leg Clamp Trap (Green) [REV5]
 #
 # Correct mechanical layout:
 # - A permanent 4 m x 4 m outer square frame.

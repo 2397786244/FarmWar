@@ -344,7 +344,7 @@ def parse_args():
     else:
         argv = []
 
-    out_dir = os.path.join(os.getcwd(), "generated_foodwar_turrets")
+    out_dir = os.path.join(os.getcwd(), "generated_farmwar_turrets")
     skip_preview = False
 
     i = 0

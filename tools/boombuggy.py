@@ -1,4 +1,4 @@
-# Food-War BoomBuggy
+# FarmWar BoomBuggy
 # Compact black remote self-destruct buggy - Blender 4.4+ generator
 #
 # OUTPUT:
@@ -339,7 +339,7 @@ if CLEAR_SCENE:
 collection = ensure_collection(ROOT_NAME)
 
 root = add_empty(ROOT_NAME, None, collection)
-root["asset_role"] = "FoodWar_BoomBuggy_RemoteSelfDestructCar"
+root["asset_role"] = "FarmWar_BoomBuggy_RemoteSelfDestructCar"
 root["root_origin"] = "ground_center_0_0_0"
 root["blender_visual_front"] = "-Y"
 root["godot_intended_forward"] = "+Z"

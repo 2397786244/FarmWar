@@ -8,6 +8,7 @@ signal player_setup_confirmed(selection: Dictionary)
 signal player_setup_rejected(reason: String)
 signal world_snapshot_received(snapshot: Dictionary)
 signal reliable_world_event_received(event: Dictionary)
+signal visual_world_event_received(event: Dictionary)
 signal inventory_state_received(state: Dictionary)
 signal player_correction_received(correction: Dictionary)
 signal team_chat_message_received(message: Dictionary)
@@ -203,6 +204,11 @@ func receive_world_snapshot(snapshot: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable", 1)
 func receive_reliable_world_event(event: Dictionary) -> void:
 	reliable_world_event_received.emit(event)
+
+
+@rpc("authority", "call_remote", "unreliable", 5)
+func receive_visual_world_event(event: Dictionary) -> void:
+	visual_world_event_received.emit(event)
 
 
 @rpc("authority", "call_remote", "reliable", 2)

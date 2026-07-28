@@ -1,6 +1,6 @@
 # Blender 4.4+
 # -----------------------------------------------------------------------------
-# Food War - Standalone Assistant / Farmer / Rider Tool Renderer
+# FarmWar - Standalone Assistant / Farmer / Rider Tool Renderer
 #
 # No companion Python files or pre-generated GLBs are required.
 # Generates one overview, three group PNGs and an editable Blender scene.
@@ -32,7 +32,7 @@ def decode_source(key):
 
 def execute_module(key, module_name=None, source_override=None):
     source = source_override if source_override is not None else decode_source(key)
-    actual_name = module_name or ("foodwar_afr_" + key)
+    actual_name = module_name or ("farmwar_afr_" + key)
     module = types.ModuleType(actual_name)
     module.__file__ = os.path.join(SCRIPT_DIR, "<bundled_" + key + ".py>")
     module.__package__ = ""

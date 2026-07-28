@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Automatic Cooking Machine
+# FarmWar / Farm Town - Automatic Cooking Machine
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_AutomaticCookingMachine_v1.glb

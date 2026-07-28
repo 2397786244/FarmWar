@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Area Shield Generator
+# FarmWar / Farm Town - Area Shield Generator
 #
 # Generates:
 #   generated_farmtown_deployables/

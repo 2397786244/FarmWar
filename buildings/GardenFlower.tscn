@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://biwhwtiukaxqp"]
+
+[ext_resource type="PackedScene" uid="uid://cbkv758smq6ba" path="res://assets/environment/FTF_Garden_PlanterTall_RedYellowFlowers_2_2m.glb" id="1_fiv6i"]
+
+[node name="GardenFlower" type="StaticBody3D" unique_id=99533876]
+
+[node name="FTF_Garden_PlanterTall_RedYellowFlowers_2_2m2" parent="." unique_id=1980401356 instance=ExtResource("1_fiv6i")]

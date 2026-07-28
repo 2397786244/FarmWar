@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Sealed Wooden Crates (Four Variants)
+# FarmWar / Farm Town - Sealed Wooden Crates (Four Variants)
 #
 # Generates:
 #   generated_farmtown_props/

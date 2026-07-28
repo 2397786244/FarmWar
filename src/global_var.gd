@@ -2,6 +2,7 @@ extends Node
 
 signal storage_changed(team: String, item_name: String, new_amount: float)
 signal team_money_changed(team: String, delta: float, new_amount: float)
+signal team_score_changed(team: String, delta: float, new_score: float)
 
 const INITIAL_MONEY := 1000
 
@@ -73,6 +74,18 @@ var team_storage: Dictionary = {
 	"red": {"money": INITIAL_MONEY},
 }
 
+# 胜利分数与可消费的队伍资金分离。分数只在本局奖励/收入结算时增加，
+# 购买、建造和其他资金支出不会影响分数。
+var team_scores: Dictionary = {
+	"blue": 0.0,
+	"red": 0.0,
+}
+
+var team_match_stats: Dictionary = {
+	"blue": _make_empty_match_stats(),
+	"red": _make_empty_match_stats(),
+}
+
 var pending_player_selection:Dictionary = {}
 var open_server_browser_on_main_menu := false
 
@@ -117,6 +130,29 @@ func add_item(team: String, item_name: String, amount: float) -> bool:
 	return true
 
 
+func add_team_reward(team: String, amount: float) -> bool:
+	# 既有的奖励性收入同时写入资金和胜利分数。
+	if amount <= 0.0:
+		return false
+	if not add_item(team, "money", amount):
+		return false
+	add_team_score(team, amount)
+	return true
+
+
+func add_team_score(team: String, amount: float) -> bool:
+	if GameAuthority.should_send_network_requests():
+		push_warning("Client proxy cannot authoritatively add team score.")
+		return false
+	if amount <= 0.0 or not team_scores.has(team):
+		return false
+	var previous_score := float(team_scores[team])
+	var new_score := previous_score + amount
+	team_scores[team] = new_score
+	team_score_changed.emit(team, amount, new_score)
+	return true
+
+
 func remove_item(team: String, item_name: String, amount: float) -> bool:
 	if GameAuthority.should_send_network_requests():
 		push_warning("Client proxy cannot authoritatively remove inventory items.")
@@ -148,9 +184,9 @@ func get_game_stats(team: String, query: StringName):
 
 
 func get_team_score(team: String) -> int:
-	if not team_storage.has(team):
+	if not team_scores.has(team):
 		return 0
-	return roundi(float((team_storage[team] as Dictionary).get("money", 0.0)))
+	return roundi(float(team_scores[team]))
 
 
 func get_team_scores() -> Dictionary:
@@ -158,6 +194,47 @@ func get_team_scores() -> Dictionary:
 		"red": get_team_score("red"),
 		"blue": get_team_score("blue"),
 	}
+
+
+func _make_empty_match_stats() -> Dictionary:
+	return {
+		"completed_orders": 0,
+		"partial_orders": 0,
+		"agriculture_livestock": 0,
+		"cooking": 0,
+		"mining": 0,
+		"combat": 0,
+	}
+
+
+func add_match_stat(team: String, category: String, amount: int) -> void:
+	if amount <= 0 or not team_match_stats.has(team):
+		return
+	var stats: Dictionary = team_match_stats[team]
+	stats[category] = int(stats.get(category, 0)) + amount
+	team_match_stats[team] = stats
+
+
+func get_team_match_stats(team: String) -> Dictionary:
+	return (team_match_stats.get(team, _make_empty_match_stats()) as Dictionary).duplicate(true)
+
+
+func get_all_team_match_stats() -> Dictionary:
+	return {"red": get_team_match_stats("red"), "blue": get_team_match_stats("blue")}
+
+
+func apply_team_scores(scores: Dictionary, allow_decrease := false) -> void:
+	# 客户端低频快照可能晚于可靠加分事件到达；同一局内不得让旧快照回退分数。
+	for team: String in team_scores:
+		if not scores.has(team):
+			continue
+		var previous_score := float(team_scores[team])
+		var incoming_score := maxf(0.0, float(scores.get(team, previous_score)))
+		var new_score := incoming_score if allow_decrease else maxf(previous_score, incoming_score)
+		team_scores[team] = new_score
+		var delta := new_score - previous_score
+		if not is_zero_approx(delta):
+			team_score_changed.emit(team, delta, new_score)
 
 
 func get_public_inventory_state() -> Dictionary:
@@ -175,6 +252,13 @@ func reset_team_storage() -> void:
 		for key in team_storage[team]:
 			team_storage[team][key] = INITIAL_MONEY if key == "money" else 0
 			storage_changed.emit(team, key, float(team_storage[team][key]))
+	for team: String in team_scores:
+		var previous_score := float(team_scores[team])
+		team_scores[team] = 0.0
+		if not is_zero_approx(previous_score):
+			team_score_changed.emit(team, -previous_score, 0.0)
+	for team: String in team_match_stats:
+		team_match_stats[team] = _make_empty_match_stats()
 
 
 	

@@ -22,6 +22,8 @@ var status_label: Label
 var buy_list: VBoxContainer
 var sell_list: VBoxContainer
 var tab_container: TabContainer
+var market_session_acquired := false
+var _market_session_refresh_left := 0.0
 
 
 func _ready() -> void:
@@ -38,18 +40,36 @@ func show_shop(shop: Shop, team: String, player: GamePlayer = null) -> void:
 	current_shop = shop
 	current_team = team
 	current_player = player
+	market_session_acquired = shop.shop_category != "livestock_market"
+	_market_session_refresh_left = 0.0
 	visible = true
 	_refresh_interface()
+	if shop.shop_category == "livestock_market":
+		_submit_market_session_action("open")
 
 
 func close_shop() -> void:
 	if not visible:
 		return
+	if market_session_acquired and is_instance_valid(current_shop) \
+			and current_shop.shop_category == "livestock_market":
+		_submit_market_session_action("close")
 	visible = false
+	market_session_acquired = false
 	current_shop = null
 	current_team = ""
 	current_player = null
 	closed.emit()
+
+
+func _process(delta: float) -> void:
+	if not visible or not market_session_acquired or not is_instance_valid(current_shop) \
+			or current_shop.shop_category != "livestock_market":
+		return
+	_market_session_refresh_left -= delta
+	if _market_session_refresh_left <= 0.0:
+		_market_session_refresh_left = 5.0
+		_submit_market_session_action("refresh")
 
 
 # 保留旧函数名，避免已有代码调用时失效。
@@ -151,6 +171,8 @@ func _refresh_interface() -> void:
 		subtitle_label.text = "快餐按份购买，直接存入个人背包"
 	elif current_shop.uses_personal_weapon_inventory():
 		subtitle_label.text = "使用队伍金钱购买，武器直接存入购买者背包"
+	elif current_shop.shop_category == "livestock_market":
+		subtitle_label.text = "购买需要本队已完工且有空位的对应棚舍；出售只读取个人背包"
 	else:
 		subtitle_label.text = "食材按 kg 交易；防御装备按件交易"
 	money_label.text = "金币  %d" % GlobalVar.check_team_item_amount(current_team, "money")
@@ -224,7 +246,7 @@ func _create_product_row(product: Dictionary, is_buy: bool) -> Control:
 	var trade_button := Button.new()
 	trade_button.text = "购买" if is_buy else "出售"
 	trade_button.custom_minimum_size = Vector2(92.0, 42.0)
-	trade_button.disabled = not is_buy and owned <= 0
+	trade_button.disabled = (not is_buy and owned <= 0) or not market_session_acquired
 	trade_button.add_theme_color_override("font_color", COLOR_TEXT)
 	trade_button.add_theme_stylebox_override(
 		"normal", _style_box(COLOR_BUY if is_buy else COLOR_SELL, 8)
@@ -248,24 +270,24 @@ func _on_trade_pressed(
 	var amount := quantity.value
 	var unit := str(GlobalVar.get_shop_product(item_id).get("unit", "item"))
 	var success := false
+	var request := {
+		"action": "trade",
+		"item_id": item_id,
+		"amount": amount,
+		"is_buy": is_buy,
+		"shop_category": current_shop.shop_category,
+		"shop_path": str(current_shop.get_path()),
+		"shop_position": current_shop.global_position,
+	}
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_shop_transaction({
-			"item_id": item_id,
-			"amount": amount,
-			"is_buy": is_buy,
-			"shop_category": current_shop.shop_category,
-		})
+		MultiplayerNetwork.submit_shop_transaction(request)
 		status_label.text = "交易请求已发送，等待服务器确认：%s × %s" % [display_name, _format_quantity(amount, unit)]
 		status_label.add_theme_color_override("font_color", COLOR_MUTED)
 		return
 	elif GameAuthority.is_local_authority():
-		var result: Dictionary = GameAuthority.local_shop_transaction(GameAuthority.LOCAL_PLAYER_ID, {
-			"item_id": item_id,
-			"amount": amount,
-			"is_buy": is_buy,
-			"shop_category": current_shop.shop_category,
-		})
-		success = bool(result.get("ok", false))
+		var result: Dictionary = GameAuthority.local_shop_transaction(GameAuthority.LOCAL_PLAYER_ID, request)
+		apply_transaction_result(result)
+		return
 	else:
 		success = current_shop.buy(current_team, item_id, amount) if is_buy \
 			else current_shop.sell(current_team, item_id, amount)
@@ -289,6 +311,10 @@ func apply_transaction_result(result: Dictionary) -> void:
 	if str(result.get("team", "")) != current_team \
 			or str(result.get("shop_category", "general")) != current_shop.shop_category:
 		return
+	var session_action := str(result.get("session_action", ""))
+	if not session_action.is_empty():
+		_apply_market_session_result(result, session_action)
+		return
 	var product := GlobalVar.get_shop_product(str(result.get("item_id", "")))
 	var display_name := str(product.get("name", result.get("item_id", "")))
 	var amount := float(result.get("amount", 0.0))
@@ -301,9 +327,77 @@ func apply_transaction_result(result: Dictionary) -> void:
 		]
 		status_label.add_theme_color_override("font_color", COLOR_ACCENT)
 	else:
-		status_label.text = "交易失败：金币不足、背包空间不足或持有数量不足"
+		var message := _transaction_failure_message(str(result.get("reason", "")))
+		status_label.text = "交易失败：%s" % message
 		status_label.add_theme_color_override("font_color", Color("#FF8D8D"))
+		_show_player_notice(message)
 	_refresh_interface()
+
+
+func _submit_market_session_action(action: String) -> void:
+	if not is_instance_valid(current_shop):
+		return
+	var request := {
+		"action": action,
+		"shop_category": "livestock_market",
+		"shop_path": str(current_shop.get_path()),
+		"shop_position": current_shop.global_position,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_shop_transaction(request)
+	elif GameAuthority.is_local_authority():
+		var result := GameAuthority.local_shop_transaction(GameAuthority.LOCAL_PLAYER_ID, request)
+		apply_transaction_result(result)
+
+
+func _apply_market_session_result(result: Dictionary, action: String) -> void:
+	if action == "close":
+		return
+	if bool(result.get("ok", false)):
+		market_session_acquired = true
+		_market_session_refresh_left = 5.0
+		if action == "open":
+			status_label.text = "牲畜市场已打开"
+			status_label.add_theme_color_override("font_color", COLOR_ACCENT)
+		_refresh_interface()
+		return
+	market_session_acquired = false
+	var message := _transaction_failure_message(str(result.get("reason", "market_in_use")))
+	_show_player_notice(message)
+	status_label.text = message
+	status_label.add_theme_color_override("font_color", Color("#FF8D8D"))
+	close_shop()
+
+
+func _transaction_failure_message(reason: String) -> String:
+	match reason:
+		"market_in_use":
+			return "另一名队员正在使用牲畜市场"
+		"market_out_of_range":
+			return "距离牲畜市场过远"
+		"market_session_required":
+			return "牲畜市场操作权已失效，请重新打开"
+		"chicken_chop_not_built":
+			return "本队鸡舍尚未建造完成"
+		"livestock_chop_not_built":
+			return "本队牲畜棚尚未建造完成"
+		"chicken_chop_full":
+			return "本队鸡舍已满，无法购买活鸡"
+		"livestock_chop_full":
+			return "本队牲畜棚已满，无法购买猪或牛"
+		"insufficient_money":
+			return "队伍金钱不足"
+		"personal_bag_full":
+			return "个人背包格子或载重不足"
+		"personal_item_insufficient":
+			return "个人背包中没有足够的该活体动物"
+		_:
+			return "金币不足、背包空间不足或持有数量不足"
+
+
+func _show_player_notice(message: String) -> void:
+	if is_instance_valid(current_player):
+		current_player.show_gameplay_notice(message)
 
 
 func _format_quantity(amount: float, unit: String) -> String:

@@ -17,7 +17,7 @@ albedo_color = Color(1, 0.72156864, 0.23921569, 0.019607844)
 material = SubResource("StandardMaterial3D_light_beam")
 top_radius = 0.1
 bottom_radius = 2.6
-height = 2.65
+height = 3.5
 radial_segments = 24
 rings = 1
 cap_top = false
@@ -25,6 +25,7 @@ cap_bottom = false
 
 [node name="StreetLamp2" type="StaticBody3D" unique_id=1543496913]
 script = ExtResource("2_street_lamp")
+night_light_energy = 15.0
 
 [node name="StreetLamp_CurvedDownward" parent="." unique_id=383067002 instance=ExtResource("1_fvtvw")]
 

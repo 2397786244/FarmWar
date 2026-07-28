@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # ---------------------------------------------------------------------
-# Food War / Farm Town - Handheld Fertilizer Injector
+# FarmWar / Farm Town - Handheld Fertilizer Injector
 #
 # Generates one GLB:
 #   FTF_Tool_FertilizerInjector_White_v2.glb
@@ -33,7 +33,7 @@
 #   generated_farmtown_tools/FTF_Tool_FertilizerInjector_White_v2.glb
 #
 # Run:
-#   blender --background --factory-startup --python generate_foodwar_fertilizer_injector_v2.py
+#   blender --background --factory-startup --python generate_farmwar_fertilizer_injector_v2.py
 # ---------------------------------------------------------------------
 
 import bpy

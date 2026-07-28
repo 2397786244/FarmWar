@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Handheld Tablet Scanner
+# FarmWar / Farm Town - Handheld Tablet Scanner
 #
 # Generates:
 #   generated_farmtown_tools/

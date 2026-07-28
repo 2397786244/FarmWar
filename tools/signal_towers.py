@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Signal Jammer Tower + Signal Booster Tower
+# FarmWar / Farm Town - Signal Jammer Tower + Signal Booster Tower
 #
 # One script generates two independent GLB assets:
 #   generated_farmtown_tools/FTF_Tool_SignalJammerTower_4m_v1.glb

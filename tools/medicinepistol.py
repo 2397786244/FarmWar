@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # ---------------------------------------------------------------------
-# Food War / Farm Town - Handheld Medicine Pistol
+# FarmWar / Farm Town - Handheld Medicine Pistol
 #
 # Generates one GLB:
 #   FTF_Tool_MedicinePistol_BlackBlue.glb
@@ -31,7 +31,7 @@
 #   generated_farmtown_tools/FTF_Tool_MedicinePistol_BlackBlue.glb
 #
 # Run:
-#   blender --background --factory-startup --python generate_foodwar_medicine_pistol.py
+#   blender --background --factory-startup --python generate_farmwar_medicine_pistol.py
 # ---------------------------------------------------------------------
 
 import bpy

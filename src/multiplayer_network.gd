@@ -13,6 +13,7 @@ signal player_setup_confirmed(selection: Dictionary)
 signal player_setup_rejected(reason: String)
 signal world_snapshot_received(snapshot: Dictionary)
 signal reliable_world_event_received(event: Dictionary)
+signal visual_world_event_received(event: Dictionary)
 signal inventory_state_received(state: Dictionary)
 signal player_correction_received(correction: Dictionary)
 signal team_chat_message_received(message: Dictionary)
@@ -257,6 +258,10 @@ func _ensure_rpc_endpoint() -> void:
 		func(event: Dictionary) -> void:
 			GameAuthority.apply_reliable_world_event(event)
 			reliable_world_event_received.emit(event)
+	)
+	rpc_endpoint.visual_world_event_received.connect(
+		func(event: Dictionary) -> void:
+			visual_world_event_received.emit(event)
 	)
 	rpc_endpoint.inventory_state_received.connect(
 		func(state: Dictionary) -> void:

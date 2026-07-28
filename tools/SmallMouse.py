@@ -1,4 +1,4 @@
-# Food-War SmallMouse
+# FarmWar SmallMouse
 # Compact robotic mouse / Engineer exclusive tool - Blender 4.4+ generator
 #
 # OUTPUT:
@@ -302,7 +302,7 @@ if CLEAR_SCENE:
 collection = get_collection(ROOT_NAME)
 
 root = add_empty(ROOT_NAME, None, collection)
-root["asset_role"] = "FoodWar_Engineer_SmallMouse"
+root["asset_role"] = "FarmWar_Engineer_SmallMouse"
 root["root_origin"] = "ground_center_0_0_0"
 root["blender_visual_front"] = "-Y"
 root["godot_intended_forward"] = "+Z"

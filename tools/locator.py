@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Rider Vehicle Locator Launcher
+# FarmWar / Farm Town - Rider Vehicle Locator Launcher
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_VehicleLocatorLauncher_White_v2.glb

@@ -1,0 +1,93 @@
+[gd_scene format=3 uid="uid://dlwrhvm2aqekt"]
+
+[ext_resource type="Script" uid="uid://bin7dj6ohmy10" path="res://src/start_scene.gd" id="1_start"]
+
+[sub_resource type="Environment" id="Environment_studio"]
+background_mode = 1
+background_color = Color(0.035, 0.042, 0.052, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.42, 0.46, 0.52, 1)
+ambient_light_energy = 0.34
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Material_ground"]
+albedo_color = Color(0.16, 0.18, 0.19, 1)
+roughness = 0.92
+
+[sub_resource type="PlaneMesh" id="Mesh_ground"]
+material = SubResource("Material_ground")
+size = Vector2(18, 18)
+
+[sub_resource type="StandardMaterial3D" id="Material_wall_back"]
+albedo_color = Color(0.11, 0.125, 0.14, 1)
+roughness = 0.88
+
+[sub_resource type="BoxMesh" id="Mesh_wall_back"]
+material = SubResource("Material_wall_back")
+size = Vector3(10, 5.5, 0.18)
+
+[sub_resource type="StandardMaterial3D" id="Material_wall_side"]
+albedo_color = Color(0.135, 0.145, 0.15, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_wall_side"]
+material = SubResource("Material_wall_side")
+size = Vector3(0.18, 5.5, 8)
+
+[node name="StartScene" type="Node3D" unique_id=807353276]
+script = ExtResource("1_start")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1810009033]
+environment = SubResource("Environment_studio")
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=481998730]
+
+[node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=386613625]
+mesh = SubResource("Mesh_ground")
+
+[node name="Wall1" type="StaticBody3D" parent="." unique_id=645332553]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.75, -3.2)
+
+[node name="Mesh" type="MeshInstance3D" parent="Wall1" unique_id=1088060587]
+mesh = SubResource("Mesh_wall_back")
+
+[node name="Wall2" type="StaticBody3D" parent="." unique_id=1271903243]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.9, 2.75, 0.7)
+
+[node name="Mesh" type="MeshInstance3D" parent="Wall2" unique_id=691097184]
+mesh = SubResource("Mesh_wall_side")
+
+[node name="ShowcaseAnchor" type="Node3D" parent="." unique_id=2137631680]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 0, 0)
+
+[node name="Lights" type="Node3D" parent="." unique_id=2027935334]
+
+[node name="KeyLight" type="SpotLight3D" parent="Lights" unique_id=18865086]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.4, 6.2, 5.2)
+light_color = Color(1, 0.91, 0.8, 1)
+light_energy = 6.5
+shadow_enabled = true
+spot_range = 18.0
+spot_angle = 36.0
+
+[node name="FillLight" type="SpotLight3D" parent="Lights" unique_id=722152595]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5, 4.3, 4)
+light_color = Color(0.47, 0.66, 1, 1)
+light_energy = 2.8
+shadow_enabled = true
+spot_range = 15.0
+spot_angle = 42.0
+
+[node name="RimLight" type="SpotLight3D" parent="Lights" unique_id=1467730897]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.4, 5.1, -2.3)
+light_color = Color(1, 0.71, 0.37, 1)
+light_energy = 4.0
+shadow_enabled = true
+spot_range = 13.0
+spot_angle = 39.0
+
+[node name="StudioCamera" type="Camera3D" parent="." unique_id=115869923]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, 2.85, 9.4)
+current = true
+fov = 46.0

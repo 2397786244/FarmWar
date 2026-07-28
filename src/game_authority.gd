@@ -8,6 +8,7 @@ const CombatBalance = preload("res://src/combat_balance.gd")
 # 单人模式：不创建 ENet，但仍调用同一批 server_* 业务函数，避免本地玩法和多人玩法规则分叉。
 signal world_snapshot_ready(snapshot: Dictionary)
 signal reliable_world_event_ready(event: Dictionary)
+signal visual_world_event_ready(event: Dictionary)
 signal inventory_state_ready(state: Dictionary)
 signal player_correction_ready(peer_id: int, correction: Dictionary)
 signal team_chat_message_ready(message: Dictionary)
@@ -29,6 +30,7 @@ const PLAYER_CORRECTION_TICK_INTERVAL := 1
 const PLAYER_JUMP_GRACE_TICKS := 3
 const PLAYER_MAX_HP := 200.0
 const PLAYER_RESPAWN_SECONDS := 10.0
+const LOCAL_MATCH_DURATION_SECONDS := 48.0 * 60.0
 const PLAYER_KNOCKBACK_DECELERATION := 18.0
 const PLAYER_PRONE_SPEED_MULTIPLIER := 0.4
 const PLAYER_PRONE_MAX_PITCH_DEGREES := 16.0
@@ -182,6 +184,8 @@ var pending_farm_tile_deltas: Dictionary = {}
 var pending_farm_reconcile_chunks: Array = []
 var farm_reconcile_states: Dictionary = {}
 var farm_reconcile_cycle := 0
+var local_match_elapsed_seconds := 0.0
+var local_match_finished := false
 
 # 低频/可靠状态：农田、库存、比分、工具放置等更适合事件同步或低频纠偏。
 var authoritative_farm_events: Array[Dictionary] = []
@@ -211,6 +215,8 @@ func _ready() -> void:
 	_load_authoritative_tool_cooldowns()
 	if not GlobalVar.team_money_changed.is_connected(_on_team_money_changed):
 		GlobalVar.team_money_changed.connect(_on_team_money_changed)
+	if not GlobalVar.team_score_changed.is_connected(_on_team_score_changed):
+		GlobalVar.team_score_changed.connect(_on_team_score_changed)
 
 
 func _on_team_money_changed(team: String, delta: float, new_amount: float) -> void:
@@ -221,6 +227,18 @@ func _on_team_money_changed(team: String, delta: float, new_amount: float) -> vo
 		"team": team,
 		"delta": delta,
 		"new_amount": new_amount,
+		"tick": server_tick,
+	})
+
+
+func _on_team_score_changed(team: String, delta: float, new_score: float) -> void:
+	if (not is_server_authority() and not is_local_authority()) or is_zero_approx(delta):
+		return
+	reliable_world_event_ready.emit({
+		"type": "team_score_changed",
+		"team": team,
+		"delta": delta,
+		"new_score": new_score,
 		"tick": server_tick,
 	})
 
@@ -254,12 +272,14 @@ func _load_authoritative_tool_cooldowns() -> void:
 func start_server_mode(manager: Node = null) -> void:
 	mode = MODE_SERVER
 	server_manager = manager
+	GlobalVar.reset_team_storage()
 	_reset_runtime_state()
 
 
 func start_local_mode(selection: Dictionary = {}) -> void:
 	mode = MODE_LOCAL
 	server_manager = null
+	GlobalVar.reset_team_storage()
 	_reset_runtime_state()
 	if not selection.is_empty():
 		register_or_update_player(LOCAL_PLAYER_ID, selection)
@@ -268,6 +288,7 @@ func start_local_mode(selection: Dictionary = {}) -> void:
 func start_client_mode() -> void:
 	mode = MODE_CLIENT
 	server_manager = null
+	GlobalVar.apply_team_scores({"red": 0, "blue": 0}, true)
 	_reset_runtime_state(false)
 
 
@@ -338,6 +359,8 @@ func _reset_runtime_state(clear_players := true) -> void:
 	pending_farm_reconcile_chunks.clear()
 	farm_reconcile_states.clear()
 	farm_reconcile_cycle = 0
+	local_match_elapsed_seconds = 0.0
+	local_match_finished = false
 	authoritative_farm_events.clear()
 	last_snapshot.clear()
 	tick_samples_ms.clear()
@@ -365,6 +388,13 @@ func _physics_process(delta: float) -> void:
 	nature_resource_reconcile_accumulator += delta
 	farm_reconcile_accumulator += delta
 	metrics_second_accumulator += delta
+	if mode == MODE_LOCAL and not local_match_finished:
+		local_match_elapsed_seconds += delta
+		if local_match_elapsed_seconds >= LOCAL_MATCH_DURATION_SECONDS:
+			_finish_local_match_due_to_time_limit()
+			return
+	if local_match_finished:
+		return
 	_run_authority_tick(delta)
 	if metrics_second_accumulator >= 1.0:
 		_roll_metrics_second()
@@ -375,6 +405,23 @@ func _physics_process(delta: float) -> void:
 			print_server_metrics()
 
 
+func _finish_local_match_due_to_time_limit() -> void:
+	if local_match_finished:
+		return
+	local_match_finished = true
+	reliable_world_event_ready.emit({
+		"type": "match_ended",
+		"reason": "time_limit",
+		"settlement": {
+			"scores": GlobalVar.get_team_scores(),
+			"money": {
+				"red": int(round(GlobalVar.check_team_item_amount("red", "money"))),
+				"blue": int(round(GlobalVar.check_team_item_amount("blue", "money"))),
+			},
+			"stats": GlobalVar.get_all_team_match_stats(),
+		},
+		"tick": server_tick,
+	})
 func _run_authority_tick(delta: float) -> void:
 	var simulation_delta := TARGET_TICK_INTERVAL
 	var tick_start := Time.get_ticks_usec()
@@ -759,44 +806,52 @@ func _consume_chat_rate_slot(peer_id: int) -> bool:
 
 func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) -> Dictionary:
 	var result := {"ok": false, "peer_id": peer_id, "command": "get", "tick": server_tick}
-	var requested_id := command.trim_prefix("[get]").strip_edges().trim_suffix(".").strip_edges()
-	if requested_id.is_empty() or requested_id.contains(" "):
+	var arguments := command.trim_prefix("[get]").strip_edges().trim_suffix(".").strip_edges()
+	var parts := arguments.split(" ", false)
+	if parts.size() != 2 or not str(parts[1]).is_valid_int():
 		result["reason"] = "invalid_get_syntax"
-		_emit_team_chat_system(peer_id, state, "用法：[get] <item_id>")
+		_emit_team_chat_system(peer_id, state, "用法：[get] <item_id> <item_count>，数量必须是正整数")
 		return result
+	var requested_id := str(parts[0]).strip_edges()
+	var item_count := int(parts[1])
+	if requested_id.is_empty() or item_count <= 0:
+		result["reason"] = "invalid_get_count"
+		_emit_team_chat_system(peer_id, state, "item_count 必须是大于 0 的整数")
+		return result
+	result["item_id"] = requested_id
+	result["item_count"] = item_count
 	var crate_size := CargoCrateData.get_size_for_item_id(requested_id)
 	if not crate_size.is_empty():
-		var crate := CargoCrateData.create_empty(crate_size)
-		if _server_backpack_entry_count(state) >= _server_bag_capacity(state):
+		var sample_crate := CargoCrateData.create_empty(crate_size)
+		var total_crate_weight := float(sample_crate.get("total_weight_kg", 0.0)) * float(item_count)
+		if _server_backpack_entry_count(state) + item_count > _server_bag_capacity(state):
 			result["reason"] = "personal_bag_full"
-			_emit_team_chat_system(peer_id, state, "背包已满，无法添加 %s" % requested_id, true)
+			_emit_team_chat_system(peer_id, state, "背包格子不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 			return result
-		if _personal_ingredient_total_weight(state) + float(crate.get("total_weight_kg", 0.0)) \
+		if _personal_ingredient_total_weight(state) + total_crate_weight \
 				> _server_bag_weight_capacity_kg(state) + 0.001:
 			result["reason"] = "personal_bag_overweight"
-			_emit_team_chat_system(peer_id, state, "背包载重不足，无法添加 %s" % requested_id, true)
+			_emit_team_chat_system(peer_id, state, "背包载重不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 			return result
-		_add_personal_cargo_crate(state, crate)
-		_server_layout_add_item(state, crate)
+		var crates: Array[Dictionary] = []
+		for _index in range(item_count):
+			var crate := CargoCrateData.create_empty(crate_size)
+			_add_personal_cargo_crate(state, crate)
+			_server_layout_add_item(state, crate)
+			crates.append(crate)
 		player_states[peer_id] = state
-		if mode == MODE_LOCAL:
-			_apply_test_backpack_grant_to_local_player(peer_id, [crate])
-		else:
-			reliable_world_event_ready.emit({
-				"type": "backpack_test_grant", "peer_id": peer_id,
-				"entries": [crate], "tick": server_tick,
-			})
-		_emit_team_chat_system(peer_id, state, "已获得 %s（%s）" % [
-			str(crate.get("display_name", requested_id)), str(crate.get("item_id", requested_id)),
+		_emit_debug_backpack_grant(peer_id, crates)
+		_emit_team_chat_system(peer_id, state, "已获得 %s × %d（%s）" % [
+			str(sample_crate.get("display_name", requested_id)), item_count, requested_id,
 		])
 		result["ok"] = true
-		result["item_id"] = str(crate.get("item_id", requested_id))
-		result["crate"] = crate.duplicate(true)
+		result["crates"] = crates.duplicate(true)
 		return result
 	var equipment_definition := EquipmentCatalog.get_definition(requested_id)
 	var ingredient_definition := IngredientCatalog.get_definition(requested_id)
 	if not ingredient_definition.is_empty():
-		var weight_kg := IngredientCatalog.get_pickup_unit_kg(requested_id)
+		var unit_weight_kg := IngredientCatalog.get_pickup_unit_kg(requested_id)
+		var weight_kg := unit_weight_kg * float(item_count)
 		if not _server_can_add_personal_ingredient(state, requested_id, weight_kg, false):
 			var overweight := _personal_ingredient_total_weight(state) + weight_kg \
 					> _server_bag_weight_capacity_kg(state) + 0.001
@@ -811,9 +866,10 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		}
 		_server_add_personal_ingredient(state, requested_id, weight_kg, false)
 		player_states[peer_id] = state
-		_emit_debug_backpack_grant(peer_id, ingredient_entry)
-		_emit_team_chat_system(peer_id, state, "已获得 %s %.2f kg（%s）" % [
-			str(ingredient_definition.get("display_name", requested_id)), weight_kg, requested_id,
+		_emit_debug_backpack_grant(peer_id, [ingredient_entry])
+		_emit_team_chat_system(peer_id, state, "已获得 %s %.2f kg（%d × %.2f kg，%s）" % [
+			str(ingredient_definition.get("display_name", requested_id)), weight_kg,
+			item_count, unit_weight_kg, requested_id,
 		])
 		result["ok"] = true
 		result["item_id"] = requested_id
@@ -821,8 +877,9 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		return result
 	var dish_definition := DishCatalog.get_definition(requested_id)
 	if not dish_definition.is_empty():
-		var serving_weight := float(dish_definition.get("serving_weight_kg", 0.0))
-		if not _server_can_add_personal_dish(state, requested_id, 1, serving_weight):
+		var serving_unit_weight := float(dish_definition.get("serving_weight_kg", 0.0))
+		var serving_weight := serving_unit_weight * float(item_count)
+		if not _server_can_add_personal_dish(state, requested_id, item_count, serving_weight):
 			var overweight := _personal_ingredient_total_weight(state) + serving_weight \
 					> _server_bag_weight_capacity_kg(state) + 0.001
 			result["reason"] = "personal_bag_overweight" if overweight else "personal_bag_full"
@@ -832,13 +889,13 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 			return result
 		var dish_entry := {
 			"kind": "dish", "dish_id": requested_id,
-			"servings": 1, "weight_kg": serving_weight,
+			"servings": item_count, "weight_kg": serving_weight,
 		}
-		_server_add_personal_dish(state, requested_id, 1, serving_weight)
+		_server_add_personal_dish(state, requested_id, item_count, serving_weight)
 		player_states[peer_id] = state
-		_emit_debug_backpack_grant(peer_id, dish_entry)
-		_emit_team_chat_system(peer_id, state, "已获得 %s 1份（%s）" % [
-			str(dish_definition.get("display_name", requested_id)), requested_id,
+		_emit_debug_backpack_grant(peer_id, [dish_entry])
+		_emit_team_chat_system(peer_id, state, "已获得 %s %d份（%s）" % [
+			str(dish_definition.get("display_name", requested_id)), item_count, requested_id,
 		])
 		result["ok"] = true
 		result["item_id"] = requested_id
@@ -850,9 +907,9 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		return result
 	if not equipment_definition.is_empty():
 		var owned_equipment: Array = state.get("owned_equipment_ids", [])
-		if owned_equipment.has(requested_id):
+		if item_count != 1 or owned_equipment.has(requested_id):
 			result["reason"] = "already_owned"
-			_emit_team_chat_system(peer_id, state, "已经拥有：%s" % requested_id)
+			_emit_team_chat_system(peer_id, state, "该装备只能拥有一个：%s" % requested_id)
 			return result
 		if _server_backpack_entry_count(state) >= _server_bag_capacity(state):
 			result["reason"] = "personal_bag_full"
@@ -864,77 +921,72 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		var equipment_entry := _server_equipment_item(state, requested_id)
 		_server_layout_add_item(state, equipment_entry)
 		player_states[peer_id] = state
-		if mode == MODE_LOCAL:
-			_apply_test_backpack_grant_to_local_player(peer_id, [equipment_entry])
-		else:
-			reliable_world_event_ready.emit({"type": "backpack_test_grant", "peer_id": peer_id, "entries": [equipment_entry], "tick": server_tick})
+		_emit_debug_backpack_grant(peer_id, [equipment_entry])
 		_emit_team_chat_system(peer_id, state, "已获得 %s（%s）" % [str(equipment_definition.get("name", requested_id)), requested_id])
 		result["ok"] = true
 		result["equipment_id"] = requested_id
 		return result
-	if _player_has_tool(state, requested_id) and not _tool_allows_multiple(requested_id):
+	var allows_multiple := _tool_allows_multiple(requested_id)
+	if not allows_multiple and (item_count > 1 or _player_has_tool(state, requested_id)):
 		result["reason"] = "already_owned"
-		_emit_team_chat_system(peer_id, state, "已经拥有：%s" % requested_id)
+		_emit_team_chat_system(peer_id, state, "该道具只能拥有一个：%s" % requested_id)
 		return result
-	if _server_backpack_entry_count(state) >= _server_bag_capacity(state):
+	if _server_backpack_entry_count(state) + item_count > _server_bag_capacity(state):
 		result["reason"] = "personal_bag_full"
-		_emit_team_chat_system(peer_id, state, "背包已满，无法添加 %s" % requested_id, true)
+		_emit_team_chat_system(peer_id, state, "背包格子不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 		return result
 	var definition: Dictionary = authoritative_tool_definitions[requested_id]
-	var requested_weight := float(definition.get("weight_kg", 0.0))
+	var requested_weight := float(definition.get("weight_kg", 0.0)) * float(item_count)
 	if _personal_ingredient_total_weight(state) + requested_weight > _server_bag_weight_capacity_kg(state) + 0.001:
 		result["reason"] = "personal_bag_overweight"
-		_emit_team_chat_system(peer_id, state, "背包载重不足，无法添加 %s" % requested_id, true)
+		_emit_team_chat_system(peer_id, state, "背包载重不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 		return result
-	var entry := {
-		"kind": "tool",
-		"tool_id": requested_id,
-		"weight_kg": requested_weight,
-	}
-	if requested_id.begins_with("animal_"):
-		entry["current_hp"] = 400.0 if requested_id != "animal_chicken" else 200.0
-		entry["max_hp"] = entry["current_hp"]
-		entry["growth_progress"] = 0.0
-		entry["maturity_seconds"] = float(definition.get("maturity_seconds", 0.0))
-		entry["livestock_instance_id"] = "stored:%d" % next_livestock_id
-		next_livestock_id += 1
+	var entries: Array[Dictionary] = []
 	var tool_ids: Array = state.get("special_tool_ids", [])
-	tool_ids.append(requested_id)
+	for _index in range(item_count):
+		var entry := {
+			"kind": "tool",
+			"tool_id": requested_id,
+			"weight_kg": float(definition.get("weight_kg", 0.0)),
+		}
+		if requested_id.begins_with("animal_"):
+			entry["current_hp"] = 400.0 if requested_id != "animal_chicken" else 200.0
+			entry["max_hp"] = entry["current_hp"]
+			entry["growth_progress"] = 0.0
+			entry["maturity_seconds"] = float(definition.get("maturity_seconds", 0.0))
+			entry["livestock_instance_id"] = "stored:%d" % next_livestock_id
+			next_livestock_id += 1
+		if _uses_finite_ammo(requested_id):
+			entry.merge(_default_weapon_ammo_state(requested_id), true)
+		tool_ids.append(requested_id)
+		_server_layout_add_item(state, entry)
+		entries.append(entry)
 	state["special_tool_ids"] = tool_ids
-	_server_layout_add_item(state, entry)
 	if _uses_finite_ammo(requested_id):
 		var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 		ammo_states[requested_id] = _default_weapon_ammo_state(requested_id)
 		state["weapon_ammo_states"] = ammo_states
 	player_states[peer_id] = state
-	if _uses_finite_ammo(requested_id):
-		entry.merge(_default_weapon_ammo_state(requested_id), true)
-	if mode == MODE_LOCAL:
-		_apply_test_backpack_grant_to_local_player(peer_id, [entry])
-	else:
-		reliable_world_event_ready.emit({
-			"type": "backpack_test_grant",
-			"peer_id": peer_id,
-			"entries": [entry],
-			"tick": server_tick,
-		})
+	_emit_debug_backpack_grant(peer_id, entries)
 	_emit_team_chat_system(
 		peer_id,
 		state,
-		"已获得 %s（%s）" % [str(definition.get("name", requested_id)), requested_id]
+		"已获得 %s × %d（%s）" % [str(definition.get("name", requested_id)), item_count, requested_id]
 	)
 	result["ok"] = true
 	result["tool_id"] = requested_id
 	return result
 
 
-func _emit_debug_backpack_grant(peer_id: int, entry: Dictionary) -> void:
+func _emit_debug_backpack_grant(peer_id: int, entries: Array[Dictionary]) -> void:
+	if entries.is_empty():
+		return
 	if mode == MODE_LOCAL:
-		_apply_test_backpack_grant_to_local_player(peer_id, [entry])
+		_apply_test_backpack_grant_to_local_player(peer_id, entries)
 	else:
 		reliable_world_event_ready.emit({
 			"type": "backpack_test_grant", "peer_id": peer_id,
-			"entries": [entry], "tick": server_tick,
+			"entries": entries, "tick": server_tick,
 		})
 
 
@@ -1384,7 +1436,7 @@ func _simulate_vehicles(delta: float) -> void:
 		if vehicle.cargo_user_peer_id > 0:
 			var cargo_user_state: Dictionary = player_states.get(vehicle.cargo_user_peer_id, {})
 			if cargo_user_state.is_empty() or not bool(cargo_user_state.get("cargo_storage_open", false)) \
-					or _vector3_from_value(cargo_user_state.get("position", Vector3.ZERO)).distance_to(vehicle.global_position) > 6.5:
+					or not vehicle.is_cargo_storage_interaction_available_to(_vector3_from_value(cargo_user_state.get("position", Vector3.ZERO))):
 				vehicle.cargo_user_peer_id = 0
 		var input: Dictionary = state.get("input", {})
 		if vehicle.driver_peer_id == 0:
@@ -2550,25 +2602,114 @@ func _livestock_sell_price(product: Dictionary, item: Dictionary) -> int:
 	return roundi(float(base_price) * (1.0 + 2.0 * progress / 100.0))
 
 
+func _check_livestock_purchase_capacity(team: String, tool_id: String, amount: int) -> Dictionary:
+	var required_kind := "chicken" if tool_id == "animal_chicken" else "livestock"
+	var has_completed_chop := false
+	var available_slots := 0
+	for node in get_tree().get_nodes_in_group("livestock_chops"):
+		if not node is LivestockChop:
+			continue
+		var chop := node as LivestockChop
+		if chop.owner_team != team or chop.chop_kind != required_kind or not chop.completed:
+			continue
+		has_completed_chop = true
+		var chop_state := chop.get_chop_state()
+		var slots: Array = chop_state.get("slots", [])
+		for slot_value: Variant in slots:
+			if not slot_value is Dictionary or (slot_value as Dictionary).is_empty():
+				available_slots += 1
+	if not has_completed_chop:
+		return {
+			"ok": false,
+			"reason": "chicken_chop_not_built" if required_kind == "chicken" \
+				else "livestock_chop_not_built",
+		}
+	if amount <= 0 or available_slots < amount:
+		return {
+			"ok": false,
+			"reason": "chicken_chop_full" if required_kind == "chicken" \
+				else "livestock_chop_full",
+		}
+	return {"ok": true, "available_slots": available_slots}
+
+
+func _emit_shop_transaction_result(result: Dictionary) -> Dictionary:
+	reliable_world_event_ready.emit({"type": "shop_transaction", "data": result, "tick": server_tick})
+	return result
+
+
 func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionary:
 	if not player_states.has(peer_id):
-		return {"ok": false, "reason": "unknown_player"}
+		return _emit_shop_transaction_result({
+			"ok": false, "reason": "unknown_player", "peer_id": peer_id,
+			"shop_category": str(transaction.get("shop_category", "general")),
+		})
 	var team := str(player_states[peer_id].get("team", ""))
 	if team.is_empty():
-		return {"ok": false, "reason": "missing_team"}
+		return _emit_shop_transaction_result({
+			"ok": false, "reason": "missing_team", "peer_id": peer_id,
+			"shop_category": str(transaction.get("shop_category", "general")),
+		})
+	var shop_category := str(transaction.get("shop_category", "general"))
+	var action_name := str(transaction.get("action", "trade"))
+	if shop_category == "livestock_market":
+		var market := _livestock_market_from_transaction(transaction)
+		var session_result := {
+			"ok": false,
+			"peer_id": peer_id,
+			"team": team,
+			"shop_category": shop_category,
+			"session_action": action_name,
+		}
+		if market == null:
+			session_result["reason"] = "unknown_market"
+			return _emit_shop_transaction_result(session_result)
+		if action_name == "close":
+			session_result["ok"] = market.release_team_user(team, peer_id) \
+				or market.get_team_user(team) == 0
+			return _emit_shop_transaction_result(session_result)
+		if not _can_server_interact_with_position(
+			player_states[peer_id], market.get_interaction_position(), 6.0
+		):
+			session_result["reason"] = "market_out_of_range"
+			return _emit_shop_transaction_result(session_result)
+		if action_name == "open":
+			session_result["ok"] = market.try_acquire_team_user(team, peer_id)
+			if not bool(session_result["ok"]):
+				session_result["reason"] = "market_in_use"
+			return _emit_shop_transaction_result(session_result)
+		if action_name == "refresh":
+			session_result["ok"] = market.touch_team_user(team, peer_id)
+			if not bool(session_result["ok"]):
+				session_result["reason"] = "market_session_required"
+			return _emit_shop_transaction_result(session_result)
+		if action_name != "trade":
+			session_result["reason"] = "unsupported_action"
+			return _emit_shop_transaction_result(session_result)
+		if not market.touch_team_user(team, peer_id):
+			session_result["reason"] = "market_session_required"
+			return _emit_shop_transaction_result(session_result)
 	var item_id := str(transaction.get("item_id", ""))
 	var is_buy := bool(transaction.get("is_buy", true))
 	var product: Dictionary = GlobalVar.get_shop_product(item_id)
 	if product.is_empty():
-		return {"ok": false, "reason": "invalid_item"}
-	var shop_category := str(transaction.get("shop_category", "general"))
+		return _emit_shop_transaction_result({
+			"ok": false, "reason": "invalid_item", "peer_id": peer_id,
+			"team": team, "shop_category": shop_category,
+		})
 	if str(product.get("shop_category", "general")) != shop_category:
-		return {"ok": false, "reason": "item_not_sold_here"}
+		return _emit_shop_transaction_result({
+			"ok": false, "reason": "item_not_sold_here", "peer_id": peer_id,
+			"team": team, "shop_category": shop_category,
+		})
 	var is_weighted_item := str(product.get("unit", "item")) == "kg"
 	var amount := float(transaction.get("amount", 1.0)) if is_weighted_item else float(int(transaction.get("amount", 1)))
 	var trade_unit := IngredientCatalog.get_pickup_unit_kg(item_id) if is_weighted_item else 1.0
 	if amount <= 0.0 or absf(fmod(amount, trade_unit)) > 0.0001:
-		return {"ok": false, "reason": "invalid_amount"}
+		return _emit_shop_transaction_result({
+			"ok": false, "reason": "invalid_amount", "peer_id": peer_id,
+			"team": team, "shop_category": shop_category,
+		})
 	var ok := false
 	var product_kind := str(product.get("kind", ""))
 	var is_dish := product_kind == "dish"
@@ -2578,8 +2719,17 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 	var state: Dictionary = player_states[peer_id]
 	var transaction_total_price := 0
 	var player_slots_result: Array = []
+	var failure_reason := ""
 	if is_livestock and is_buy and bool(product.get("can_buy", false)):
 		var livestock_amount := int(amount)
+		var chop_check := _check_livestock_purchase_capacity(team, item_id, livestock_amount)
+		if not bool(chop_check.get("ok", false)):
+			return _emit_shop_transaction_result({
+				"ok": false, "reason": str(chop_check.get("reason", "chop_full")),
+				"peer_id": peer_id, "team": team, "item_id": item_id,
+				"amount": amount, "is_buy": true, "kind": product_kind,
+				"shop_category": shop_category,
+			})
 		var sample_entry := _make_purchased_livestock_entry(item_id)
 		# The sample reserves an id; it is also used as the first purchased entry.
 		var total_weight := float(sample_entry.get("weight_kg", 0.0)) * float(livestock_amount)
@@ -2598,6 +2748,10 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 				state["special_tool_ids"] = livestock_ids
 				player_states[peer_id] = state
 				player_slots_result = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+		elif not has_capacity:
+			failure_reason = "personal_bag_full"
+		else:
+			failure_reason = "insufficient_money"
 	elif is_livestock and not is_buy and bool(product.get("can_sell", false)):
 		var livestock_amount := int(amount)
 		var matching_slots: Array[int] = []
@@ -2618,10 +2772,12 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 					ok = false
 					break
 			if ok:
-				GlobalVar.add_item(team, "money", transaction_total_price)
+				GlobalVar.add_team_reward(team, transaction_total_price)
 				_clear_invalid_current_selection(state, _typed_dictionary_array(state.get("backpack_slot_items", []) as Array))
 				player_states[peer_id] = state
 				player_slots_result = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+		else:
+			failure_reason = "personal_item_insufficient"
 	elif is_weapon and is_buy and bool(product.get("can_buy", false)):
 		var weapon_amount := int(amount)
 		var total_price := roundi(float(product.get("buy_price", 0)) * float(weapon_amount))
@@ -2659,7 +2815,7 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 		ok = dish_weight > 0.0 and _server_remove_personal_dish(state, item_id, int(amount), dish_weight)
 		if ok:
 			player_states[peer_id] = state
-			GlobalVar.add_item(team, "money", total_sell)
+			GlobalVar.add_team_reward(team, total_sell)
 	elif is_buy and bool(product.get("can_buy", false)):
 		var total_price := roundi(float(product.get("buy_price", 0)) * amount)
 		if GlobalVar.check_team_item_amount(team, "money") >= total_price:
@@ -2669,7 +2825,7 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 		if GlobalVar.check_team_item_amount(team, item_id) >= amount:
 			ok = GlobalVar.remove_item(team, item_id, amount)
 			if ok:
-				GlobalVar.add_item(team, "money", total_sell)
+				GlobalVar.add_team_reward(team, total_sell)
 	var result := {
 		"ok": ok,
 		"peer_id": peer_id,
@@ -2682,9 +2838,11 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 		"total_weight_kg": dish_weight,
 		"total_price": transaction_total_price,
 	}
+	if not ok and not failure_reason.is_empty():
+		result["reason"] = failure_reason
 	if not player_slots_result.is_empty():
 		result["player_slots"] = player_slots_result
-	reliable_world_event_ready.emit({"type": "shop_transaction", "data": result, "tick": server_tick})
+	_emit_shop_transaction_result(result)
 	inventory_state_ready.emit(_build_inventory_state())
 	return result
 
@@ -2778,6 +2936,24 @@ func _release_invalid_kitchen_users() -> void:
 			if float(state.get("respawn_left", 0.0)) > 0.0 or not _can_server_interact_with_position(state, station.global_position, PLAYER_VEHICLE_INTERACTION_RANGE):
 				if station.force_release_user(peer_id):
 					_emit_kitchen_lock_state(station)
+	for node in get_tree().get_nodes_in_group("livestock_markets"):
+		if not node is LivestockMarket:
+			continue
+		var market := node as LivestockMarket
+		market.refresh_team_locks()
+		for market_team: String in ["red", "blue"]:
+			var market_peer_id := market.get_team_user(market_team)
+			if market_peer_id == 0:
+				continue
+			if not player_states.has(market_peer_id):
+				market.force_release_user(market_peer_id)
+				continue
+			var market_state: Dictionary = player_states[market_peer_id]
+			if float(market_state.get("respawn_left", 0.0)) > 0.0 \
+					or not _can_server_interact_with_position(
+						market_state, market.get_interaction_position(), 6.0
+					):
+				market.force_release_user(market_peer_id)
 
 
 func _force_release_kitchen_user(peer_id: int) -> void:
@@ -2789,6 +2965,9 @@ func _force_release_kitchen_user(peer_id: int) -> void:
 				var station := node as KitchenAppliance
 				if station.force_release_user(peer_id):
 					_emit_kitchen_lock_state(station)
+	for node in get_tree().get_nodes_in_group("livestock_markets"):
+		if node is LivestockMarket:
+			(node as LivestockMarket).force_release_user(peer_id)
 
 
 func _emit_kitchen_lock_state(station: KitchenAppliance) -> void:
@@ -3654,16 +3833,15 @@ func server_cargo_car_action(peer_id: int, action: Dictionary) -> Dictionary:
 	if vehicle == null or not vehicle.supports_cargo():
 		result["reason"] = "unknown_vehicle"
 		return _emit_cargo_car_result(result)
-	if not vehicle.owner_team.is_empty() and vehicle.owner_team != str(state.get("team", "")):
-		result["reason"] = "wrong_team"
-		return _emit_cargo_car_result(result)
 	var action_name := str(action.get("action", ""))
 	if action_name == "close":
 		result["ok"] = vehicle.release_cargo_user(peer_id) or vehicle.cargo_user_peer_id == 0
 		state["cargo_storage_open"] = false
 		player_states[peer_id] = state
 		return _fill_cargo_car_result(result, state, vehicle)
-	if not _can_server_interact_with_position(state, vehicle.global_position, 6.5):
+	if not vehicle.is_cargo_storage_interaction_available_to(
+		_vector3_from_value(state.get("position", Vector3.ZERO))
+	):
 		result["reason"] = "vehicle_out_of_range"
 		return _emit_cargo_car_result(result)
 	if not vehicle.try_acquire_cargo_user(peer_id):
@@ -6679,6 +6857,11 @@ func _simulate_placed_tools(delta: float) -> void:
 		match tool_name:
 			"AutoShooter":
 				var shooter := _gameplay_tool_node(_node_for_tool_ref({"kind": "placed", "id": tool_id}))
+				if shooter == null or not shooter.has_method("is_deployed_on_farm_tile") \
+						or not bool(shooter.call("is_deployed_on_farm_tile")):
+					tool["cooldown_left"] = 0.5
+					placed_tool_states[tool_id] = tool
+					continue
 				if shooter != null and float(shooter.get("disable_remaining")) > 0.0:
 					tool["cooldown_left"] = 0.1
 					placed_tool_states[tool_id] = tool
@@ -6932,6 +7115,16 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 				):
 					confirmed_target_count += 1
 					confirmed_total_damage += applied_damage
+		var future_warrior_damage := _damage_future_warriors_in_radius(
+			hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire
+		)
+		confirmed_target_count += int(future_warrior_damage.get("count", 0))
+		confirmed_total_damage += float(future_warrior_damage.get("total_damage", 0.0))
+		var farmer_ai_damage := _damage_farmer_ais_in_radius(
+			hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire
+		)
+		confirmed_target_count += int(farmer_ai_damage.get("count", 0))
+		confirmed_total_damage += float(farmer_ai_damage.get("total_damage", 0.0))
 		var manager := get_node_or_null("/root/Farmlandmanager")
 		if manager != null:
 			var plots: Array = manager.call("get_plots_in_radius", hit_position, radius)
@@ -7353,9 +7546,16 @@ func _damage_player(
 			if not killer_team.is_empty() and killer_team != victim_team:
 				award_action_reward(
 					resolved_attacker_peer_id,
-					CombatBalance.get_int("team_rewards", "enemy_player_kill", 100),
+					CombatBalance.get_int("team_rewards", "enemy_player_kill", 200),
 					"击杀对方玩家"
 				)
+		elif previous_hp > 0.0 and not attacker_team.is_empty() \
+				and attacker_team != str(state.get("team", "")):
+			_award_team_combat_reward_without_player(
+				attacker_team,
+				CombatBalance.get_int("team_rewards", "enemy_player_kill", 200),
+				"击杀对方玩家"
+			)
 		_begin_player_respawn(peer_id)
 	reliable_world_event_ready.emit({
 		"type": "player_damaged",
@@ -7451,8 +7651,9 @@ func award_action_reward(peer_id: int, amount: int, description: String) -> bool
 			or (not is_server_authority() and not is_local_authority()):
 		return false
 	var team := str((player_states[peer_id] as Dictionary).get("team", ""))
-	if team.is_empty() or not GlobalVar.add_item(team, "money", float(amount)):
+	if team.is_empty() or not GlobalVar.add_team_reward(team, float(amount)):
 		return false
+	GlobalVar.add_match_stat(team, _match_stat_category_for_action(description), amount)
 	reliable_world_event_ready.emit({
 		"type": "action_reward",
 		"peer_id": peer_id,
@@ -7462,6 +7663,41 @@ func award_action_reward(peer_id: int, amount: int, description: String) -> bool
 		"tick": server_tick,
 	})
 	return true
+
+
+func award_future_warrior_defeat(attacker_team: String, defender_team: String) -> void:
+	award_team_ai_defeat(attacker_team, defender_team, "Future Warrior")
+
+
+func award_team_ai_defeat(attacker_team: String, defender_team: String, display_name: String) -> void:
+	if attacker_team.is_empty() or attacker_team == defender_team \
+			or (not is_server_authority() and not is_local_authority()):
+		return
+	var amount := CombatBalance.get_int("team_rewards", "enemy_player_kill", 200)
+	var attacker_peer_id := resolve_attacker_peer_id(attacker_team)
+	if attacker_peer_id > 0:
+		award_action_reward(attacker_peer_id, amount, "击杀敌方 %s" % display_name)
+	else:
+		_award_team_combat_reward_without_player(attacker_team, amount, "击杀敌方 %s" % display_name)
+
+
+func _award_team_combat_reward_without_player(team: String, amount: int, description: String) -> bool:
+	if team.is_empty() or amount <= 0 or not GlobalVar.add_team_reward(team, float(amount)):
+		return false
+	GlobalVar.add_match_stat(team, "combat", amount)
+	return true
+
+
+func _match_stat_category_for_action(description: String) -> String:
+	if description.contains("黑熊") or description.contains("击杀") or description.contains("摧毁"):
+		return "combat"
+	if description.contains("收割") or description.contains("砍伐"):
+		return "agriculture_livestock"
+	if description.contains("矿"):
+		return "mining"
+	if description.contains("成品菜") or description.contains("料理"):
+		return "cooking"
+	return "combat"
 
 
 func get_authoritative_player_position(peer_id: int) -> Variant:
@@ -7892,6 +8128,10 @@ func _apply_hit_to_collider(
 			return false
 	var node = collider
 	while node != null:
+		if node is FutureWarriorAI:
+			return bool((node as FutureWarriorAI).impact(effect, damage, attacker_team))
+		if node is FarmerAI:
+			return bool((node as FarmerAI).impact(effect, damage, attacker_team))
 		if node is VehicleBase:
 			return _damage_vehicle(node as VehicleBase, damage, effect, attacker_team)
 		var tool_ref := _registered_tool_ref_for_node(node)
@@ -7903,6 +8143,72 @@ func _apply_hit_to_collider(
 			return bool(node.call("impact", effect, damage, attacker_team))
 		node = node.get_parent() if node is Node else null
 	return false
+
+
+func _damage_future_warriors_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false,
+	friendly_fire := false
+) -> Dictionary:
+	var result := {"count": 0, "total_damage": 0.0}
+	for node in get_tree().get_nodes_in_group("future_warrior_ai"):
+		if not node is FutureWarriorAI or not is_instance_valid(node):
+			continue
+		var warrior := node as FutureWarriorAI
+		if int(warrior.state) == FutureWarriorAI.AIState.DEAD:
+			continue
+		if not friendly_fire and not attacker_team.is_empty() and warrior.team_id == attacker_team:
+			continue
+		var distance := warrior.global_position.distance_to(center)
+		if distance > radius:
+			continue
+		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
+		var occlusion := _explosion_damage_multiplier(center, warrior.global_position + Vector3.UP * 0.85, warrior)
+		var applied_damage := maxf(0.0, damage * ratio * occlusion)
+		if applied_damage <= 0.0:
+			continue
+		var direction := warrior.global_position - center
+		if warrior.impact(effect, applied_damage, attacker_team, direction):
+			result["count"] = int(result["count"]) + 1
+			result["total_damage"] = float(result["total_damage"]) + applied_damage
+	return result
+
+
+func _damage_farmer_ais_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false,
+	friendly_fire := false
+) -> Dictionary:
+	var result := {"count": 0, "total_damage": 0.0}
+	for node in get_tree().get_nodes_in_group("farmer_ai"):
+		if not node is FarmerAI or not is_instance_valid(node):
+			continue
+		var farmer := node as FarmerAI
+		if int(farmer.state) == FarmerAI.AIState.DEAD:
+			continue
+		if not friendly_fire and not attacker_team.is_empty() and farmer.team_id == attacker_team:
+			continue
+		var distance := farmer.global_position.distance_to(center)
+		if distance > radius:
+			continue
+		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
+		var occlusion := _explosion_damage_multiplier(center, farmer.global_position + Vector3.UP * 0.85, farmer)
+		var applied_damage := maxf(0.0, damage * ratio * occlusion)
+		if applied_damage <= 0.0:
+			continue
+		var direction := farmer.global_position - center
+		if farmer.impact(effect, applied_damage, attacker_team, direction):
+			result["count"] = int(result["count"]) + 1
+			result["total_damage"] = float(result["total_damage"]) + applied_damage
+	return result
 
 
 func _tool_max_hp(tool_name: String) -> float:
@@ -8657,6 +8963,28 @@ func _livestock_chop_from_action(action: Dictionary) -> LivestockChop:
 	return null
 
 
+func _livestock_market_from_transaction(transaction: Dictionary) -> LivestockMarket:
+	var market_path := str(transaction.get("shop_path", ""))
+	if not market_path.is_empty():
+		var path_node := get_node_or_null(NodePath(market_path))
+		if path_node is LivestockMarket:
+			return path_node as LivestockMarket
+	var position_value: Variant = transaction.get("shop_position", null)
+	if position_value is Vector3:
+		var best: LivestockMarket = null
+		var best_distance := INF
+		for node in get_tree().get_nodes_in_group("livestock_markets"):
+			if node is LivestockMarket:
+				var distance := (node as LivestockMarket).global_position.distance_squared_to(
+					position_value as Vector3
+				)
+				if distance < best_distance:
+					best = node as LivestockMarket
+					best_distance = distance
+		return best
+	return null
+
+
 func _chopping_station_from_action(action: Dictionary) -> ChoppingStation:
 	var station_path := str(action.get("station_path", ""))
 	if not station_path.is_empty():
@@ -8994,6 +9322,15 @@ func apply_reliable_world_event(event: Dictionary) -> void:
 			var team_data: Dictionary = GlobalVar.team_storage[team]
 			team_data["money"] = float(event.get("new_amount", team_data.get("money", 0.0)))
 			GlobalVar.storage_changed.emit(team, "money", float(team_data["money"]))
+	elif event_type == "team_score_changed":
+		var score_team := str(event.get("team", ""))
+		if GlobalVar.team_scores.has(score_team):
+			GlobalVar.apply_team_scores({
+				score_team: float(event.get(
+					"new_score",
+					GlobalVar.get_team_score(score_team)
+				))
+			})
 	reliable_world_event_ready.emit(event)
 
 
@@ -9067,6 +9404,9 @@ func apply_inventory_state(state: Dictionary) -> void:
 			if team_data is Dictionary:
 				for item_name in (team_data as Dictionary).keys():
 					GlobalVar.storage_changed.emit(str(team), str(item_name), float((team_data as Dictionary).get(item_name, 0.0)))
+	var scores: Variant = state.get("scores", {})
+	if scores is Dictionary:
+		GlobalVar.apply_team_scores(scores as Dictionary)
 	inventory_state_ready.emit(state)
 
 

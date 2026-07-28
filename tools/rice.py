@@ -1,4 +1,4 @@
-# Blender 4.x / 5.x - standalone Food War asset generator
+# Blender 4.x / 5.x - standalone FarmWar asset generator
 # This script creates a visual-only GLB and a 1100x700 PNG preview.
 # It clears the scene, generates the asset, validates it, exports it, then
 # clears the scene again and re-imports the GLB for final validation.
@@ -10,7 +10,7 @@ import os
 from mathutils import Vector
 
 ASSET_NAME = "FTF_Plant_Rice_Mature"
-OUTPUT_FOLDER_NAME = "generated_foodwar_assets"
+OUTPUT_FOLDER_NAME = "generated_farmwar_assets"
 PREVIEW_SIZE = (1100, 700)
 
 try:
@@ -454,7 +454,7 @@ def main():
 
 
 
-# Food War plant asset: mature rice plant, approximately 1.2m tall.
+# FarmWar plant asset: mature rice plant, approximately 1.2m tall.
 # V2 repair: all leaf geometry is constrained to Z >= 0.
 EXPECTED_HEIGHT = 1.20
 HEIGHT_TOLERANCE = 0.12

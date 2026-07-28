@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://d2tbwv4xsw574"]
+
+[ext_resource type="PackedScene" uid="uid://dl1jut8l3p30e" path="res://assets/buildings/FTF_Vehicle_MetalTankerTrailer_Silver_8m.glb" id="1_e6q4k"]
+
+[node name="OilTanker" type="StaticBody3D" unique_id=1642549355]
+
+[node name="Mesh" parent="." unique_id=55931769 instance=ExtResource("1_e6q4k")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)

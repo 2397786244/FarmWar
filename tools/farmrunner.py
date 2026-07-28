@@ -1,4 +1,4 @@
-# Food-War FarmRunner
+# FarmWar FarmRunner
 # Low-hover automatic seeding / harvesting device
 # Blender 4.4+ Python script
 #

@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/showcase_character.gd" id="1_showcase"]
+
+[node name="ShowcaseCharacter" type="Node3D"]
+script = ExtResource("1_showcase")
+
+[node name="AppearanceRoot" type="Node3D" parent="."]
+
+[node name="FloorPropRoot" type="Node3D" parent="."]

@@ -521,6 +521,24 @@ func release_cargo_user(peer_id: int) -> bool:
 	return true
 
 
+func is_cargo_storage_interaction_available_to(world_position: Vector3) -> bool:
+	for child: Node in get_children():
+		if not child is CargoCarInteractionArea:
+			continue
+		var area := child as CargoCarInteractionArea
+		if area.interaction_kind != "cargo":
+			continue
+		var shape_node := area.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		var shape := shape_node.shape as BoxShape3D if shape_node != null else null
+		if shape == null:
+			continue
+		var local := area.to_local(world_position)
+		var half := shape.size * 0.5 + Vector3(0.55, 0.35, 0.55)
+		if absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z:
+			return true
+	return false
+
+
 func get_available_cargo_capacity_kg() -> float:
 	return maxf(0.0, get_cargo_capacity_kg() - cargo_weight_kg)
 

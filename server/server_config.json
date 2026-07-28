@@ -6,7 +6,7 @@
   "port": 2088,
   "query_port": 2089,
   "max_clients": 10,
-  "match_duration_minutes": 20,
+  "match_duration_minutes": 48,
   "death_drop_mode": "save",
   "metrics_log_enabled": true,
   "metrics_log_interval_seconds": 10.0

@@ -1,4 +1,4 @@
-# Blender 4.x / 5.x - standalone Food War asset generator
+# Blender 4.x / 5.x - standalone FarmWar asset generator
 # Creates a visual-only GLB and a 1100x700 PNG preview.
 # No external plugins, textures, collision meshes, cameras, or lights are exported.
 
@@ -9,7 +9,7 @@ import os
 from mathutils import Vector
 
 ASSET_NAME = "FTF_Resource_CoalOre_1m"
-OUTPUT_FOLDER_NAME = "generated_foodwar_assets"
+OUTPUT_FOLDER_NAME = "generated_farmwar_assets"
 PREVIEW_SIZE = (1100, 700)
 
 try:
@@ -430,7 +430,7 @@ def main():
     print("DONE: {} generated, previewed, exported, and re-import validated.".format(ASSET_NAME))
 
 
-# Food War 1m ore boulder. Root and rock base are at Z=0.
+# FarmWar 1m ore boulder. Root and rock base are at Z=0.
 EXPECTED_HEIGHT = 1.0
 HEIGHT_TOLERANCE = 0.08
 REQUIRE_BOTTOM_AT_ZERO = True

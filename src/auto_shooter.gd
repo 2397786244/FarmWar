@@ -28,6 +28,10 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_update_status_effects(delta)
+	if not is_deployed_on_farm_tile():
+		is_working = false
+		shoot_counter = 0.0
+		return
 	if not is_working or current_hp <= 0.0 or frozen_remaining > 0.0:
 		return
 	shoot_counter += delta
@@ -39,13 +43,13 @@ func _physics_process(delta: float) -> void:
 func activate_tool() -> void:
 	self.collision_layer = 128
 	$CollisionShape3D.disabled = false
-	is_working = true
+	is_working = is_deployed_on_farm_tile()
 	_health_label_activated = true
 	_update_label()
 
 
 func tool_working() -> void:
-	if GameAuthority.is_server_authority():
+	if GameAuthority.is_server_authority() or not is_deployed_on_farm_tile():
 		return
 	var world_parent: Node = GlobalVar.gameworld
 	if world_parent == null:
@@ -143,6 +147,11 @@ func emit() -> void:
 		tile.setting_tool("AutoShooter", tool_owner,setting_player)
 
 
+func is_deployed_on_farm_tile() -> bool:
+	var tile := get_parent() as FarmTile
+	return tile != null and is_instance_valid(tile.tool_child) and tile.tool_child == self
+
+
 func _update_status_effects(delta: float) -> void:
 	if frozen_remaining > 0.0:
 		frozen_remaining = maxf(0.0, frozen_remaining - delta)
@@ -150,7 +159,7 @@ func _update_status_effects(delta: float) -> void:
 	if disable_remaining > 0.0:
 		disable_remaining = maxf(0.0, disable_remaining - delta)
 	if disable_remaining <= 0.0 and current_hp > 0.0:
-		is_working = true
+		is_working = is_deployed_on_farm_tile()
 	
 	if burn_remaining > 0.0:
 		var tick_time := minf(delta, burn_remaining)

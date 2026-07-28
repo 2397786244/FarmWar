@@ -1,8 +1,8 @@
-# Food-War PlantProtector
+# FarmWar PlantProtector
 # Mechanical Scarecrow Plant Protector
 # Blender 4.x Python script
 #
-# FOOD-WAR ASSET CONTRACT APPLIED:
+# FarmWar ASSET CONTRACT APPLIED:
 # - Godot 4.x / GLB-ready low-poly prop
 # - Root origin at ground-center (0, 0, 0)
 # - Native Blender: Z up, visual forward = local -Y

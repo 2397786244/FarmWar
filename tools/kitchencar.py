@@ -1,6 +1,6 @@
 # Blender 4.4+ / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Chef Drivable Field Kitchen Vehicle
+# FarmWar / Farm Town - Chef Drivable Field Kitchen Vehicle
 #
 # Generates:
 #   generated_field_kitchen_vehicle/

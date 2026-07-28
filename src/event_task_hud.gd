@@ -126,7 +126,7 @@ func _format_task(task: Dictionary) -> String:
 		lines.append("交付：" + _escape(destination))
 	var reward := int((task.get("rewards", {}) as Dictionary).get("money", 0))
 	if reward > 0:
-		lines.append("奖励：%d 队伍金钱" % reward)
+		lines.append("奖励：%d 队伍金钱，同时增加同额队伍得分" % reward)
 	if bool(task.get("all_team_task", false)):
 		var winner := str(task.get("race_winner_team", ""))
 		lines.append("竞赛奖励：率先完成额外 +20%" if winner.is_empty() else "率先完成：%s队" % ("红" if winner == "red" else "蓝"))

@@ -3,11 +3,13 @@ class_name HarvestTree
 
 const NatureResourceIdentity = preload("res://src/nature_resource_identity.gd")
 const CombatBalance = preload("res://src/combat_balance.gd")
+const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
 
 const MAX_HP := 500.0
 const LOG_DROP_COUNT := 4
 const FALL_DURATION := 0.8
 const FALL_SETTLE_DELAY := 0.18
+const HIT_FRAGMENT_COLOR := Color("75452b")
 
 @export var tree_id := ""
 @export var resource_id := ""
@@ -78,6 +80,15 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	_pending_attacker_peer_id = 0
 	current_hp = maxf(0.0, current_hp - strength)
 	_update_health_label()
+	if not GameAuthority.is_server_authority():
+		play_hit_effect()
+	else:
+		GameAuthority.visual_world_event_ready.emit({
+			"type": "nature_resource_hit",
+			"resource_id": resource_id,
+			"resource_kind": "tree",
+			"tick": GameAuthority.server_tick,
+		})
 	if GameAuthority.is_server_authority() and current_hp > 0.0:
 		GameAuthority.reliable_world_event_ready.emit({
 			"type": "nature_resource_health",
@@ -96,6 +107,15 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 		)
 		GameAuthority.destroy_harvest_tree(self, maxi(1, log_drop_count))
 	return true
+
+
+func play_hit_effect() -> void:
+	var approximate_position := global_position + Vector3(
+		randf_range(-0.35, 0.35),
+		randf_range(1.2, 2.2),
+		randf_range(-0.35, 0.35)
+	)
+	NatureResourceHitEffect.spawn(get_tree().current_scene, approximate_position, HIT_FRAGMENT_COLOR)
 
 
 func impact_from_peer(effect: String, strength: float, attacker_team: String, attacker_peer_id: int) -> bool:

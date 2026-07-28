@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # ---------------------------------------------------------------------
-# Food War / Farm Town - Glock-Style Medicine Pistol V4
+# FarmWar / Farm Town - Glock-Style Medicine Pistol V4
 #
 # Generates one GLB:
 #   FTF_Tool_MedicinePistol_GlockStyle_BlackBlue_v4.glb

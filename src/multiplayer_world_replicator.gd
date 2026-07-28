@@ -104,6 +104,8 @@ func _connect_network_signals() -> void:
 		MultiplayerNetwork.world_snapshot_received.connect(_on_world_snapshot_received)
 	if not MultiplayerNetwork.reliable_world_event_received.is_connected(_on_reliable_world_event_received):
 		MultiplayerNetwork.reliable_world_event_received.connect(_on_reliable_world_event_received)
+	if not MultiplayerNetwork.visual_world_event_received.is_connected(_on_visual_world_event_received):
+		MultiplayerNetwork.visual_world_event_received.connect(_on_visual_world_event_received)
 	if not MultiplayerNetwork.inventory_state_received.is_connected(_on_inventory_state_received):
 		MultiplayerNetwork.inventory_state_received.connect(_on_inventory_state_received)
 	if not MultiplayerNetwork.disconnected.is_connected(_on_disconnected):
@@ -173,6 +175,14 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []))
 	_sync_wild_animals(snapshot.get("wild_animals", []))
+
+
+func _on_visual_world_event_received(event: Dictionary) -> void:
+	if not GameAuthority.is_client_proxy() or str(event.get("type", "")) != "nature_resource_hit":
+		return
+	var resource := _nature_resource_by_id(str(event.get("resource_id", "")))
+	if resource != null and resource.has_method("play_hit_effect"):
+		resource.call("play_hit_effect")
 
 
 func _sync_players(players_value: Variant, world_snapshot: Dictionary) -> void:
@@ -2208,6 +2218,9 @@ func _on_inventory_state_received(state: Dictionary) -> void:
 			if team_data is Dictionary:
 				for item_name in (team_data as Dictionary).keys():
 					GlobalVar.storage_changed.emit(str(team), str(item_name), float((team_data as Dictionary).get(item_name, 0.0)))
+	var scores: Variant = state.get("scores", {})
+	if scores is Dictionary:
+		GlobalVar.apply_team_scores(scores as Dictionary)
 
 
 func _disable_visual_runtime(root: Node) -> void:

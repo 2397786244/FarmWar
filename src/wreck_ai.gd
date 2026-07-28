@@ -2,7 +2,7 @@ extends CharacterBody3D
 class_name AIPlayer
 
 ## ============================================================
-## Food-War 农场 AI
+## FarmWar 农场 AI
 ##
 ## 功能：
 ## - 不依赖 NavigationRegion3D / NavigationAgent3D。

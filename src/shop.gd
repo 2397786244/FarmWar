@@ -83,7 +83,7 @@ func sell(team: String, item_name: String, amount: float = 1.0) -> bool:
 	var total_price := roundi(float(product["sell_price"]) * amount)
 	if not GlobalVar.remove_item(team, item_name, amount):
 		return false
-	GlobalVar.add_item(team, "money", total_price)
+	GlobalVar.add_team_reward(team, total_price)
 	transaction_completed.emit(team, item_name, amount, false)
 	return true
 

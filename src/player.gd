@@ -125,9 +125,11 @@ var cooldown_ring: Control
 var health_root: PanelContainer
 var health_bar: ProgressBar
 var health_label: Label
+var team_money_label: Label
 var ammo_label: Label
 var control_status_root: PanelContainer
 var control_status_title: Label
+var control_status_team_money_label: Label
 var control_status_primary_label: Label
 var control_status_primary_bar: ProgressBar
 var control_status_secondary_label: Label
@@ -141,6 +143,10 @@ var control_status_detail_label: Label
 var match_timer_label: Label
 var respawn_overlay: ColorRect
 var respawn_label: Label
+var death_camera: Camera3D
+var death_camera_origin := Vector3.ZERO
+var death_camera_target := Vector3.ZERO
+var match_end_page: Control
 var tranquilizer_overlay: ColorRect
 var damage_flash_root: Control
 var damage_flash_tween: Tween
@@ -2978,12 +2984,18 @@ func _process(delta: float) -> void:
 	_update_control_status_ui()
 	_update_match_timer_ui()
 	_update_global_score_ui()
+	_update_team_money_ui()
 	if game_exit_dialog.is_open():
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
 	if team_chat_panel.is_chat_open():
+		_set_weapon_aiming(false)
+		_update_cooldown_ring()
+		_update_crosshair_visibility()
+		return
+	if is_instance_valid(match_end_page) and match_end_page.visible:
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
@@ -3068,7 +3080,7 @@ func _update_continuous_tool_use() -> void:
 
 
 func _ensure_local_camera_ownership() -> void:
-	if remote_is_active or vehicle_is_active or not is_instance_valid(camera):
+	if is_respawning or remote_is_active or vehicle_is_active or not is_instance_valid(camera):
 		return
 	if not camera.current:
 		print("[CameraOwnership] Restoring local player camera for peer=%d" % authority_peer_id)
@@ -3099,6 +3111,15 @@ func _update_global_score_ui() -> void:
 			GlobalVar.get_team_score("red"),
 			GlobalVar.get_team_score("blue"),
 		]
+
+
+func _update_team_money_ui() -> void:
+	var amount := int(round(GlobalVar.check_team_item_amount(team, "money")))
+	var text := "队伍金钱  %d" % amount
+	if is_instance_valid(team_money_label):
+		team_money_label.text = text
+	if is_instance_valid(control_status_team_money_label):
+		control_status_team_money_label.text = text
 
 
 func _physics_process(delta: float) -> void:
@@ -3433,7 +3454,7 @@ func _create_team_money_delta_feeds() -> void:
 
 
 func show_team_money_delta(changed_team: String, delta: float) -> void:
-	if changed_team != team or is_zero_approx(delta):
+	if changed_team != team or delta <= 0.0:
 		return
 	if team_money_delta_feeds.is_empty():
 		_create_team_money_delta_feeds()
@@ -3514,6 +3535,10 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if is_remote_proxy:
 		return
 	var event_type := str(event.get("type", ""))
+	if event_type == "match_ended":
+		var settlement_value: Variant = event.get("settlement", {})
+		show_match_end_page(settlement_value as Dictionary if settlement_value is Dictionary else {})
+		return
 	if event_type == "personal_inventory_grant":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
 			var entries: Variant = event.get("entries", [])
@@ -3552,6 +3577,8 @@ func _on_authority_world_event(event: Dictionary) -> void:
 			)
 		return
 	if event_type == "team_money_changed":
+		return
+	if event_type == "team_score_changed":
 		show_team_money_delta(
 			str(event.get("team", "")),
 			float(event.get("delta", 0.0))
@@ -3756,6 +3783,13 @@ func _create_health_ui() -> void:
 	content.add_theme_constant_override("separation", 5)
 	margin.add_child(content)
 
+	team_money_label = Label.new()
+	team_money_label.text = "队伍金钱  0"
+	team_money_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	team_money_label.add_theme_font_size_override("font_size", 18)
+	team_money_label.add_theme_color_override("font_color", Color("#FFD166"))
+	content.add_child(team_money_label)
+
 	ammo_label = Label.new()
 	ammo_label.text = ""
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -3808,6 +3842,12 @@ func _create_control_status_ui() -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 4)
 	margin.add_child(content)
+
+	control_status_team_money_label = Label.new()
+	control_status_team_money_label.text = "队伍金钱  0"
+	control_status_team_money_label.add_theme_font_size_override("font_size", 16)
+	control_status_team_money_label.add_theme_color_override("font_color", Color("#FFD166"))
+	content.add_child(control_status_team_money_label)
 
 	control_status_title = Label.new()
 	control_status_title.add_theme_font_size_override("font_size", 17)
@@ -3943,6 +3983,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		_update_tranquilizer_overlay()
 		if started_respawning:
 			death_respawn_duration = respawn_left
+			_reset_all_camera_shake()
 			_play_death_animation()
 		else:
 			# The reliable death event can arrive after an earlier snapshot. Keep the
@@ -3977,12 +4018,13 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		velocity = Vector3.ZERO
 		if remote_is_active:
 			remote_device_close(false)
-		if not is_remote_proxy:
+		if _owns_local_death_camera():
 			_ensure_respawn_overlay()
-			var fade := create_tween()
-			fade.tween_property(respawn_overlay, "color:a", 0.88, 0.65)
+			_start_death_camera()
 			_update_respawn_overlay()
 	else:
+		_reset_all_camera_shake()
+		_stop_death_camera()
 		death_respawn_duration = 0.0
 		action_anim_locked = false
 		landing_animation = false
@@ -4017,14 +4059,197 @@ func _update_death_appearance_visibility() -> void:
 		return
 	var hide_at_remaining := death_respawn_duration * 0.5
 	appearance.visible = respawn_left > hide_at_remaining
+	_update_death_camera()
 
 
 func _update_respawn_overlay() -> void:
 	if not is_instance_valid(respawn_label):
 		return
-	respawn_label.visible = is_respawning
+	var reveal_respawn_overlay := is_respawning and respawn_left <= death_respawn_duration * 0.5
+	respawn_label.visible = reveal_respawn_overlay
 	if is_respawning:
-		respawn_label.text = "复活中... %d" % maxf(1.0, ceilf(respawn_left))
+		var target_alpha := 0.88 if reveal_respawn_overlay else 0.0
+		if is_instance_valid(respawn_overlay) and not is_equal_approx(respawn_overlay.color.a, target_alpha):
+			var fade := create_tween()
+			fade.tween_property(respawn_overlay, "color:a", target_alpha, 0.35)
+		if reveal_respawn_overlay:
+			respawn_label.text = "你死了\n复活中... %d" % maxf(1.0, ceilf(respawn_left))
+
+
+func show_match_end_page(settlement: Dictionary) -> void:
+	if is_remote_proxy or is_instance_valid(match_end_page):
+		return
+	if is_instance_valid(cargo_car_storage_page):
+		cargo_car_storage_page.close()
+	if is_instance_valid(cargo_crate_storage_page):
+		cargo_crate_storage_page.close()
+	match_end_page = Control.new()
+	match_end_page.name = "MatchEndPage"
+	match_end_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	match_end_page.z_index = 200
+	match_end_page.mouse_filter = Control.MOUSE_FILTER_STOP
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.0, 0.0, 0.82)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	match_end_page.add_child(dim)
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.offset_left = -390.0
+	panel.offset_top = -315.0
+	panel.offset_right = 390.0
+	panel.offset_bottom = 315.0
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color("#101313")
+	panel_style.border_color = Color("#D78A31")
+	panel_style.set_border_width_all(3)
+	panel_style.set_corner_radius_all(6)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	match_end_page.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_bottom", 24)
+	panel.add_child(margin)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	margin.add_child(content)
+	var scores: Dictionary = settlement.get("scores", GlobalVar.get_team_scores()) as Dictionary
+	var money: Dictionary = settlement.get("money", {}) as Dictionary
+	var stats: Dictionary = settlement.get("stats", {}) as Dictionary
+	var own_score := int(scores.get(team, GlobalVar.get_team_score(team)))
+	var opponent_team := "blue" if team == "red" else "red"
+	var opponent_score := int(scores.get(opponent_team, GlobalVar.get_team_score(opponent_team)))
+	var own_stats: Dictionary = stats.get(team, GlobalVar.get_team_match_stats(team)) as Dictionary
+	var enemy_stats: Dictionary = stats.get(opponent_team, GlobalVar.get_team_match_stats(opponent_team)) as Dictionary
+	var own_money := int(money.get(team, GlobalVar.check_team_item_amount(team, "money")))
+	var enemy_money := int(money.get(opponent_team, GlobalVar.check_team_item_amount(opponent_team, "money")))
+	var is_victory := own_score > opponent_score \
+		or (own_score == opponent_score and int(own_stats.get("completed_orders", 0)) > int(enemy_stats.get("completed_orders", 0))) \
+		or (own_score == opponent_score and int(own_stats.get("completed_orders", 0)) == int(enemy_stats.get("completed_orders", 0)) and own_money >= enemy_money)
+	var title := Label.new()
+	title.text = "胜利" if is_victory else "失败"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 52)
+	title.add_theme_color_override("font_color", Color("#72D692") if is_victory else Color("#F06A61"))
+	content.add_child(title)
+	var score_line := Label.new()
+	score_line.text = "最终得分  %d : %d" % [own_score, opponent_score]
+	score_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	score_line.add_theme_font_size_override("font_size", 22)
+	score_line.add_theme_color_override("font_color", Color("#E8E8E8"))
+	content.add_child(score_line)
+	var table := GridContainer.new()
+	table.columns = 3
+	table.add_theme_constant_override("h_separation", 24)
+	table.add_theme_constant_override("v_separation", 7)
+	content.add_child(table)
+	_add_settlement_cell(table, "", HORIZONTAL_ALIGNMENT_LEFT, Color("#A9B6B2"))
+	_add_settlement_cell(table, "本队", HORIZONTAL_ALIGNMENT_CENTER, _team_color(team))
+	_add_settlement_cell(table, "对方", HORIZONTAL_ALIGNMENT_CENTER, _team_color(opponent_team))
+	var rows := [
+		["完成订单", "completed_orders"], ["部分完成订单", "partial_orders"],
+		["农业与养殖贡献", "agriculture_livestock"], ["料理贡献", "cooking"],
+		["矿产贡献", "mining"], ["战斗贡献", "combat"],
+	]
+	for row: Array in rows:
+		_add_settlement_cell(table, str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, Color("#E6ECE8"))
+		_add_settlement_cell(table, _format_settlement_value(int(own_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
+		_add_settlement_cell(table, _format_settlement_value(int(enemy_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
+	_add_settlement_cell(table, "剩余资金", HORIZONTAL_ALIGNMENT_LEFT, Color("#E6ECE8"))
+	_add_settlement_cell(table, _format_settlement_value(own_money), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
+	_add_settlement_cell(table, _format_settlement_value(enemy_money), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
+	var button := Button.new()
+	button.text = "返回战局浏览器" if GameAuthority.should_send_network_requests() else "返回主界面"
+	button.custom_minimum_size = Vector2(230.0, 50.0)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	button.pressed.connect(_return_from_match_end)
+	content.add_child(button)
+	$SubViewport.add_child(match_end_page)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _add_settlement_cell(grid: GridContainer, text_value: String, alignment: HorizontalAlignment, color: Color) -> void:
+	var label := Label.new()
+	label.text = text_value
+	label.horizontal_alignment = alignment
+	label.custom_minimum_size = Vector2(190.0 if alignment == HORIZONTAL_ALIGNMENT_LEFT else 120.0, 28.0)
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", color)
+	grid.add_child(label)
+
+
+func _format_settlement_value(value: int) -> String:
+	return "%d" % value
+
+
+func _team_color(value: String) -> Color:
+	return Color("#FF6464") if value == "red" else Color("#6FAAFF")
+
+
+func _return_from_match_end() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.disconnect_from_game_server(false)
+		GlobalVar.open_server_browser_on_main_menu = true
+	else:
+		GameAuthority.stop_authority()
+		GlobalVar.open_server_browser_on_main_menu = false
+	get_tree().change_scene_to_file("res://ui/MainMenuRoot.tscn")
+
+
+func _start_death_camera() -> void:
+	if not _owns_local_death_camera() or not is_instance_valid(camera):
+		return
+	if not is_instance_valid(death_camera):
+		death_camera = Camera3D.new()
+		death_camera.name = "DeathCamera"
+		var camera_host: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
+		if camera_host == null:
+			camera_host = get_parent()
+		camera_host.add_child(death_camera)
+	var backward := global_transform.basis.z.normalized()
+	if backward.length_squared() < 0.001:
+		backward = Vector3.BACK
+	death_camera_origin = global_position + Vector3.UP * 1.7 + backward * 2.6
+	death_camera_target = global_position + Vector3.UP * 7.0 + backward * 8.5
+	death_camera.global_position = death_camera_origin
+	death_camera.fov = camera.fov
+	death_camera.look_at(global_position + Vector3.UP * 0.55, Vector3.UP)
+	camera.current = false
+	death_camera.make_current()
+
+
+func _update_death_camera() -> void:
+	if not is_instance_valid(death_camera) or death_respawn_duration <= 0.0:
+		return
+	var progress := clampf(1.0 - respawn_left / death_respawn_duration, 0.0, 1.0)
+	var camera_progress := clampf(progress * 2.0, 0.0, 1.0)
+	death_camera.global_position = death_camera_origin.lerp(death_camera_target, camera_progress)
+	death_camera.look_at(global_position + Vector3.UP * 0.65, Vector3.UP)
+	if not death_camera.current:
+		death_camera.make_current()
+
+
+func _stop_death_camera() -> void:
+	if not _owns_local_death_camera():
+		return
+	if is_instance_valid(death_camera):
+		death_camera.queue_free()
+	death_camera = null
+	if is_instance_valid(camera):
+		camera.make_current()
+
+
+func _owns_local_death_camera() -> bool:
+	if is_remote_proxy:
+		return false
+	if GameAuthority.is_local_authority():
+		return authority_peer_id == GameAuthority.local_player_id
+	if GameAuthority.should_send_network_requests():
+		return authority_peer_id == MultiplayerNetwork.get_unique_peer_id()
+	return false
 
 
 func _update_match_timer_ui() -> void:
@@ -5297,6 +5522,19 @@ func _update_camera_shake(delta: float) -> void:
 		) * camera_shake_strength * fade
 	else:
 		camera.position = camera_rest_position
+
+
+func _reset_all_camera_shake() -> void:
+	# Death changes the active camera before the normal shake update can restore
+	# its offset. Reset every possible presentation camera so no pre-death jitter
+	# carries into the respawned first-person view.
+	if is_instance_valid(camera):
+		camera.position = camera_rest_position
+	camera_shake_time = 0.0
+	camera_shake_strength = 0.0
+	camera_shake_duration = 0.22
+	_reset_vehicle_camera_shake()
+	_reset_remote_camera_shake()
 
 
 func _connect_active_vehicle_damage_signal() -> void:

@@ -1,4 +1,4 @@
-# Food-War FarmRunner Dock
+# FarmWar FarmRunner Dock
 # Low-profile visual marker / charging-dock style base for FarmRunner
 # Blender 4.4+ Python script
 #

@@ -24,8 +24,7 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	if not is_instance_valid(vehicle) or not is_instance_valid(player) \
-			or player.global_position.distance_to(vehicle.global_position) > 6.5 \
-			or absf(vehicle.current_speed) > 0.25:
+			or not vehicle.is_cargo_storage_interaction_available_to(player.global_position):
 		close()
 
 

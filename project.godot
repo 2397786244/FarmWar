@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="FoodWar"
+config/name="FarmWar"
 run/main_scene="uid://bi010yget6nhi"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
@@ -38,7 +38,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="FoodWar"
+project/assembly_name="FarmWar"
 
 [filesystem]
 

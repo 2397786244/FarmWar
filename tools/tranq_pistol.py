@@ -1,6 +1,6 @@
 # Blender 4.x / 5.x
 # -----------------------------------------------------------------------------
-# Food War / Farm Town - Rounded Tranquilizer Pistol (Black / Purple)
+# FarmWar / Farm Town - Rounded Tranquilizer Pistol (Black / Purple)
 #
 # Generates:
 #   generated_farmtown_tools/FTF_Tool_TranquilizerPistol_RoundPurple_v2.glb

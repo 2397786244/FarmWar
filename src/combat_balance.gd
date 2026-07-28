@@ -5,7 +5,7 @@ class_name CombatBalance
 ## runtime, but GameAuthority must never carry a second set of literals.
 const PROFILES := {
 	"team_rewards": {
-		"enemy_player_kill": 100,
+		"enemy_player_kill": 200,
 		"wild_animal_kill": 50,
 		"crop_harvest": 5,
 		"ore_mined": 50,

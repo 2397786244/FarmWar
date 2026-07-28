@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://clltj1txxhs4s"]
+
+[ext_resource type="PackedScene" uid="uid://cjdo3sqcmxkfe" path="res://assets/buildings/FTF_Garden_FlowerBed_Long_4m.glb" id="1_s3mrs"]
+
+[node name="GardenFlower2" type="StaticBody3D" unique_id=1841070220]
+
+[node name="FTF_Garden_FlowerBed_Long_4m2" parent="." unique_id=1070540541 instance=ExtResource("1_s3mrs")]
