@@ -12,7 +12,7 @@ const LOCAL_BOUNDARY_WARNING_SHADER: Shader = preload(
 	"res://src/environment/local_boundary_warning.gdshader"
 )
 const CRESTON_TOWN_SURFACE_PALETTE_LOOKUP: Texture2D = preload(
-	"res://worlds/creston_town_surface_palette_lookup.res"
+	"res://worlds/creston_town/creston_town_surface_palette_lookup.res"
 )
 # CrestonTown's 1m-thick Grass BoxMesh is centered at y=0, so its visible
 # surface is y=0.5. Keep the GLB base slabs slightly below that surface.
@@ -35,6 +35,7 @@ const FAR_GRASS_SURFACE_Y := 0.51
 @export var fourth_rock_count := 5
 @export var fifth_rock_count := 3
 @export var visibility_distance := 900.0
+@export var surface_palette_lookup: Texture2D = CRESTON_TOWN_SURFACE_PALETTE_LOOKUP
 @export_group("Sparse First-ring Grass")
 @export var far_grass_inner_half_extent := 132.0
 @export var far_grass_outer_half_extent := 250.0
@@ -93,7 +94,7 @@ func _build_far_ground() -> void:
 	_grass_material = ShaderMaterial.new()
 	_grass_material.shader = FAR_GRASS_SHADER
 	_grass_material.set_shader_parameter(
-		"surface_palette", CRESTON_TOWN_SURFACE_PALETTE_LOOKUP
+		"surface_palette", surface_palette_lookup
 	)
 	var core_half := core_map_size * 0.5
 	var far_half := far_ground_size * 0.5

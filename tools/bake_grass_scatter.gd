@@ -1,6 +1,6 @@
 extends SceneTree
 
-const DEFAULT_SCENE := "res://worlds/creston_town.tscn"
+const DEFAULT_SCENE := "res://worlds/creston_town/creston_town.tscn"
 
 
 func _initialize() -> void:

@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://dqqw8jwrh8hb"]
+
+[ext_resource type="PackedScene" uid="uid://g522kdvnhxbk" path="res://character/weapons/NormalDrone.tscn" id="1_normal"]
+[ext_resource type="Script" uid="uid://cqa2ye12v2opc" path="res://src/ai_normal_drone.gd" id="2_script"]
+
+[node name="AINormalDrone" unique_id=260222586 instance=ExtResource("1_normal")]
+script = ExtResource("2_script")
+team_id = "blue"
+target_scan_range = 50.0
+attack_standoff_distance = 9.0
+ai_move_speed = 11.0
+target_refresh_interval = 0.35
+minimum_effective_signal_to_attack = 0.2

@@ -127,3 +127,8 @@ debug_color = Color(0, 0.6, 0.69803923, 1)
 transform = Transform3D(0.92646307, -0.37638596, 0, 0.37638596, 0.92646307, 0, 0, 0, 1, -3.096724, 7.9652157, 0)
 shape = SubResource("BoxShape3D_18nie")
 debug_color = Color(0, 0.6, 0.69803923, 1)
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=2134964255]
+depth = 10.0
+polygon = PackedVector2Array(5.829662, 6.6193056, 0.035058163, 9.010342, -5.918134, 6.5827084)
+debug_color = Color(0.9229195, 0.21638012, 0.446527, 0.41960785)

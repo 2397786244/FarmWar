@@ -88,6 +88,8 @@ var team_match_stats: Dictionary = {
 
 var pending_player_selection:Dictionary = {}
 var open_server_browser_on_main_menu := false
+var open_cooperative_worlds_on_main_menu := false
+var cooperative_return_notice := ""
 
 func _init() -> void:
 	for team: String in team_storage:

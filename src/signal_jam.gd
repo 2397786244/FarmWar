@@ -199,6 +199,9 @@ func get_jam_ratio_for_device(device_id: String) -> float:
 func _refresh_jammed_devices() -> void:
 	if not is_instance_valid(jam_3d):
 		return
+	for previous in jammed_devices.values():
+		if is_instance_valid(previous) and previous.has_method("set_jam_ratio"):
+			previous.call("set_jam_ratio", 1.0)
 	var current_devices: Dictionary = {}
 	for body in jam_3d.get_overlapping_bodies():
 		var target := _remote_device_from_collider(body)
@@ -207,6 +210,10 @@ func _refresh_jammed_devices() -> void:
 		var device_id := _device_id_for(target)
 		current_devices[device_id] = target
 	jammed_devices = current_devices
+	for device_id in jammed_devices:
+		var target: Node3D = jammed_devices[device_id]
+		if is_instance_valid(target) and target.has_method("set_jam_ratio"):
+			target.call("set_jam_ratio", get_jam_ratio_for_device(str(device_id)))
 
 
 func _on_jam_3d_body_entered(body: Node3D) -> void:

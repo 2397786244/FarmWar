@@ -52,6 +52,17 @@ var _rng := RandomNumberGenerator.new()
 var _chain_update_accumulator := 0.0
 var _local_match_elapsed_seconds := 0.0
 var _tracked_authority_mode := ""
+var runtime_enabled := true
+
+
+func set_runtime_enabled(enabled: bool) -> void:
+	runtime_enabled = enabled
+	_chain_update_accumulator = 0.0
+	_local_match_elapsed_seconds = 0.0
+
+
+func is_runtime_enabled() -> bool:
+	return runtime_enabled
 
 
 func _ready() -> void:
@@ -63,7 +74,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if GameAuthority.is_client_proxy():
+	if not runtime_enabled or GameAuthority.is_client_proxy():
 		return
 	_track_local_match_elapsed(delta)
 	_chain_update_accumulator += delta
@@ -74,12 +85,12 @@ func _process(delta: float) -> void:
 
 
 func _on_buildings_changed(_buildings: Array[Dictionary]) -> void:
-	if not GameAuthority.is_client_proxy():
+	if runtime_enabled and not GameAuthority.is_client_proxy():
 		call_deferred("ensure_delivery_task_chains")
 
 
 func ensure_delivery_task_chains() -> void:
-	if GameAuthority.is_client_proxy():
+	if not runtime_enabled or GameAuthority.is_client_proxy():
 		return
 	var warehouses := {}
 	var now_msec := _unix_msec()
@@ -327,7 +338,7 @@ func get_material_collection_inventory() -> Array[Dictionary]:
 
 
 func emit_random_delivery_task(target_team: String, category: String, difficulty := "simple", metadata := {}) -> Array[Dictionary]:
-	if GameAuthority.is_client_proxy():
+	if not runtime_enabled or GameAuthority.is_client_proxy():
 		return []
 	if not _inventory_ready:
 		_rebuild_delivery_inventory()

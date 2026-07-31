@@ -30,7 +30,7 @@ const TALL_SPECIES_SALT := 214013
 @export_group("Rendering")
 @export_range(1.0, 500.0, 1.0) var small_visibility_distance := 60.0
 @export_range(1.0, 500.0, 1.0) var tall_visibility_distance := 80.0
-@export_file("*.res") var bake_output_path := "res://worlds/creston_town_grass_scatter.res"
+@export_file("*.res") var bake_output_path := "res://worlds/creston_town/creston_town_grass_scatter.res"
 @export var bake_data: GrassScatterBakeData
 
 @export_group("Editor Actions")

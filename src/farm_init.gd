@@ -12,6 +12,7 @@ var is_map_initialized := false
 
 const FUTURE_WARRIOR_AI_SCENE := preload("res://character/FutureWarriorAI.tscn")
 const FARMER_AI_SCENE := preload("res://character/FarmerAI.tscn")
+const ASSISTANT_AI_SCENE := preload("res://character/AssistantAI.tscn")
 
 
 func _ready() -> void:
@@ -30,13 +31,16 @@ func _ready() -> void:
 	if player != null:
 		_set_loading_progress(0.99, "正在生成玩家")
 		await get_tree().process_frame
-		_spawn_singleplayer_future_warrior()
+	if is_instance_valid(player) and GameAuthority.is_local_authority():
+		# 单人局蓝方当前由 FarmerAI 与 AssistantAI 组成；FutureWarrior 暂不生成。
 		farmer_ai = _spawn_singleplayer_farmer_ai()
 	await MapLoading.finish_loading()
 	if is_instance_valid(player):
 		player.process_mode = Node.PROCESS_MODE_INHERIT
 	if is_instance_valid(farmer_ai):
 		farmer_ai.process_mode = Node.PROCESS_MODE_INHERIT
+	if is_instance_valid(player) and GameAuthority.is_local_authority():
+		_spawn_singleplayer_assistant_ai()
 
 
 func wait_until_initialized() -> void:
@@ -153,6 +157,19 @@ func _spawn_singleplayer_farmer_ai() -> FarmerAI:
 		GameAuthority.LOCAL_PLAYER_ID
 	)
 	return farmer
+
+
+func _spawn_singleplayer_assistant_ai() -> void:
+	if not GameAuthority.is_local_authority() or not get_tree().get_nodes_in_group("assistant_ai").is_empty():
+		return
+	var assistant := ASSISTANT_AI_SCENE.instantiate() as AssistantAI
+	if assistant == null:
+		push_error("无法实例化 AssistantAI 场景。")
+		return
+	assistant.name = "AssistantAI_Blue"
+	assistant.team_id = "blue"
+	add_child(assistant)
+	assistant.global_position = get_team_spawn_position("blue", 3, GameAuthority.LOCAL_PLAYER_ID)
 
 
 func get_team_spawn_position(team: String, player_index := 0, random_seed := 0) -> Vector3:

@@ -13,6 +13,17 @@ var global_events: Array[Dictionary] = []
 var team_tasks := {"red": [], "blue": []}
 var next_event_id := 1
 var next_task_id := 1
+var emitters_enabled := true
+
+
+func set_emitters_enabled(enabled: bool) -> void:
+	emitters_enabled = enabled
+	if not emitters_enabled:
+		reset()
+
+
+func are_emitters_enabled() -> bool:
+	return emitters_enabled
 
 
 func reset() -> void:
@@ -24,7 +35,7 @@ func reset() -> void:
 
 
 func add_global_event(title: String, description := "", event_type := "info") -> Dictionary:
-	if not _can_mutate():
+	if not emitters_enabled or not _can_mutate():
 		return {}
 	if title.is_empty():
 		return {}
@@ -45,7 +56,7 @@ func add_global_event(title: String, description := "", event_type := "info") ->
 
 
 func remove_global_event(event_id: int) -> bool:
-	if not _can_mutate() or event_id <= 0:
+	if not emitters_enabled or not _can_mutate() or event_id <= 0:
 		return false
 	for index in range(global_events.size()):
 		if int(global_events[index].get("event_id", 0)) != event_id:
@@ -58,7 +69,7 @@ func remove_global_event(event_id: int) -> bool:
 
 
 func add_team_task(target_team: String, task: Dictionary) -> Array[Dictionary]:
-	if not _can_mutate() or not _is_valid_task(task):
+	if not emitters_enabled or not _can_mutate() or not _is_valid_task(task):
 		return []
 	var target_teams := _resolve_target_teams(target_team)
 	if target_teams.is_empty():
@@ -82,15 +93,19 @@ func add_team_task(target_team: String, task: Dictionary) -> Array[Dictionary]:
 
 
 func get_global_events() -> Array[Dictionary]:
+	if not emitters_enabled:
+		return []
 	return _copy_event_list(global_events)
 
 
 func get_team_tasks(team: String) -> Array[Dictionary]:
+	if not emitters_enabled:
+		return []
 	return _copy_task_list(team_tasks.get(team, []))
 
 
 func update_team_task(team: String, task_id: int, changes: Dictionary) -> Dictionary:
-	if not _can_mutate() or team not in VALID_TEAMS or task_id <= 0:
+	if not emitters_enabled or not _can_mutate() or team not in VALID_TEAMS or task_id <= 0:
 		return {}
 	var list: Array = team_tasks.get(team, [])
 	for index in range(list.size()):
@@ -122,6 +137,8 @@ func get_state_for_team(team: String) -> Dictionary:
 
 
 func apply_state(state: Dictionary) -> void:
+	if not emitters_enabled:
+		return
 	var events_value: Variant = state.get("global_events", [])
 	if events_value is Array:
 		global_events = _sanitize_dictionary_array(events_value as Array)

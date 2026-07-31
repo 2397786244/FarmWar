@@ -6,7 +6,7 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var packed := load("res://worlds/cloud_system.tscn") as PackedScene
+	var packed := load("res://worlds/shared/cloud_system.tscn") as PackedScene
 	if packed == null:
 		push_error("Cloud validation: cloud_system.tscn could not be loaded.")
 		quit(1)

@@ -2,7 +2,14 @@
 
 [ext_resource type="PackedScene" uid="uid://dl1jut8l3p30e" path="res://assets/buildings/FTF_Vehicle_MetalTankerTrailer_Silver_8m.glb" id="1_e6q4k"]
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_e6q4k"]
+size = Vector3(18, 6, 5)
+
 [node name="OilTanker" type="StaticBody3D" unique_id=1642549355]
 
 [node name="Mesh" parent="." unique_id=55931769 instance=ExtResource("1_e6q4k")]
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1073587762]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.7021217, 0)
+shape = SubResource("BoxShape3D_e6q4k")

@@ -59,6 +59,7 @@ func _spawn_animal() -> void:
 	if animal is FarmLivestock:
 		(animal as FarmLivestock).owner_team = ""
 		(animal as FarmLivestock).housed_in_chop = false
+		(animal as FarmLivestock).naturally_spawned = true
 	world.add_child(animal)
 	animal.global_position = _find_spawn_position()
 	animal.set("home_position", global_position)

@@ -6,8 +6,8 @@ class_name AutoShooterTool
 @export var max_hp := 500.0
 @export var target_range := 35.0
 @export var projectile_speed := 30.0
-@export var projectile_damage := 80.0
-@export var projectile_radius := 3.0
+@export var projectile_damage := 200.0
+@export var projectile_radius := 12.0
 @export var hp_debug_label: bool = true
 
 var current_hp := 500.0
@@ -49,7 +49,10 @@ func activate_tool() -> void:
 
 
 func tool_working() -> void:
-	if GameAuthority.is_server_authority() or not is_deployed_on_farm_tile():
+	# Active authority modes fire through GameAuthority's single projectile
+	# simulation. This legacy path remains only for isolated compatibility scenes.
+	if GameAuthority.is_server_authority() or GameAuthority.is_local_authority() \
+			or GameAuthority.should_send_network_requests() or not is_deployed_on_farm_tile():
 		return
 	var world_parent: Node = GlobalVar.gameworld
 	if world_parent == null:

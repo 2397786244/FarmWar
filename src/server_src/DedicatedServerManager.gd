@@ -28,7 +28,7 @@ const DEFAULT_METRICS_LOG_INTERVAL_SECONDS := 10.0
 const DEFAULT_MATCH_DURATION_MINUTES := 48.0
 const DEFAULT_DEATH_DROP_MODE := "save"
 const VALID_DEATH_DROP_MODES := ["all", "random", "save"]
-const SERVER_WORLD_SCENE_PATH := "res://worlds/creston_town.tscn"
+const SERVER_WORLD_SCENE_PATH := "res://worlds/creston_town/creston_town.tscn"
 
 const PUBLIC_STATE_WAITING_PLAYERS := "WAITING_PLAYERS"
 const PUBLIC_STATE_IN_GAME := "IN_GAME"

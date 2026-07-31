@@ -24,3 +24,6 @@ __MACOSX/
 # IDE-local settings
 .vscode/
 .idea/
+
+# Local Steam development AppID (for example Spacewar 480)
+steam_appid.txt

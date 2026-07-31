@@ -96,8 +96,8 @@ var max_camera_pitch_degrees: float = 70.0
 @export var bomb_cooldown: float = 2.0
 @export var startup_bomb_lock: float = 3.0
 @export var bomb_initial_down_speed: float = 10.0
-@export var bomb_damage: float = 100.0
-@export var bomb_explosion_radius: float = 4.0
+@export var bomb_damage: float = 200.0
+@export var bomb_explosion_radius: float = 12.0
 @export var bomb_ignore_drone_time: float = 0.1
 const REMOTE_PRECISION_ACTION_MIN_EFFECTIVE_SIGNAL := 0.20
 
@@ -725,6 +725,9 @@ func _submit_remote_authority_action(action_name: String) -> bool:
 		return true
 	if GameAuthority.is_local_authority():
 		GameAuthority.local_remote_action(GameAuthority.LOCAL_PLAYER_ID, action)
+		# Local authority owns both simulation and visuals for this bomb.
+		# Returning true prevents the legacy BoomBullet from being launched too.
+		return true
 	return false
 
 

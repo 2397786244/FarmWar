@@ -64,7 +64,7 @@ const PROFILES := {
 		"effect_duration": 8.0, "flash_cycle": 2.0, "darkness_alpha": 0.82,
 	},
 	"wand": {"range": 80.0, "damage": 100.0},
-	"wreck": {"projectile_speed": 30.0, "damage": 100.0, "radius": 4.0},
+	"wreck": {"projectile_speed": 30.0, "damage": 200.0, "radius": 12.0},
 	# One point ensures the explosion immediately invokes FarmTile.impact("bug")
 	# while the following cloud supplies the persistent growth-blocking effect.
 	"bug_cannon": {"projectile_speed": 30.0, "damage": 1.0, "radius": 8.0},
@@ -91,8 +91,8 @@ const PROFILES := {
 		"shield_duration": 30.0, "shield_hp": 2000.0, "cooldown": 60.0,
 	},
 	"auto_shooter": {
-		"target_range": 35.0, "projectile_speed": 30.0, "damage": 80.0,
-		"radius": 3.0, "fire_interval": 10.0,
+		"target_range": 35.0, "projectile_speed": 30.0, "damage": 200.0,
+		"radius": 12.0, "fire_interval": 10.0,
 	},
 	"wheat_sentry": {
 		"target_range": 20.0, "projectile_speed": 60.0, "damage": 25.0,
@@ -100,7 +100,7 @@ const PROFILES := {
 	},
 	"anti_air": {"intercept_range": 15.0, "magazine_size": 8, "reload_time": 20.0},
 	"normal_drone": {
-		"bomb_speed": 10.0, "bomb_damage": 100.0, "bomb_radius": 4.0,
+		"bomb_speed": 10.0, "bomb_damage": 200.0, "bomb_radius": 12.0,
 		"bomb_cooldown": 2.0, "startup_bomb_lock": 3.0,
 	},
 	"tech_drone": {

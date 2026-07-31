@@ -28,6 +28,9 @@ MapLoading="*res://src/map_loading_screen.gd"
 MapBuildingRegistry="*res://src/map_building_registry.gd"
 RareResourceManager="*res://src/rare_resource_manager.gd"
 GlobalCaptureManager="*res://src/global_capture_manager.gd"
+CooperativeWorldStorage="*res://src/cooperative_world_storage.gd"
+SteamService="*res://src/steam_service.gd"
+CooperativeSession="*res://src/cooperative_session.gd"
 
 [display]
 
@@ -39,6 +42,10 @@ window/stretch/aspect="expand"
 [dotnet]
 
 project/assembly_name="FarmWar"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godotsteam/plugin.cfg")
 
 [filesystem]
 
@@ -203,3 +210,7 @@ second_action={
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+
+[steam]
+
+initialization/app_data/app_id=480

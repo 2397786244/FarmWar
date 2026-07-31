@@ -21,6 +21,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	visible = not CooperativeSession.is_active()
+	if not visible:
+		return
 	_countdown_accumulator += delta
 	if _countdown_accumulator < 0.25:
 		return
@@ -49,6 +52,9 @@ func _on_team_tasks_changed(_team: String, _tasks: Array[Dictionary]) -> void:
 
 
 func _refresh() -> void:
+	visible = not CooperativeSession.is_active()
+	if not visible:
+		return
 	var global_lines: Array[String] = []
 	var global_events := EventBoard.get_global_events()
 	for index in range(mini(MAX_VISIBLE_GLOBAL_EVENTS, global_events.size())):

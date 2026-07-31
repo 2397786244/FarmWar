@@ -11,13 +11,19 @@ var _cooldown_remaining := 0.0
 var _rng := RandomNumberGenerator.new()
 var active_resource: Dictionary = {}
 var active_resource_node: Node3D = null
+var runtime_enabled := true
+
+
+func set_runtime_enabled(enabled: bool) -> void:
+	runtime_enabled = enabled
+	_check_timer = 0.0
 
 func _ready() -> void:
 	_rng.randomize()
 	add_to_group("rare_resource_manager")
 
 func _process(delta: float) -> void:
-	if not (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
+	if not runtime_enabled or not (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
 		return
 	_cooldown_remaining = maxf(0.0, _cooldown_remaining - delta)
 	if not active_resource.is_empty():

@@ -42,6 +42,7 @@ const NETWORK_STATES := {
 @export var egg_interval_seconds := 30.0
 @export_range(0.0, 1.0, 0.01) var golden_egg_chance := 0.10
 @export var network_proxy := false
+@export var naturally_spawned := false
 @export var initial_hp := -1.0
 @export_range(0.0, 100.0, 0.1) var initial_growth_progress := 0.0
 
@@ -306,6 +307,23 @@ func get_low_frequency_growth_state() -> Dictionary:
 		"animal_id": animal_id,
 		"growth_progress": roundi(get_growth_progress()),
 		"mature": is_mature(),
+	}
+
+
+func get_persistent_state() -> Dictionary:
+	return {
+		"animal_id": animal_id,
+		"scene_path": scene_file_path,
+		"species_id": species_id,
+		"owner_team": owner_team,
+		"position": global_position,
+		"yaw": rotation.y,
+		"home_position": home_position,
+		"current_hp": current_hp,
+		"max_hp": max_hp,
+		"growth_progress": get_growth_progress(),
+		"maturity_seconds": maturity_seconds,
+		"naturally_spawned": naturally_spawned,
 	}
 
 

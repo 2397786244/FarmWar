@@ -157,6 +157,9 @@ func apply_authoritative_chop_state(state: Dictionary) -> void:
 		for index in range(slot_items.size()):
 			slot_items[index] = ((value as Array)[index] as Dictionary).duplicate(true) \
 				if index < (value as Array).size() and (value as Array)[index] is Dictionary else {}
+			if not GameAuthority.is_client_proxy() and not slot_items[index].is_empty() \
+					and not is_instance_valid(slot_animals[index]):
+				_spawn_slot_animal(index)
 	_refresh_visuals()
 
 

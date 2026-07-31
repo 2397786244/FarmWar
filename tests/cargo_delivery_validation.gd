@@ -6,7 +6,7 @@ func _init() -> void:
 
 
 func _run_validation() -> void:
-	var map_scene := load("res://worlds/creston_town.tscn") as PackedScene
+	var map_scene := load("res://worlds/creston_town/creston_town.tscn") as PackedScene
 	assert(map_scene != null)
 	var map := map_scene.instantiate()
 	root.add_child(map)

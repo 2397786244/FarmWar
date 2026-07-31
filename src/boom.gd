@@ -1,8 +1,8 @@
 extends CharacterBody3D
 class_name BoomBullet
 
-@export var explosion_radius := 4.0
-@export var bullet_strength := 100.0
+@export var explosion_radius := 12.0
+@export var bullet_strength := 200.0
 @export var gravity_strength := 18.0
 @export var max_lifetime := 8.0
 
@@ -33,9 +33,6 @@ func _physics_process(delta: float) -> void:
 
 	current_lifetime += delta
 	var speed_multiplier = AreaProtectorTool.get_cannonball_speed_multiplier_at(
-		self, global_position, bullet_owner
-	)
-	bullet_strength = base_bullet_strength * AreaProtectorTool.get_damage_multiplier_at(
 		self, global_position, bullet_owner
 	)
 	var projectile_delta = delta * speed_multiplier
@@ -106,40 +103,15 @@ func _explode() -> void:
 		_generate_boom_effect()
 		queue_free()
 		return
-	_damage_nearby_plots(global_position)
-	_damage_nearby_players(global_position)
+	GameAuthority.apply_local_boom_explosion(
+		global_position,
+		bullet_owner,
+		bullet_strength,
+		explosion_radius,
+		"Explosion"
+	)
 	_generate_boom_effect()
 	queue_free()
-
-
-func _damage_nearby_plots(hit_position: Vector3) -> void:
-	var manager := get_node_or_null("/root/Farmlandmanager")
-	if manager == null:
-		return
-	for plot in manager.get_plots_in_radius(hit_position, explosion_radius):
-		if is_instance_valid(plot):
-			plot.impact("Explosion", bullet_strength, bullet_owner)
-
-## TODO，需要从BoomBuggy那边获得更好的伤害Tools、Player、AI的代码判断
-## 爆炸伤害附近的 AI/玩家（不伤害同队）
-func _damage_nearby_players(hit_position: Vector3) -> void:
-	for node in get_tree().get_nodes_in_group("ai_players"):
-		if not is_instance_valid(node) or not node is CharacterBody3D:
-			continue
-		var player := node as CharacterBody3D
-		# 同队不伤害
-		if player.has_method("get_combat_team") and \
-				str(player.call("get_combat_team")) == bullet_owner:
-			continue
-		var dist := player.global_position.distance_to(hit_position)
-		if dist <= explosion_radius:
-			# 距离越远伤害越低（线性衰减）
-			var damage_ratio := 1.0 - (dist / explosion_radius) * 0.5
-			var damage := bullet_strength * damage_ratio
-			if player.has_method("impact"):
-				player.impact("Explosion", damage, bullet_owner)
-			elif player.has_method("_take_damage"):
-				player.call("_take_damage", damage)
 
 
 func _generate_boom_effect() -> void:
@@ -156,7 +128,6 @@ func _generate_boom_effect() -> void:
 	world_parent.add_child(effect)
 	effect.global_position = global_position
 
-## 从外部引爆，没有接触附近的
-func explode():
-	_generate_boom_effect()
-	queue_free()
+## 防空等外部拦截也属于一次真实爆炸，不能只播放视觉效果。
+func explode() -> void:
+	_explode()

@@ -2,10 +2,13 @@ extends Control
 class_name MainMenuRoot
 
 const HOME_SCENE := preload("res://ui/HomeMenuPage.tscn")
+const MULTIPLAYER_MODE_SCENE := preload("res://ui/MultiplayerModePage.tscn")
 const SERVER_BROWSER_SCENE := preload("res://ui/ServerBrowserPage.tscn")
 const LOBBY_SCENE := preload("res://ui/MultiplayerLobbyFlow.tscn")
 const BATTLE_ROOM_SCENE := preload("res://ui/MultiplayerBattleRoomPage.tscn")
-const LOCAL_WORLD_SCENE := preload("res://worlds/creston_town.tscn")
+const COOPERATIVE_WORLD_SCENE := preload("res://ui/CooperativeWorldPage.tscn")
+const COOPERATIVE_LOBBY_SCENE := preload("res://ui/CooperativeLobbyPage.tscn")
+const LOCAL_WORLD_SCENE := preload("res://worlds/creston_town/creston_town.tscn")
 
 var page_host: Control
 var current_page: Control
@@ -16,9 +19,13 @@ func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	_build_interface()
 	_connect_multiplayer_network_signals()
+	_connect_steam_signals()
 	if GlobalVar.open_server_browser_on_main_menu:
 		GlobalVar.open_server_browser_on_main_menu = false
 		_show_server_browser()
+	elif GlobalVar.open_cooperative_worlds_on_main_menu:
+		GlobalVar.open_cooperative_worlds_on_main_menu = false
+		_show_cooperative_worlds()
 	else:
 		_show_home()
 	#Input.MOUSE_MODE_CAPTURED
@@ -48,7 +55,7 @@ func _show_home() -> void:
 	print("[MenuFlow] Opening home page")
 	var page := _set_page(HOME_SCENE)
 	page.singleplayer_requested.connect(_on_singleplayer_requested)
-	page.multiplayer_requested.connect(_show_server_browser)
+	page.multiplayer_requested.connect(_show_multiplayer_mode)
 	page.quit_requested.connect(func(): get_tree().quit())
 
 
@@ -57,6 +64,26 @@ func _show_server_browser() -> void:
 	var page := _set_page(SERVER_BROWSER_SCENE)
 	page.back_requested.connect(_show_home)
 	page.join_server_requested.connect(_show_multiplayer_lobby)
+
+
+func _show_multiplayer_mode() -> void:
+	print("[MenuFlow] Opening multiplayer mode selector")
+	var page := _set_page(MULTIPLAYER_MODE_SCENE)
+	page.back_requested.connect(_show_home)
+	page.cooperative_requested.connect(_show_cooperative_worlds)
+	page.competitive_requested.connect(_show_server_browser)
+
+
+func _show_cooperative_worlds() -> void:
+	print("[MenuFlow] Opening cooperative world selector")
+	var page := _set_page(COOPERATIVE_WORLD_SCENE)
+	page.back_requested.connect(_show_multiplayer_mode)
+
+
+func _show_cooperative_lobby(_lobby_id := 0, _lobby_data: Dictionary = {}) -> void:
+	print("[MenuFlow] Opening cooperative Steam lobby")
+	var page := _set_page(COOPERATIVE_LOBBY_SCENE)
+	page.back_requested.connect(_show_cooperative_worlds)
 
 
 func _show_multiplayer_lobby(address := "", port := 0) -> void:
@@ -105,6 +132,15 @@ func _connect_multiplayer_network_signals() -> void:
 		_on_match_started_received
 	):
 		MultiplayerNetwork.match_started_received.connect(_on_match_started_received)
+
+
+func _connect_steam_signals() -> void:
+	if not SteamService.cooperative_lobby_joined.is_connected(_on_cooperative_lobby_joined):
+		SteamService.cooperative_lobby_joined.connect(_on_cooperative_lobby_joined)
+
+
+func _on_cooperative_lobby_joined(lobby_id: int, lobby_data: Dictionary) -> void:
+	_show_cooperative_lobby(lobby_id, lobby_data)
 
 
 func _on_lobby_players_public_info_received(players: Array) -> void:

@@ -23,7 +23,7 @@ var blue_list: VBoxContainer
 var red_list: VBoxContainer
 
 ### WARNING： 开发阶段的测试
-var MAP = "res://worlds/creston_town.tscn"
+var MAP = "res://worlds/creston_town/creston_town.tscn"
 var is_loading_world:bool = false
 ###
 

@@ -51,6 +51,8 @@ const PLAYER_PHYSICS_BODY_SCENE := preload("res://character/player_physics_body.
 const BUG_STORM_SCENE := preload("res://character/weapons/BugStorm.tscn")
 const MEDICINE_STORM_SCENE := preload("res://character/weapons/MedicineStorm.tscn")
 const SPICY_AREA_SCENE := preload("res://character/weapons/SpicyArea.tscn")
+const BOOM_BULLET_SCENE := preload("res://character/weapons/boom.tscn")
+const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
 const GRENADE_VISUAL_SCENE := preload("res://character/weapons/Grenade.tscn")
 const SHIELD_LASER_VISUAL_SCENE := preload("res://character/weapons/ShieldLaser.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
@@ -311,7 +313,9 @@ func is_client_proxy() -> bool:
 
 
 func should_send_network_requests() -> bool:
-	return mode == MODE_CLIENT and MultiplayerNetwork.is_connected_to_game_server()
+	return mode == MODE_CLIENT and (
+		MultiplayerNetwork.is_connected_to_game_server() or CooperativeSession.is_client()
+	)
 
 
 func set_metrics_print_interval(seconds: float) -> void:
@@ -560,6 +564,9 @@ func _simulate_players(delta: float) -> void:
 			move = move.normalized()
 		if mode == MODE_SERVER:
 			var proxy := _ensure_player_physics_node(peer_id, position)
+			if proxy == null:
+				player_states[peer_id] = state
+				continue
 			_set_server_player_prone_collision(proxy, prone)
 			var basis := Basis(Vector3.UP, yaw)
 			var direction := (basis * Vector3(move.x, 0.0, move.y)).normalized()
@@ -1237,8 +1244,10 @@ func _apply_test_backpack_grant_to_local_player(peer_id: int, entries: Array) ->
 
 func _ensure_player_physics_node(peer_id: int, position: Vector3) -> CharacterBody3D:
 	var existing: Node = player_physics_nodes.get(peer_id, null)
-	if existing is CharacterBody3D and is_instance_valid(existing):
+	if existing is CharacterBody3D and is_instance_valid(existing) \
+			and existing.is_inside_tree() and not existing.is_queued_for_deletion():
 		return existing as CharacterBody3D
+	player_physics_nodes.erase(peer_id)
 	var body := PLAYER_PHYSICS_BODY_SCENE.instantiate() as CharacterBody3D
 	if body == null:
 		push_error("Unable to create the shared player physics body.")
@@ -1262,6 +1271,10 @@ func _clear_player_physics_nodes() -> void:
 		if is_instance_valid(proxy):
 			proxy.queue_free()
 	player_physics_nodes.clear()
+
+
+func prepare_world_transition() -> void:
+	_clear_player_physics_nodes()
 
 
 func local_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
@@ -6623,6 +6636,8 @@ func _spawn_server_projectile(
 		"life": 0.0,
 		"max_life": 8.0,
 	}
+	if mode == MODE_LOCAL and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+		_spawn_local_projectile_visual(projectile_id, BOOM_BULLET_SCENE, projectile_states[projectile_id])
 	return {"ok": true, "projectile_id": projectile_id, "projectile_type": projectile_type, "position": origin}
 
 
@@ -6713,6 +6728,19 @@ func _spawn_local_grenade_explosion(position: Vector3) -> void:
 	if world == null:
 		return
 	var effect := GRENADE_EXPLOSION_SCENE.instantiate() as Node3D
+	if effect == null:
+		return
+	world.add_child(effect)
+	effect.global_position = position
+
+
+func _spawn_local_boom_explosion(position: Vector3) -> void:
+	if mode != MODE_LOCAL:
+		return
+	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
+	if world == null:
+		return
+	var effect := BOOM_EFFECT_SCENE.instantiate() as Node3D
 	if effect == null:
 		return
 	world.add_child(effect)
@@ -7076,6 +7104,65 @@ func _server_intercept_enemy_projectile(tool: Dictionary, range: float) -> bool:
 	return true
 
 
+## Local BoomBullet entities (Wreck, NormalDrone, and AutoShooter) use this
+## instead of their old AI-only overlap check.  Multiplayer projectiles are
+## still resolved by _explode_projectile on the server.
+func apply_local_boom_explosion(
+	position: Vector3,
+	team: String,
+	damage: float,
+	radius: float,
+	effect := "Explosion",
+	knockback := 20.0
+) -> void:
+	if not is_local_authority() or radius <= 0.0 or damage <= 0.0:
+		return
+	# Match server projectile resolution: the shield zone weakens an enemy Boom
+	# at the actual detonation point, before its radius damage is distributed.
+	damage *= AreaProtectorTool.get_damage_multiplier_at(self, position, team)
+	var attacker_peer_id := resolve_attacker_peer_id(team)
+	for peer_id_value in player_states.keys():
+		var peer_id := int(peer_id_value)
+		var target: Dictionary = player_states[peer_id]
+		if str(target.get("team", "")) == team:
+			continue
+		var position_value: Variant = get_authoritative_player_position(peer_id)
+		var target_position: Vector3 = position_value as Vector3 if position_value is Vector3 else _vector3_from_value(target.get("position", Vector3.ZERO))
+		var distance := target_position.distance_to(position)
+		if distance > radius:
+			continue
+		var ratio := 1.0 - (distance / radius) * 0.5
+		var occlusion := _explosion_damage_multiplier(position, target_position + Vector3.UP * 0.9)
+		var direction := (target_position - position).normalized()
+		_damage_player(
+			peer_id,
+			damage * ratio * occlusion,
+			knockback * ratio * occlusion,
+			direction,
+			team,
+			effect,
+			attacker_peer_id
+		)
+	var manager := get_node_or_null("/root/Farmlandmanager")
+	if manager != null:
+		var plots: Array = manager.call("get_plots_in_radius", position, radius)
+		for plot in plots:
+			if not plot is FarmTile:
+				continue
+			var tile := plot as FarmTile
+			var occlusion := _explosion_damage_multiplier(position, tile.global_position + Vector3.UP * 0.15, tile)
+			tile.impact(effect, damage * occlusion, team)
+	_damage_future_warriors_in_radius(position, radius, damage, team, effect, false, false)
+	_damage_farmer_ais_in_radius(position, radius, damage, team, effect, false, false)
+	_damage_assistant_ai_in_radius(position, radius, damage, team, effect, false, false)
+	_damage_ai_normal_drones_in_radius(position, radius, damage, team, effect, false, false)
+	_damage_vehicles_in_radius(position, radius, damage, team, effect)
+	_damage_tools_in_radius(position, radius, damage, team, effect)
+	_damage_harvest_trees_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
+	_damage_nature_resources_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
+	_damage_wild_animals_in_radius(position, radius, damage, knockback, team, effect, false, attacker_peer_id)
+
+
 func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_peer_id := 0, hit_world := true) -> void:
 	if not projectile_states.has(projectile_id):
 		return
@@ -7101,7 +7188,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			if not friendly_fire and str(target.get("team", "")) == team:
 				continue
 			var is_direct_hit := int(peer_id) == direct_hit_peer_id
-			var pos := _vector3_from_value(target.get("position", Vector3.ZERO))
+			var position_value: Variant = get_authoritative_player_position(int(peer_id))
+			var pos: Vector3 = position_value as Vector3 if position_value is Vector3 else _vector3_from_value(target.get("position", Vector3.ZERO))
 			var dist := pos.distance_to(hit_position)
 			if is_direct_hit or dist <= radius:
 				var ratio := 1.0 if is_direct_hit else maxf(0.0, 1.0 - dist / radius) \
@@ -7125,6 +7213,12 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		)
 		confirmed_target_count += int(farmer_ai_damage.get("count", 0))
 		confirmed_total_damage += float(farmer_ai_damage.get("total_damage", 0.0))
+		var assistant_damage := _damage_assistant_ai_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire)
+		confirmed_target_count += int(assistant_damage.get("count", 0))
+		confirmed_total_damage += float(assistant_damage.get("total_damage", 0.0))
+		var ai_drone_damage := _damage_ai_normal_drones_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire)
+		confirmed_target_count += int(ai_drone_damage.get("count", 0))
+		confirmed_total_damage += float(ai_drone_damage.get("total_damage", 0.0))
 		var manager := get_node_or_null("/root/Farmlandmanager")
 		if manager != null:
 			var plots: Array = manager.call("get_plots_in_radius", hit_position, radius)
@@ -7190,6 +7284,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		)
 	if projectile_type == "grenade":
 		_spawn_local_grenade_explosion(hit_position)
+	elif mode == MODE_LOCAL and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+		_spawn_local_boom_explosion(hit_position)
 	reliable_world_event_ready.emit({
 		"type": "projectile_exploded",
 		"projectile_id": projectile_id,
@@ -8132,6 +8228,10 @@ func _apply_hit_to_collider(
 			return bool((node as FutureWarriorAI).impact(effect, damage, attacker_team))
 		if node is FarmerAI:
 			return bool((node as FarmerAI).impact(effect, damage, attacker_team))
+		if node is AssistantAI:
+			return bool((node as AssistantAI).impact(effect, damage, attacker_team))
+		if node is AINormalDrone:
+			return bool((node as AINormalDrone).impact(effect, damage, attacker_team))
 		if node is VehicleBase:
 			return _damage_vehicle(node as VehicleBase, damage, effect, attacker_team)
 		var tool_ref := _registered_tool_ref_for_node(node)
@@ -8208,6 +8308,34 @@ func _damage_farmer_ais_in_radius(
 		if farmer.impact(effect, applied_damage, attacker_team, direction):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied_damage
+	return result
+
+
+func _damage_assistant_ai_in_radius(center: Vector3, radius: float, damage: float, attacker_team: String, effect: String, linear_falloff := false, friendly_fire := false) -> Dictionary:
+	return _damage_group_nodes_in_radius("assistant_ai", center, radius, damage, attacker_team, effect, linear_falloff, friendly_fire)
+
+
+func _damage_ai_normal_drones_in_radius(center: Vector3, radius: float, damage: float, attacker_team: String, effect: String, linear_falloff := false, friendly_fire := false) -> Dictionary:
+	return _damage_group_nodes_in_radius("ai_normal_drones", center, radius, damage, attacker_team, effect, linear_falloff, friendly_fire)
+
+
+func _damage_group_nodes_in_radius(group_name: String, center: Vector3, radius: float, damage: float, attacker_team: String, effect: String, linear_falloff: bool, friendly_fire: bool) -> Dictionary:
+	var result := {"count": 0, "total_damage": 0.0}
+	for node in get_tree().get_nodes_in_group(group_name):
+		if not node is Node3D or not is_instance_valid(node):
+			continue
+		var target := node as Node3D
+		var target_team := str(target.call("get_combat_team")) if target.has_method("get_combat_team") else ""
+		if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
+			continue
+		var distance := target.global_position.distance_to(center)
+		if distance > radius:
+			continue
+		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
+		var applied := maxf(0.0, damage * ratio * _explosion_damage_multiplier(center, target.global_position + Vector3.UP, target))
+		if applied > 0.0 and target.has_method("impact") and bool(target.call("impact", effect, applied, attacker_team)):
+			result["count"] = int(result["count"]) + 1
+			result["total_damage"] = float(result["total_damage"]) + applied
 	return result
 
 
@@ -8884,6 +9012,7 @@ func _apply_tech_drone_repair_pulse(
 	var visual_speed := _configured_tool_float(device_node, "repair_pulse_visual_speed", CombatBalance.get_float("tech_drone", "visual_speed"))
 	var hit := _raycast_world(origin, origin + direction * range)
 	var hit_position := _vector3_from_value(hit.get("position", origin + direction * range))
+	var actor_team := str(result.get("team", ""))
 	if hit.has("collider"):
 		var tool_ref := _tool_ref_for_collider(hit.get("collider"))
 		if not tool_ref.is_empty():
@@ -8891,7 +9020,6 @@ func _apply_tech_drone_repair_pulse(
 			var target_type := _tech_drone_electronic_type_key(
 				str(state.get("tool_name", state.get("device_type", "")))
 			)
-			var actor_team := str(result.get("team", ""))
 			if str(state.get("team", "")) == actor_team:
 				_repair_registered_tool_ref(
 					tool_ref,
@@ -8901,6 +9029,15 @@ func _apply_tech_drone_repair_pulse(
 				var target := _gameplay_tool_node(_node_for_tool_ref(tool_ref))
 				if target != null and target.has_method("impact"):
 					target.call("impact", "repair_laser", 0.0, actor_team)
+		elif hit.get("collider") is Node:
+			var cursor := hit.get("collider") as Node
+			while cursor != null:
+				if cursor is AINormalDrone:
+					var ai_drone := cursor as AINormalDrone
+					if ai_drone.team_id != actor_team:
+						ai_drone.impact("repair_laser", 0.0, actor_team)
+					break
+				cursor = cursor.get_parent()
 	var lifetime := maxf(0.01, origin.distance_to(hit_position) / maxf(visual_speed, 0.01))
 	_emit_visual_projectile(peer_id, "repair_laser", origin, direction, visual_speed, lifetime, "repair_laser", true)
 

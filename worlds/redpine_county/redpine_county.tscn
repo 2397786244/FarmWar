@@ -1,0 +1,180 @@
+[gd_scene format=3 uid="uid://dgmoifwfbwlvt"]
+
+[ext_resource type="PackedScene" path="res://worlds/shared/cloud_system.tscn" id="1_egthv"]
+[ext_resource type="PackedScene" path="res://worlds/shared/day_night_system.tscn" id="2_4qtev"]
+[ext_resource type="Shader" uid="uid://pu5wb13ismhh" path="res://src/terrain/terrain_surface.gdshader" id="3_e2tvo"]
+[ext_resource type="Resource" path="res://worlds/redpine_county/redpine_county_surface_palette.tres" id="4_palette"]
+[ext_resource type="Texture2D" path="res://worlds/redpine_county/redpine_county_surface_mask.res" id="5_mask"]
+[ext_resource type="Texture2D" path="res://worlds/redpine_county/redpine_county_surface_palette_lookup.res" id="6_lookup"]
+[ext_resource type="Script" uid="uid://dn8o1sjdmg6re" path="res://src/terrain/terrain_surface_baker.gd" id="7_baker"]
+[ext_resource type="Script" uid="uid://ds7s0htg58tpd" path="res://src/terrain/grass_scatter_3d.gd" id="8_grass_scatter"]
+[ext_resource type="PackedScene" uid="uid://b3uurwo4gfuai" path="res://assets/environment/Grass_small.glb" id="9_grass_small"]
+[ext_resource type="PackedScene" uid="uid://jvc2pomu8b0q" path="res://assets/environment/Grass_tall.glb" id="10_grass_tall"]
+[ext_resource type="Script" uid="uid://fs0mky1autm5" path="res://src/environment/far_scenery_ring_3d.gd" id="11_far_scenery"]
+[ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="12_farm_field"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_mxl0g"]
+sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
+sky_horizon_color = Color(0.8666667, 0.9372549, 0.7882353, 1)
+ground_bottom_color = Color(0.30588236, 0.43529412, 0.27058825, 1)
+ground_horizon_color = Color(0.7882353, 0.8352941, 0.65882355, 1)
+sun_angle_max = 20.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_ou4pv"]
+sky_material = SubResource("ProceduralSkyMaterial_mxl0g")
+
+[sub_resource type="Environment" id="Environment_u05bv"]
+background_mode = 2
+sky = SubResource("Sky_ou4pv")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+
+[sub_resource type="NavigationMesh" id="NavigationMesh_redpine"]
+agent_height = 1.8
+agent_radius = 0.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_y800q"]
+render_priority = 0
+shader = ExtResource("3_e2tvo")
+shader_parameter/surface_mask = ExtResource("5_mask")
+shader_parameter/surface_palette = ExtResource("6_lookup")
+shader_parameter/terrain_origin = Vector2(-512, -512)
+shader_parameter/terrain_size = Vector2(1024, 1024)
+
+[sub_resource type="BoxMesh" id="BoxMesh_kbqde"]
+material = SubResource("ShaderMaterial_y800q")
+size = Vector3(1024, 1, 1024)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lpa43"]
+size = Vector3(1024, 1, 1024)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_boundary_ns"]
+size = Vector3(1028, 50, 2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_boundary_ew"]
+size = Vector3(2, 50, 1024)
+
+[node name="RedpineCounty" type="Node3D" unique_id=1847981274]
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1868436204]
+transform = Transform3D(0.8660254, 0.38302222, -0.32139382, 0, 0.64278764, 0.76604444, 0.5, -0.66341394, 0.5566704, 0, 33.850002, 0)
+light_color = Color(1, 0.94509804, 0.8156863, 1)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=615547506]
+environment = SubResource("Environment_u05bv")
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="." unique_id=1025921194]
+navigation_mesh = SubResource("NavigationMesh_redpine")
+
+[node name="RedpineFarmWest" type="Node3D" parent="." unique_id=1591635433]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -430, 0.52, -430)
+script = ExtResource("12_farm_field")
+field_label = "redpine_west"
+length_tiles = 64
+width_tiles = 48
+generate_on_ready = true
+
+[node name="RedpineFarmEast" type="Node3D" parent="." unique_id=781594620]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 200, 0.52, 270)
+script = ExtResource("12_farm_field")
+field_label = "redpine_east"
+length_tiles = 64
+width_tiles = 48
+generate_on_ready = true
+
+[node name="CloudSystem" parent="." unique_id=370718456 instance=ExtResource("1_egthv")]
+large_tower_count = 36
+long_wispy_count = 0
+medium_layered_count = 8
+small_puff_count = 8
+random_seed = 66666
+coverage_size = Vector2(1024, 1024)
+core_cloud_ratio = 0.3
+cloud_height_range = Vector2(60, 120)
+cloud_visibility_distance = 500.0
+
+[node name="DayNightSystem" parent="." unique_id=1281452287 instance=ExtResource("2_4qtev")]
+initial_hour = 17.0
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=51506157]
+collision_mask = 14334
+
+[node name="Grass" type="MeshInstance3D" parent="Ground" unique_id=1512160251]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.080908775, 0, 0.17407644)
+mesh = SubResource("BoxMesh_kbqde")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=1459429199]
+shape = SubResource("BoxShape3D_lpa43")
+debug_color = Color(0.9084172, 0.19416112, 0.57601494, 0.41960785)
+
+[node name="MapBoundaryWalls" type="Node3D" parent="." unique_id=998186456]
+
+[node name="NorthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=375170044]
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/NorthWall" unique_id=1162062283]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25.5, -513)
+shape = SubResource("BoxShape3D_boundary_ns")
+
+[node name="SouthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=660613481]
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/SouthWall" unique_id=2035578391]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25.5, 513)
+shape = SubResource("BoxShape3D_boundary_ns")
+
+[node name="WestWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=313017060]
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/WestWall" unique_id=1493005382]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -513, 25.5, 0)
+shape = SubResource("BoxShape3D_boundary_ew")
+
+[node name="EastWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=261931048]
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/EastWall" unique_id=1077493384]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 513, 25.5, 0)
+shape = SubResource("BoxShape3D_boundary_ew")
+
+[node name="FarSceneryRing" type="Node3D" parent="." unique_id=1121213467]
+script = ExtResource("11_far_scenery")
+core_map_size = Vector2(1024, 1024)
+far_ground_size = Vector2(3072, 3072)
+inner_tree_half_extent = 550.0
+outer_tree_half_extent = 680.0
+fourth_rock_half_extent = 900.0
+fifth_rock_half_extent = 1120.0
+visibility_distance = 1600.0
+surface_palette_lookup = ExtResource("6_lookup")
+far_grass_inner_half_extent = 512.0
+far_grass_outer_half_extent = 720.0
+
+[node name="SurfaceAreas" type="Node3D" parent="." unique_id=358613233]
+
+[node name="TerrainSurfaceBaker" type="Node3D" parent="." unique_id=1410129592]
+script = ExtResource("7_baker")
+palette = ExtResource("4_palette")
+target_mesh = NodePath("../Ground/Grass")
+area_root = NodePath("../SurfaceAreas")
+terrain_size = Vector2(1024, 1024)
+mask_output_path = "res://worlds/redpine_county/redpine_county_surface_mask.res"
+palette_output_path = "res://worlds/redpine_county/redpine_county_surface_palette_lookup.res"
+
+[node name="GrassScatter" type="Node3D" parent="." unique_id=1580321225]
+script = ExtResource("8_grass_scatter")
+small_grass_scene = ExtResource("9_grass_small")
+tall_grass_scene = ExtResource("10_grass_tall")
+surface_mask = ExtResource("5_mask")
+terrain_size = Vector2(1024, 1024)
+small_density = 0.0
+tall_density = 0.0
+bake_output_path = "res://worlds/redpine_county/redpine_county_grass_scatter.res"
+
+[node name="Roads" type="Node3D" parent="." unique_id=1551874102]

@@ -571,7 +571,7 @@ func _submit_backpack_layout_sync() -> void:
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
-	elif GameAuthority.is_local_authority() and GameAuthority.player_states.has(authority_peer_id):
+	elif _is_authority_local_player() and GameAuthority.player_states.has(authority_peer_id):
 		GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 
 
@@ -1974,8 +1974,12 @@ func _submit_authority_input(input_direction: Vector2, jumped: bool, delta: floa
 		if pending_input_frames.size() > 120:
 			pending_input_frames.pop_front()
 		MultiplayerNetwork.submit_player_input(frame)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_receive_player_input(authority_peer_id, frame)
+
+
+func _is_authority_local_player() -> bool:
+	return GameAuthority.is_local_authority() or CooperativeSession.is_host()
 
 
 func _make_tool_request() -> Dictionary:
@@ -2098,7 +2102,7 @@ func _submit_remote_control_frame() -> void:
 		remote_tool_node.call("record_network_prediction", frame)
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_remote_control_input(frame)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_remote_control_input(authority_peer_id, frame)
 
 
@@ -2116,7 +2120,7 @@ func _submit_vehicle_control_frame() -> void:
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_vehicle_input(frame)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_input(authority_peer_id, frame)
 
 
@@ -2127,7 +2131,7 @@ func _request_vehicle_enter(vehicle: VehicleBase) -> void:
 	var vehicle_id := vehicle.get_vehicle_id()
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_vehicle_session(vehicle_id, true)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_session(authority_peer_id, vehicle_id, true)
 	else:
 		var seat_index := vehicle.get_available_seat_index(true)
@@ -2145,7 +2149,7 @@ func _request_vehicle_exit() -> void:
 		return
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_vehicle_session(active_vehicle_id, false)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_session(authority_peer_id, active_vehicle_id, false)
 	elif is_instance_valid(active_vehicle):
 		var seat_index := active_vehicle.exit_seat(authority_peer_id)
@@ -2299,6 +2303,16 @@ func _on_authority_player_correction(peer_id: int, correction: Dictionary) -> vo
 	if acknowledged_seq < last_server_correction_seq:
 		return
 	last_server_correction_seq = acknowledged_seq
+	if CooperativeSession.is_host():
+		var host_position: Variant = correction.get("position", global_position)
+		var host_velocity: Variant = correction.get("velocity", velocity)
+		if host_position is Vector3:
+			global_position = host_position
+		if host_velocity is Vector3:
+			velocity = host_velocity
+		rotation.y = float(correction.get("yaw", rotation.y))
+		Head.rotation.x = float(correction.get("pitch", Head.rotation.x))
+		return
 	if not GameAuthority.should_send_network_requests():
 		return
 	pending_server_correction = correction.duplicate(true)
@@ -2459,7 +2473,7 @@ func _select_tool(new_index: int, force := false) -> void:
 		return
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_select_tool(current_tool_index, _selected_tool_id())
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_select_tool(authority_peer_id, current_tool_index, _selected_tool_id())
 
 
@@ -2502,7 +2516,7 @@ func _select_handheld_item(new_index: int, item: Dictionary, force := false) -> 
 		return
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_select_tool(current_tool_index, _selected_tool_id())
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_select_tool(authority_peer_id, current_tool_index, _selected_tool_id())
 
 
@@ -2657,7 +2671,7 @@ func _select_empty_hotbar_slot(selected_slot := -1) -> void:
 		return
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_select_tool(current_tool_index, "")
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_select_tool(authority_peer_id, current_tool_index, "")
 
 
@@ -2712,7 +2726,7 @@ func _use_current_tool() -> void:
 		_consume_predicted_ammo()
 		MultiplayerNetwork.submit_use_tool(_make_tool_request())
 		_play_local_tool_visual()
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		# 单人模式也走 GameAuthority 的本地权威入口。
 		# 不能先调用旧 emit() 再调用 local_try_use_tool()，否则 FarmRunner/放置类工具会执行两次。
 		ret = GameAuthority.local_try_use_tool(authority_peer_id, _make_tool_request())
@@ -2790,7 +2804,7 @@ func _request_reload_current_weapon() -> void:
 		item["reload_duration"] = reload_time
 		backpack_items[current_tool_index] = item
 		MultiplayerNetwork.submit_reload_weapon(tool_id)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_reload_weapon(authority_peer_id, tool_id)
 	else:
 		var needed := maxi(0, int(definition.get("magazine_size", 1)) - int(item.get("ammo_in_mag", 0)))
@@ -2818,7 +2832,7 @@ func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
 	elif tool_id == "spicy_blaster":
 		# Network clients render the server-snapshotted projectile. Local mode has
 		# no replicator, so it still needs the flight-only projectile here.
-		if GameAuthority.is_local_authority():
+		if _is_authority_local_player():
 			tool_node.call("emit")
 		elif tool_node.has_method("play_muzzle_visual"):
 			tool_node.call("play_muzzle_visual")
@@ -2840,9 +2854,9 @@ func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
 			tool_node.call("emit_visual_only")
 		else:
 			tool_node.call("emit")
-	elif tool_id == "bug_cannon" and GameAuthority.is_local_authority():
+	elif tool_id == "bug_cannon" and _is_authority_local_player():
 		tool_node.call("emit")
-	elif tool_id == "medicine_cannon" and GameAuthority.is_local_authority():
+	elif tool_id == "medicine_cannon" and _is_authority_local_player():
 		tool_node.call("emit")
 
 
@@ -3097,16 +3111,20 @@ func _use_fist() -> void:
 	request["tool_id"] = "fist"
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_use_tool(request)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		GameAuthority.local_try_use_tool(authority_peer_id, request)
 
 
 func _update_global_score_ui() -> void:
 	var title := $SubViewport/GlobalStats as Label
 	var value := $SubViewport/GlobalStatsValue as RichTextLabel
+	var show_pvp_scores := not CooperativeSession.is_active()
 	if title != null:
 		title.visible = false
 	if value != null:
+		value.visible = show_pvp_scores
+		if not show_pvp_scores:
+			return
 		value.text = "[center][color=#FF5656]%d[/color]             [color=#69A7FF]%d[/color][/center]" % [
 			GlobalVar.get_team_score("red"),
 			GlobalVar.get_team_score("blue"),
@@ -4245,7 +4263,9 @@ func _stop_death_camera() -> void:
 func _owns_local_death_camera() -> bool:
 	if is_remote_proxy:
 		return false
-	if GameAuthority.is_local_authority():
+	if CooperativeSession.is_host():
+		return true
+	if _is_authority_local_player():
 		return authority_peer_id == GameAuthority.local_player_id
 	if GameAuthority.should_send_network_requests():
 		return authority_peer_id == MultiplayerNetwork.get_unique_peer_id()
@@ -4276,7 +4296,7 @@ func _update_match_timer_ui() -> void:
 func _update_health_ui() -> void:
 	if not is_instance_valid(health_bar) or not is_instance_valid(health_label):
 		return
-	if GameAuthority.is_local_authority() and GameAuthority.player_states.has(authority_peer_id):
+	if _is_authority_local_player() and GameAuthority.player_states.has(authority_peer_id):
 		var state: Dictionary = GameAuthority.player_states[authority_peer_id]
 		server_hp = float(state.get("hp", PLAYER_MAX_HP))
 	var hp := clampf(server_hp, 0.0, PLAYER_MAX_HP)
@@ -4852,7 +4872,7 @@ func _request_plating_station_take(station: PlatingStation) -> void:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 		return
-	if GameAuthority.is_local_authority():
+	if _is_authority_local_player():
 		var result := GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 		if bool(result.get("ok", false)):
 			add_personal_dish(str(result.get("dish_id", "")), int(result.get("servings", 0)), float(result.get("weight_kg", -1.0)))
@@ -4870,7 +4890,7 @@ func _request_oven_take(oven: Oven) -> void:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 		return
-	if GameAuthority.is_local_authority():
+	if _is_authority_local_player():
 		apply_authoritative_oven_action_result(
 			GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 		)
@@ -4896,7 +4916,7 @@ func _request_recipe_cooking_station_take(station: RecipeCookingStation) -> void
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 		return
-	if GameAuthority.is_local_authority():
+	if _is_authority_local_player():
 		apply_authoritative_recipe_station_action_result(GameAuthority.local_ingredient_pickup_action(authority_peer_id, action))
 
 
@@ -5235,7 +5255,7 @@ func _request_single_crop_harvest(tile: FarmTile, crop: Node3D) -> void:
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_farm_action(action)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		var result := GameAuthority.local_farm_action(authority_peer_id, action)
 		if debug_interaction_shapecasts:
 			print(
@@ -5257,7 +5277,7 @@ func _request_livestock_pickup(livestock: FarmLivestock) -> void:
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
-	elif GameAuthority.is_local_authority():
+	elif _is_authority_local_player():
 		var result := GameAuthority.server_ingredient_pickup_action(authority_peer_id, action)
 		if not bool(result.get("ok", false)):
 			show_gameplay_notice(str(result.get("message", "无法抱起这只动物")))
@@ -6420,8 +6440,8 @@ func remote_device_close(notify_authority := true):
 	if notify_authority and not closed_device_id.is_empty():
 		if GameAuthority.should_send_network_requests():
 			MultiplayerNetwork.submit_remote_control_session(closed_device_id, false)
-		elif GameAuthority.is_local_authority():
-			GameAuthority.local_remote_control_session(authority_peer_id, closed_device_id, false)
+	elif _is_authority_local_player():
+		GameAuthority.local_remote_control_session(authority_peer_id, closed_device_id, false)
 	
 func remote_destoryed():
 	if is_instance_valid(remote_effect):
@@ -6573,7 +6593,7 @@ func _reconnect_remote_device(device_id: String) -> void:
 		pending_remote_device_id = device_id
 		MultiplayerNetwork.submit_remote_control_session(device_id, true)
 		return
-	if GameAuthority.is_local_authority():
+	if _is_authority_local_player():
 		var result: Dictionary = GameAuthority.local_remote_control_session(authority_peer_id, device_id, true)
 		if not bool(result.get("ok", false)):
 			return

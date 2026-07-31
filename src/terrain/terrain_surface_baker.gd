@@ -8,8 +8,8 @@ extends Node3D
 @export var terrain_center := Vector2.ZERO
 @export var terrain_size := Vector2(512.0, 512.0)
 @export_range(128, 4096, 128) var mask_resolution: int = 2048
-@export_file("*.res") var mask_output_path := "res://worlds/creston_town_surface_mask.res"
-@export_file("*.res") var palette_output_path := "res://worlds/creston_town_surface_palette_lookup.res"
+@export_file("*.res") var mask_output_path := "res://worlds/creston_town/creston_town_surface_mask.res"
+@export_file("*.res") var palette_output_path := "res://worlds/creston_town/creston_town_surface_palette_lookup.res"
 @export_tool_button("Bake Terrain Mask") var bake_button: Callable = bake_surface_mask
 
 

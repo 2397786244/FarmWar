@@ -165,9 +165,14 @@ func _nature_resource_by_id(resource_id: String) -> Node:
 
 
 func _on_world_snapshot_received(snapshot: Dictionary) -> void:
-	if not GameAuthority.is_client_proxy():
+	var cooperative_host_visuals := CooperativeSession.is_host()
+	if not GameAuthority.is_client_proxy() and not cooperative_host_visuals:
 		return
 	if _resolve_world_root() == null:
+		return
+	_apply_interest_chunk_visibility(snapshot)
+	if cooperative_host_visuals:
+		_sync_players(snapshot.get("players", []), snapshot)
 		return
 	_sync_vehicles(snapshot.get("vehicles", []))
 	_sync_players(snapshot.get("players", []), snapshot)
@@ -175,6 +180,7 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []))
 	_sync_wild_animals(snapshot.get("wild_animals", []))
+	_sync_dropped_items(snapshot.get("dropped_items", []))
 
 
 func _on_visual_world_event_received(event: Dictionary) -> void:
@@ -511,11 +517,13 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 func _sync_placed_tool_health(tools_value: Variant) -> void:
 	if not tools_value is Array:
 		return
+	var seen := {}
 	for item: Variant in tools_value:
 		if not item is Dictionary:
 			continue
 		var data := item as Dictionary
 		var tool_id := str(data.get("tool_id", ""))
+		seen[tool_id] = true
 		var node := get_node_or_null(NodePath(str(data.get("path", data.get("tool_id", "")))))
 		if node == null:
 			node = _get_or_create_placed_tool_visual(tool_id, data)
@@ -538,8 +546,16 @@ func _sync_placed_tool_health(tools_value: Variant) -> void:
 			var visual_state: Variant = data.get("visual_state", {})
 			if visual_state is Dictionary:
 				node.call("apply_network_visual_state", visual_state)
-		if bool(data.get("anchor_landed", false)) and node.has_method("apply_network_activated"):
-			node.call("apply_network_activated")
+			if bool(data.get("anchor_landed", false)) and node.has_method("apply_network_activated"):
+				node.call("apply_network_activated")
+	for tool_id_value in placed_tool_visuals.keys():
+		var stale_tool_id := str(tool_id_value)
+		if seen.has(stale_tool_id):
+			continue
+		var stale_node: Node = placed_tool_visuals[stale_tool_id]
+		if is_instance_valid(stale_node) and bool(stale_node.get_meta("cooperative_network_spawned", false)):
+			stale_node.queue_free()
+		placed_tool_visuals.erase(stale_tool_id)
 
 
 func _get_or_create_remote_device_visual(device_id: String, data: Dictionary, keep_runtime := false) -> Node3D:
@@ -611,6 +627,7 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 	if visual == null:
 		return null
 	world_root.add_child(visual)
+	visual.set_meta("cooperative_network_spawned", true)
 	visual.set("tool_owner", str(data.get("team", "")))
 	if visual is KitchenAppliance:
 		(visual as KitchenAppliance).owner_team = str(data.get("team", ""))
@@ -634,6 +651,21 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 	visual.rotation.y = float(data.get("yaw", 0.0))
 	placed_tool_visuals[tool_id] = visual
 	return visual
+
+
+func _apply_interest_chunk_visibility(snapshot: Dictionary) -> void:
+	var chunks_value: Variant = snapshot.get("subscribed_chunks", [])
+	if not chunks_value is Array:
+		return
+	var active_chunks := {}
+	for chunk_value in chunks_value:
+		if chunk_value is Vector2i:
+			active_chunks[chunk_value] = true
+	for node in get_tree().get_nodes_in_group("farm_tiles"):
+		if node is FarmTile:
+			var tile := node as FarmTile
+			var chunk := Vector2i(floori(tile.global_position.x / 256.0), floori(tile.global_position.z / 256.0))
+			tile.visible = active_chunks.has(chunk)
 
 
 func _set_remote_device_jam_ratio(device: Node, ratio: float) -> void:
@@ -660,11 +692,14 @@ func _is_local_remote_device_active(device_id: String) -> bool:
 
 
 func _on_reliable_world_event_received(event: Dictionary) -> void:
-	if not GameAuthority.is_client_proxy():
+	var event_type := str(event.get("type", ""))
+	var cooperative_host_player_event := CooperativeSession.is_host() \
+		and event_type in ["tool_selected", "tool_used"]
+	if not GameAuthority.is_client_proxy() and not cooperative_host_player_event:
 		return
 	if _resolve_world_root() == null:
 		return
-	match str(event.get("type", "")):
+	match event_type:
 		"visual_projectile_fired":
 			_spawn_transient_projectile_visual(event)
 		"absorption_visual":
