@@ -1,4 +1,4 @@
-## FarmWar Runtime Map Editor V5 - single script prototype
+## FarmWar Runtime Map Editor V7.1 - single script prototype
 ## Target: Godot 4.6.x
 ## Usage:
 ##   1. Copy this file to the FarmWar project, for example:
@@ -30,13 +30,14 @@
 ##   - Red boundary walls/strips and a MAP BOUNDARY warning.
 ##   - Ctrl+Z / Cmd+Z undo and Ctrl+Y / Shift+Cmd+Z redo for terrain,
 ##     surface paint, grass chunks, placed resources/spawns and palette edits.
-##   - Save generated map scene and editor data under user://maps/.
+##   - New/Open/Save/Save As map-package workflow.
+##   - Visual continuous-road curve editor with draggable control points.
+##   - Save generated map scene and authoritative editor data under user://maps/.
 ##
 ## Deliberately not implemented in this version:
 ##   - Building placement.
 ##   - Farmland editing (the left toolbar entry is disabled).
-##   - Road curve editing UI (the Roads root and create_road_from_points API exist).
-##   - Runtime loading of a previously saved editor session.
+
 
 extends Node3D
 class_name FarmWarRuntimeMapEditor
@@ -49,6 +50,7 @@ enum ToolMode {
 	TREE,
 	ORE,
 	SPAWN,
+	ROAD,
 	FARMLAND,
 }
 
@@ -75,6 +77,8 @@ const FAR_SCENERY_PATH = "res://src/environment/far_scenery_ring_3d.gd"
 const CLOUD_SYSTEM_PATH = "res://worlds/shared/cloud_system.tscn"
 const DAY_NIGHT_SYSTEM_PATH = "res://worlds/shared/day_night_system.tscn"
 const MAP_ICON_FILE_NAME = "map_icon.png"
+const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
+const ROADS_FILE_NAME = "roads.dat"
 const SURFACE_PALETTE_FILE_NAME = "surface_palette.png"
 const MAP_ICON_SIZE = 128
 const FAR_SCENERY_GROUND_MARGIN = 768.0
@@ -140,6 +144,13 @@ const FALLBACK_SURFACES = [
 @export var force_guaranteed_far_ground = true
 @export_range(500.0, 20000.0, 100.0) var editor_far_visibility_distance = 6000.0
 
+@export_category("Road Editor")
+@export_range(0.25, 4.0, 0.05) var road_mesh_sample_spacing = 1.0
+@export_range(64, 4096, 1) var road_max_mesh_samples = 768
+@export_range(-0.1, 1.0, 0.01) var road_default_vertical_offset = 0.06
+@export_range(0.5, 4.0, 0.1) var road_control_point_pick_radius_px = 18.0
+@export_range(1.0, 30.0, 0.5) var road_selection_world_distance = 8.0
+
 @export_category("Map Package")
 @export var default_map_version = "1.0.0"
 
@@ -155,6 +166,7 @@ var _map_name = ""
 var _map_id = ""
 var _display_name = ""
 var _map_version = "1.0.0"
+var _current_map_folder = ""
 var _map_size = Vector2.ZERO
 var _terrain_origin = Vector2.ZERO
 var _sample_width = 0
@@ -224,6 +236,31 @@ var _rng = RandomNumberGenerator.new()
 var _next_object_id = 1
 var _next_spawn_id = 1
 
+
+# Continuous road editor state.
+var _selected_road: Path3D
+var _road_drawing_active = false
+var _road_selected_point = -1
+var _road_dragging = false
+var _road_drag_before: Dictionary = {}
+var _road_type = 1
+var _road_width_override = 0.0
+var _road_vertical_offset = 0.06
+var _road_edit_visual_root: Node3D
+var _road_marker_root: Node3D
+var _road_centerline: MeshInstance3D
+var _road_centerline_mesh: ImmediateMesh
+var _road_preview_line: MeshInstance3D
+var _road_preview_mesh: ImmediateMesh
+var _road_list_option: OptionButton
+var _road_type_option: OptionButton
+var _road_width_spin: SpinBox
+var _road_offset_spin: SpinBox
+var _road_finish_button: Button
+var _road_delete_point_button: Button
+var _road_conform_button: Button
+var _road_delete_button: Button
+
 # Runtime undo/redo. A drag from mouse-down to mouse-up is one action.
 var _undo_redo = UndoRedo.new()
 var _saved_undo_version = 0
@@ -265,6 +302,10 @@ var _map_version_edit: LineEdit
 var _icon_preview: TextureRect
 var _icon_status_label: Label
 var _icon_file_dialog: FileDialog
+var _open_map_file_dialog: FileDialog
+var _save_as_directory_dialog: FileDialog
+var _discard_changes_dialog: ConfirmationDialog
+var _pending_destructive_action: Callable
 var _boundary_warning_label: Label
 var _boundary_warning_until_msec = 0
 var _map_icon_image: Image
@@ -406,10 +447,32 @@ func _build_top_bar() -> void:
 	_template_option.item_selected.connect(_on_template_selected)
 	primary_row.add_child(_template_option)
 
-	var create_button = Button.new()
-	create_button.text = "Create New Map"
-	create_button.pressed.connect(_create_map_from_ui)
-	primary_row.add_child(create_button)
+	var new_button = Button.new()
+	new_button.text = "New Map"
+	new_button.tooltip_text = "Create a new map from the fields in this row."
+	new_button.pressed.connect(_request_new_map)
+	primary_row.add_child(new_button)
+
+	var open_button = Button.new()
+	open_button.text = "Open Map"
+	open_button.tooltip_text = "Open a saved FarmWar map package by selecting map.json."
+	open_button.pressed.connect(_request_open_map)
+	primary_row.add_child(open_button)
+
+	var return_button := Button.new()
+	return_button.name = "ReturnToMainMenuButton"
+	return_button.text = "返回主界面"
+	return_button.tooltip_text = "返回 FarmWar 主界面。"
+	return_button.custom_minimum_size = Vector2(150.0, 42.0)
+	return_button.add_theme_font_size_override("font_size", 18)
+	return_button.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 1.0))
+	return_button.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	return_button.add_theme_color_override("font_pressed_color", Color(1.0, 1.0, 1.0, 1.0))
+	return_button.add_theme_stylebox_override("normal", _editor_button_style(Color("#8f3d3d")))
+	return_button.add_theme_stylebox_override("hover", _editor_button_style(Color("#c65353")))
+	return_button.add_theme_stylebox_override("pressed", _editor_button_style(Color("#e07858")))
+	return_button.pressed.connect(_request_return_to_main_menu)
+	primary_row.add_child(return_button)
 
 	var package_row = HBoxContainer.new()
 	package_row.add_theme_constant_override("separation", 8)
@@ -439,9 +502,15 @@ func _build_top_bar() -> void:
 	package_row.add_child(_icon_status_label)
 
 	var save_button = Button.new()
-	save_button.text = "Save Map"
+	save_button.text = "Save"
 	save_button.pressed.connect(save_current_map)
 	package_row.add_child(save_button)
+
+	var save_as_button = Button.new()
+	save_as_button.text = "Save As"
+	save_as_button.tooltip_text = "Choose a parent folder under user data; a map-id package folder is created inside it."
+	save_as_button.pressed.connect(_open_save_as_dialog)
+	package_row.add_child(save_as_button)
 
 	_status_label = Label.new()
 	_status_label.text = "Ready"
@@ -450,6 +519,7 @@ func _build_top_bar() -> void:
 	package_row.add_child(_status_label)
 
 	_build_icon_file_dialog()
+	_build_map_file_dialogs()
 
 
 func _build_left_toolbar() -> void:
@@ -479,6 +549,7 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.TREE, "Place Trees", "Place complete harvestable tree scenes")
 	_add_tool_button(column, group, ToolMode.ORE, "Place Ores", "Place complete harvestable ore scenes")
 	_add_tool_button(column, group, ToolMode.SPAWN, "Place Spawn Points", "Giant crop or wild animal generators")
+	_add_tool_button(column, group, ToolMode.ROAD, "Roads", "Draw and edit continuous curve roads")
 
 	var farmland_button = Button.new()
 	farmland_button.text = "Farmland (later)"
@@ -490,7 +561,7 @@ func _build_left_toolbar() -> void:
 	(_tool_buttons[ToolMode.TERRAIN] as Button).button_pressed = true
 
 	var help = Label.new()
-	help.text = "LMB: use brush\nShift+LMB: lower / erase\nRMB: look around\nWASD + Q/E: move\nMouse wheel: camera speed\n[ / ]: brush radius\nCtrl+Z / Cmd+Z: undo\nCtrl+Y / Shift+Cmd+Z: redo\nCtrl/Cmd+S: save"
+	help.text = "LMB: use brush\nShift+LMB: lower / erase\nRMB: look around\nWASD + Q/E: move\nMouse wheel: camera speed\n[ / ]: brush radius\nCtrl+Z / Cmd+Z: undo\nCtrl+Y / Shift+Cmd+Z: redo\nCtrl/Cmd+S: save\n7: road tool\nEnter: finish road"
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
@@ -597,6 +668,9 @@ func _refresh_bottom_dock() -> void:
 		ToolMode.SPAWN:
 			_tool_title_label.text = "Spawn Points"
 			_add_spawn_buttons()
+		ToolMode.ROAD:
+			_tool_title_label.text = "Continuous Roads"
+			_add_road_buttons()
 		_:
 			_tool_title_label.text = "Unavailable"
 
@@ -770,6 +844,92 @@ func _add_spawn_buttons() -> void:
 	_bottom_content.add_child(hint)
 
 
+func _add_road_buttons() -> void:
+	var new_road_button = Button.new()
+	new_road_button.text = "New Road"
+	new_road_button.pressed.connect(_begin_new_road)
+	_bottom_content.add_child(new_road_button)
+
+	_road_finish_button = Button.new()
+	_road_finish_button.text = "Finish Road"
+	_road_finish_button.pressed.connect(_finish_active_road)
+	_bottom_content.add_child(_road_finish_button)
+
+	_road_delete_point_button = Button.new()
+	_road_delete_point_button.text = "Delete Point"
+	_road_delete_point_button.pressed.connect(_delete_selected_road_point)
+	_bottom_content.add_child(_road_delete_point_button)
+
+	_road_conform_button = Button.new()
+	_road_conform_button.text = "Conform To Terrain"
+	_road_conform_button.pressed.connect(_conform_selected_road_to_terrain)
+	_bottom_content.add_child(_road_conform_button)
+
+	_road_delete_button = Button.new()
+	_road_delete_button.text = "Delete Road"
+	_road_delete_button.pressed.connect(_delete_selected_road)
+	_bottom_content.add_child(_road_delete_button)
+
+	_bottom_content.add_child(_make_label("Road"))
+	_road_list_option = OptionButton.new()
+	_road_list_option.custom_minimum_size.x = 170.0
+	_road_list_option.item_selected.connect(_on_road_list_selected)
+	_bottom_content.add_child(_road_list_option)
+	_refresh_road_list_option()
+
+	_bottom_content.add_child(_make_label("Type"))
+	_road_type_option = OptionButton.new()
+	for entry in [
+		{"label": "Asphalt Narrow", "id": 0},
+		{"label": "Asphalt Wide", "id": 1},
+		{"label": "Country Gravel Narrow", "id": 2},
+		{"label": "Country Gravel Wide", "id": 3},
+	]:
+		_road_type_option.add_item(str(entry["label"]), int(entry["id"]))
+	_road_type_option.select(clampi(_road_type, 0, 3))
+	_road_type_option.item_selected.connect(_on_road_type_selected)
+	_bottom_content.add_child(_road_type_option)
+
+	_bottom_content.add_child(_make_label("Width Override"))
+	_road_width_spin = SpinBox.new()
+	_road_width_spin.min_value = 0.0
+	_road_width_spin.max_value = 20.0
+	_road_width_spin.step = 0.1
+	_road_width_spin.value = _road_width_override
+	_road_width_spin.tooltip_text = "0 uses the width defined by the selected road type."
+	_road_width_spin.value_changed.connect(_on_road_width_changed)
+	_bottom_content.add_child(_road_width_spin)
+
+	_bottom_content.add_child(_make_label("Height Offset"))
+	_road_offset_spin = SpinBox.new()
+	_road_offset_spin.min_value = -0.1
+	_road_offset_spin.max_value = 1.0
+	_road_offset_spin.step = 0.01
+	_road_offset_spin.value = _road_vertical_offset
+	_road_offset_spin.value_changed.connect(_on_road_offset_changed)
+	_bottom_content.add_child(_road_offset_spin)
+
+	var hint = Label.new()
+	hint.text = "New Road, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. The road is one continuous procedural strip, not separate GLB blocks."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size.x = 480.0
+	_bottom_content.add_child(hint)
+	_update_road_control_states()
+
+
+func _update_road_control_states() -> void:
+	if _road_finish_button != null:
+		_road_finish_button.disabled = not _road_drawing_active
+	if _road_delete_point_button != null:
+		_road_delete_point_button.disabled = (
+			_selected_road == null or _road_selected_point < 0
+		)
+	if _road_conform_button != null:
+		_road_conform_button.disabled = _selected_road == null
+	if _road_delete_button != null:
+		_road_delete_button.disabled = _selected_road == null
+
+
 func _make_label(text_value: String) -> Label:
 	var label = Label.new()
 	label.text = text_value
@@ -797,7 +957,10 @@ func _on_strength_changed(value: float) -> void:
 
 
 func _select_tool(mode: ToolMode) -> void:
+	if _tool_mode == ToolMode.ROAD and mode != ToolMode.ROAD:
+		_finish_active_road()
 	_tool_mode = mode
+	_set_road_edit_visuals_visible(mode == ToolMode.ROAD)
 	_refresh_bottom_dock()
 	_set_status("Tool: %s" % _tool_name(mode))
 
@@ -1056,6 +1219,7 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.TREE: return "Trees"
 		ToolMode.ORE: return "Ores"
 		ToolMode.SPAWN: return "Spawn Points"
+		ToolMode.ROAD: return "Roads"
 		_: return "Unavailable"
 
 
@@ -1129,9 +1293,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			if mouse_button.pressed:
 				if _pointer_is_over_ui() or _map_root == null:
 					return
-				_begin_stroke()
+				if _tool_mode == ToolMode.ROAD:
+					_handle_road_left_press()
+				else:
+					_begin_stroke()
 			else:
-				_end_stroke()
+				if _tool_mode == ToolMode.ROAD:
+					_end_road_point_drag()
+				else:
+					_end_stroke()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -1174,6 +1344,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			save_current_map()
 			get_viewport().set_input_as_handled()
 			return
+		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_ENTER:
+			_finish_active_road()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_ESCAPE:
+			_cancel_active_road()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_DELETE:
+			if _road_selected_point >= 0:
+				_delete_selected_road_point()
+			else:
+				_delete_selected_road()
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.keycode == KEY_BRACKETLEFT:
 			_brush_radius = maxf(1.0, _brush_radius - 1.0)
 			_radius_label.text = "Radius: %.1f m" % _brush_radius
@@ -1189,6 +1374,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_4: _press_tool_shortcut(ToolMode.TREE)
 			KEY_5: _press_tool_shortcut(ToolMode.ORE)
 			KEY_6: _press_tool_shortcut(ToolMode.SPAWN)
+			KEY_7: _press_tool_shortcut(ToolMode.ROAD)
 
 
 func _press_tool_shortcut(mode: ToolMode) -> void:
@@ -1224,6 +1410,12 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var hit_position = _latest_hit.get("position", Vector3.ZERO) as Vector3
+	if _tool_mode == ToolMode.ROAD:
+		_brush_preview.visible = false
+		_update_road_preview(hit_position)
+		if _road_dragging and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _pointer_is_over_ui():
+			_drag_selected_road_point(hit_position)
+		return
 	_update_contact_brush(hit_position)
 
 	if not _stroke_active or _camera_look_active or _pointer_is_over_ui():
@@ -1313,6 +1505,7 @@ func _end_stroke() -> void:
 	match _stroke_tool_mode:
 		ToolMode.TERRAIN:
 			_commit_height_stroke()
+			call_deferred("_rebuild_all_roads_to_terrain")
 		ToolMode.SURFACE:
 			_commit_surface_stroke()
 		ToolMode.GRASS:
@@ -1414,6 +1607,8 @@ func create_new_map(
 ) -> void:
 	_set_status("Creating map...")
 	_end_stroke()
+	_current_map_folder = ""
+	_reset_road_editor_state()
 
 	if is_instance_valid(_map_root):
 		var previous_map = _map_root
@@ -1477,12 +1672,13 @@ func create_new_map(
 	_collision_dirty_chunks.clear()
 	_next_object_id = 1
 	_next_spawn_id = 1
+	_clear_map_icon()
 
 	_create_terrain_material()
 
 	_map_root = Node3D.new()
 	_map_root.name = _map_id.validate_node_name()
-	_map_root.set_meta("farmwar_map_format_version", 2)
+	_map_root.set_meta("farmwar_map_format_version", 3)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
@@ -1533,7 +1729,7 @@ func _extract_surface_entries(palette: Resource) -> Array:
 	if palette == null or not _has_property(palette, "surfaces"):
 		return result
 
-	var surfaces_value = palette.get("surfaces")
+	var surfaces_value: Variant = palette.get("surfaces")
 	if not (surfaces_value is Array):
 		return result
 
@@ -2243,6 +2439,7 @@ func _apply_height_patch(patch: Dictionary) -> void:
 		_camera_rig.global_position = _clamp_editor_camera_above_ground(
 			_camera_rig.global_position
 		)
+	call_deferred("_rebuild_all_roads_to_terrain")
 
 
 func _rebuild_chunks_for_sample_rect(rect: Rect2i) -> void:
@@ -3228,18 +3425,15 @@ func _add_spawn_editor_marker(spawn: Node3D, color: Color) -> void:
 func create_road_from_points(points: PackedVector3Array, road_type: int = 1) -> Path3D:
 	if _roads_root == null or points.size() < 2:
 		return null
-	var road_script = _load_resource_or_null(ROAD_SCRIPT_PATH) as Script
-	if road_script == null:
+	var road = _create_road_node()
+	if road == null:
 		return null
-	var road = Path3D.new()
-	road.name = "RoadPath3D_%03d" % (_roads_root.get_child_count() + 1)
-	road.set_script(road_script)
-	var curve = Curve3D.new()
-	for point in points:
-		curve.add_point(point)
-	road.curve = curve
-	_roads_root.add_child(road)
 	_set_property_if_present(road, "road_type", road_type)
+	for point in points:
+		var terrain_point = Vector3(point.x, get_terrain_height_world(Vector2(point.x, point.z)), point.z)
+		road.curve.add_point(terrain_point)
+	_smooth_road_curve_handles(road.curve)
+	_rebuild_road_now(road)
 	return road
 
 
@@ -3254,7 +3448,7 @@ func save_current_map() -> void:
 
 	_end_stroke()
 	_sync_package_fields_from_ui()
-	var folder = "%s/%s" % [map_save_root.trim_suffix("/"), _map_id]
+	var folder = _resolve_current_save_folder()
 	var absolute_folder = ProjectSettings.globalize_path(folder)
 	var directory_error = DirAccess.make_dir_recursive_absolute(absolute_folder)
 	if directory_error != OK:
@@ -3266,7 +3460,7 @@ func save_current_map() -> void:
 
 	# The runtime map needs FarmWorldInitializer, but attaching it while editing
 	# would trigger game-specific initialization. Attach only while packing.
-	var previous_script = _map_root.get_script()
+	var previous_script: Variant = _map_root.get_script()
 	var initializer_script = _load_resource_or_null(FARM_INITIALIZER_PATH) as Script
 	if initializer_script != null:
 		_map_root.set_script(initializer_script)
@@ -3304,12 +3498,13 @@ func save_current_map() -> void:
 	if save_error != OK:
 		_set_status("Could not save map scene (error %d)" % save_error)
 		return
+	_current_map_folder = folder
 	_saved_undo_version = _undo_redo.get_version()
 	_set_status("Saved: %s" % scene_path)
 
 
 func _update_map_metadata_before_save() -> void:
-	_map_root.set_meta("farmwar_map_format_version", 2)
+	_map_root.set_meta("farmwar_map_format_version", 3)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
@@ -3330,7 +3525,7 @@ func _update_map_metadata_before_save() -> void:
 		"terrain_foundation_and_skirt",
 		"surface_mask",
 		"manual_grass_multimesh",
-		"roads",
+		"continuous_curve_roads",
 		"day_night_gameplay_only",
 		"cloud_system",
 		"size_aware_far_scenery",
@@ -3365,6 +3560,9 @@ func _save_editor_sidecar_data(folder: String) -> void:
 		grass_file.store_var(_manual_grass, true)
 		grass_file.close()
 
+	_save_editor_objects_sidecar(folder)
+	_save_roads_sidecar(folder)
+
 	var icon_saved = _save_map_icon(folder)
 	var template_name = (
 		"redpine_county"
@@ -3372,7 +3570,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 		else "creston_town"
 	)
 	var manifest = {
-		"format_version": 2,
+		"format_version": 3,
 		"map_id": _map_id,
 		"display_name": _display_name,
 		"icon": MAP_ICON_FILE_NAME if icon_saved else "",
@@ -3399,6 +3597,9 @@ func _save_editor_sidecar_data(folder: String) -> void:
 		"surface_colors": _surface_entries_for_json(),
 		"content": {
 			"manual_grass": "manual_grass.dat",
+			"editor_objects": EDITOR_OBJECTS_FILE_NAME,
+			"roads": ROADS_FILE_NAME,
+			"road_count": _roads_root.get_child_count(),
 			"tree_count": _trees_root.get_child_count(),
 			"ore_count": _ores_root.get_child_count(),
 			"spawn_count": _spawns_root.get_child_count(),
@@ -3446,6 +3647,1057 @@ func _assign_pack_owners(root: Node) -> void:
 		if child == _far_scenery_ring or child == _tree_forest_manager:
 			continue
 		_assign_pack_owners(child)
+
+
+
+# -----------------------------------------------------------------------------
+# Map package workflow: New / Open / Save / Save As
+# -----------------------------------------------------------------------------
+
+func _build_map_file_dialogs() -> void:
+	_open_map_file_dialog = FileDialog.new()
+	_open_map_file_dialog.name = "OpenMapPackageDialog"
+	_open_map_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_open_map_file_dialog.access = FileDialog.ACCESS_USERDATA
+	_open_map_file_dialog.use_native_dialog = true
+	_open_map_file_dialog.title = "Open FarmWar Map Package"
+	_open_map_file_dialog.filters = PackedStringArray(["map.json ; FarmWar Map Manifest"])
+	_open_map_file_dialog.file_selected.connect(_on_open_map_manifest_selected)
+	_ui_layer.add_child(_open_map_file_dialog)
+
+	_save_as_directory_dialog = FileDialog.new()
+	_save_as_directory_dialog.name = "SaveMapAsDialog"
+	_save_as_directory_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_save_as_directory_dialog.access = FileDialog.ACCESS_USERDATA
+	_save_as_directory_dialog.use_native_dialog = true
+	_save_as_directory_dialog.title = "Choose Parent Folder for Map Package"
+	_save_as_directory_dialog.dir_selected.connect(_on_save_as_parent_selected)
+	_ui_layer.add_child(_save_as_directory_dialog)
+
+	_discard_changes_dialog = ConfirmationDialog.new()
+	_discard_changes_dialog.name = "DiscardChangesDialog"
+	_discard_changes_dialog.title = "Unsaved Map Changes"
+	_discard_changes_dialog.dialog_text = "The current map has unsaved changes. Discard them and continue?"
+	_discard_changes_dialog.ok_button_text = "Discard"
+	_discard_changes_dialog.confirmed.connect(_on_discard_changes_confirmed)
+	_ui_layer.add_child(_discard_changes_dialog)
+
+
+func _request_new_map() -> void:
+	_confirm_discard_or_run(Callable(self, "_create_map_from_ui"))
+
+
+func _editor_button_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 12.0
+	style.content_margin_right = 12.0
+	style.content_margin_top = 8.0
+	style.content_margin_bottom = 8.0
+	return style
+
+
+func _request_open_map() -> void:
+	_confirm_discard_or_run(Callable(self, "_show_open_map_dialog"))
+
+
+func _request_return_to_main_menu() -> void:
+	_confirm_discard_or_run(Callable(self, "_return_to_main_menu"))
+
+
+func _return_to_main_menu() -> void:
+	if is_instance_valid(CooperativeSession) and CooperativeSession.is_active():
+		CooperativeSession.stop_session()
+	if is_instance_valid(GameAuthority):
+		GameAuthority.stop_authority()
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().change_scene_to_file("res://ui/MainMenuRoot.tscn")
+
+
+func _confirm_discard_or_run(action: Callable) -> void:
+	if _map_root != null and has_unsaved_changes():
+		_pending_destructive_action = action
+		_discard_changes_dialog.popup_centered()
+		return
+	action.call()
+
+
+func _on_discard_changes_confirmed() -> void:
+	if _pending_destructive_action.is_valid():
+		var action = _pending_destructive_action
+		_pending_destructive_action = Callable()
+		action.call()
+
+
+func _show_open_map_dialog() -> void:
+	if _open_map_file_dialog == null:
+		return
+	_open_map_file_dialog.current_dir = map_save_root
+	_open_map_file_dialog.popup_centered_ratio(0.8)
+
+
+func _open_save_as_dialog() -> void:
+	if _map_root == null:
+		_set_status("No map to save")
+		return
+	if _save_as_directory_dialog == null:
+		return
+	_save_as_directory_dialog.current_dir = map_save_root
+	_save_as_directory_dialog.popup_centered_ratio(0.8)
+
+
+func _on_save_as_parent_selected(parent_folder: String) -> void:
+	_sync_package_fields_from_ui()
+	var normalized_parent = _normalize_user_path(parent_folder)
+	_current_map_folder = normalized_parent.trim_suffix("/").path_join(_map_id)
+	save_current_map()
+
+
+func _on_open_map_manifest_selected(manifest_path: String) -> void:
+	open_map_package(_normalize_user_path(manifest_path))
+
+
+func _normalize_user_path(path: String) -> String:
+	var localized = ProjectSettings.localize_path(path)
+	if localized.begins_with("user://"):
+		return localized
+	return path
+
+
+func _resolve_current_save_folder() -> String:
+	if not _current_map_folder.is_empty():
+		return _current_map_folder.trim_suffix("/")
+	return "%s/%s" % [map_save_root.trim_suffix("/"), _map_id]
+
+
+func open_map_package(manifest_path: String) -> void:
+	if not FileAccess.file_exists(manifest_path):
+		_set_status("Map manifest does not exist: %s" % manifest_path)
+		return
+	var manifest_text = FileAccess.get_file_as_string(manifest_path)
+	var parsed = JSON.parse_string(manifest_text)
+	if not parsed is Dictionary:
+		_set_status("Invalid map.json")
+		return
+	var manifest = parsed as Dictionary
+	var size_data = manifest.get("size", {}) as Dictionary
+	var map_size_value = Vector2i(
+		maxi(32, int(size_data.get("width", 256))),
+		maxi(32, int(size_data.get("depth", 256)))
+	)
+	var template_value = TemplateMode.REDPINE_COUNTY if str(manifest.get("template", "creston_town")) == "redpine_county" else TemplateMode.CRESTON_TOWN
+	var display_name_value = str(manifest.get("display_name", "Opened Farm Map"))
+	var map_id_value = str(manifest.get("map_id", display_name_value))
+	var version_value = str(manifest.get("version", default_map_version))
+	var terrain_data = manifest.get("terrain", {}) as Dictionary
+	vertex_spacing = maxf(0.25, float(terrain_data.get("vertex_spacing", vertex_spacing)))
+
+	create_new_map(display_name_value, map_size_value, template_value, map_id_value, version_value)
+	_current_map_folder = manifest_path.get_base_dir()
+	_load_surface_entries_from_manifest(manifest)
+	_load_heightmap_sidecar(_current_map_folder.path_join(str(terrain_data.get("heightmap", "heightmap.bin"))))
+	_load_surface_mask_sidecar(_current_map_folder.path_join(str(terrain_data.get("surface_mask", "surface_mask.png"))))
+	_load_manual_grass_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("manual_grass", "manual_grass.dat"))))
+	_load_editor_objects_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("editor_objects", EDITOR_OBJECTS_FILE_NAME))))
+	_recalculate_loaded_object_counters()
+	_load_roads_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("roads", ROADS_FILE_NAME))))
+	_load_map_icon_from_package(_current_map_folder, str(manifest.get("icon", "")))
+	_rebuild_loaded_map_visuals()
+	_update_map_ui_from_loaded_manifest()
+	_reset_undo_history()
+	_saved_undo_version = _undo_redo.get_version()
+	_set_status("Opened: %s" % manifest_path)
+
+
+func _load_surface_entries_from_manifest(manifest: Dictionary) -> void:
+	var colors = manifest.get("surface_colors", []) as Array
+	if colors.is_empty():
+		return
+	var entries: Array = []
+	for value in colors:
+		var item = value as Dictionary
+		entries.append({
+			"id": clampi(int(item.get("id", entries.size())), 0, 255),
+			"label": str(item.get("name", "Surface")),
+			"color": Color.from_string(str(item.get("color", "ffffff")), Color.WHITE),
+			"roughness": clampf(float(item.get("roughness", 0.9)), 0.0, 1.0),
+		})
+	_surface_entries = entries
+	_selected_surface_id = _get_default_surface_id()
+	_sync_surface_palette_resource_from_entries()
+	_rebuild_surface_palette_lookup()
+
+
+func _load_heightmap_sidecar(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var width = int(file.get_32())
+	var depth = int(file.get_32())
+	var spacing = file.get_float()
+	var remaining = file.get_length() - file.get_position()
+	var values = file.get_buffer(remaining).to_float32_array()
+	file.close()
+	if width != _sample_width or depth != _sample_depth or values.size() != width * depth:
+		push_warning("FarmWar map editor: heightmap dimensions do not match map.json; keeping generated terrain.")
+		return
+	vertex_spacing = spacing
+	_height_samples = values
+
+
+func _load_surface_mask_sidecar(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var image = Image.load_from_file(path)
+	if image == null or image.is_empty():
+		return
+	image.convert(Image.FORMAT_RGBA8)
+	_surface_mask_image = image
+	_surface_mask_texture = ImageTexture.create_from_image(_surface_mask_image)
+	if _terrain_material != null:
+		_terrain_material.set_shader_parameter("surface_mask", _surface_mask_texture)
+
+
+func _load_manual_grass_sidecar(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var loaded = file.get_var(true)
+	file.close()
+	if loaded is Dictionary:
+		_manual_grass = loaded as Dictionary
+
+
+func _load_map_icon_from_package(folder: String, icon_name: String) -> void:
+	_clear_map_icon()
+	if icon_name.is_empty():
+		if _icon_preview != null:
+			_icon_preview.texture = null
+		if _icon_status_label != null:
+			_icon_status_label.text = "No icon in package"
+		return
+	var icon_path = folder.path_join(icon_name)
+	if not FileAccess.file_exists(icon_path):
+		return
+	var image = Image.load_from_file(icon_path)
+	if image == null or image.is_empty():
+		return
+	_map_icon_image = _make_letterboxed_icon(image)
+	_map_icon_texture = ImageTexture.create_from_image(_map_icon_image)
+	_map_icon_source_path = icon_path
+	if _icon_preview != null:
+		_icon_preview.texture = _map_icon_texture
+	if _icon_status_label != null:
+		_icon_status_label.text = icon_name
+
+
+func _clear_map_icon() -> void:
+	_map_icon_image = null
+	_map_icon_texture = null
+	_map_icon_source_path = ""
+	if _icon_preview != null:
+		_icon_preview.texture = null
+	if _icon_status_label != null:
+		_icon_status_label.text = "No icon selected"
+
+
+func _recalculate_loaded_object_counters() -> void:
+	_next_object_id = 1
+	_next_spawn_id = 1
+	for root in [_trees_root, _ores_root]:
+		if root != null:
+			_next_object_id += root.get_child_count()
+	if _spawns_root != null:
+		_next_spawn_id += _spawns_root.get_child_count()
+
+
+func _update_map_ui_from_loaded_manifest() -> void:
+	_map_name_edit.text = _display_name
+	_map_id_edit.text = _map_id
+	_map_version_edit.text = _map_version
+	_map_width_spin.value = _map_size.x
+	_map_depth_spin.value = _map_size.y
+	for index in range(_template_option.item_count):
+		if _template_option.get_item_id(index) == _template_mode:
+			_template_option.select(index)
+			break
+	_refresh_bottom_dock()
+
+
+func _rebuild_loaded_map_visuals() -> void:
+	for coordinate_value in _terrain_chunks.keys():
+		_rebuild_terrain_chunk(coordinate_value as Vector2i, true)
+	_rebuild_terrain_skirt()
+	if _ground_safety_mesh != null:
+		_apply_foundation_color()
+	for generated in _grass_generated_nodes.values():
+		if is_instance_valid(generated):
+			generated.queue_free()
+	_grass_generated_nodes.clear()
+	for species_value in _manual_grass.keys():
+		var species = str(species_value)
+		var chunks = _manual_grass.get(species, {}) as Dictionary
+		for key_value in chunks.keys():
+			_rebuild_manual_grass_chunk(species, str(key_value))
+	_rebuild_resource_multimeshes_deferred()
+	_configure_integrated_systems()
+	_configure_camera_for_map_and_far_scenery()
+	_rebuild_road_edit_visuals()
+
+
+func _apply_foundation_color() -> void:
+	var base_color = Color("50733b")
+	if not _surface_entries.is_empty():
+		base_color = (_surface_entries[0] as Dictionary).get("color", base_color) as Color
+	for mesh_instance in [_ground_safety_mesh, _terrain_skirt_mesh]:
+		if mesh_instance == null:
+			continue
+		var material = mesh_instance.material_override as StandardMaterial3D
+		if material != null:
+			material.albedo_color = base_color.darkened(0.2)
+
+
+func _save_editor_objects_sidecar(folder: String) -> void:
+	var records: Array = []
+	for root in [_trees_root, _ores_root, _spawns_root]:
+		if root == null:
+			continue
+		for child in root.get_children():
+			if child is Node3D:
+				records.append(_serialize_editor_object(child as Node3D))
+	var file = FileAccess.open(folder.path_join(EDITOR_OBJECTS_FILE_NAME), FileAccess.WRITE)
+	if file != null:
+		file.store_var(records, true)
+		file.close()
+
+
+func _load_editor_objects_sidecar(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	for root in [_trees_root, _ores_root, _spawns_root]:
+		for child in root.get_children():
+			child.queue_free()
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var loaded = file.get_var(true)
+	file.close()
+	if loaded is Array:
+		_restore_object_records(loaded as Array)
+
+
+# -----------------------------------------------------------------------------
+# Continuous road visual editor
+# -----------------------------------------------------------------------------
+
+func _ensure_road_edit_visuals() -> void:
+	if is_instance_valid(_road_edit_visual_root):
+		return
+	_road_edit_visual_root = Node3D.new()
+	_road_edit_visual_root.name = "RoadEditVisuals"
+	add_child(_road_edit_visual_root)
+
+	_road_marker_root = Node3D.new()
+	_road_marker_root.name = "ControlPoints"
+	_road_edit_visual_root.add_child(_road_marker_root)
+
+	_road_centerline_mesh = ImmediateMesh.new()
+	_road_centerline = MeshInstance3D.new()
+	_road_centerline.name = "Centerline"
+	_road_centerline.mesh = _road_centerline_mesh
+	_road_centerline.material_override = _make_unshaded_material(Color(1.0, 0.82, 0.1, 1.0))
+	_road_edit_visual_root.add_child(_road_centerline)
+
+	_road_preview_mesh = ImmediateMesh.new()
+	_road_preview_line = MeshInstance3D.new()
+	_road_preview_line.name = "PreviewLine"
+	_road_preview_line.mesh = _road_preview_mesh
+	_road_preview_line.material_override = _make_unshaded_material(Color(0.1, 0.9, 1.0, 1.0))
+	_road_edit_visual_root.add_child(_road_preview_line)
+
+
+func _make_unshaded_material(color: Color) -> StandardMaterial3D:
+	var material = StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = color
+	material.no_depth_test = true
+	return material
+
+
+func _set_road_edit_visuals_visible(value: bool) -> void:
+	_ensure_road_edit_visuals()
+	_road_edit_visual_root.visible = value
+	if value:
+		_rebuild_road_edit_visuals()
+
+
+func _reset_road_editor_state() -> void:
+	_selected_road = null
+	_road_drawing_active = false
+	_road_selected_point = -1
+	_road_dragging = false
+	_road_drag_before.clear()
+	if is_instance_valid(_road_edit_visual_root):
+		_road_edit_visual_root.queue_free()
+	_road_edit_visual_root = null
+	_road_marker_root = null
+	_road_centerline = null
+	_road_centerline_mesh = null
+	_road_preview_line = null
+	_road_preview_mesh = null
+
+
+func _begin_new_road() -> void:
+	if _roads_root == null:
+		return
+	_finish_active_road()
+	var road = _create_road_node()
+	if road == null:
+		_set_status("Could not create road: missing %s" % ROAD_SCRIPT_PATH)
+		return
+	_selected_road = road
+	_road_drawing_active = true
+	_road_selected_point = -1
+	_refresh_road_list_option()
+	_rebuild_road_edit_visuals()
+	_update_road_control_states()
+	_set_status("Road drawing: click terrain points, then press Enter or Finish Road")
+
+
+func _create_road_node() -> Path3D:
+	var road_script = _load_resource_or_null(ROAD_SCRIPT_PATH) as Script
+	if road_script == null:
+		return null
+	var road = Path3D.new()
+	road.name = "RoadPath3D_%03d" % (_roads_root.get_child_count() + 1)
+	road.set_script(road_script)
+	if not _has_property(road, "mesh_sample_spacing") or not road.has_method("rebuild_road"):
+		road.free()
+		_set_status(
+			"Road script is still the legacy GLB-block version. Replace "
+			+ ROAD_SCRIPT_PATH
+			+ " with the continuous road script."
+		)
+		return null
+	road.curve = Curve3D.new()
+	road.curve.bake_interval = maxf(0.1, road_mesh_sample_spacing * 0.5)
+	road.set_meta("map_editor_road_uuid", _new_editor_uuid("road"))
+	_roads_root.add_child(road)
+	_set_property_if_present(road, "road_type", _road_type)
+	_set_property_if_present(road, "width_override", _road_width_override)
+	_set_property_if_present(road, "mesh_sample_spacing", road_mesh_sample_spacing)
+	_set_property_if_present(road, "max_mesh_samples", road_max_mesh_samples)
+	_set_property_if_present(road, "vertical_offset", _road_vertical_offset)
+	_set_property_if_present(road, "editor_preview_mode", true)
+	_set_property_if_present(road, "follow_terrain", true)
+	_set_property_if_present(road, "terrain_collision_mask", TERRAIN_COLLISION_LAYER)
+	return road
+
+
+func _handle_road_left_press() -> void:
+	if _latest_hit.is_empty():
+		return
+	var point_index = _find_road_control_point_under_mouse()
+	if point_index >= 0 and _selected_road != null:
+		_road_selected_point = point_index
+		_road_dragging = true
+		_road_drag_before = _serialize_road(_selected_road)
+		if _selected_road.has_method("set_rebuild_suspended"):
+			_selected_road.call("set_rebuild_suspended", true)
+		_rebuild_road_edit_visuals()
+		_update_road_control_states()
+		return
+	var hit_position = _latest_hit.get("position", Vector3.ZERO) as Vector3
+	if _road_drawing_active and _selected_road != null:
+		_add_point_to_active_road(hit_position)
+		return
+	var nearest = _find_nearest_road(hit_position)
+	if nearest != null:
+		_select_road(nearest)
+	else:
+		_road_selected_point = -1
+		_rebuild_road_edit_visuals()
+
+
+func _add_point_to_active_road(hit_position: Vector3) -> void:
+	if _selected_road == null or _selected_road.curve == null:
+		return
+	if not _selected_road.is_inside_tree():
+		return
+	var world_point = Vector3(
+		hit_position.x,
+		get_terrain_height_world(Vector2(hit_position.x, hit_position.z)),
+		hit_position.z
+	)
+	var point = _selected_road.to_local(world_point)
+	_selected_road.curve.add_point(point)
+	_road_selected_point = _selected_road.curve.point_count - 1
+	_smooth_road_curve_handles(_selected_road.curve)
+	# Curve3D.changed schedules one coalesced rebuild. Calling rebuild_road()
+	# again here used to create duplicate work on the second point.
+	_rebuild_road_edit_visuals()
+	_update_road_control_states()
+	_set_status("Road points: %d" % _selected_road.curve.point_count)
+
+
+func _finish_active_road() -> void:
+	if not _road_drawing_active:
+		return
+	_road_drawing_active = false
+	if _selected_road == null:
+		return
+	if _selected_road.curve == null or _selected_road.curve.point_count < 2:
+		var invalid = _selected_road
+		_selected_road = null
+		invalid.queue_free()
+		_rebuild_road_edit_visuals()
+		_refresh_bottom_dock()
+		_set_status("Road cancelled: at least two points are required")
+		return
+	_set_property_if_present(_selected_road, "editor_preview_mode", false)
+	_rebuild_road_now(_selected_road)
+	var record = _serialize_road(_selected_road)
+	_undo_redo.create_action("Create Road")
+	_undo_redo.add_do_method(_restore_road_records.bind([record]))
+	_undo_redo.add_undo_method(_remove_road_records.bind([record]))
+	_undo_redo.commit_action(false)
+	_refresh_bottom_dock()
+	_update_road_control_states()
+	_set_status("Road completed")
+
+
+func _cancel_active_road() -> void:
+	if not _road_drawing_active:
+		return
+	_road_drawing_active = false
+	if _selected_road != null:
+		var road = _selected_road
+		_selected_road = null
+		road.queue_free()
+	_road_selected_point = -1
+	_rebuild_road_edit_visuals()
+	_refresh_bottom_dock()
+	_update_road_control_states()
+	_set_status("Road drawing cancelled")
+
+
+func _drag_selected_road_point(hit_position: Vector3) -> void:
+	if _selected_road == null or _selected_road.curve == null:
+		return
+	if _road_selected_point < 0 or _road_selected_point >= _selected_road.curve.point_count:
+		return
+	if not _selected_road.is_inside_tree():
+		return
+	var world_point = Vector3(
+		hit_position.x,
+		get_terrain_height_world(Vector2(hit_position.x, hit_position.z)),
+		hit_position.z
+	)
+	var point = _selected_road.to_local(world_point)
+	_selected_road.curve.set_point_position(_road_selected_point, point)
+	_smooth_road_curve_handles(_selected_road.curve)
+	_rebuild_road_edit_visuals()
+
+
+func _end_road_point_drag() -> void:
+	if not _road_dragging:
+		return
+	_road_dragging = false
+	if _selected_road != null and _selected_road.has_method("set_rebuild_suspended"):
+		_selected_road.call("set_rebuild_suspended", false)
+	if _selected_road == null or _road_drag_before.is_empty():
+		_road_drag_before.clear()
+		return
+	var after = _serialize_road(_selected_road)
+	_commit_road_state_change("Move Road Point", _road_drag_before, after)
+	_road_drag_before.clear()
+
+
+func _delete_selected_road_point() -> void:
+	if _selected_road == null or _selected_road.curve == null or _road_selected_point < 0:
+		return
+	var before = _serialize_road(_selected_road)
+	_selected_road.curve.remove_point(_road_selected_point)
+	_road_selected_point = mini(_road_selected_point, _selected_road.curve.point_count - 1)
+	_smooth_road_curve_handles(_selected_road.curve)
+	_rebuild_road_now(_selected_road)
+	var after = _serialize_road(_selected_road)
+	_commit_road_state_change("Delete Road Point", before, after)
+	_rebuild_road_edit_visuals()
+	_refresh_bottom_dock()
+	_update_road_control_states()
+
+
+func _conform_selected_road_to_terrain() -> void:
+	if _selected_road == null or _selected_road.curve == null:
+		return
+	var before = _serialize_road(_selected_road)
+	if not _selected_road.is_inside_tree():
+		return
+	for index in range(_selected_road.curve.point_count):
+		var local_point = _selected_road.curve.get_point_position(index)
+		var world_point = _selected_road.to_global(local_point)
+		world_point.y = get_terrain_height_world(Vector2(world_point.x, world_point.z))
+		_selected_road.curve.set_point_position(
+			index,
+			_selected_road.to_local(world_point)
+		)
+	_smooth_road_curve_handles(_selected_road.curve)
+	_rebuild_road_now(_selected_road)
+	var after = _serialize_road(_selected_road)
+	_commit_road_state_change("Conform Road To Terrain", before, after)
+	_rebuild_road_edit_visuals()
+
+
+func _delete_selected_road() -> void:
+	if _selected_road == null:
+		return
+	var record = _serialize_road(_selected_road)
+	_remove_road_records([record])
+	_undo_redo.create_action("Delete Road")
+	_undo_redo.add_do_method(_remove_road_records.bind([record]))
+	_undo_redo.add_undo_method(_restore_road_records.bind([record]))
+	_undo_redo.commit_action(false)
+	_selected_road = null
+	_road_selected_point = -1
+	_refresh_bottom_dock()
+	_rebuild_road_edit_visuals()
+	_update_road_control_states()
+
+
+func _commit_road_state_change(action_name: String, before: Dictionary, after: Dictionary) -> void:
+	if before.is_empty() or after.is_empty():
+		return
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_road_record_state.bind(after))
+	_undo_redo.add_undo_method(_apply_road_record_state.bind(before))
+	_undo_redo.commit_action(false)
+
+
+func _apply_road_record_state(record: Dictionary) -> void:
+	var uuid = str(record.get("uuid", ""))
+	var road = _find_road_by_uuid(uuid)
+	if road == null:
+		_restore_road_records([record])
+		road = _find_road_by_uuid(uuid)
+	if road == null:
+		return
+	_apply_serialized_road_to_node(road, record)
+	if _selected_road != null and str(_selected_road.get_meta("map_editor_road_uuid", "")) == uuid:
+		_selected_road = road
+	_rebuild_road_edit_visuals()
+	_refresh_bottom_dock()
+
+
+func _smooth_road_curve_handles(target_curve: Curve3D) -> void:
+	if target_curve == null:
+		return
+	var count = target_curve.point_count
+	for index in range(count):
+		var current = target_curve.get_point_position(index)
+		var previous = target_curve.get_point_position(maxi(0, index - 1))
+		var next = target_curve.get_point_position(mini(count - 1, index + 1))
+		var tangent = (next - previous) * 0.22
+		if index == 0:
+			tangent = (next - current) * 0.32
+		elif index == count - 1:
+			tangent = (current - previous) * 0.32
+		target_curve.set_point_in(index, -tangent)
+		target_curve.set_point_out(index, tangent)
+
+
+func _find_road_control_point_under_mouse() -> int:
+	if (
+		_selected_road == null
+		or _selected_road.curve == null
+		or _editor_camera == null
+		or not _selected_road.is_inside_tree()
+	):
+		return -1
+	var mouse = get_viewport().get_mouse_position()
+	var best_index = -1
+	var best_distance = road_control_point_pick_radius_px
+	for index in range(_selected_road.curve.point_count):
+		var world = _selected_road.to_global(_selected_road.curve.get_point_position(index))
+		if _editor_camera.is_position_behind(world):
+			continue
+		var screen = _editor_camera.unproject_position(world)
+		var distance = screen.distance_to(mouse)
+		if distance <= best_distance:
+			best_distance = distance
+			best_index = index
+	return best_index
+
+
+func _find_nearest_road(world_position: Vector3) -> Path3D:
+	if _roads_root == null:
+		return null
+	var best: Path3D
+	var best_distance = road_selection_world_distance
+	for child in _roads_root.get_children():
+		if not child is Path3D:
+			continue
+		var road = child as Path3D
+		if not road.is_inside_tree():
+			continue
+		if road.curve == null or road.curve.point_count < 2:
+			continue
+		var total = road.curve.get_baked_length()
+		var sample_count = maxi(2, int(ceil(total / 2.0)) + 1)
+		for index in range(sample_count):
+			var distance_along = float(index) * total / float(sample_count - 1)
+			var point = road.to_global(road.curve.sample_baked(distance_along, true))
+			var distance = Vector2(point.x, point.z).distance_to(Vector2(world_position.x, world_position.z))
+			if distance < best_distance:
+				best_distance = distance
+				best = road
+	return best
+
+
+func _select_road(road: Path3D) -> void:
+	_selected_road = road
+	_road_selected_point = -1
+	_road_drawing_active = false
+	_road_type = int(_get_property_or(road, "road_type", 1))
+	_road_width_override = float(_get_property_or(road, "width_override", 0.0))
+	_road_vertical_offset = float(_get_property_or(road, "vertical_offset", road_default_vertical_offset))
+	_refresh_bottom_dock()
+	_rebuild_road_edit_visuals()
+	_update_road_control_states()
+
+
+func _on_road_list_selected(index: int) -> void:
+	if _road_list_option == null or index < 0:
+		return
+	var child_index = _road_list_option.get_item_id(index)
+	if _roads_root != null and child_index >= 0 and child_index < _roads_root.get_child_count():
+		var road = _roads_root.get_child(child_index) as Path3D
+		if road != null:
+			_select_road(road)
+
+
+func _refresh_road_list_option() -> void:
+	if _road_list_option == null:
+		return
+	_road_list_option.clear()
+	if _roads_root == null:
+		return
+	for child_index in range(_roads_root.get_child_count()):
+		var child = _roads_root.get_child(child_index)
+		if not child is Path3D:
+			continue
+		_road_list_option.add_item(child.name, child_index)
+		if child == _selected_road:
+			_road_list_option.select(_road_list_option.item_count - 1)
+
+
+func _on_road_type_selected(index: int) -> void:
+	_road_type = _road_type_option.get_item_id(index)
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "road_type", _road_type)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Type",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _on_road_width_changed(value: float) -> void:
+	_road_width_override = value
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "width_override", value)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Width",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _on_road_offset_changed(value: float) -> void:
+	_road_vertical_offset = value
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "vertical_offset", value)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Height Offset",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _update_road_preview(cursor: Vector3) -> void:
+	_ensure_road_edit_visuals()
+	if _road_preview_mesh == null:
+		return
+	_road_preview_mesh.clear_surfaces()
+	if (
+		not _road_drawing_active
+		or _selected_road == null
+		or _selected_road.curve == null
+		or _selected_road.curve.point_count == 0
+		or not _selected_road.is_inside_tree()
+		or _road_preview_line == null
+		or not _road_preview_line.is_inside_tree()
+	):
+		return
+	var last_world = _selected_road.to_global(
+		_selected_road.curve.get_point_position(
+			_selected_road.curve.point_count - 1
+		)
+	) + Vector3.UP * 0.12
+	var target_world = Vector3(
+		cursor.x,
+		get_terrain_height_world(Vector2(cursor.x, cursor.z)) + 0.12,
+		cursor.z
+	)
+	_road_preview_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	_road_preview_mesh.surface_add_vertex(
+		_road_preview_line.to_local(last_world)
+	)
+	_road_preview_mesh.surface_add_vertex(
+		_road_preview_line.to_local(target_world)
+	)
+	_road_preview_mesh.surface_end()
+
+
+func _rebuild_road_edit_visuals() -> void:
+	_ensure_road_edit_visuals()
+	if (
+		_road_marker_root == null
+		or _road_centerline_mesh == null
+		or _road_centerline == null
+	):
+		return
+
+	# Detach old markers immediately. queue_free() alone leaves them in the
+	# scene tree until the end of the frame and can cause duplicate/stale
+	# control-point visuals during rapid edits.
+	for child in _road_marker_root.get_children():
+		_road_marker_root.remove_child(child)
+		child.queue_free()
+
+	_road_centerline_mesh.clear_surfaces()
+	if (
+		_selected_road == null
+		or _selected_road.curve == null
+		or not _selected_road.is_inside_tree()
+		or not _road_marker_root.is_inside_tree()
+		or not _road_centerline.is_inside_tree()
+	):
+		return
+
+	for index in range(_selected_road.curve.point_count):
+		var marker = MeshInstance3D.new()
+		marker.name = "RoadPoint_%02d" % index
+		var sphere = SphereMesh.new()
+		sphere.radius = 0.45 if index == _road_selected_point else 0.32
+		sphere.height = sphere.radius * 2.0
+		marker.mesh = sphere
+		marker.material_override = _make_unshaded_material(
+			Color(1.0, 0.2, 0.08, 1.0)
+			if index == _road_selected_point
+			else Color(1.0, 0.82, 0.1, 1.0)
+		)
+
+		# A Node3D cannot use global_position before it enters SceneTree.
+		# Add it first, then convert the road point from world space into the
+		# marker root's local space.
+		_road_marker_root.add_child(marker)
+		var marker_world = _selected_road.to_global(
+			_selected_road.curve.get_point_position(index)
+		) + Vector3.UP * 0.18
+		marker.position = _road_marker_root.to_local(marker_world)
+
+	if _selected_road.curve.point_count >= 2:
+		var total = _selected_road.curve.get_baked_length()
+		if total <= 0.001:
+			return
+		var sample_count = maxi(2, int(ceil(total / 1.0)) + 1)
+		# Centerline is only an editor helper, so cap its vertices as well.
+		sample_count = mini(sample_count, 2048)
+		_road_centerline_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		for index in range(sample_count):
+			var distance = float(index) * total / float(sample_count - 1)
+			var point_world = _selected_road.to_global(
+				_selected_road.curve.sample_baked(distance, true)
+			) + Vector3.UP * 0.18
+			_road_centerline_mesh.surface_add_vertex(
+				_road_centerline.to_local(point_world)
+			)
+		_road_centerline_mesh.surface_end()
+
+
+func _rebuild_road_now(road: Path3D) -> void:
+	if road == null:
+		return
+	if road.has_method("request_rebuild"):
+		road.call("request_rebuild")
+	elif road.has_method("rebuild_road"):
+		road.call_deferred("rebuild_road")
+
+
+func _rebuild_all_roads_to_terrain() -> void:
+	if _roads_root == null:
+		return
+	for child in _roads_root.get_children():
+		if child is Path3D:
+			_rebuild_road_now(child as Path3D)
+
+
+func _serialize_road(road: Path3D) -> Dictionary:
+	var uuid = str(road.get_meta("map_editor_road_uuid", ""))
+	if uuid.is_empty():
+		uuid = _new_editor_uuid("road")
+		road.set_meta("map_editor_road_uuid", uuid)
+	var points: Array = []
+	var in_handles: Array = []
+	var out_handles: Array = []
+	var tilts: Array = []
+	if road.curve != null:
+		for index in range(road.curve.point_count):
+			points.append(road.curve.get_point_position(index))
+			in_handles.append(road.curve.get_point_in(index))
+			out_handles.append(road.curve.get_point_out(index))
+			tilts.append(road.curve.get_point_tilt(index))
+	return {
+		"uuid": uuid,
+		"name": road.name,
+		"transform": road.transform,
+		"road_type": int(_get_property_or(road, "road_type", 1)),
+		"width_override": float(_get_property_or(road, "width_override", 0.0)),
+		"mesh_sample_spacing": float(_get_property_or(road, "mesh_sample_spacing", road_mesh_sample_spacing)),
+		"max_mesh_samples": int(_get_property_or(road, "max_mesh_samples", road_max_mesh_samples)),
+		"vertical_offset": float(_get_property_or(road, "vertical_offset", road_default_vertical_offset)),
+		"texture_repeat_length": float(_get_property_or(road, "texture_repeat_length", 6.0)),
+		"follow_terrain": bool(_get_property_or(road, "follow_terrain", true)),
+		"terrain_collision_mask": int(_get_property_or(road, "terrain_collision_mask", TERRAIN_COLLISION_LAYER)),
+		"crown_height": float(_get_property_or(road, "crown_height", 0.015)),
+		"edge_drop": float(_get_property_or(road, "edge_drop", 0.0)),
+		"generate_collision": bool(_get_property_or(road, "generate_collision", false)),
+		"points": points,
+		"in_handles": in_handles,
+		"out_handles": out_handles,
+		"tilts": tilts,
+		"closed": road.curve.closed if road.curve != null else false,
+	}
+
+
+func _apply_serialized_road_to_node(road: Path3D, record: Dictionary) -> void:
+	road.name = str(record.get("name", "RoadPath3D"))
+	road.transform = record.get("transform", Transform3D.IDENTITY) as Transform3D
+	road.set_meta("map_editor_road_uuid", str(record.get("uuid", _new_editor_uuid("road"))))
+	_set_property_if_present(road, "road_type", int(record.get("road_type", 1)))
+	_set_property_if_present(road, "width_override", float(record.get("width_override", 0.0)))
+	_set_property_if_present(road, "mesh_sample_spacing", float(record.get("mesh_sample_spacing", road_mesh_sample_spacing)))
+	_set_property_if_present(road, "max_mesh_samples", int(record.get("max_mesh_samples", road_max_mesh_samples)))
+	_set_property_if_present(road, "vertical_offset", float(record.get("vertical_offset", road_default_vertical_offset)))
+	_set_property_if_present(road, "editor_preview_mode", false)
+	_set_property_if_present(road, "texture_repeat_length", float(record.get("texture_repeat_length", 6.0)))
+	_set_property_if_present(road, "follow_terrain", bool(record.get("follow_terrain", true)))
+	_set_property_if_present(road, "terrain_collision_mask", int(record.get("terrain_collision_mask", TERRAIN_COLLISION_LAYER)))
+	_set_property_if_present(road, "crown_height", float(record.get("crown_height", 0.015)))
+	_set_property_if_present(road, "edge_drop", float(record.get("edge_drop", 0.0)))
+	_set_property_if_present(road, "generate_collision", bool(record.get("generate_collision", false)))
+	var curve_value = Curve3D.new()
+	var points = record.get("points", []) as Array
+	var in_handles = record.get("in_handles", []) as Array
+	var out_handles = record.get("out_handles", []) as Array
+	var tilts = record.get("tilts", []) as Array
+	for index in range(points.size()):
+		curve_value.add_point(
+			points[index] as Vector3,
+			in_handles[index] as Vector3 if index < in_handles.size() else Vector3.ZERO,
+			out_handles[index] as Vector3 if index < out_handles.size() else Vector3.ZERO
+		)
+		if index < tilts.size():
+			curve_value.set_point_tilt(index, float(tilts[index]))
+	curve_value.closed = bool(record.get("closed", false))
+	road.curve = curve_value
+	if road.has_method("refresh_curve_connection"):
+		road.call("refresh_curve_connection")
+	else:
+		_rebuild_road_now(road)
+
+
+func _save_roads_sidecar(folder: String) -> void:
+	var records: Array = []
+	if _roads_root != null:
+		for child in _roads_root.get_children():
+			if child is Path3D:
+				records.append(_serialize_road(child as Path3D))
+	var file = FileAccess.open(folder.path_join(ROADS_FILE_NAME), FileAccess.WRITE)
+	if file != null:
+		file.store_var(records, true)
+		file.close()
+
+
+func _load_roads_sidecar(path: String) -> void:
+	if _roads_root == null:
+		return
+	for child in _roads_root.get_children():
+		child.queue_free()
+	if not FileAccess.file_exists(path):
+		return
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var loaded = file.get_var(true)
+	file.close()
+	if loaded is Array:
+		_restore_road_records(loaded as Array)
+
+
+func _restore_road_records(records: Array) -> void:
+	for value in records:
+		var record = value as Dictionary
+		var uuid = str(record.get("uuid", ""))
+		if not uuid.is_empty() and _find_road_by_uuid(uuid) != null:
+			continue
+		var road = _create_road_node()
+		if road == null:
+			continue
+		_apply_serialized_road_to_node(road, record)
+	_refresh_road_list_option()
+	_rebuild_road_edit_visuals()
+
+
+func _remove_road_records(records: Array) -> void:
+	for value in records:
+		var record = value as Dictionary
+		var road = _find_road_by_uuid(str(record.get("uuid", "")))
+		if road == null:
+			continue
+		if road == _selected_road:
+			_selected_road = null
+			_road_selected_point = -1
+		road.queue_free()
+	_refresh_road_list_option()
+	_rebuild_road_edit_visuals()
+
+
+func _find_road_by_uuid(uuid: String) -> Path3D:
+	if uuid.is_empty() or _roads_root == null:
+		return null
+	for child in _roads_root.get_children():
+		if child is Path3D and str(child.get_meta("map_editor_road_uuid", "")) == uuid:
+			return child as Path3D
+	return null
 
 
 # -----------------------------------------------------------------------------
