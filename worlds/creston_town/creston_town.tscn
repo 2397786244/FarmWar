@@ -61,7 +61,8 @@
 [ext_resource type="PackedScene" uid="uid://8eixcic7o4kc" path="res://buildings/warehouse_blue.tscn" id="58_3cyp7"]
 [ext_resource type="PackedScene" path="res://worlds/shared/cloud_system.tscn" id="59_cloud_system"]
 [ext_resource type="PackedScene" path="res://worlds/shared/day_night_system.tscn" id="60_day_night"]
-[ext_resource type="Script" uid="uid://fs0mky1autm5" path="res://src/environment/far_scenery_ring_3d.gd" id="61_far_scenery"]
+[ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="62_weather"]
+[ext_resource type="Script" uid="uid://by56w567ih6jo" path="res://src/far_scenery_ring_3d.gd" id="61_far_scenery"]
 [ext_resource type="PackedScene" uid="uid://dba6lq15i61io" path="res://buildings/RoadsideDiner.tscn" id="63_4igfp"]
 [ext_resource type="PackedScene" uid="uid://kwvmjeo72p05" path="res://buildings/Gunstore.tscn" id="64_of110"]
 [ext_resource type="PackedScene" uid="uid://cmhxh57ujwdlv" path="res://buildings/Lottery.tscn" id="65_mwjp6"]
@@ -218,6 +219,8 @@ cloud_visibility_distance = 500.0
 
 [node name="DayNightSystem" parent="." unique_id=1259791586 instance=ExtResource("60_day_night")]
 initial_hour = 17.0
+
+[node name="WeatherSystem" parent="." instance=ExtResource("62_weather")]
 
 [node name="Ground" type="StaticBody3D" parent="." unique_id=421201706]
 collision_mask = 14334

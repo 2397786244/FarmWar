@@ -43,7 +43,9 @@ var _fallback_elapsed := 0.0
 var _client_tick_anchor := 0.0
 var _client_anchor_msec := 0
 var _last_client_snapshot_tick := -1
+var _client_world_time_anchor := -1.0
 var _update_accumulator := 0.0
+var _rain_strength := 0.0
 
 
 func _ready() -> void:
@@ -109,6 +111,11 @@ func get_street_light_factor() -> float:
 	) else 0.0
 
 
+func set_weather_state(weather_type: String, intensity := 1.0) -> void:
+	_rain_strength = clampf(intensity, 0.0, 1.0) if weather_type == "rain" else 0.0
+	_apply_time_of_day()
+
+
 func _is_hour_in_wrapped_range(hour: float, start_hour: float, end_hour: float) -> bool:
 	var start := fposmod(start_hour, 24.0)
 	var end := fposmod(end_hour, 24.0)
@@ -123,6 +130,15 @@ func _synchronized_elapsed_seconds() -> float:
 	if _game_authority != null and bool(_game_authority.call("is_client_proxy")):
 		var snapshot_value: Variant = _game_authority.get("last_snapshot")
 		var snapshot := snapshot_value as Dictionary if snapshot_value is Dictionary else {}
+		var authoritative_time := float(snapshot.get("world_time_seconds", -1.0))
+		if authoritative_time >= 0.0:
+			var snapshot_tick_for_time := int(snapshot.get("tick", -1))
+			if snapshot_tick_for_time != _last_client_snapshot_tick:
+				_last_client_snapshot_tick = snapshot_tick_for_time
+				_client_world_time_anchor = authoritative_time
+				_client_anchor_msec = Time.get_ticks_msec()
+			if _client_world_time_anchor >= 0.0:
+				return _client_world_time_anchor + float(Time.get_ticks_msec() - _client_anchor_msec) * 0.001
 		var snapshot_tick := int(snapshot.get("tick", -1))
 		if snapshot_tick >= 0 and snapshot_tick != _last_client_snapshot_tick:
 			_last_client_snapshot_tick = snapshot_tick
@@ -175,7 +191,8 @@ func _apply_directional_lights(
 ) -> void:
 	if _sun != null:
 		_set_light_direction(_sun, -sun_direction)
-		_sun.light_energy = pow(maxf(sin(altitude), 0.0), 0.35) * maximum_sun_energy
+		_sun.light_energy = pow(maxf(sin(altitude), 0.0), 0.35) * maximum_sun_energy \
+			* lerpf(1.0, 0.24, _rain_strength)
 		var warm_factor := 1.0 - smoothstep(deg_to_rad(2.0), deg_to_rad(22.0), altitude)
 		_sun.light_color = Color(1.0, 0.58, 0.32).lerp(
 			Color(1.0, 0.95, 0.82), 1.0 - warm_factor
@@ -183,7 +200,8 @@ func _apply_directional_lights(
 		_sun.visible = _sun.light_energy > 0.002
 	if _moon != null:
 		_set_light_direction(_moon, sun_direction)
-		_moon.light_energy = maximum_moon_energy * smoothstep(0.35, 0.92, night_factor)
+		_moon.light_energy = maximum_moon_energy * smoothstep(0.35, 0.92, night_factor) \
+			* lerpf(1.0, 0.20, _rain_strength)
 		_moon.visible = _moon.light_energy > 0.002
 
 
@@ -214,10 +232,15 @@ func _apply_environment(altitude: float) -> void:
 	)
 	_environment.ambient_light_energy = lerpf(
 		night_ambient_energy, day_ambient_energy, daylight_factor
-	)
+	) * lerpf(1.0, 0.58, _rain_strength)
 	_environment.ambient_light_color = Color(0.16, 0.21, 0.36).lerp(
 		Color.WHITE, daylight_factor
-	)
+	).lerp(Color(0.30, 0.38, 0.54), _rain_strength * 0.78)
+	_environment.fog_enabled = _rain_strength > 0.01
+	_environment.fog_light_color = Color(0.12, 0.17, 0.29)
+	_environment.fog_light_energy = lerpf(0.0, 0.55, _rain_strength)
+	_environment.fog_density = lerpf(0.0, 0.006, _rain_strength)
+	_environment.fog_sky_affect = lerpf(0.0, 0.72, _rain_strength)
 	if _sky_material == null:
 		return
 	var top := Color(0.008, 0.018, 0.055).lerp(
@@ -227,14 +250,16 @@ func _apply_environment(altitude: float) -> void:
 		Color(0.72, 0.88, 0.97), daylight_factor
 	)
 	horizon = horizon.lerp(Color(1.0, 0.32, 0.12), twilight * 0.72)
-	_sky_material.sky_top_color = top
-	_sky_material.sky_horizon_color = horizon
+	_sky_material.sky_top_color = top.lerp(Color(0.016, 0.030, 0.085), _rain_strength)
+	_sky_material.sky_horizon_color = horizon.lerp(Color(0.075, 0.12, 0.23), _rain_strength)
 	_sky_material.ground_bottom_color = Color(0.012, 0.018, 0.028).lerp(
 		Color(0.25, 0.40, 0.22), daylight_factor
 	)
 	_sky_material.ground_horizon_color = Color(0.03, 0.04, 0.07).lerp(
 		Color(0.62, 0.73, 0.54), daylight_factor
-	).lerp(Color(0.62, 0.20, 0.10), twilight * 0.45)
+	).lerp(Color(0.62, 0.20, 0.10), twilight * 0.45).lerp(
+		Color(0.055, 0.075, 0.12), _rain_strength
+	)
 
 
 func _create_moon() -> void:
@@ -284,7 +309,7 @@ func _update_celestial_visuals(sun_direction: Vector3) -> void:
 	var center := camera.global_position if camera != null else global_position
 	if _sun_visual != null:
 		_sun_visual.global_position = center + sun_direction * 320.0
-		_sun_visual.visible = sun_direction.y > -0.08
+		_sun_visual.visible = sun_direction.y > -0.08 and _rain_strength < 0.18
 	if _moon_visual != null:
 		_moon_visual.global_position = center - sun_direction * 300.0
-		_moon_visual.visible = sun_direction.y < 0.12
+		_moon_visual.visible = sun_direction.y < 0.12 and _rain_strength < 0.18

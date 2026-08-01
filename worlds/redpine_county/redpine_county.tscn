@@ -3,15 +3,16 @@
 [ext_resource type="PackedScene" path="res://worlds/shared/cloud_system.tscn" id="1_egthv"]
 [ext_resource type="PackedScene" path="res://worlds/shared/day_night_system.tscn" id="2_4qtev"]
 [ext_resource type="Shader" uid="uid://pu5wb13ismhh" path="res://src/terrain/terrain_surface.gdshader" id="3_e2tvo"]
-[ext_resource type="Resource" path="res://worlds/redpine_county/redpine_county_surface_palette.tres" id="4_palette"]
+[ext_resource type="Resource" uid="uid://byea6cadoxxrk" path="res://worlds/redpine_county/redpine_county_surface_palette.tres" id="4_palette"]
 [ext_resource type="Texture2D" path="res://worlds/redpine_county/redpine_county_surface_mask.res" id="5_mask"]
 [ext_resource type="Texture2D" path="res://worlds/redpine_county/redpine_county_surface_palette_lookup.res" id="6_lookup"]
 [ext_resource type="Script" uid="uid://dn8o1sjdmg6re" path="res://src/terrain/terrain_surface_baker.gd" id="7_baker"]
 [ext_resource type="Script" uid="uid://ds7s0htg58tpd" path="res://src/terrain/grass_scatter_3d.gd" id="8_grass_scatter"]
 [ext_resource type="PackedScene" uid="uid://b3uurwo4gfuai" path="res://assets/environment/Grass_small.glb" id="9_grass_small"]
 [ext_resource type="PackedScene" uid="uid://jvc2pomu8b0q" path="res://assets/environment/Grass_tall.glb" id="10_grass_tall"]
-[ext_resource type="Script" uid="uid://fs0mky1autm5" path="res://src/environment/far_scenery_ring_3d.gd" id="11_far_scenery"]
+[ext_resource type="Script" uid="uid://by56w567ih6jo" path="res://src/far_scenery_ring_3d.gd" id="11_far_scenery"]
 [ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="12_farm_field"]
+[ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="13_weather"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_mxl0g"]
 sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
@@ -74,7 +75,6 @@ script = ExtResource("12_farm_field")
 field_label = "redpine_west"
 length_tiles = 64
 width_tiles = 48
-generate_on_ready = true
 
 [node name="RedpineFarmEast" type="Node3D" parent="." unique_id=781594620]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 200, 0.52, 270)
@@ -82,7 +82,6 @@ script = ExtResource("12_farm_field")
 field_label = "redpine_east"
 length_tiles = 64
 width_tiles = 48
-generate_on_ready = true
 
 [node name="CloudSystem" parent="." unique_id=370718456 instance=ExtResource("1_egthv")]
 large_tower_count = 36
@@ -97,6 +96,9 @@ cloud_visibility_distance = 500.0
 
 [node name="DayNightSystem" parent="." unique_id=1281452287 instance=ExtResource("2_4qtev")]
 initial_hour = 17.0
+
+[node name="WeatherSystem" parent="." unique_id=1694774774 instance=ExtResource("13_weather")]
+weather_override = "rain"
 
 [node name="Ground" type="StaticBody3D" parent="." unique_id=51506157]
 collision_mask = 14334

@@ -8,9 +8,9 @@ const JUMP_VELOCITY := 3.0
 const PRONE_SPEED_MULTIPLIER := 0.4
 const PLAYER_MAX_HP := 200.0
 const NETWORK_SIMULATION_DELTA := 1.0 / 60.0
-const PLAYER_SOFT_CORRECTION_DISTANCE := 0.03
-const PLAYER_HARD_CORRECTION_DISTANCE := 1.5
-const PLAYER_CORRECTION_BLEND := 0.20
+const PLAYER_SOFT_CORRECTION_DISTANCE := 0.10
+const PLAYER_HARD_CORRECTION_DISTANCE := 2.0
+const PLAYER_CORRECTION_BLEND := 0.12
 const PLAYER_AIRBORNE_VERTICAL_TOLERANCE := 0.35
 const REMOTE_INTERPOLATION_DELAY_MSEC := 100
 const REMOTE_MAX_EXTRAPOLATION_MSEC := 100
@@ -1568,10 +1568,9 @@ func apply_remote_tool_selection(tool_index: int, tool_id := "") -> void:
 		tool_definitions[tool_index] = (all_tool_definitions_by_id[tool_id] as Dictionary).duplicate(true)
 	_select_tool(tool_index, true)
 	# Remote snapshots can update the proxy's skeleton/pivot transform in the
-	# same frame as the tool swap. Reapply the global-up correction after the
-	# instantiated model has entered the remote hand socket.
-	if is_instance_valid(tool_node) \
-			and not _definition_uses_weapon_orientation(tool_definitions[tool_index]):
+	# same frame as the tool swap. Every held model, including weapons, uses the
+	# same global-up correction as the local presentation path.
+	if is_instance_valid(tool_node):
 		_schedule_held_model_upright(tool_node)
 
 
@@ -2304,14 +2303,9 @@ func _on_authority_player_correction(peer_id: int, correction: Dictionary) -> vo
 		return
 	last_server_correction_seq = acknowledged_seq
 	if CooperativeSession.is_host():
-		var host_position: Variant = correction.get("position", global_position)
-		var host_velocity: Variant = correction.get("velocity", velocity)
-		if host_position is Vector3:
-			global_position = host_position
-		if host_velocity is Vector3:
-			velocity = host_velocity
-		rotation.y = float(correction.get("yaw", rotation.y))
-		Head.rotation.x = float(correction.get("pitch", Head.rotation.x))
+		# The host owns the authoritative input stream. Writing the separate
+		# server-physics proxy transform back into this predicted body causes
+		# visible micro-teleports each correction tick.
 		return
 	if not GameAuthority.should_send_network_requests():
 		return
@@ -2990,6 +2984,7 @@ func _process(delta: float) -> void:
 		if vehicle_is_active:
 			_update_vehicle_occupant_presentation()
 		_update_upper_body_aim(delta)
+		_update_remote_held_model_alignment()
 		return
 	_ensure_local_camera_ownership()
 	_update_prone_presentation(delta)
@@ -3621,13 +3616,26 @@ func _on_authority_world_event(event: Dictionary) -> void:
 				if not consumed_tool_id.is_empty():
 					_apply_consumed_tool(consumed_tool_id, int(data.get("consumed_tool_index", -1)))
 		return
-	if event_type == "projectile_exploded" and str(event.get("projectile_type", "")) == "grenade":
+	if event_type == "projectile_exploded":
 		var explosion_position: Variant = event.get("position", Vector3.ZERO)
 		if explosion_position is Vector3:
 			apply_explosion_camera_shake(
 				explosion_position as Vector3,
-				float(event.get("shake_radius", CombatBalance.get_float("grenade", "shake_radius")))
+				float(event.get("shake_radius", 0.0))
 			)
+		return
+	if event_type == "player_died" and CooperativeSession.is_host() \
+			and int(event.get("peer_id", 0)) == authority_peer_id:
+		apply_death_inventory_drop(event.get("dropped_inventory_items", []))
+		apply_respawn_state(float(event.get("respawn_seconds", 0.0)))
+		return
+	if event_type == "player_respawned" and CooperativeSession.is_host() \
+			and int(event.get("peer_id", 0)) == authority_peer_id:
+		var respawn_position: Variant = event.get("position", null)
+		apply_respawn_state(
+			0.0,
+			respawn_position as Vector3 if respawn_position is Vector3 else null
+		)
 		return
 	if event_type == "weapon_ammo_state":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
@@ -5390,6 +5398,19 @@ func _update_tool_camera_alignment() -> void:
 		desired_pivot_basis,
 		tool_pivot.global_position
 	)
+
+
+func _update_remote_held_model_alignment() -> void:
+	# Remote proxies do not own a Camera3D, so they cannot use the local
+	# first-person pivot path. Their BoneAttachment3D changes as interpolated
+	# locomotion and aim animations update; enforce global +Y afterwards so both
+	# PVP ENet and PVE Steam clients render the same held orientation.
+	if not is_remote_proxy:
+		return
+	if is_instance_valid(tool_node) and tool_node.visible:
+		_upright_held_model(tool_node)
+	if is_instance_valid(held_item_node) and held_item_node.visible:
+		_upright_held_model(held_item_node)
 
 
 func _current_tool_is_shooting() -> bool:

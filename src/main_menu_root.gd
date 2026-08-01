@@ -9,6 +9,7 @@ const BATTLE_ROOM_SCENE := preload("res://ui/MultiplayerBattleRoomPage.tscn")
 const COOPERATIVE_WORLD_SCENE := preload("res://ui/CooperativeWorldPage.tscn")
 const COOPERATIVE_LOBBY_SCENE := preload("res://ui/CooperativeLobbyPage.tscn")
 const LOCAL_WORLD_SCENE := preload("res://worlds/creston_town/creston_town.tscn")
+const RUNTIME_MAP_EDITOR_SCENE := preload("res://ui/RuntimeMapEditor.tscn")
 
 var page_host: Control
 var current_page: Control
@@ -56,6 +57,7 @@ func _show_home() -> void:
 	var page := _set_page(HOME_SCENE)
 	page.singleplayer_requested.connect(_on_singleplayer_requested)
 	page.multiplayer_requested.connect(_show_multiplayer_mode)
+	page.map_editor_requested.connect(_on_map_editor_requested)
 	page.quit_requested.connect(func(): get_tree().quit())
 
 
@@ -119,6 +121,13 @@ func _on_singleplayer_requested() -> void:
 	)
 	await get_tree().process_frame
 	get_tree().change_scene_to_packed(LOCAL_WORLD_SCENE)
+
+
+func _on_map_editor_requested() -> void:
+	print("[MenuFlow] Home: opening runtime map editor")
+	GameAuthority.stop_authority()
+	GlobalVar.pending_player_selection = {}
+	get_tree().change_scene_to_packed(RUNTIME_MAP_EDITOR_SCENE)
 
 
 func _connect_multiplayer_network_signals() -> void:

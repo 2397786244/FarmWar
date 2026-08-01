@@ -92,7 +92,7 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
-	if not GameAuthority.is_client_proxy():
+	if not NetworkSession.is_authority_visual_client():
 		return
 	_resolve_world_root()
 	_update_transient_projectile_visuals(delta)
@@ -100,16 +100,16 @@ func _process(delta: float) -> void:
 
 
 func _connect_network_signals() -> void:
-	if not MultiplayerNetwork.world_snapshot_received.is_connected(_on_world_snapshot_received):
-		MultiplayerNetwork.world_snapshot_received.connect(_on_world_snapshot_received)
-	if not MultiplayerNetwork.reliable_world_event_received.is_connected(_on_reliable_world_event_received):
-		MultiplayerNetwork.reliable_world_event_received.connect(_on_reliable_world_event_received)
-	if not MultiplayerNetwork.visual_world_event_received.is_connected(_on_visual_world_event_received):
-		MultiplayerNetwork.visual_world_event_received.connect(_on_visual_world_event_received)
-	if not MultiplayerNetwork.inventory_state_received.is_connected(_on_inventory_state_received):
-		MultiplayerNetwork.inventory_state_received.connect(_on_inventory_state_received)
-	if not MultiplayerNetwork.disconnected.is_connected(_on_disconnected):
-		MultiplayerNetwork.disconnected.connect(_on_disconnected)
+	if not NetworkSession.world_snapshot_received.is_connected(_on_world_snapshot_received):
+		NetworkSession.world_snapshot_received.connect(_on_world_snapshot_received)
+	if not NetworkSession.reliable_world_event_received.is_connected(_on_reliable_world_event_received):
+		NetworkSession.reliable_world_event_received.connect(_on_reliable_world_event_received)
+	if not NetworkSession.visual_world_event_received.is_connected(_on_visual_world_event_received):
+		NetworkSession.visual_world_event_received.connect(_on_visual_world_event_received)
+	if not NetworkSession.inventory_state_received.is_connected(_on_inventory_state_received):
+		NetworkSession.inventory_state_received.connect(_on_inventory_state_received)
+	if not NetworkSession.disconnected.is_connected(_on_disconnected):
+		NetworkSession.disconnected.connect(_on_disconnected)
 
 
 func _resolve_world_root() -> Node3D:
@@ -165,14 +165,15 @@ func _nature_resource_by_id(resource_id: String) -> Node:
 
 
 func _on_world_snapshot_received(snapshot: Dictionary) -> void:
-	var cooperative_host_visuals := CooperativeSession.is_host()
-	if not GameAuthority.is_client_proxy() and not cooperative_host_visuals:
+	var authority_visual_client := NetworkSession.is_listen_server()
+	if not GameAuthority.is_client_proxy() and not authority_visual_client:
 		return
 	if _resolve_world_root() == null:
 		return
 	_apply_interest_chunk_visibility(snapshot)
-	if cooperative_host_visuals:
-		_sync_players(snapshot.get("players", []), snapshot)
+	_apply_authoritative_environment(snapshot)
+	if authority_visual_client:
+		_sync_players(snapshot.get("players", []), snapshot, false)
 		return
 	_sync_vehicles(snapshot.get("vehicles", []))
 	_sync_players(snapshot.get("players", []), snapshot)
@@ -183,6 +184,17 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_dropped_items(snapshot.get("dropped_items", []))
 
 
+func _apply_authoritative_environment(snapshot: Dictionary) -> void:
+	if not GameAuthority.is_client_proxy():
+		return
+	var weather_value: Variant = snapshot.get("weather", {})
+	if not weather_value is Dictionary:
+		return
+	for weather_system in get_tree().get_nodes_in_group("weather_systems"):
+		if weather_system != null and weather_system.has_method("apply_authoritative_weather_state"):
+			weather_system.call("apply_authoritative_weather_state", weather_value as Dictionary)
+
+
 func _on_visual_world_event_received(event: Dictionary) -> void:
 	if not GameAuthority.is_client_proxy() or str(event.get("type", "")) != "nature_resource_hit":
 		return
@@ -191,11 +203,11 @@ func _on_visual_world_event_received(event: Dictionary) -> void:
 		resource.call("play_hit_effect")
 
 
-func _sync_players(players_value: Variant, world_snapshot: Dictionary) -> void:
+func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_local_snapshot := true) -> void:
 	if not players_value is Array:
 		return
 	var seen := {}
-	var local_peer_id := MultiplayerNetwork.get_unique_peer_id()
+	var local_peer_id := _get_local_human_peer_id()
 	for item: Variant in players_value:
 		if not item is Dictionary:
 			continue
@@ -205,7 +217,8 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary) -> void:
 			continue
 		seen[peer_id] = true
 		if peer_id == local_peer_id:
-			_apply_local_player_snapshot(data)
+			if apply_local_snapshot:
+				_apply_local_player_snapshot(data)
 			continue
 		var player := _get_or_create_remote_player(peer_id, data)
 		if player != null and player.has_method("apply_remote_snapshot"):
@@ -219,6 +232,13 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary) -> void:
 			if is_instance_valid(node):
 				node.queue_free()
 			remote_players.erase(peer_id)
+
+
+func _get_local_human_peer_id() -> int:
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
+			return int((node as GamePlayer).authority_peer_id)
+	return MultiplayerNetwork.get_unique_peer_id()
 
 
 func _sync_wild_animals(animals_value: Variant) -> void:
@@ -693,9 +713,9 @@ func _is_local_remote_device_active(device_id: String) -> bool:
 
 func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
-	var cooperative_host_player_event := CooperativeSession.is_host() \
-		and event_type in ["tool_selected", "tool_used"]
-	if not GameAuthority.is_client_proxy() and not cooperative_host_player_event:
+	var authority_player_event := NetworkSession.is_listen_server() \
+		and event_type in ["tool_selected", "tool_used", "visual_projectile_fired"]
+	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
 	if _resolve_world_root() == null:
 		return
@@ -794,6 +814,12 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_livestock_chop_action_result(event.get("data", {}))
 		"livestock_chop_state":
 			_apply_livestock_chop_state(event.get("station_state", {}))
+		"livestock_spawned":
+			_apply_livestock_spawned(event.get("state", {}))
+		"placed_tool_spawned":
+			_apply_placed_tool_spawned(event.get("state", {}))
+		"remote_device_spawned":
+			_apply_remote_device_spawned(event.get("state", {}))
 		"chopping_action_result":
 			_apply_chopping_action_result(event.get("data", {}))
 		"plating_station_action_result":
@@ -854,6 +880,63 @@ func _apply_backpack_test_grant(event: Dictionary) -> void:
 				and int((node as GamePlayer).authority_peer_id) == peer_id:
 			(node as GamePlayer).apply_test_backpack_grant(entries as Array)
 			return
+
+
+func _apply_livestock_spawned(state_value: Variant) -> void:
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var animal_id := str(state.get("animal_id", ""))
+	if animal_id.is_empty():
+		return
+	var visual := wild_animal_visuals.get(animal_id, null) as Node3D
+	if not is_instance_valid(visual):
+		var packed := load(str(state.get("scene_path", ""))) as PackedScene
+		if packed == null or _resolve_world_root() == null:
+			return
+		visual = packed.instantiate() as Node3D
+		if visual == null:
+			return
+		visual.set("animal_id", animal_id)
+		visual.set("network_proxy", true)
+		world_root.add_child(visual)
+		wild_animal_visuals[animal_id] = visual
+	if visual.has_method("apply_network_state"):
+		visual.call("apply_network_state", state)
+
+
+func _apply_placed_tool_spawned(state_value: Variant) -> void:
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var tool_id := str(state.get("tool_id", ""))
+	if tool_id.is_empty():
+		return
+	var visual := _get_or_create_placed_tool_visual(tool_id, state)
+	if visual == null:
+		return
+	var position: Variant = state.get("position", Vector3.ZERO)
+	if position is Vector3:
+		visual.global_position = position
+	visual.rotation.y = float(state.get("yaw", visual.rotation.y))
+	if visual.has_method("apply_network_health"):
+		visual.call("apply_network_health", float(state.get("hp", 0.0)))
+
+
+func _apply_remote_device_spawned(state_value: Variant) -> void:
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var device_id := str(state.get("device_id", ""))
+	if device_id.is_empty():
+		return
+	var visual := _get_or_create_remote_device_visual(device_id, state)
+	if visual == null:
+		return
+	var position: Variant = state.get("position", Vector3.ZERO)
+	if position is Vector3:
+		visual.global_position = position
+	visual.rotation.y = float(state.get("yaw", visual.rotation.y))
 
 
 func _apply_weapon_ammo_state_event(event: Dictionary) -> void:

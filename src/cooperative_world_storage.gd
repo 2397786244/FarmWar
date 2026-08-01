@@ -114,6 +114,10 @@ func get_local_profile(world_id: String, steam_id: int) -> Dictionary:
 func save_local_profile(world_id: String, steam_id: int, selection: Dictionary) -> bool:
 	if world_id.is_empty() or steam_id <= 0:
 		return false
+	# First-choice-only: a local UI must not be able to overwrite a character
+	# already committed for this cooperative world.
+	if has_local_profile(world_id, steam_id):
+		return true
 	if not DirAccess.dir_exists_absolute(PROFILE_ROOT):
 		DirAccess.make_dir_recursive_absolute(PROFILE_ROOT)
 	var profile := {
@@ -145,6 +149,10 @@ func save_host_initial_profile(world_id: String, steam_id: int, selection: Dicti
 	var players: Dictionary = world.get("players", {})
 	players[str(steam_id)] = profile
 	world["players"] = players
+	var loadout_locks: Dictionary = world.get("loadout_locks", {})
+	if not loadout_locks.has(str(steam_id)):
+		loadout_locks[str(steam_id)] = _loadout_lock_from_selection(selection, steam_id)
+	world["loadout_locks"] = loadout_locks
 	world["host_steam_id"] = steam_id
 	var host_summary: Dictionary = world.get("host_summary", {})
 	host_summary["hero_id"] = profile["hero_id"]
@@ -156,6 +164,48 @@ func save_host_initial_profile(world_id: String, steam_id: int, selection: Dicti
 	if saved:
 		active_world = world.duplicate(true)
 	return saved
+
+
+func get_host_loadout_lock(world_id: String, steam_id: int) -> Dictionary:
+	if world_id.is_empty() or steam_id <= 0:
+		return {}
+	var world := load_world(world_id)
+	if world.is_empty():
+		return {}
+	var locks: Variant = world.get("loadout_locks", {})
+	if not locks is Dictionary:
+		return {}
+	var lock: Variant = (locks as Dictionary).get(str(steam_id), {})
+	return (lock as Dictionary).duplicate(true) if lock is Dictionary else {}
+
+
+func save_host_loadout_lock(world_id: String, steam_id: int, selection: Dictionary) -> Dictionary:
+	if world_id.is_empty() or steam_id <= 0:
+		return {}
+	var world := load_world(world_id)
+	if world.is_empty():
+		return {}
+	var locks: Dictionary = world.get("loadout_locks", {})
+	var existing: Variant = locks.get(str(steam_id), {})
+	if existing is Dictionary and not (existing as Dictionary).is_empty():
+		return (existing as Dictionary).duplicate(true)
+	var lock := _loadout_lock_from_selection(selection, steam_id)
+	locks[str(steam_id)] = lock
+	world["loadout_locks"] = locks
+	if not save_world(world):
+		return {}
+	active_world = world.duplicate(true)
+	return lock.duplicate(true)
+
+
+func _loadout_lock_from_selection(selection: Dictionary, steam_id: int) -> Dictionary:
+	return {
+		"steam_id": steam_id,
+		"hero_id": str(selection.get("hero_id", "farmer")),
+		"primary_weapon_ids": selection.get("primary_weapon_ids", []).duplicate(true),
+		"special_tool_ids": selection.get("special_tool_ids", []).duplicate(true),
+		"locked_unix": Time.get_unix_time_from_system(),
+	}
 
 
 func save_host_player_state(world_id: String, peer_id: int, state: Dictionary) -> bool:

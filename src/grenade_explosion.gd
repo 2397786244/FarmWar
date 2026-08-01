@@ -14,7 +14,7 @@ func _ready() -> void:
 	_animate_flash()
 	_animate_shockwave()
 	var light_tween := create_tween()
-	light_tween.tween_property(blast_light, "light_energy", 0.0, 0.32)
+	light_tween.tween_property(blast_light, "light_energy", 0.0, 0.46)
 	get_tree().create_timer(2.6).timeout.connect(queue_free)
 
 
@@ -23,8 +23,8 @@ func _animate_flash() -> void:
 	flash.material_override = material
 	flash.scale = Vector3.ONE * 0.25
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(flash, "scale", Vector3.ONE * 4.8, 0.18)
-	tween.tween_method(func(alpha: float) -> void: material.albedo_color.a = alpha, 0.88, 0.0, 0.24)
+	tween.tween_property(flash, "scale", Vector3.ONE * 7.0, 0.26)
+	tween.tween_method(func(alpha: float) -> void: material.albedo_color.a = alpha, 1.0, 0.0, 0.38)
 
 
 func _animate_shockwave() -> void:

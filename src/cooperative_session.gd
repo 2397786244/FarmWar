@@ -11,7 +11,7 @@ signal peer_left(peer_id: int)
 const MODE_NONE := "none"
 const MODE_HOST := "host"
 const MODE_CLIENT := "client"
-const DEFAULT_SPAWN := Vector3(-460.0, 1.6, -460.0)
+const DEFAULT_SPAWN := Vector3(0.0, 1.6, 0.0)
 const CHUNK_SIZE_METERS := 256.0
 const INTEREST_RADIUS_METERS := 1024.0
 const WORLD_SAVE_INTERVAL_SECONDS := 10.0
@@ -43,6 +43,11 @@ func is_host() -> bool:
 
 func is_client() -> bool:
 	return mode == MODE_CLIENT
+
+
+func get_death_drop_mode() -> String:
+	var configured := str(active_world.get("death_drop_mode", "save")).to_lower()
+	return configured if configured in ["all", "random", "save"] else "save"
 
 
 func _ready() -> void:
@@ -77,7 +82,24 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	mode = MODE_HOST
 	_set_pve_event_system_enabled(false)
 	active_world = world.duplicate(true)
-	local_selection = _normalize_selection(selection, multiplayer.get_unique_id())
+	var host_lock := CooperativeWorldStorage.get_host_loadout_lock(
+		str(active_world.get("world_id", "")), SteamService.steam_id
+	)
+	if host_lock.is_empty():
+		host_lock = CooperativeWorldStorage.save_host_loadout_lock(
+			str(active_world.get("world_id", "")), SteamService.steam_id, selection
+		)
+	if host_lock.is_empty():
+		session_failed.emit("无法锁定房主的合作角色与初始道具。")
+		steam_peer.close()
+		multiplayer.multiplayer_peer = null
+		peer = null
+		mode = MODE_NONE
+		return false
+	var active_locks: Dictionary = active_world.get("loadout_locks", {})
+	active_locks[str(SteamService.steam_id)] = host_lock.duplicate(true)
+	active_world["loadout_locks"] = active_locks
+	local_selection = _normalize_selection(host_lock, multiplayer.get_unique_id())
 	joined_players.clear()
 	peer_chunk_subscriptions.clear()
 	world_save_accumulator = 0.0
@@ -227,7 +249,21 @@ func request_join_world(profile: Dictionary) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if sender_id <= 0:
 		return
-	var selection := _normalize_selection(profile, sender_id)
+	var steam_id := int(profile.get("steam_id", 0))
+	if steam_id <= 0:
+		return
+	var lock := CooperativeWorldStorage.get_host_loadout_lock(
+		str(active_world.get("world_id", "")), steam_id
+	)
+	if lock.is_empty():
+		lock = CooperativeWorldStorage.save_host_loadout_lock(
+			str(active_world.get("world_id", "")), steam_id, profile
+		)
+	if lock.is_empty():
+		return
+	var locked_selection := lock.duplicate(true)
+	locked_selection["display_name"] = str(profile.get("display_name", "Player_%d" % sender_id))
+	var selection := _normalize_selection(locked_selection, sender_id)
 	selection["team"] = "red"
 	selection["position"] = _next_spawn_position(sender_id)
 	joined_players[sender_id] = selection.duplicate(true)
@@ -355,7 +391,7 @@ func _broadcast_world_snapshot(snapshot: Dictionary) -> void:
 	MultiplayerNetwork.world_snapshot_received.emit(snapshot)
 	for peer_id_value: Variant in joined_players.keys():
 		var peer_id := int(peer_id_value)
-		if peer_id > 1 and multiplayer.get_peers().has(peer_id):
+		if _is_connected_remote_peer(peer_id):
 			var interest_snapshot := _make_interest_snapshot(peer_id, snapshot)
 			var entered_chunks: Variant = interest_snapshot.get("entered_chunks", [])
 			if entered_chunks is Array and not (entered_chunks as Array).is_empty():
@@ -400,7 +436,7 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 	if event_type in ["farm_tile_delta", "farm_tile_deltas", "farm_reconcile_chunk", "low_frequency_snapshot"]:
 		for peer_id_value: Variant in joined_players.keys():
 			var peer_id := int(peer_id_value)
-			if peer_id <= 1 or not multiplayer.get_peers().has(peer_id):
+			if not _is_connected_remote_peer(peer_id):
 				continue
 			var filtered_event := _filter_interest_reliable_event(peer_id, event)
 			if not filtered_event.is_empty():
@@ -410,7 +446,7 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 
 
 func _send_reliable_event_to_peer(peer_id: int, event: Dictionary) -> void:
-	if peer_id <= 1 or not multiplayer.get_peers().has(peer_id):
+	if not _is_connected_remote_peer(peer_id):
 		return
 	receive_reliable_event.rpc_id(peer_id, event)
 
@@ -421,7 +457,7 @@ func _broadcast_visual_event(event: Dictionary) -> void:
 
 
 func _broadcast_player_correction(peer_id: int, correction: Dictionary) -> void:
-	if not is_host() or peer_id <= 1 or not multiplayer.get_peers().has(peer_id):
+	if not is_host() or not _is_connected_remote_peer(peer_id):
 		return
 	receive_player_correction.rpc_id(peer_id, correction)
 
@@ -430,13 +466,19 @@ func _broadcast_team_chat_message(message: Dictionary) -> void:
 	if not is_host():
 		return
 	var recipient_peer_id := int(message.get("recipient_peer_id", 0))
-	if recipient_peer_id > 1 and multiplayer.get_peers().has(recipient_peer_id):
+	if _is_connected_remote_peer(recipient_peer_id):
 		receive_team_chat_message.rpc_id(recipient_peer_id, message)
 		return
 	for peer_id_value: Variant in joined_players.keys():
 		var peer_id := int(peer_id_value)
-		if peer_id > 1 and multiplayer.get_peers().has(peer_id):
+		if _is_connected_remote_peer(peer_id):
 			receive_team_chat_message.rpc_id(peer_id, message)
+
+
+func _is_connected_remote_peer(peer_id: int) -> bool:
+	return peer_id > 0 \
+		and peer_id != multiplayer.get_unique_id() \
+		and multiplayer.get_peers().has(peer_id)
 
 
 func _load_active_world(selection: Dictionary) -> void:
@@ -481,12 +523,22 @@ func _spawn_local_player(scene: Node3D) -> void:
 	player.name = "CooperativeLocalPlayer"
 	scene.add_child(player)
 	player.apply_loadout_selection(local_selection)
-	var position_value: Variant = local_selection.get("position", DEFAULT_SPAWN)
-	player.global_position = position_value if position_value is Vector3 else DEFAULT_SPAWN
+	var position_value: Variant = local_selection.get("position", _map_spawn_position(0, int(local_selection.get("peer_id", 0))))
+	player.global_position = position_value if position_value is Vector3 else _map_spawn_position(0, int(local_selection.get("peer_id", 0)))
 
 
 func _next_spawn_position(peer_id: int) -> Vector3:
-	return DEFAULT_SPAWN + Vector3(float(joined_players.size() % 4) * 2.0, 0.0, float(peer_id % 3) * 2.0)
+	return _map_spawn_position(joined_players.size() % 4, peer_id)
+
+
+func _map_spawn_position(player_index := 0, peer_id := 0) -> Vector3:
+	var world := GlobalVar.gameworld
+	if world is FarmWorldInitializer:
+		return (world as FarmWorldInitializer).get_team_spawn_position("red", player_index, peer_id)
+	var scene := get_tree().current_scene
+	if scene is FarmWorldInitializer:
+		return (scene as FarmWorldInitializer).get_team_spawn_position("red", player_index, peer_id)
+	return DEFAULT_SPAWN
 
 
 func _make_interest_snapshot(peer_id: int, snapshot: Dictionary) -> Dictionary:
@@ -621,19 +673,21 @@ func _as_vector3(value: Variant) -> Vector3:
 
 func _normalize_selection(source: Dictionary, peer_id: int) -> Dictionary:
 	var saved_position: Variant = source.get("position", null)
-	var spawn_position: Vector3 = DEFAULT_SPAWN
-	if saved_position is Vector3 or saved_position is Array:
-		spawn_position = _as_vector3(saved_position)
-	return {
+	if saved_position == null:
+		saved_position = source.get("last_position", null)
+	var normalized := {
 		"peer_id": peer_id,
+		"steam_id": int(source.get("steam_id", 0)),
 		"display_name": str(source.get("display_name", SteamService.persona_name)),
 		"team": "red",
 		"hero_id": str(source.get("hero_id", "farmer")),
 		"primary_weapon_ids": source.get("primary_weapon_ids", []).duplicate(),
 		"special_tool_ids": source.get("special_tool_ids", []).duplicate(),
 		"ready": true,
-		"position": spawn_position,
 	}
+	if saved_position is Vector3 or saved_position is Array:
+		normalized["position"] = _as_vector3(saved_position)
+	return normalized
 
 
 func _save_joined_player_profile(peer_id: int, selection: Dictionary) -> void:

@@ -30,6 +30,10 @@ const FAR_GRASS_SURFACE_Y := 0.51
 @export_range(0.0, 0.8, 0.01) var outer_tree_skip_chance := 0.14
 @export var tree_position_jitter := 3.0
 @export var farm_patch_spacing := Vector2(82.0, 82.0)
+# Minimum distance from the playable map boundary to a distant farm-group
+# center. The editor sets this before _ready(), so farms never move inside a
+# larger custom map.
+@export var far_farm_inner_margin := 260.0
 @export var fourth_rock_half_extent := 520.0
 @export var fifth_rock_half_extent := 650.0
 @export var fourth_rock_count := 5
@@ -97,7 +101,11 @@ func _build_far_ground() -> void:
 		"surface_palette", surface_palette_lookup
 	)
 	var core_half := core_map_size * 0.5
-	var far_half := far_ground_size * 0.5
+	# Never allow an invalid far-ground size to overlap the playable map.
+	var far_half := Vector2(
+		maxf(far_ground_size.x * 0.5, core_half.x + 1.0),
+		maxf(far_ground_size.y * 0.5, core_half.y + 1.0)
+	)
 	_add_ground_strip("FarGroundNorth", Vector3(0.0, 0.0, -0.5 * (core_half.y + far_half.y)), Vector2(far_ground_size.x, far_half.y - core_half.y), _grass_material)
 	_add_ground_strip("FarGroundSouth", Vector3(0.0, 0.0, 0.5 * (core_half.y + far_half.y)), Vector2(far_ground_size.x, far_half.y - core_half.y), _grass_material)
 	_add_ground_strip("FarGroundWest", Vector3(-0.5 * (core_half.x + far_half.x), 0.0, 0.0), Vector2(far_half.x - core_half.x, core_map_size.y), _grass_material)
@@ -242,7 +250,7 @@ func _make_sparse_rock_ring(half_extent: float, count: int, phase: float) -> Arr
 
 func _make_sparse_far_grass(count: int, scale_range: Vector2) -> Array[Transform3D]:
 	var transforms: Array[Transform3D] = []
-	var inner_extent := maxf(core_map_size.x * 0.5, far_grass_inner_half_extent)
+	var inner_extent := maxf(maxf(core_map_size.x, core_map_size.y) * 0.5, far_grass_inner_half_extent)
 	var outer_extent := maxf(inner_extent, far_grass_outer_half_extent)
 	var minimum_scale := minf(scale_range.x, scale_range.y)
 	var maximum_scale := maxf(scale_range.x, scale_range.y)
@@ -263,15 +271,68 @@ func _make_sparse_far_grass(count: int, scale_range: Vector2) -> Array[Transform
 
 
 func _farm_group_layouts() -> Array[Dictionary]:
+	# The original layout used fixed coordinates tuned for a 256x256 map.
+	# Derive every group from core_map_size so a larger custom map cannot
+	# swallow distant farms into the playable area.
+	var core_half := core_map_size * 0.5
+	var margin := maxf(190.0, far_farm_inner_margin)
+	var north_z := -(core_half.y + margin)
+	var south_z := core_half.y + margin
+	var west_x := -(core_half.x + margin)
+	var east_x := core_half.x + margin
+	var along_x := maxf(90.0, core_half.x * 0.48)
+	var along_z := maxf(90.0, core_half.y * 0.48)
+	var stagger := farm_patch_spacing.length() * 0.35
+
 	return [
-		{"position": Vector3(-190, 0, -390), "size": Vector2i(2, 2), "yaw": 0.0, "buildings": 2},
-		{"position": Vector3(115, 0, -455), "size": Vector2i(2, 3), "yaw": 0.0, "buildings": 3},
-		{"position": Vector3(405, 0, -165), "size": Vector2i(2, 2), "yaw": PI * 0.5, "buildings": 2},
-		{"position": Vector3(470, 0, 175), "size": Vector2i(3, 2), "yaw": PI * 0.5, "buildings": 3},
-		{"position": Vector3(175, 0, 410), "size": Vector2i(2, 2), "yaw": PI, "buildings": 2},
-		{"position": Vector3(-135, 0, 470), "size": Vector2i(3, 2), "yaw": PI, "buildings": 3},
-		{"position": Vector3(-415, 0, 145), "size": Vector2i(2, 2), "yaw": -PI * 0.5, "buildings": 2},
-		{"position": Vector3(-460, 0, -190), "size": Vector2i(2, 3), "yaw": -PI * 0.5, "buildings": 3},
+		{
+			"position": Vector3(-along_x, 0.0, north_z),
+			"size": Vector2i(2, 2),
+			"yaw": 0.0,
+			"buildings": 2
+		},
+		{
+			"position": Vector3(along_x * 0.72, 0.0, north_z - stagger),
+			"size": Vector2i(2, 3),
+			"yaw": 0.0,
+			"buildings": 3
+		},
+		{
+			"position": Vector3(east_x, 0.0, -along_z),
+			"size": Vector2i(2, 2),
+			"yaw": PI * 0.5,
+			"buildings": 2
+		},
+		{
+			"position": Vector3(east_x + stagger, 0.0, along_z * 0.72),
+			"size": Vector2i(3, 2),
+			"yaw": PI * 0.5,
+			"buildings": 3
+		},
+		{
+			"position": Vector3(along_x, 0.0, south_z),
+			"size": Vector2i(2, 2),
+			"yaw": PI,
+			"buildings": 2
+		},
+		{
+			"position": Vector3(-along_x * 0.72, 0.0, south_z + stagger),
+			"size": Vector2i(3, 2),
+			"yaw": PI,
+			"buildings": 3
+		},
+		{
+			"position": Vector3(west_x, 0.0, along_z),
+			"size": Vector2i(2, 2),
+			"yaw": -PI * 0.5,
+			"buildings": 2
+		},
+		{
+			"position": Vector3(west_x - stagger, 0.0, -along_z * 0.72),
+			"size": Vector2i(2, 3),
+			"yaw": -PI * 0.5,
+			"buildings": 3
+		},
 	]
 
 

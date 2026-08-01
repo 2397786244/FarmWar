@@ -109,120 +109,74 @@ func submit_player_setup(setup_data: Dictionary) -> void:
 
 
 func submit_player_input(input_frame: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("player_input", input_frame)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_player_input(input_frame)
+	NetworkSession.submit_action("player_input", input_frame)
 
 
 func submit_select_tool(tool_index: int, tool_id := "") -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("select_tool", {"tool_index": tool_index, "tool_id": tool_id})
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_select_tool(tool_index, tool_id)
+	NetworkSession.submit_action("select_tool", {"tool_index": tool_index, "tool_id": tool_id})
 
 
 func submit_use_tool(tool_request: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("use_tool", tool_request)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_use_tool(tool_request)
+	NetworkSession.submit_action("use_tool", tool_request)
 
 
 func submit_reload_weapon(tool_id: String) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("reload_weapon", {"tool_id": tool_id})
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_reload_weapon(tool_id)
+	NetworkSession.submit_action("reload_weapon", {"tool_id": tool_id})
 
 
 func submit_shop_transaction(transaction: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("shop_transaction", transaction)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_shop_transaction(transaction)
+	NetworkSession.submit_action("shop_transaction", transaction)
 
 
 func submit_farm_action(action: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("farm_action", action)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_farm_action(action)
+	NetworkSession.submit_action("farm_action", action)
 
 
 func submit_ingredient_pickup_action(action: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("ingredient_action", action)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_ingredient_pickup_action(action)
+	NetworkSession.submit_action("ingredient_action", action)
 
 
 func submit_remote_control_input(input_frame: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("remote_input", input_frame)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_remote_control_input(input_frame)
+	NetworkSession.submit_action("remote_input", input_frame)
 
 
 func submit_remote_control_session(device_id: String, connected: bool) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("remote_session", {"device_id": device_id, "connected": connected})
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_remote_control_session(device_id, connected)
+	NetworkSession.submit_action("remote_session", {"device_id": device_id, "connected": connected})
 
 
 func submit_remote_action(action: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("remote_action", action)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_remote_action(action)
+	NetworkSession.submit_action("remote_action", action)
 
 
 func submit_vehicle_input(input_frame: Dictionary) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("vehicle_input", input_frame)
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_vehicle_input(input_frame)
+	NetworkSession.submit_action("vehicle_input", input_frame)
 
 
 func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1) -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("vehicle_session", {"vehicle_id": vehicle_id, "connected": connected, "seat_index": seat_index})
-		return
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
-	rpc_endpoint.submit_vehicle_session(vehicle_id, connected, seat_index)
+	NetworkSession.submit_action("vehicle_session", {"vehicle_id": vehicle_id, "connected": connected, "seat_index": seat_index})
 
 
 func submit_team_chat(message: String, scope := "team") -> void:
-	if CooperativeSession.is_client():
-		CooperativeSession.submit_action("team_chat", {"message": message, "scope": scope})
-		return
+	NetworkSession.submit_action("team_chat", {"message": message, "scope": scope})
+
+
+func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
 		return
-	rpc_endpoint.submit_team_chat(message, scope)
+	match action_type:
+		"player_input": rpc_endpoint.submit_player_input(payload)
+		"select_tool": rpc_endpoint.submit_select_tool(int(payload.get("tool_index", 0)), str(payload.get("tool_id", "")))
+		"use_tool": rpc_endpoint.submit_use_tool(payload)
+		"reload_weapon": rpc_endpoint.submit_reload_weapon(str(payload.get("tool_id", "")))
+		"shop_transaction": rpc_endpoint.submit_shop_transaction(payload)
+		"farm_action": rpc_endpoint.submit_farm_action(payload)
+		"ingredient_action": rpc_endpoint.submit_ingredient_pickup_action(payload)
+		"remote_input": rpc_endpoint.submit_remote_control_input(payload)
+		"remote_session": rpc_endpoint.submit_remote_control_session(str(payload.get("device_id", "")), bool(payload.get("connected", false)))
+		"remote_action": rpc_endpoint.submit_remote_action(payload)
+		"vehicle_input": rpc_endpoint.submit_vehicle_input(payload)
+		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))
 
 
 func get_unique_peer_id() -> int:

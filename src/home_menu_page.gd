@@ -4,6 +4,7 @@ class_name HomeMenuPage
 signal start_game_requested
 signal singleplayer_requested
 signal multiplayer_requested
+signal map_editor_requested
 signal settings_requested
 signal quit_requested
 
@@ -87,6 +88,10 @@ func _build_interface() -> void:
 	multiplayer_button.pressed.connect(_on_multiplayer_pressed)
 	box.add_child(multiplayer_button)
 
+	var map_editor_button := _make_button("地图编辑器")
+	map_editor_button.pressed.connect(_on_map_editor_pressed)
+	box.add_child(map_editor_button)
+
 	var settings_button := _make_button("设置")
 	settings_button.pressed.connect(func(): settings_requested.emit())
 	box.add_child(settings_button)
@@ -104,6 +109,11 @@ func _on_singleplayer_pressed() -> void:
 func _on_multiplayer_pressed() -> void:
 	print("[MenuFlow] Home: multiplayer button pressed")
 	multiplayer_requested.emit()
+
+
+func _on_map_editor_pressed() -> void:
+	print("[MenuFlow] Home: map editor button pressed")
+	map_editor_requested.emit()
 
 
 func _make_button(text: String) -> Button:

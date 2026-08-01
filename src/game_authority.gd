@@ -313,9 +313,7 @@ func is_client_proxy() -> bool:
 
 
 func should_send_network_requests() -> bool:
-	return mode == MODE_CLIENT and (
-		MultiplayerNetwork.is_connected_to_game_server() or CooperativeSession.is_client()
-	)
+	return mode == MODE_CLIENT and NetworkSession.is_client()
 
 
 func set_metrics_print_interval(seconds: float) -> void:
@@ -988,9 +986,9 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 func _emit_debug_backpack_grant(peer_id: int, entries: Array[Dictionary]) -> void:
 	if entries.is_empty():
 		return
-	if mode == MODE_LOCAL:
+	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
 		_apply_test_backpack_grant_to_local_player(peer_id, entries)
-	else:
+	if mode != MODE_LOCAL:
 		reliable_world_event_ready.emit({
 			"type": "backpack_test_grant", "peer_id": peer_id,
 			"entries": entries, "tick": server_tick,
@@ -1958,7 +1956,7 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 				)
 			_emit_visual_projectile(
 				peer_id, visual_type, origin, pellet_direction,
-				speed, pellet_lifetime, "nail"
+				speed, pellet_lifetime, "nail", NetworkSession.is_listen_server()
 			)
 		return
 	var direction := _vector3_from_value(result.get("direction", Vector3.FORWARD)).normalized()
@@ -1970,7 +1968,10 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 			lifetime,
 			maxf(0.01, origin.distance_to(impact_position) / maxf(speed, 0.01))
 		)
-	_emit_visual_projectile(peer_id, visual_type, origin, direction, speed, lifetime, str(result.get("effect", "")))
+	_emit_visual_projectile(
+		peer_id, visual_type, origin, direction, speed, lifetime,
+		str(result.get("effect", "")), NetworkSession.is_listen_server()
+	)
 
 
 func _emit_visual_projectile(
@@ -2171,6 +2172,11 @@ func _server_spawn_livestock(
 	world.add_child(animal)
 	animal.global_position = spawn_position
 	animal.rotation.y = placement_yaw
+	reliable_world_event_ready.emit({
+		"type": "livestock_spawned",
+		"state": animal.get_network_state(),
+		"tick": server_tick,
+	})
 	return {
 		"ok": true,
 		"placed": species_id,
@@ -2532,7 +2538,7 @@ func _emit_personal_inventory_grant(peer_id: int, entries: Array[Dictionary]) ->
 		return
 	if mode == MODE_LOCAL:
 		_apply_test_backpack_grant_to_local_player(peer_id, entries)
-	else:
+	if mode != MODE_LOCAL:
 		reliable_world_event_ready.emit({
 			"type": "personal_inventory_grant", "peer_id": peer_id,
 			"entries": entries, "tick": server_tick,
@@ -6093,6 +6099,20 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 		placed_state["scene_path"] = scene_path
 		placed_state["free_placement"] = true
 		placed_tool_states[device_id] = placed_state
+		if mode == MODE_SERVER:
+			reliable_world_event_ready.emit({
+				"type": "placed_tool_spawned",
+				"state": placed_state.duplicate(true),
+				"tick": server_tick,
+			})
+	if mode == MODE_SERVER and is_remote_device:
+		var remote_state: Dictionary = remote_device_states.get(device_id, {}).duplicate(true)
+		remote_state["scene_path"] = scene_path
+		reliable_world_event_ready.emit({
+			"type": "remote_device_spawned",
+			"state": remote_state,
+			"tick": server_tick,
+		})
 	var result := {
 		"ok": true,
 		"placed": device_type,
@@ -6636,7 +6656,8 @@ func _spawn_server_projectile(
 		"life": 0.0,
 		"max_life": 8.0,
 	}
-	if mode == MODE_LOCAL and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+	if _should_render_authoritative_projectiles_locally() \
+			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
 		_spawn_local_projectile_visual(projectile_id, BOOM_BULLET_SCENE, projectile_states[projectile_id])
 	return {"ok": true, "projectile_id": projectile_id, "projectile_type": projectile_type, "position": origin}
 
@@ -6701,7 +6722,7 @@ func _spawn_vehicle_shield_laser(peer_id: int, tool_request: Dictionary) -> Dict
 
 
 func _spawn_local_projectile_visual(projectile_id: int, scene: PackedScene, projectile: Dictionary) -> void:
-	if mode != MODE_LOCAL or projectile_id <= 0 or scene == null:
+	if not _should_render_authoritative_projectiles_locally() or projectile_id <= 0 or scene == null:
 		return
 	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if world == null:
@@ -6714,6 +6735,10 @@ func _spawn_local_projectile_visual(projectile_id: int, scene: PackedScene, proj
 	local_projectile_visual_nodes[projectile_id] = visual
 
 
+func _should_render_authoritative_projectiles_locally() -> bool:
+	return mode == MODE_LOCAL or (mode == MODE_SERVER and NetworkSession.is_listen_server())
+
+
 func _remove_local_projectile_visual(projectile_id: int) -> void:
 	var visual: Variant = local_projectile_visual_nodes.get(projectile_id, null)
 	if is_instance_valid(visual):
@@ -6722,7 +6747,7 @@ func _remove_local_projectile_visual(projectile_id: int) -> void:
 
 
 func _spawn_local_grenade_explosion(position: Vector3) -> void:
-	if mode != MODE_LOCAL:
+	if not _should_render_authoritative_projectiles_locally():
 		return
 	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if world == null:
@@ -6735,7 +6760,7 @@ func _spawn_local_grenade_explosion(position: Vector3) -> void:
 
 
 func _spawn_local_boom_explosion(position: Vector3) -> void:
-	if mode != MODE_LOCAL:
+	if not _should_render_authoritative_projectiles_locally():
 		return
 	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if world == null:
@@ -7284,7 +7309,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		)
 	if projectile_type == "grenade":
 		_spawn_local_grenade_explosion(hit_position)
-	elif mode == MODE_LOCAL and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+	elif _should_render_authoritative_projectiles_locally() \
+			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
 		_spawn_local_boom_explosion(hit_position)
 	reliable_world_event_ready.emit({
 		"type": "projectile_exploded",
@@ -7295,9 +7321,17 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		"effect": effect,
 		"direction": _vector3_from_value(projectile.get("velocity", Vector3.FORWARD)),
 		"hit_world": hit_world,
-		"shake_radius": CombatBalance.get_float("grenade", "shake_radius") if projectile_type == "grenade" else 0.0,
+		"shake_radius": _projectile_camera_shake_radius(projectile_type, radius),
 		"tick": server_tick,
 	})
+
+
+func _projectile_camera_shake_radius(projectile_type: String, explosion_radius: float) -> float:
+	if projectile_type == "grenade":
+		return CombatBalance.get_float("grenade", "shake_radius")
+	if projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "bug_boom", "medicine_boom", "boom_buggy_explosion"]:
+		return maxf(8.0, explosion_radius * 1.5)
+	return 0.0
 
 
 func _spawn_authoritative_bug_storm(position: Vector3, source_team: String) -> void:
@@ -7915,6 +7949,9 @@ func _begin_player_respawn(peer_id: int) -> void:
 
 
 func _get_death_drop_mode() -> String:
+	var session_drop_mode := NetworkSession.get_death_drop_mode()
+	if session_drop_mode in ["all", "random", "save"]:
+		return session_drop_mode
 	if server_manager != null and server_manager.has_method("get_death_drop_mode"):
 		var configured_mode := str(server_manager.call("get_death_drop_mode")).to_lower()
 		if configured_mode == "all" or configured_mode == "random" or configured_mode == "save":
@@ -9687,9 +9724,15 @@ func _build_world_snapshot() -> Dictionary:
 	for animal in get_tree().get_nodes_in_group("wild_animals"):
 		if is_instance_valid(animal) and animal.has_method("get_network_state"):
 			public_wild_animals.append(animal.call("get_network_state") as Dictionary)
+	var weather_state: Dictionary = {}
+	var weather_system := get_tree().get_first_node_in_group("weather_systems")
+	if weather_system != null and weather_system.has_method("get_authoritative_weather_state"):
+		weather_state = weather_system.call("get_authoritative_weather_state") as Dictionary
 	return {
 		"tick": server_tick,
+		"world_time_seconds": float(server_tick) / TARGET_TICK_RATE,
 		"server_time_msec": Time.get_ticks_msec(),
+		"weather": weather_state,
 		"remaining_time_seconds": remaining_time_seconds,
 		"match_duration_seconds": match_duration_seconds,
 		"players": public_players,
@@ -9898,8 +9941,8 @@ func get_bytes_received_per_second() -> int:
 
 
 func get_peer_rtt_ms(peer_id: int) -> float:
-	if MultiplayerNetwork.is_connected_to_game_server() and peer_id == MultiplayerNetwork.get_unique_peer_id():
-		return MultiplayerNetwork.get_last_rtt_ms()
+	if NetworkSession.is_client() and peer_id == NetworkSession.get_unique_peer_id():
+		return NetworkSession.get_last_rtt_ms()
 	return 0.0
 
 

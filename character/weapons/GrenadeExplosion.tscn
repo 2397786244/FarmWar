@@ -180,6 +180,6 @@ draw_pass_1 = SubResource("Mesh_debris")
 
 [node name="BlastLight" type="OmniLight3D" parent="."]
 light_color = Color(1, 0.38, 0.08, 1)
-light_energy = 9.0
-omni_range = 13.0
-shadow_enabled = true
+light_energy = 24.0
+omni_range = 18.0
+shadow_enabled = false

@@ -37,6 +37,7 @@ const DEFAULT_SHADOW_COLOR := Color(0.08, 0.12, 0.08, 0.105)
 @export var cloud_color := Color(1.0, 1.0, 1.0, 0.68)
 @export_range(0.0, 1.0, 0.01) var minimum_cloud_opacity := 0.78
 @export_range(50.0, 1500.0, 1.0) var cloud_visibility_distance := 900.0
+@export_range(0.25, 4.0, 0.05) var cloud_scale_multiplier := 2.0
 
 @export_group("Editor Actions")
 @export_tool_button("Rebuild Clouds") var rebuild_button: Callable = rebuild
@@ -50,6 +51,7 @@ var _cloud_material: StandardMaterial3D
 var _shadow_material: StandardMaterial3D
 var _daylight_factor := 1.0
 var _sun_direction := Vector3(0.0, 1.0, 0.0)
+var _rain_strength := 0.0
 
 
 func _ready() -> void:
@@ -114,6 +116,11 @@ func set_daylight_state(daylight: float, sun_direction: Vector3) -> void:
 	_daylight_factor = clampf(daylight, 0.0, 1.0)
 	if sun_direction.length_squared() > 0.001:
 		_sun_direction = sun_direction.normalized()
+	_apply_daylight_materials()
+
+
+func set_weather_state(weather_type: String, intensity := 1.0) -> void:
+	_rain_strength = clampf(intensity, 0.0, 1.0) if weather_type == "rain" else 0.0
 	_apply_daylight_materials()
 
 
@@ -334,7 +341,7 @@ func _update_multimeshes() -> void:
 
 
 func _cloud_transform(state: Dictionary) -> Transform3D:
-	var scale_value := float(state.get("scale", 1.0))
+	var scale_value := float(state.get("scale", 1.0)) * cloud_scale_multiplier
 	return Transform3D(
 		Basis(Vector3.UP, float(state.get("yaw", 0.0))).scaled(Vector3.ONE * scale_value),
 		state.get("position", Vector3.ZERO) as Vector3
@@ -343,7 +350,7 @@ func _cloud_transform(state: Dictionary) -> Transform3D:
 
 func _shadow_transform(state: Dictionary, lobe: Dictionary) -> Transform3D:
 	var yaw := float(state.get("yaw", 0.0))
-	var scale_value := float(state.get("scale", 1.0))
+	var scale_value := float(state.get("scale", 1.0)) * cloud_scale_multiplier
 	var cloud_position := state.get("position", Vector3.ZERO) as Vector3
 	var offset := (lobe.get("offset", Vector2.ZERO) as Vector2).rotated(-yaw) * scale_value
 	var size := (lobe.get("size", Vector2.ONE) as Vector2) * scale_value
@@ -374,13 +381,23 @@ func _apply_daylight_materials() -> void:
 		var color_value: Variant = cloud_color
 		var day_color := color_value as Color if color_value is Color else DEFAULT_CLOUD_COLOR
 		var night_color := Color(0.30, 0.37, 0.48, day_color.a * 0.72)
-		_cloud_material.albedo_color = night_color.lerp(day_color, _daylight_factor)
-		_cloud_material.emission_energy_multiplier = lerpf(0.025, 0.12, _daylight_factor)
+		var weather_color := Color(0.075, 0.105, 0.17, 0.94)
+		_cloud_material.albedo_color = night_color.lerp(day_color, _daylight_factor).lerp(
+			weather_color, _rain_strength
+		)
+		_cloud_material.emission_energy_multiplier = lerpf(
+			lerpf(0.025, 0.12, _daylight_factor), 0.008, _rain_strength
+		)
 	if _shadow_material != null:
 		var shadow_value: Variant = shadow_color
 		var next_shadow_color := shadow_value as Color \
 				if shadow_value is Color else DEFAULT_SHADOW_COLOR
-		next_shadow_color.a *= smoothstep(0.12, 0.72, _daylight_factor)
+		next_shadow_color.a *= lerpf(
+			smoothstep(0.12, 0.72, _daylight_factor), 1.0, _rain_strength
+		)
+		next_shadow_color = next_shadow_color.lerp(
+			Color(0.025, 0.04, 0.075, 0.30), _rain_strength
+		)
 		_shadow_material.albedo_color = next_shadow_color
 
 
