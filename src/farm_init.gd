@@ -13,10 +13,38 @@ var is_map_initialized := false
 const FUTURE_WARRIOR_AI_SCENE := preload("res://character/FutureWarriorAI.tscn")
 const FARMER_AI_SCENE := preload("res://character/FarmerAI.tscn")
 const ASSISTANT_AI_SCENE := preload("res://character/AssistantAI.tscn")
+const AI_SCENE_PATHS := {
+	"futurewarrior": "res://character/FutureWarriorAI.tscn",
+	"future_warrior": "res://character/FutureWarriorAI.tscn",
+	"farmer": "res://character/FarmerAI.tscn",
+	"farmerai": "res://character/FarmerAI.tscn",
+	"assistant": "res://character/AssistantAI.tscn",
+	"assistantai": "res://character/AssistantAI.tscn",
+}
 
 
 func _ready() -> void:
 	GlobalVar.gameworld = self
+	# Custom maps exported by the runtime editor are user:// scenes, so their
+	# serialized light settings can lag behind editor changes.  Enforce the same
+	# near-field dynamic-shadow contract here after child DayNightSystem nodes
+	# have initialized.  This applies equally to built-in and user maps.
+	_configure_runtime_shadow_contract()
+	# Existing editor packages were saved with a noon start time.  Use the same
+	# morning angle as Creston for editor-generated worlds, so directional
+	# shadows remain visibly offset from trees, characters, and buildings.
+	_configure_editor_map_daylight()
+	# Older editor packages persist manually painted MultiMeshes with shadow
+	# casting disabled. Run after child _ready/deferred builders so both old
+	# packages and newly generated resource MultiMeshes use the same setting.
+	call_deferred("_enforce_runtime_shadow_casters")
+	# Pre-fix editor packages embedded a modified two-sided terrain shader. Use
+	# the same receiver shader as Creston at runtime as well, so players do not
+	# need to recreate existing maps just to obtain dynamic shadows.
+	call_deferred("_restore_editor_terrain_shadow_receiver")
+	# Old packages saved their full-map terrain and foundation as shadow casters.
+	# Disable those legacy casters after the scene has finished constructing.
+	call_deferred("_disable_editor_terrain_shadow_casters")
 	MapLoading.ensure_loading(loading_map_name, loading_images_directory, loading_tips_path)
 	_set_loading_progress(0.25, "正在初始化地图系统")
 	await get_tree().process_frame
@@ -27,20 +55,125 @@ func _ready() -> void:
 	map_initialization_completed.emit()
 
 	var player := _create_pending_player()
-	var farmer_ai: FarmerAI
+	var configured_ai: Array[Node] = []
 	if player != null:
 		_set_loading_progress(0.99, "正在生成玩家")
 		await get_tree().process_frame
-	if is_instance_valid(player) and GameAuthority.is_local_authority():
-		# 单人局蓝方当前由 FarmerAI 与 AssistantAI 组成；FutureWarrior 暂不生成。
-		farmer_ai = _spawn_singleplayer_farmer_ai()
+	# AI is a map rule, not a mode-wide default.  A map with no AI entries
+	# deliberately creates no NPCs.  The host/server owns these nodes in both
+	# single-player and cooperative PvE; clients only receive their replicated
+	# state through the normal authority/replicator path.
+	var is_cooperative_host := CooperativeSession.is_active() and CooperativeSession.is_host()
+	if GameAuthority.is_local_authority() or (GameAuthority.is_server_authority() and is_cooperative_host):
+		configured_ai = _spawn_configured_ai()
 	await MapLoading.finish_loading()
 	if is_instance_valid(player):
 		player.process_mode = Node.PROCESS_MODE_INHERIT
-	if is_instance_valid(farmer_ai):
-		farmer_ai.process_mode = Node.PROCESS_MODE_INHERIT
-	if is_instance_valid(player) and GameAuthority.is_local_authority():
-		_spawn_singleplayer_assistant_ai()
+	for ai_value in configured_ai:
+		if is_instance_valid(ai_value):
+			ai_value.process_mode = Node.PROCESS_MODE_INHERIT
+
+
+func _configure_runtime_shadow_contract() -> void:
+	var sun := get_node_or_null("Sun") as DirectionalLight3D
+	if sun == null:
+		push_warning("Map is missing Sun; dynamic shadows are unavailable.")
+		return
+	sun.shadow_enabled = true
+	# Deliberately matches Creston's default DirectionalLight3D settings. This
+	# also overwrites old editor packages that saved the problematic 512m CSM.
+	sun.directional_shadow_max_distance = 100.0
+
+
+func _configure_editor_map_daylight() -> void:
+	if not bool(get_meta("farmwar_editor_generated", false)):
+		return
+	var day_night := get_node_or_null("DayNightSystem")
+	if day_night == null:
+		return
+	day_night.set("initial_hour", 10.0)
+	# DayNightSystem has already run _ready by the time FarmWorldInitializer is
+	# ready, so reapply immediately instead of leaving one noon-lit frame.
+	day_night.call("_apply_time_of_day")
+
+
+func _enforce_runtime_shadow_casters() -> void:
+	for root_name in ["ManualGrass", "GrassScatter", "Trees", "Ores", "Buildings"]:
+		var root := get_node_or_null(NodePath(root_name))
+		if root != null:
+			_set_shadow_casting_recursive(root)
+
+
+func _set_shadow_casting_recursive(node: Node) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for child in node.get_children():
+		_set_shadow_casting_recursive(child)
+
+
+func _restore_editor_terrain_shadow_receiver() -> void:
+	if not bool(get_meta("farmwar_editor_generated", false)):
+		return
+	var source_shader := load("res://src/terrain/terrain_surface.gdshader") as Shader
+	var terrain_root := get_node_or_null("Ground/Grass")
+	if source_shader == null or terrain_root == null:
+		return
+	var needs_winding_repair := int(get_meta("farmwar_terrain_winding_version", 1)) < 2
+	var replacements: Dictionary = {}
+	for mesh_value in terrain_root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := mesh_value as MeshInstance3D
+		var material := mesh_instance.material_override as ShaderMaterial
+		if material != null:
+			var material_id := material.get_instance_id()
+			var corrected := replacements.get(material_id, null) as ShaderMaterial
+			if corrected == null:
+				corrected = material.duplicate() as ShaderMaterial
+				corrected.shader = source_shader
+				replacements[material_id] = corrected
+			mesh_instance.material_override = corrected
+		if needs_winding_repair:
+			_repair_editor_terrain_winding(mesh_instance)
+	if needs_winding_repair:
+		set_meta("farmwar_terrain_winding_version", 2)
+
+
+func _repair_editor_terrain_winding(mesh_instance: MeshInstance3D) -> void:
+	if bool(mesh_instance.get_meta("farmwar_shadow_winding_fixed", false)):
+		return
+	var source_mesh := mesh_instance.mesh as ArrayMesh
+	if source_mesh == null or source_mesh.get_surface_count() != 1:
+		return
+	var arrays := source_mesh.surface_get_arrays(0)
+	var source_indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+	if source_indices.is_empty() or source_indices.size() % 3 != 0:
+		return
+	var corrected_indices := source_indices.duplicate()
+	for index in range(0, corrected_indices.size(), 3):
+		var second := corrected_indices[index + 1]
+		corrected_indices[index + 1] = corrected_indices[index + 2]
+		corrected_indices[index + 2] = second
+	arrays[Mesh.ARRAY_INDEX] = corrected_indices
+	var repaired_mesh := ArrayMesh.new()
+	repaired_mesh.add_surface_from_arrays(
+		source_mesh.surface_get_primitive_type(0), arrays
+	)
+	mesh_instance.mesh = repaired_mesh
+	mesh_instance.set_meta("farmwar_shadow_winding_fixed", true)
+
+
+func _disable_editor_terrain_shadow_casters() -> void:
+	if not bool(get_meta("farmwar_editor_generated", false)):
+		return
+	for root_path in [NodePath("Ground/Grass"), NodePath("TerrainFoundation")]:
+		var root := get_node_or_null(root_path)
+		if root == null:
+			continue
+		for mesh_value in root.find_children("*", "MeshInstance3D", true, false):
+			(mesh_value as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ground_base := get_node_or_null("Ground/GroundBase") as MeshInstance3D
+	if ground_base != null:
+		ground_base.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ground_base.visible = false
 
 
 func wait_until_initialized() -> void:
@@ -117,68 +250,112 @@ func _create_pending_player() -> GamePlayer:
 	return player
 
 
-func _spawn_singleplayer_future_warrior() -> void:
-	# 单人局由本地权威生成一名蓝方敌人。多人局只保留真实玩家，
-	# 不在客户端或专用服务器地图中额外生成这名 AI。
-	if not GameAuthority.is_local_authority():
-		return
-	if not get_tree().get_nodes_in_group("future_warrior_ai").is_empty():
-		return
-	var future_warrior := FUTURE_WARRIOR_AI_SCENE.instantiate() as FutureWarriorAI
-	if future_warrior == null:
-		push_error("无法实例化 FutureWarriorAI 场景。")
-		return
-	future_warrior.name = "FutureWarrior_Blue"
-	future_warrior.team_id = "blue"
-	add_child(future_warrior)
-	future_warrior.global_position = get_team_spawn_position(
-		"blue",
-		1,
-		GameAuthority.LOCAL_PLAYER_ID
-	)
+func _spawn_configured_ai() -> Array[Node]:
+	var result: Array[Node] = []
+	var configured_value: Variant = get_meta("farmwar_ai_configuration", [])
+	if not configured_value is Array:
+		return result
+	var configured := configured_value as Array
+	for index in range(configured.size()):
+		if not configured[index] is Dictionary:
+			continue
+		var entry := configured[index] as Dictionary
+		var ai_type := _normalize_ai_type(str(entry.get("ai_type", entry.get("type", ""))))
+		var scene_path := str(AI_SCENE_PATHS.get(ai_type, ""))
+		if scene_path.is_empty():
+			push_warning("地图 AI 配置 #%d 使用了未知类型：%s" % [index + 1, ai_type])
+			continue
+		var packed := load(scene_path) as PackedScene
+		if packed == null:
+			push_warning("无法加载地图 AI 场景：%s" % scene_path)
+			continue
+		var ai := packed.instantiate() as Node
+		if ai == null:
+			continue
+		var team := str(entry.get("team", "" )).to_lower()
+		if team not in ["red", "blue"]:
+			push_warning("地图 AI #%d 的队伍无效，跳过生成。" % (index + 1))
+			ai.free()
+			continue
+		var spawn_id := str(entry.get("spawn_point_id", "")).strip_edges()
+		var spawn_position := get_spawn_position_for_id(
+			spawn_id,
+			team,
+			index,
+			GameAuthority.LOCAL_PLAYER_ID + index
+		)
+		if spawn_position == Vector3.INF:
+			push_warning("地图 AI #%d 没有可用的 %s 队出生点，跳过生成。" % [index + 1, team])
+			ai.free()
+			continue
+		ai.name = str(entry.get("name", "%s_%s_%02d" % [ai_type.capitalize(), team.capitalize(), index + 1]))
+		ai.set_meta("network_ai_id", "map_ai_%02d" % (index + 1))
+		ai.set_meta("map_ai_type", ai_type)
+		_set_property_if_present(ai, "team_id", team)
+		_set_property_if_present(ai, "spawn_point_id", spawn_id)
+		_set_property_if_present(ai, "respawn_seconds", clampf(float(entry.get("respawn_seconds", 10.0)), 1.0, 600.0))
+		ai.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(ai)
+		if ai is Node3D:
+			(ai as Node3D).global_position = spawn_position
+		result.append(ai)
+	return result
 
 
-func _spawn_singleplayer_farmer_ai() -> FarmerAI:
-	if not GameAuthority.is_local_authority():
-		return null
-	if not get_tree().get_nodes_in_group("farmer_ai").is_empty():
-		return null
-	var farmer := FARMER_AI_SCENE.instantiate() as FarmerAI
-	if farmer == null:
-		push_error("无法实例化 FarmerAI 场景。")
-		return null
-	farmer.name = "FarmerAI_Blue"
-	farmer.team_id = "blue"
-	farmer.process_mode = Node.PROCESS_MODE_DISABLED
-	add_child(farmer)
-	farmer.global_position = get_team_spawn_position(
-		"blue",
-		2,
-		GameAuthority.LOCAL_PLAYER_ID
-	)
-	return farmer
+func _normalize_ai_type(value: String) -> String:
+	return value.strip_edges().to_lower().replace(" ", "_")
 
 
-func _spawn_singleplayer_assistant_ai() -> void:
-	if not GameAuthority.is_local_authority() or not get_tree().get_nodes_in_group("assistant_ai").is_empty():
+func _set_property_if_present(object: Object, property_name: String, value: Variant) -> void:
+	if object == null:
 		return
-	var assistant := ASSISTANT_AI_SCENE.instantiate() as AssistantAI
-	if assistant == null:
-		push_error("无法实例化 AssistantAI 场景。")
-		return
-	assistant.name = "AssistantAI_Blue"
-	assistant.team_id = "blue"
-	add_child(assistant)
-	assistant.global_position = get_team_spawn_position("blue", 3, GameAuthority.LOCAL_PLAYER_ID)
+	for property_info: Dictionary in object.get_property_list():
+		if str(property_info.get("name", "")) == property_name:
+			object.set(property_name, value)
+			return
 
 
 func get_team_spawn_position(team: String, player_index := 0, random_seed := 0) -> Vector3:
-	var bus_name := "SpawnBlueBus" if team == "blue" else "SpawnRedBus"
-	var bus := get_node_or_null(bus_name) as SpawnBus
-	if bus == null:
-		push_warning("地图缺少出生巴士 %s，使用地图中心作为后备出生点。" % bus_name)
+	var points := get_team_spawn_points(team)
+	if points.is_empty():
+		push_warning("地图缺少 %s 队独立出生点，使用地图中心作为后备出生点。" % team)
 		return Vector3(0.0, 1.5, 0.0)
-	return bus.get_spawn_position(player_index, random_seed)
+	points.sort_custom(func(left: TeamSpawnPoint, right: TeamSpawnPoint) -> bool:
+		return left.spawn_point_id < right.spawn_point_id
+	)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:%s:%d" % [random_seed, team, player_index])
+	var point := points[rng.randi_range(0, points.size() - 1)]
+	return point.get_spawn_position(player_index, random_seed)
+
+
+func get_team_spawn_points(team: String) -> Array[TeamSpawnPoint]:
+	var points: Array[TeamSpawnPoint] = []
+	for point_value: Node in get_tree().get_nodes_in_group("team_spawn_points"):
+		if point_value is TeamSpawnPoint and str((point_value as TeamSpawnPoint).team).to_lower() == team.to_lower():
+			points.append(point_value as TeamSpawnPoint)
+	points.sort_custom(func(left: TeamSpawnPoint, right: TeamSpawnPoint) -> bool:
+		return left.spawn_point_id < right.spawn_point_id
+	)
+	return points
+
+
+func get_spawn_position_for_id(spawn_point_id: String, team: String, player_index := 0, random_seed := 0) -> Vector3:
+	var points := get_team_spawn_points(team)
+	if not spawn_point_id.is_empty():
+		for point in points:
+			if point.spawn_point_id == spawn_point_id:
+				return point.get_spawn_position(player_index, random_seed)
+	if points.is_empty():
+		return Vector3.INF
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("ai:%d:%s:%d" % [random_seed, team, player_index])
+	return points[rng.randi_range(0, points.size() - 1)].get_spawn_position(player_index, random_seed)
+
+
+func get_random_enemy_spawn_position(team: String, random_seed := 0, player_index := 0) -> Vector3:
+	var enemy_team := "blue" if team.to_lower() == "red" else "red"
+	return get_spawn_position_for_id("", enemy_team, player_index, random_seed)
 
 
 func _set_loading_progress(progress: float, status: String) -> void:

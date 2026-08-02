@@ -84,6 +84,17 @@
 	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
 	},
 	{
+	  "id": "future_m4",
+	  "loadout_selectable": false,
+	  "name": "FutureM4",
+	  "tool_scene": "res://character/weapons/FutureM4.tscn",
+	  "icon": "",
+	  "power": 48,
+	  "fire_rate": 10.0,
+	  "cooldown": 0.1,
+	  "description": "双手持握的未来型卡宾枪，射速、单发威力和弹匣容量均高于 M4。"
+	},
+	{
 	  "id": "ar15",
 	  "loadout_selectable": false,
 	  "name": "AR15步枪",

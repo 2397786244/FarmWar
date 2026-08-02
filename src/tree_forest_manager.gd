@@ -2,7 +2,7 @@ extends Node3D
 class_name TreeForestManager
 
 const MIN_RESPAWN_SECONDS := 60.0
-const RESPAWN_BY_TYPE := {"oak": 90.0, "redcedar": 75.0, "cottonwood": 120.0}
+const RESPAWN_BY_TYPE := {"oak": 90.0, "redcedar": 75.0, "redmaple": 105.0, "cottonwood": 120.0}
 
 var resources: Array[Node] = []
 var trees: Array[HarvestTree] = []
@@ -58,7 +58,10 @@ func _build_multimeshes() -> void:
 				groups[key] = {
 					"mesh": source.mesh,
 					"entries": [],
-					"cast_shadow": source.cast_shadow,
+					# Harvest resources are gameplay-near geometry.  Do not inherit an
+					# accidental disabled import flag from a GLB: trees and rocks must
+					# always cast onto the playable terrain.
+					"cast_shadow": GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
 					"material_override": source.material_override,
 				}
 			(groups[key]["entries"] as Array).append({

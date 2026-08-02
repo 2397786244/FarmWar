@@ -11,10 +11,13 @@ const HIT_FRAGMENT_COLOR := Color("858b90")
 
 @export var resource_id := ""
 @export var resource_type := "ore"
+@export var resource_kind := "ore"
 @export var display_name := "矿石"
 @export var max_hp := 400.0
 @export var respawn_seconds := 90.0
 @export var drops: Array[Dictionary] = []
+@export var show_hit_particles := true
+@export var destroy_reward_description := ""
 
 var current_hp := 0.0
 var destroyed := false
@@ -30,6 +33,8 @@ var _pending_attacker_peer_id := 0
 func _ready() -> void:
 	add_to_group("nature_resources")
 	add_to_group("harvest_ores")
+	if resource_kind == "mushroom":
+		add_to_group("harvest_mushrooms")
 	add_to_group("regrowing_resources")
 	if resource_id.is_empty():
 		resource_id = NatureResourceIdentity.make_stable_id(self)
@@ -77,23 +82,26 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	_pending_attacker_peer_id = 0
 	current_hp = maxf(0.0, current_hp - strength)
 	_update_health_label()
-	if not GameAuthority.is_server_authority():
+	if not GameAuthority.is_server_authority() and show_hit_particles:
 		play_hit_effect()
-	else:
+	elif GameAuthority.is_server_authority() and show_hit_particles:
 		GameAuthority.visual_world_event_ready.emit({
 			"type": "nature_resource_hit",
 			"resource_id": resource_id,
-			"resource_kind": "ore",
+			"resource_kind": resource_kind,
 			"tick": GameAuthority.server_tick,
 		})
 	if GameAuthority.is_server_authority():
 		_emit_health_event(current_hp <= 0.0)
 	if current_hp <= 0.0:
 		destroyed = true
+		var reward_description := destroy_reward_description
+		if reward_description.is_empty():
+			reward_description = "采集了%s" % display_name if resource_kind == "mushroom" else "开采了%s" % display_name
 		GameAuthority.award_action_reward(
 			_last_attacker_peer_id,
 			CombatBalance.get_int("team_rewards", "ore_mined", 50),
-			"开采了%s" % display_name
+			reward_description
 		)
 		_play_destroy(true)
 	return true
@@ -190,7 +198,7 @@ func _emit_health_event(is_destroyed: bool) -> void:
 	GameAuthority.reliable_world_event_ready.emit({
 		"type": "nature_resource_health",
 		"resource_id": resource_id,
-		"resource_kind": "ore",
+		"resource_kind": resource_kind,
 		"hp": current_hp,
 		"destroyed": is_destroyed,
 		"tick": GameAuthority.server_tick,

@@ -35,6 +35,14 @@ const PLAYER_KNOCKBACK_DECELERATION := 18.0
 const PLAYER_PRONE_SPEED_MULTIPLIER := 0.4
 const PLAYER_PRONE_MAX_PITCH_DEGREES := 16.0
 const PLAYER_PRONE_COLLISION_POSITION := Vector3(0.0, 0.5, -0.2)
+const PLAYER_SWIM_HORIZONTAL_SPEED := 3.5
+const PLAYER_SWIM_RISE_SPEED := 3.0
+const PLAYER_SWIM_DIVE_SPEED := 2.8
+const PLAYER_SWIM_SINK_SPEED := 0.45
+const PLAYER_SWIM_VERTICAL_ACCELERATION := 8.0
+const PLAYER_SWIM_MAX_DEPTH := 3.0
+const PLAYER_SWIM_SURFACE_MARGIN := 0.20
+const PLAYER_SWIM_EXIT_PROBE_DISTANCE := 0.45
 const PLAYER_CROP_INTERACTION_RANGE := 4.0
 const PLAYER_VEHICLE_INTERACTION_RANGE := 4.0
 const BASE_PERSONAL_BAG_WEIGHT_KG := 30.0
@@ -69,12 +77,14 @@ const FINITE_AMMO_WEAPON_IDS := {
 	"shotgun": true,
 	"hunting_rifle": true,
 	"m4": true,
+	"future_m4": true,
 	"ar15": true,
 }
 # Server combat queries hit only meaningful gameplay targets and blockers.
-# River (4), shops (512), and other non-combat layers intentionally stay out.
+# Water (65536), shops (512), and other non-combat layers intentionally stay out.
 const COLLISION_LAYER_GROUND := 1
 const COLLISION_LAYER_WALL := 2
+const COLLISION_LAYER_WATER := 65536
 const COLLISION_LAYER_CHARACTER := 8
 const COLLISION_LAYER_BULLET := 32
 const COLLISION_LAYER_FARM_TILE := 64
@@ -543,16 +553,26 @@ func _simulate_players(delta: float) -> void:
 				continue
 		var input: Dictionary = latest_inputs.get(peer_id, {})
 		var move := _vector2_from_value(input.get("move", Vector2.ZERO))
-		var prone := bool(input.get("prone", state.get("prone", false)))
+		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		var water_surface_y := WaterBody3D.get_surface_level_at(position)
+		var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+		var swim_up := swimming and bool(input.get("swim_up", false))
+		var diving := swimming and bool(input.get("dive", false))
+		var prone := bool(input.get("prone", state.get("prone", false))) and not swimming
 		state["prone"] = prone
+		state["swimming"] = swimming
 		var yaw := wrapf(float(input.get("yaw", state.get("yaw", 0.0))), -PI, PI)
 		var pitch_limit := PLAYER_PRONE_MAX_PITCH_DEGREES if prone else 50.0
 		var pitch := clampf(float(input.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit))
 		var speed := float(state.get("speed", 5.0)) * EquipmentCatalog.get_movement_speed_multiplier(
 			str(state.get("equipped_legwear_id", ""))
 		)
-		speed *= PLAYER_PRONE_SPEED_MULTIPLIER if prone else 1.0
-		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		if swimming:
+			speed = PLAYER_SWIM_HORIZONTAL_SPEED * EquipmentCatalog.get_movement_speed_multiplier(
+				str(state.get("equipped_legwear_id", ""))
+			)
+		else:
+			speed *= PLAYER_PRONE_SPEED_MULTIPLIER if prone else 1.0
 		var velocity := _vector3_from_value(state.get("velocity", Vector3.ZERO))
 		var knockback_velocity := _vector3_from_value(state.get("knockback_velocity", Vector3.ZERO))
 		knockback_velocity.y = 0.0
@@ -568,28 +588,60 @@ func _simulate_players(delta: float) -> void:
 			_set_server_player_prone_collision(proxy, prone)
 			var basis := Basis(Vector3.UP, yaw)
 			var direction := (basis * Vector3(move.x, 0.0, move.y)).normalized()
-			if not proxy.is_on_floor():
-				proxy.velocity += proxy.get_gravity() * delta
 			proxy.rotation.y = yaw
 			var jump_sequence := int(input.get("jump_seq", state.get("last_jump_seq", 0)))
 			var last_jump_sequence := int(state.get("last_jump_seq", 0))
 			var jump_requested := jump_sequence > last_jump_sequence
-			if jump_requested and int(state.get("pending_jump_seq", -1)) != jump_sequence:
-				state["pending_jump_seq"] = jump_sequence
-				state["pending_jump_until_tick"] = server_tick + PLAYER_JUMP_GRACE_TICKS
-			# is_on_floor() can briefly become false when the input and server physics
-			# ticks straddle the floor-contact update. The previous authoritative
-			# grounded state provides one tick of jump grace without trusting clients.
-			var jump_accepted := jump_requested and not prone \
-				and (proxy.is_on_floor() or was_grounded)
-			if jump_accepted:
-				proxy.velocity.y = 3.0
+			var jump_accepted := false
+			if not swimming:
+				if not proxy.is_on_floor():
+					proxy.velocity += proxy.get_gravity() * delta
+				if jump_requested and int(state.get("pending_jump_seq", -1)) != jump_sequence:
+					state["pending_jump_seq"] = jump_sequence
+					state["pending_jump_until_tick"] = server_tick + PLAYER_JUMP_GRACE_TICKS
+				# is_on_floor() can briefly become false when the input and server physics
+				# ticks straddle the floor-contact update. The previous authoritative
+				# grounded state provides one tick of jump grace without trusting clients.
+				jump_accepted = jump_requested and not prone \
+					and (proxy.is_on_floor() or was_grounded)
+				if jump_accepted:
+					proxy.velocity.y = 3.0
+			else:
+				var target_vertical := -PLAYER_SWIM_SINK_SPEED
+				if diving:
+					target_vertical = -PLAYER_SWIM_DIVE_SPEED
+				elif swim_up:
+					target_vertical = PLAYER_SWIM_RISE_SPEED
+				proxy.velocity.y = clampf(proxy.velocity.y, -PLAYER_SWIM_DIVE_SPEED, PLAYER_SWIM_RISE_SPEED)
+				proxy.velocity.y = move_toward(proxy.velocity.y, target_vertical, PLAYER_SWIM_VERTICAL_ACCELERATION * delta)
+				if position.y <= water_surface_y - PLAYER_SWIM_MAX_DEPTH and proxy.velocity.y < 0.0:
+					proxy.velocity.y = 0.0
+				if position.y >= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN and proxy.velocity.y > 0.0:
+					proxy.velocity.y = 0.0
+			if swimming and direction.length_squared() > 0.001:
+				var exit_probe := position + direction * PLAYER_SWIM_EXIT_PROBE_DISTANCE
+				if WaterBody3D.get_surface_level_at(exit_probe) >= INF:
+					proxy.velocity.y = maxf(proxy.velocity.y, PLAYER_SWIM_RISE_SPEED)
 			proxy.velocity.x = direction.x * speed + knockback_velocity.x
 			proxy.velocity.z = direction.z * speed + knockback_velocity.z
 			proxy.move_and_slide()
 			position = proxy.global_position
 			velocity = proxy.velocity
-			grounded = proxy.is_on_floor()
+			grounded = false if swimming else proxy.is_on_floor()
+			if swimming and direction.length_squared() > 0.001 and proxy.is_on_wall():
+				velocity.y = maxf(velocity.y, PLAYER_SWIM_RISE_SPEED)
+				proxy.velocity.y = velocity.y
+			if swimming:
+				var post_surface_y := WaterBody3D.get_surface_level_at(position)
+				if post_surface_y < INF:
+					if position.y > post_surface_y + PLAYER_SWIM_SURFACE_MARGIN:
+						position.y = post_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+						velocity.y = minf(velocity.y, 0.0)
+					elif position.y < post_surface_y - PLAYER_SWIM_MAX_DEPTH:
+						position.y = post_surface_y - PLAYER_SWIM_MAX_DEPTH
+						velocity.y = maxf(velocity.y, 0.0)
+					proxy.global_position = position
+					proxy.velocity = velocity
 			# Consume a jump only after it was actually applied. Otherwise the client
 			# predicts a jump that the next correction incorrectly erases mid-air.
 			if jump_accepted:
@@ -603,9 +655,35 @@ func _simulate_players(delta: float) -> void:
 		else:
 			var basis := Basis(Vector3.UP, yaw)
 			var direction := (basis * Vector3(move.x, 0.0, move.y)).normalized()
+			if swimming:
+				var target_vertical := -PLAYER_SWIM_SINK_SPEED
+				if diving:
+					target_vertical = -PLAYER_SWIM_DIVE_SPEED
+				elif swim_up:
+					target_vertical = PLAYER_SWIM_RISE_SPEED
+				velocity.y = clampf(velocity.y, -PLAYER_SWIM_DIVE_SPEED, PLAYER_SWIM_RISE_SPEED)
+				velocity.y = move_toward(velocity.y, target_vertical, PLAYER_SWIM_VERTICAL_ACCELERATION * delta)
+				if position.y <= water_surface_y - PLAYER_SWIM_MAX_DEPTH and velocity.y < 0.0:
+					velocity.y = 0.0
+				if position.y >= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN and velocity.y > 0.0:
+					velocity.y = 0.0
+				if direction.length_squared() > 0.001:
+					var exit_probe := position + direction * PLAYER_SWIM_EXIT_PROBE_DISTANCE
+					if WaterBody3D.get_surface_level_at(exit_probe) >= INF:
+						velocity.y = maxf(velocity.y, PLAYER_SWIM_RISE_SPEED)
 			velocity.x = direction.x * speed + knockback_velocity.x
 			velocity.z = direction.z * speed + knockback_velocity.z
 			position += velocity * delta
+			if swimming:
+				var post_surface_y := WaterBody3D.get_surface_level_at(position)
+				if post_surface_y < INF:
+					if position.y > post_surface_y + PLAYER_SWIM_SURFACE_MARGIN:
+						position.y = post_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+						velocity.y = minf(velocity.y, 0.0)
+					elif position.y < post_surface_y - PLAYER_SWIM_MAX_DEPTH:
+						position.y = post_surface_y - PLAYER_SWIM_MAX_DEPTH
+						velocity.y = maxf(velocity.y, 0.0)
+					grounded = false
 		knockback_velocity = knockback_velocity.move_toward(Vector3.ZERO, PLAYER_KNOCKBACK_DECELERATION * delta)
 		state["position"] = position
 		state["velocity"] = velocity
@@ -666,6 +744,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["yaw"] = float(existing.get("yaw", 0.0))
 	existing["pitch"] = float(existing.get("pitch", 0.0))
 	existing["prone"] = bool(existing.get("prone", false))
+	existing["swimming"] = bool(existing.get("swimming", false))
 	existing["hp"] = float(existing.get("hp", PLAYER_MAX_HP))
 	existing["current_tool_index"] = int(existing.get("current_tool_index", 0))
 	existing["current_tool_id"] = str(existing.get("current_tool_id", ""))
@@ -1295,7 +1374,10 @@ func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 		move = Vector2.ZERO
 	if move.length() > 1.0:
 		move = move.normalized()
-	var requested_prone := bool(input_frame.get("prone", state.get("prone", false)))
+	var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var water_surface_y := WaterBody3D.get_surface_level_at(position)
+	var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+	var requested_prone := bool(input_frame.get("prone", state.get("prone", false))) and not swimming
 	var pitch_limit := PLAYER_PRONE_MAX_PITCH_DEGREES if requested_prone else 50.0
 	var sanitized_input := {
 		"input_seq": input_seq,
@@ -1305,6 +1387,8 @@ func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 		"yaw": wrapf(float(input_frame.get("yaw", state.get("yaw", 0.0))), -PI, PI),
 		"pitch": clampf(float(input_frame.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit)),
 		"prone": requested_prone,
+		"swim_up": swimming and bool(input_frame.get("swim_up", false)),
+		"dive": swimming and bool(input_frame.get("dive", false)),
 	}
 	state["last_received_input_seq"] = input_seq
 	player_states[peer_id] = state
@@ -1863,6 +1947,8 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 
 
 func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
+	if bool(state.get("swimming", false)):
+		return "swim"
 	if not bool(state.get("grounded", true)):
 		return "air"
 	if bool(state.get("prone", false)):
@@ -1874,7 +1960,7 @@ func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
 
 func _animation_action_for_tool(tool_id: String) -> String:
 	match tool_id:
-		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "m4", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
+		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "m4", "future_m4", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
 			return "shooting"
 		"eater":
 			return "melee"
@@ -1916,7 +2002,7 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float("nail_gun", "visual_speed")
 			lifetime = CombatBalance.get_float("nail_gun", "visual_lifetime")
-		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "ar15":
+		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "future_m4", "ar15":
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float(tool_id, "visual_speed")
 			lifetime = CombatBalance.get_float(tool_id, "visual_lifetime")
@@ -2031,7 +2117,7 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("freeze_gun", "range"), CombatBalance.get_float("freeze_gun", "damage"), CombatBalance.get_float("freeze_gun", "knockback"), "freeze"), true)
 		"nail_gun":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("nail_gun", "range"), CombatBalance.get_float("nail_gun", "damage"), CombatBalance.get_float("nail_gun", "knockback"), "nail"), true)
-		"suppressed_pistol", "hunting_rifle", "m4", "ar15":
+		"suppressed_pistol", "hunting_rifle", "m4", "future_m4", "ar15":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float(tool_id, "range"), CombatBalance.get_float(tool_id, "damage"), CombatBalance.get_float(tool_id, "knockback"), "nail"), true)
 		"shotgun":
 			result.merge(_server_shotgun(peer_id, tool_request), true)
@@ -6471,6 +6557,9 @@ func _validate_free_placement(peer_id: int, scene_path: String, requested_positi
 		_free_placement_debug("rejected reason=placement_too_steep")
 		return {"ok": false, "reason": "placement_too_steep"}
 	var ground_position := _vector3_from_value(ground_hit.get("position", requested_position))
+	if WaterBody3D.is_surface_blocked(ground_position):
+		_free_placement_debug("rejected reason=placement_in_water")
+		return {"ok": false, "reason": "placement_in_water"}
 	var packed := load(scene_path) as PackedScene
 	if packed == null:
 		_free_placement_debug("rejected reason=placement_missing_scene")
@@ -8181,10 +8270,11 @@ func _respawn_player(peer_id: int) -> void:
 	if not player_states.has(peer_id):
 		return
 	var state: Dictionary = player_states[peer_id]
-	var spawn_position := _vector3_from_value(
-		state.get("spawn_position", state.get("position", Vector3.ZERO))
+	var spawn_position := _get_random_team_spawn_position(
+		str(state.get("team", "red")), peer_id
 	)
 	state["position"] = spawn_position
+	state["spawn_position"] = spawn_position
 	state["velocity"] = Vector3.ZERO
 	state["knockback_velocity"] = Vector3.ZERO
 	state["hp"] = PLAYER_MAX_HP
@@ -8208,6 +8298,17 @@ func _respawn_player(peer_id: int) -> void:
 		"position": spawn_position,
 		"tick": server_tick,
 	})
+
+
+func _get_random_team_spawn_position(team: String, peer_id: int) -> Vector3:
+	var world := GlobalVar.gameworld
+	if is_instance_valid(world) and world.has_method("get_team_spawn_position"):
+		# The authoritative tick changes each respawn, while the peer id keeps the
+		# choice deterministic for every client that receives this authoritative event.
+		return world.call("get_team_spawn_position", team, peer_id, server_tick) as Vector3
+	push_warning("当前地图缺少独立队伍出生点；复活回退到记录的位置。")
+	var state: Dictionary = player_states.get(peer_id, {}) as Dictionary
+	return _vector3_from_value(state.get("spawn_position", state.get("position", Vector3.ZERO)))
 
 
 func _apply_local_player_respawn_state(peer_id: int, respawn_left: float, spawn_position: Variant = null) -> void:
@@ -9623,6 +9724,7 @@ func _build_world_snapshot() -> Dictionary:
 			"pitch": float(state.get("pitch", 0.0)),
 			"grounded": bool(state.get("grounded", true)),
 			"prone": bool(state.get("prone", false)),
+			"swimming": bool(state.get("swimming", false)),
 			"locomotion_state": state.get("locomotion_state", "idle_tool"),
 			"hp": float(state.get("hp", PLAYER_MAX_HP)),
 			"respawn_left": float(state.get("respawn_left", 0.0)),
@@ -9724,6 +9826,14 @@ func _build_world_snapshot() -> Dictionary:
 	for animal in get_tree().get_nodes_in_group("wild_animals"):
 		if is_instance_valid(animal) and animal.has_method("get_network_state"):
 			public_wild_animals.append(animal.call("get_network_state") as Dictionary)
+	var public_ai_players: Array[Dictionary] = []
+	for ai_group in [&"farmer_ai", &"future_warrior_ai", &"assistant_ai"]:
+		for ai_value in get_tree().get_nodes_in_group(ai_group):
+			if not is_instance_valid(ai_value) or not ai_value.has_method("get_network_state"):
+				continue
+			var ai_state := ai_value.call("get_network_state") as Dictionary
+			if not ai_state.is_empty():
+				public_ai_players.append(ai_state)
 	var weather_state: Dictionary = {}
 	var weather_system := get_tree().get_first_node_in_group("weather_systems")
 	if weather_system != null and weather_system.has_method("get_authoritative_weather_state"):
@@ -9741,6 +9851,7 @@ func _build_world_snapshot() -> Dictionary:
 		"remote_devices": public_remote_devices,
 		"placed_tools": public_placed_tools,
 		"wild_animals": public_wild_animals,
+		"ai_players": public_ai_players,
 	}
 
 
@@ -9754,6 +9865,7 @@ func _estimate_world_snapshot_bytes(snapshot: Dictionary) -> int:
 	var remotes_value: Variant = snapshot.get("remote_devices", [])
 	var tools_value: Variant = snapshot.get("placed_tools", [])
 	var animals_value: Variant = snapshot.get("wild_animals", [])
+	var ai_value: Variant = snapshot.get("ai_players", [])
 	if players_value is Array:
 		estimate += (players_value as Array).size() * 320
 	if vehicles_value is Array:
@@ -9766,6 +9878,8 @@ func _estimate_world_snapshot_bytes(snapshot: Dictionary) -> int:
 		estimate += (tools_value as Array).size() * 300
 	if animals_value is Array:
 		estimate += (animals_value as Array).size() * 160
+	if ai_value is Array:
+		estimate += (ai_value as Array).size() * 240
 	return estimate
 
 

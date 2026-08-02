@@ -67,19 +67,30 @@ func _spawn_animal() -> void:
 
 
 func _find_spawn_position() -> Vector3:
-	var angle := _rng.randf_range(0.0, TAU)
-	var distance := sqrt(_rng.randf()) * spawn_radius
-	var candidate := global_position + Vector3(cos(angle), 0.0, sin(angle)) * distance
 	var world_3d := get_world_3d()
-	if world_3d == null:
-		return candidate
-	var query := PhysicsRayQueryParameters3D.create(
-		candidate + Vector3.UP * 20.0,
-		candidate + Vector3.DOWN * 40.0,
-		GameAuthority.COLLISION_LAYER_GROUND
-	)
-	var hit := world_3d.direct_space_state.intersect_ray(query)
-	return hit.get("position", candidate) if not hit.is_empty() else candidate
+	for attempt in range(8):
+		var angle := _rng.randf_range(0.0, TAU)
+		var distance := sqrt(_rng.randf()) * spawn_radius
+		var candidate := global_position + Vector3(cos(angle), 0.0, sin(angle)) * distance
+		if world_3d == null:
+			return candidate
+		var query := PhysicsRayQueryParameters3D.create(
+			candidate + Vector3.UP * 20.0,
+			candidate + Vector3.DOWN * 40.0,
+			GameAuthority.COLLISION_LAYER_GROUND
+		)
+		var hit := world_3d.direct_space_state.intersect_ray(query)
+		var grounded := hit.get("position", candidate) as Vector3 if not hit.is_empty() else candidate
+		if not _is_water_position(grounded):
+			return grounded
+	return global_position
+
+
+func _is_water_position(position: Vector3) -> bool:
+	for value in get_tree().get_nodes_in_group("water_bodies"):
+		if value != null and value.has_method("contains_world_point") and value.call("contains_world_point", position):
+			return true
+	return false
 
 
 func _players_nearby() -> bool:

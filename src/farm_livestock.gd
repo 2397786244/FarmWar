@@ -497,6 +497,13 @@ func _move_horizontal(direction: Vector3, speed: float, delta: float) -> void:
 	if freeze_remaining > 0.0 or tranquilizer_remaining > 0.0:
 		_stop_horizontal(delta)
 		return
+	var horizontal_step := direction * speed + _knockback_velocity
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Livestock cannot navigate into water; players can still carry them.
+		direction = Vector3.ZERO
+		_knockback_velocity.x = 0.0
+		_knockback_velocity.z = 0.0
 	_face_direction(direction, delta)
 	velocity.x = direction.x * speed + _knockback_velocity.x
 	velocity.z = direction.z * speed + _knockback_velocity.z

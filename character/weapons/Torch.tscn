@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://bphlvxf52500n"]
+
+[ext_resource type="PackedScene" uid="uid://dlwk68mpxna8v" path="res://assets/tools/Torch.glb" id="1_c3tum"]
+[ext_resource type="Script" uid="uid://oy5ioitdjyk3" path="res://src/torch.gd" id="2_torch"]
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_flame"]
+emission_shape = 1
+emission_sphere_radius = 0.035
+direction = Vector3(0, 1, 0)
+spread = 16.0
+initial_velocity_min = 0.24
+initial_velocity_max = 0.58
+gravity = Vector3(0, 1.4, 0)
+damping_min = 0.45
+damping_max = 0.9
+scale_min = 0.055
+scale_max = 0.12
+color = Color(1, 0.42, 0.06, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_flame"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0.72, 0.24, 1)
+billboard_mode = 1
+
+[sub_resource type="QuadMesh" id="QuadMesh_flame"]
+material = SubResource("StandardMaterial3D_flame")
+size = Vector2(0.22, 0.3)
+
+[node name="Torch" type="Node3D" unique_id=390527485]
+script = ExtResource("2_torch")
+
+[node name="Mesh" parent="." unique_id=1425491470 instance=ExtResource("1_c3tum")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.30784285, 0)
+
+[node name="ParticlesPoint" type="Marker3D" parent="." unique_id=980636247]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.98158324, 0)
+
+[node name="FlameParticles" type="GPUParticles3D" parent="ParticlesPoint" unique_id=594457510]
+amount = 18
+lifetime = 0.72
+randomness = 0.35
+visibility_aabb = AABB(-0.35, -0.1, -0.35, 0.7, 1.45, 0.7)
+process_material = SubResource("ParticleProcessMaterial_flame")
+draw_pass_1 = SubResource("QuadMesh_flame")
+
+[node name="TorchLight" type="OmniLight3D" parent="ParticlesPoint" unique_id=1175926173]
+light_color = Color(1, 0.55, 0.2, 1)
+light_energy = 3.0
+omni_range = 7.0
+omni_attenuation = 1.45

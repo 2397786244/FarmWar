@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/water_body_3d.gd" id="1_water"]
+
+[node name="WaterBody3D" type="Node3D"]
+script = ExtResource("1_water")
+water_level = 0.5
+water_depth = 2.0

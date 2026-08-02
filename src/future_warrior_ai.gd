@@ -155,6 +155,9 @@ var grenade_mode: int = GrenadeMode.AUTO
 @export_range(1.0, 30.0, 0.5)
 var respawn_seconds: float = 10.0
 
+## Optional map-assigned spawn. Empty means a random spawn point in team_id.
+@export var spawn_point_id: String = ""
+
 ## 子弹没有公开 damage/bullet_damage 属性时使用。
 @export var default_bullet_damage: float = 12.0
 @export var color_bullet_damage: float = 15.0
@@ -228,7 +231,7 @@ var low_health_flee_ratio: float = 0.38
 @export var boundary_turn_margin: float = 4.0
 
 ## 视锥随巡逻视线转动。角色的实际前方采用 Godot CharacterBody3D 的 -Z 轴。
-@export_range(1.0, 80.0, 0.5) var vision_range: float = 50.0
+@export_range(1.0, 80.0, 0.5) var vision_range: float = 80.0
 @export_range(10.0, 180.0, 1.0) var vision_fov_degrees: float = 120.0
 @export_range(5.0, 90.0, 1.0) var search_look_sweep_degrees: float = 48.0
 @export_range(0.5, 8.0, 0.1) var search_look_sweep_seconds: float = 2.8
@@ -370,6 +373,8 @@ var hit_3d: Area3D
 var hit_collision_shape: CollisionShape3D
 
 var health_label: Label3D
+var team_marker: MeshInstance3D
+const TEAM_MARKER_HEIGHT := 3.15
 
 
 # ------------------------------------------------------------------
@@ -460,6 +465,7 @@ func _ready() -> void:
 
 	add_to_group("future_warrior_ai")
 	add_to_group("combat_characters")
+	_ensure_team_marker_visual()
 
 	_create_required_runtime_nodes()
 	_load_future_warrior_appearance()
@@ -1816,7 +1822,7 @@ func _find_best_visible_hostile() -> CharacterBody3D:
 	var best_target: CharacterBody3D
 	var best_score := INF
 
-	for group_name in [&"human_players", &"wild_animals"]:
+	for group_name in [&"human_players", &"wild_animals", &"combat_characters"]:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if not node is CharacterBody3D:
 				continue
@@ -1849,6 +1855,10 @@ func _is_valid_target(
 func _is_active_hostile_candidate(candidate: CharacterBody3D) -> bool:
 	if candidate == null or candidate == self:
 		return false
+	if candidate.has_method("get_network_state"):
+		var network_state := candidate.call("get_network_state") as Dictionary
+		if bool(network_state.get("dead", false)):
+			return false
 	if candidate.is_in_group("wild_animals"):
 		return candidate is BlackBear and int((candidate as BlackBear).state) != BlackBear.State.DEAD
 	return _is_enemy(candidate)
@@ -1933,9 +1943,16 @@ func _resolve_enemy_farm_position() -> Vector3:
 	var game_world: Node = GlobalVar.gameworld
 	if not is_instance_valid(game_world):
 		return INVALID_POSITION
-	var enemy_farm_name := "RedFarm" if team_id == "blue" else "BlueFarm"
-	var enemy_farm := game_world.get_node_or_null(enemy_farm_name) as Node3D
-	return enemy_farm.global_position if enemy_farm != null else INVALID_POSITION
+	if game_world.has_method("get_random_enemy_spawn_position"):
+		var value: Variant = game_world.call(
+			"get_random_enemy_spawn_position",
+			team_id,
+			get_instance_id() + int(Time.get_ticks_msec() / 1000.0),
+			0
+		)
+		if value is Vector3 and value != Vector3.INF:
+			return value as Vector3
+	return INVALID_POSITION
 
 
 func _next_enemy_farm_patrol_position() -> Vector3:
@@ -2966,6 +2983,13 @@ func _apply_character_movement(
 	speed: float,
 	delta: float
 ) -> void:
+	var horizontal_step := direction * speed + rubber_knockback
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Water is a hard navigation boundary for enemy AI.
+		direction = Vector3.ZERO
+		rubber_knockback.x = 0.0
+		rubber_knockback.z = 0.0
 	var desired_velocity := (
 		direction * speed
 		+ rubber_knockback
@@ -3057,6 +3081,93 @@ func _rotate_toward_direction(
 
 func get_combat_team() -> String:
 	return team_id
+
+
+func _ensure_team_marker_visual() -> void:
+	if is_instance_valid(team_marker):
+		_update_team_marker_visibility()
+		return
+	team_marker = MeshInstance3D.new()
+	team_marker.name = "TeamMarker"
+	team_marker.position = Vector3.UP * TEAM_MARKER_HEIGHT
+	team_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	team_marker.ignore_occlusion_culling = true
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.14
+	sphere.height = 0.28
+	sphere.radial_segments = 16
+	sphere.rings = 8
+	team_marker.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.no_depth_test = true
+	material.albedo_color = _team_marker_color()
+	material.emission_enabled = true
+	material.emission = _team_marker_color()
+	material.emission_energy_multiplier = 2.5
+	material.render_priority = 120
+	team_marker.material_override = material
+	add_child(team_marker)
+	_update_team_marker_visibility()
+
+
+func _team_marker_color() -> Color:
+	return Color("#F04455") if team_id == "red" else Color("#398CFF")
+
+
+func _local_viewer_team() -> String:
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is Node:
+			continue
+		if _has_property(node, "is_remote_proxy") and bool(node.get("is_remote_proxy")):
+			continue
+		var value := _get_combat_team(node)
+		if not value.is_empty():
+			return value
+	return ""
+
+
+func _update_team_marker_visibility() -> void:
+	if not is_instance_valid(team_marker):
+		return
+	var material := team_marker.material_override as StandardMaterial3D
+	var marker_color := _team_marker_color()
+	if material != null:
+		material.albedo_color = marker_color
+		material.emission = marker_color
+	var viewer_team := _local_viewer_team()
+	# Teammate markers are always visible. If the local player has not been
+	# created yet, keep the marker visible until the viewer team is known.
+	team_marker.visible = (viewer_team.is_empty() or viewer_team == team_id) \
+		and state != AIState.DEAD
+
+
+func get_network_state() -> Dictionary:
+	return {
+		"ai_id": str(get_meta("network_ai_id", name)),
+		"ai_type": "futurewarrior",
+		"name": name,
+		"team": team_id,
+		"position": global_position,
+		"yaw": rotation.y,
+		"hp": current_hp,
+		"max_hp": max_hp,
+		"dead": state == AIState.DEAD,
+		"respawn_left": 0.0,
+		"state": int(state),
+	}
+
+
+func apply_network_state(data: Dictionary) -> void:
+	global_position = data.get("position", global_position) as Vector3
+	rotation.y = float(data.get("yaw", rotation.y))
+	current_hp = float(data.get("hp", current_hp))
+	if data.has("state"):
+		state = int(data.get("state", state))
+	_update_team_marker_visibility()
+	if health_label != null:
+		health_label.visible = not bool(data.get("dead", false))
+		_update_health_label()
 
 
 func _is_enemy(node: Node) -> bool:
@@ -3590,19 +3701,16 @@ func _respawn_at_team_spawn() -> void:
 	_equip_weapon(WeaponSlot.AR15)
 	_play_body_animation(&"Idle", 0.05)
 	_update_health_label()
-	_debug("respawned at blue team spawn")
+	_debug("respawned at %s team spawn" % team_id)
 
 
 func _get_team_respawn_position() -> Vector3:
 	var game_world: Node = GlobalVar.gameworld
-	if is_instance_valid(game_world) and game_world.has_method("get_team_spawn_position"):
+	if is_instance_valid(game_world) and game_world.has_method("get_spawn_position_for_id"):
 		var spawn_value: Variant = game_world.call(
-			"get_team_spawn_position",
-			team_id,
-			1,
-			get_instance_id()
+			"get_spawn_position_for_id", spawn_point_id, team_id, 1, get_instance_id()
 		)
-		if spawn_value is Vector3:
+		if spawn_value is Vector3 and spawn_value != Vector3.INF:
 			return spawn_value
 	return global_position
 

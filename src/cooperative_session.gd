@@ -551,7 +551,7 @@ func _make_interest_snapshot(peer_id: int, snapshot: Dictionary) -> Dictionary:
 	result["subscribed_chunks"] = subscription["active"]
 	result["entered_chunks"] = subscription["entered"]
 	result["left_chunks"] = subscription["left"]
-	for key in ["players", "vehicles", "projectiles", "remote_devices", "placed_tools", "wild_animals"]:
+	for key in ["players", "ai_players", "vehicles", "projectiles", "remote_devices", "placed_tools", "wild_animals"]:
 		var value: Variant = snapshot.get(key, [])
 		if value is Array:
 			result[key] = _filter_interest_entries(value as Array, observer_position)

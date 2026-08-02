@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://bkqdpelri1sr7"]
+
+[ext_resource type="PackedScene" uid="uid://j7nbnx3rucw5" path="res://assets/nature/Mushroom_RedWhite.glb" id="1_rdbaq"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_harvest"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bm6be"]
+size = Vector3(0.6, 0.5, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wubqb"]
+size = Vector3(0.6, 0.5, 0.6)
+
+[node name="RedWhiteMushroom" type="StaticBody3D" unique_id=1757348936]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_harvest")
+resource_type = "redwhite_mushroom"
+resource_kind = "mushroom"
+display_name = "红白蘑菇"
+max_hp = 50.0
+respawn_seconds = 75.0
+show_hit_particles = false
+destroy_reward_description = "采集了红白蘑菇"
+drops = Array[Dictionary]([{
+"count": 1,
+"item_id": "redwhite_mushroom",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_redwhite_mushroom.glb",
+"weight_kg": 0.25
+}])
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1296208045]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0684486, 0.26296592, 0)
+shape = SubResource("BoxShape3D_bm6be")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1136271472]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=905139059]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.064114034, 0.2767601, 0)
+shape = SubResource("BoxShape3D_wubqb")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1125188791]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "350"
+outline_size = 6
+
+[node name="Mesh" parent="." unique_id=1221014083 instance=ExtResource("1_rdbaq")]
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

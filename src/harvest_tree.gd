@@ -238,6 +238,8 @@ func _localized_tree_name(id: String) -> String:
 			return "棉白杨"
 		"redcedar":
 			return "红雪松"
+		"redmaple":
+			return "红枫"
 		_:
 			return id if not id.is_empty() else "树木"
 

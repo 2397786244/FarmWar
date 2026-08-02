@@ -10,9 +10,17 @@
 [ext_resource type="Script" uid="uid://ds7s0htg58tpd" path="res://src/terrain/grass_scatter_3d.gd" id="8_grass_scatter"]
 [ext_resource type="PackedScene" uid="uid://b3uurwo4gfuai" path="res://assets/environment/Grass_small.glb" id="9_grass_small"]
 [ext_resource type="PackedScene" uid="uid://jvc2pomu8b0q" path="res://assets/environment/Grass_tall.glb" id="10_grass_tall"]
+[ext_resource type="PackedScene" path="res://assets/nature/Wildflower_BlackEyedSusan.glb" id="14_black_eyed_susan"]
+[ext_resource type="PackedScene" path="res://assets/nature/Wildflower_Coneflower.glb" id="15_coneflower"]
+[ext_resource type="PackedScene" path="res://assets/nature/Fern_Clump.glb" id="16_fern"]
 [ext_resource type="Script" uid="uid://by56w567ih6jo" path="res://src/far_scenery_ring_3d.gd" id="11_far_scenery"]
 [ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="12_farm_field"]
 [ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="13_weather"]
+[ext_resource type="Script" path="res://src/farm_init.gd" id="17_farm_init"]
+[ext_resource type="Script" path="res://src/tree_forest_manager.gd" id="18_tree_forest"]
+[ext_resource type="PackedScene" path="res://buildings/SpawnRedBus.tscn" id="19_red_bus"]
+[ext_resource type="PackedScene" path="res://buildings/SpawnBlueBus.tscn" id="20_blue_bus"]
+[ext_resource type="PackedScene" path="res://buildings/TeamSpawnPoint.tscn" id="21_team_spawn"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_mxl0g"]
 sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
@@ -57,6 +65,8 @@ size = Vector3(1028, 50, 2)
 size = Vector3(2, 50, 1024)
 
 [node name="RedpineCounty" type="Node3D" unique_id=1847981274]
+script = ExtResource("17_farm_init")
+loading_map_name = "Redpine County"
 
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=1868436204]
 transform = Transform3D(0.8660254, 0.38302222, -0.32139382, 0, 0.64278764, 0.76604444, 0.5, -0.66341394, 0.5566704, 0, 33.850002, 0)
@@ -173,10 +183,37 @@ palette_output_path = "res://worlds/redpine_county/redpine_county_surface_palett
 script = ExtResource("8_grass_scatter")
 small_grass_scene = ExtResource("9_grass_small")
 tall_grass_scene = ExtResource("10_grass_tall")
+black_eyed_susan_scene = ExtResource("14_black_eyed_susan")
+coneflower_scene = ExtResource("15_coneflower")
+fern_scene = ExtResource("16_fern")
 surface_mask = ExtResource("5_mask")
 terrain_size = Vector2(1024, 1024)
 small_density = 0.0
 tall_density = 0.0
+black_eyed_susan_density = 0.001
+coneflower_density = 0.001
+fern_density = 0.002
 bake_output_path = "res://worlds/redpine_county/redpine_county_grass_scatter.res"
 
 [node name="Roads" type="Node3D" parent="." unique_id=1551874102]
+
+[node name="TreeForestManager" type="Node3D" parent="."]
+script = ExtResource("18_tree_forest")
+
+[node name="SpawnRedBus" parent="." instance=ExtResource("19_red_bus")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -470, 0.52, -470)
+
+[node name="SpawnBlueBus" parent="." instance=ExtResource("20_blue_bus")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 470, 0.52, 470)
+
+[node name="SpawnPoints" type="Node3D" parent="."]
+
+[node name="RedTeamSpawn" parent="SpawnPoints" instance=ExtResource("21_team_spawn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -462, 0.52, -466)
+team = "red"
+spawn_point_id = "red_spawn_01"
+
+[node name="BlueTeamSpawn" parent="SpawnPoints" instance=ExtResource("21_team_spawn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 462, 0.52, 466)
+team = "blue"
+spawn_point_id = "blue_spawn_01"

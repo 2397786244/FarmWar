@@ -8,7 +8,7 @@ const LOBBY_SCENE := preload("res://ui/MultiplayerLobbyFlow.tscn")
 const BATTLE_ROOM_SCENE := preload("res://ui/MultiplayerBattleRoomPage.tscn")
 const COOPERATIVE_WORLD_SCENE := preload("res://ui/CooperativeWorldPage.tscn")
 const COOPERATIVE_LOBBY_SCENE := preload("res://ui/CooperativeLobbyPage.tscn")
-const LOCAL_WORLD_SCENE := preload("res://worlds/creston_town/creston_town.tscn")
+const SINGLE_PLAYER_WORLD_SCENE := preload("res://ui/SinglePlayerWorldPage.tscn")
 const RUNTIME_MAP_EDITOR_SCENE := preload("res://ui/RuntimeMapEditor.tscn")
 
 var page_host: Control
@@ -103,6 +103,17 @@ func _show_multiplayer_battle_room(selection: Dictionary, auto_load_map := false
 
 
 func _on_singleplayer_requested() -> void:
+	print("[MenuFlow] Opening single-player map selector")
+	var page := _set_page(SINGLE_PLAYER_WORLD_SCENE)
+	page.back_requested.connect(_show_home)
+	page.map_activated.connect(_start_singleplayer_map)
+
+
+func _start_singleplayer_map(map_definition: Dictionary) -> void:
+	var scene_path := str(map_definition.get("scene_path", ""))
+	if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
+		push_error("[MenuFlow] Single-player map is unavailable: %s" % scene_path)
+		return
 	var selection := {
 		"peer_id": GameAuthority.LOCAL_PLAYER_ID,
 		"display_name": "LocalPlayer",
@@ -115,12 +126,12 @@ func _on_singleplayer_requested() -> void:
 	GameAuthority.start_local_mode(selection)
 	GlobalVar.pending_player_selection = selection
 	MapLoading.begin_loading(
-		"Creston Town",
-		"res://assets/loading/creston_town",
+		str(map_definition.get("display_name", "FarmWar Map")),
+		str(map_definition.get("loading_images_directory", "")),
 		"res://data/loading_tips.json"
 	)
 	await get_tree().process_frame
-	get_tree().change_scene_to_packed(LOCAL_WORLD_SCENE)
+	get_tree().change_scene_to_file(scene_path)
 
 
 func _on_map_editor_requested() -> void:

@@ -2,7 +2,7 @@
 class_name GrassScatterBakeData
 extends Resource
 
-const FORMAT_VERSION := 1
+const FORMAT_VERSION := 2
 
 @export var format_version := FORMAT_VERSION
 @export var terrain_size := Vector2.ZERO
@@ -10,6 +10,9 @@ const FORMAT_VERSION := 1
 @export var random_seed := 0
 @export var small_chunks: Dictionary = {}
 @export var tall_chunks: Dictionary = {}
+@export var black_eyed_susan_chunks: Dictionary = {}
+@export var coneflower_chunks: Dictionary = {}
+@export var fern_chunks: Dictionary = {}
 
 
 func is_compatible(expected_size: Vector2, expected_chunk_size: float, expected_seed: int) -> bool:

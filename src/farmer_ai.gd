@@ -64,6 +64,8 @@ const REMOTE_GROUPS: Array[StringName] = [
 
 @export_category("Identity")
 @export_enum("blue", "red") var team_id: String = "blue"
+## Optional map-assigned spawn. Empty means a random spawn point in team_id.
+@export var spawn_point_id: String = ""
 @export var server_authoritative: bool = true
 
 @export_category("Health")
@@ -84,12 +86,13 @@ const REMOTE_GROUPS: Array[StringName] = [
 @export var stuck_timeout: float = 1.7
 @export var use_navigation_agent: bool = true
 @export_range(0.05, 1.0, 0.05) var navigation_refresh_interval: float = 0.25
-@export var patrol_enemy_farm_when_idle: bool = true
 
 @export_category("Farming")
 ## FarmWorld 的 Farmlandmanager 已维护农田索引，低频同步即可。
 @export_range(0.5, 10.0, 0.25) var farm_tile_rescan_interval: float = 2.0
-@export var allow_claimable_tiles_when_no_owned_land: bool = true
+## FarmerAI only operates when its own team already has a configured/claimed
+## farm.  It must not wander through neutral fields on maps without a farm.
+@export var allow_claimable_tiles_when_no_owned_land: bool = false
 @export var harvest_before_planting: bool = true
 @export var fallback_seed_name: String = "wheat"
 @export var farm_action_pause: float = 0.30
@@ -161,6 +164,8 @@ var threat_scan: ShapeCast3D
 var hit_3d: Area3D
 var hit_collision_shape: CollisionShape3D
 var health_label: Label3D
+var team_marker: MeshInstance3D
+const TEAM_MARKER_HEIGHT := 3.15
 
 
 # ------------------------------------------------------------------
@@ -232,6 +237,7 @@ func _ready() -> void:
 
 	_create_required_runtime_nodes()
 	add_to_group("farmer_ai")
+	add_to_group("combat_characters")
 
 	# Farmlandmanager 已保存农田索引。避免在加载界面期间递归遍历整张地图；
 	# 仅在该管理器缺失的旧场景中才使用下面的缓存回退扫描。
@@ -243,6 +249,7 @@ func _ready() -> void:
 
 	_resolve_required_tool_ids()
 	_set_farmer_appearance()
+	_ensure_team_marker_visual()
 	_update_health_label()
 	# 让首帧先完成画面呈现；农田选择会在下一秒开始。
 	_schedule_think(1.0)
@@ -1073,6 +1080,8 @@ func _refresh_continuous_threat_target() -> void:
 				candidates,
 				seen
 			)
+	for node in get_tree().get_nodes_in_group("combat_characters"):
+		_append_unique_candidate(node as Node3D, candidates, seen)
 
 	# 低频递归兜底，兼容尚未 add_to_group 的 NormalDrone/BoomBuggy/SmallMouse。
 	# 主检测仍由每帧 ShapeCast 完成，避免高频遍历大型地图。
@@ -1154,6 +1163,9 @@ func _resolve_combat_target_from_contact(contact: Node) -> Node3D:
 			if node3d.is_in_group("human_players"):
 				return node3d
 
+			if node3d.is_in_group("combat_characters"):
+				return node3d
+
 			if _is_priority_remote_device(node3d):
 				remote_fallback = node3d
 				if (
@@ -1205,8 +1217,13 @@ func _is_valid_hostile_candidate(candidate: Node3D) -> bool:
 
 	var is_player := candidate.is_in_group("human_players")
 	var is_remote := _is_priority_remote_device(candidate)
-	if not is_player and not is_remote:
+	var is_ai_character := candidate.is_in_group("combat_characters")
+	if not is_player and not is_remote and not is_ai_character:
 		return false
+	if is_ai_character and candidate.has_method("get_network_state"):
+		var network_state := candidate.call("get_network_state") as Dictionary
+		if bool(network_state.get("dead", false)):
+			return false
 
 	var candidate_team := _get_combat_team(candidate)
 	if not candidate_team.is_empty() and candidate_team == team_id:
@@ -1367,6 +1384,12 @@ func _update_movement(delta: float) -> void:
 
 
 func _apply_movement(direction: Vector3, delta: float) -> void:
+	var horizontal_step := direction * move_speed + knockback_velocity
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Do not let patrol or flee movement enter water; NavigationObstacle3D
+		# handles path planning, this guard covers direct movement/knockback.
+		direction = Vector3.ZERO
 	var desired_velocity := direction * move_speed + knockback_velocity
 	knockback_velocity = knockback_velocity.move_toward(Vector3.ZERO, 18.0 * delta)
 
@@ -1434,24 +1457,16 @@ func _try_jump() -> void:
 
 
 func _start_farm_patrol() -> void:
-	var enemy_farm_position := _get_enemy_farm_position()
-	if patrol_enemy_farm_when_idle and enemy_farm_position != INVALID_POSITION:
-		patrol_target = enemy_farm_position + Vector3(
-			rng.randf_range(-patrol_radius, patrol_radius),
-			0.0,
-			rng.randf_range(-patrol_radius, patrol_radius)
-		)
-	else:
-		var plots := _get_team_plots(team_id)
-		if plots.is_empty():
-			patrol_target = global_position + Vector3(
-				rng.randf_range(-patrol_radius, patrol_radius),
-				0.0,
-				rng.randf_range(-patrol_radius, patrol_radius)
-			)
-		else:
-			var tile := plots[rng.randi_range(0, plots.size() - 1)] as Node3D
-			patrol_target = tile.global_position
+	# FarmerAI patrols only its own farm.  No configured/claimed farm means
+	# there is no valid work destination, so remain idle instead of wandering
+	# toward an enemy farm or a random point on the map.
+	var plots := _get_workable_team_plots()
+	if plots.is_empty():
+		patrol_target = INVALID_POSITION
+		_schedule_think(1.0)
+		return
+	var tile := plots[rng.randi_range(0, plots.size() - 1)] as Node3D
+	patrol_target = tile.global_position
 
 	movement_target = patrol_target
 	state = AIState.PATROL
@@ -1464,16 +1479,6 @@ func _approach_position(target_position: Vector3, distance: float) -> Vector3:
 	if away.length_squared() < 0.001:
 		away = -global_transform.basis.z
 	return target_position + away.normalized() * distance
-
-
-func _get_enemy_farm_position() -> Vector3:
-	var game_world: Node = GlobalVar.gameworld
-	if not is_instance_valid(game_world):
-		return INVALID_POSITION
-	var enemy_farm_name := "RedFarm" if team_id == "blue" else "BlueFarm"
-	var enemy_farm := game_world.get_node_or_null(enemy_farm_name) as Node3D
-	return enemy_farm.global_position if enemy_farm != null else INVALID_POSITION
-
 
 func _direction_to_goal(goal: Vector3) -> Vector3:
 	if goal == INVALID_POSITION:
@@ -2204,11 +2209,11 @@ func _finish_death() -> void:
 
 func _respawn_at_team_spawn() -> void:
 	var game_world: Node = GlobalVar.gameworld
-	if is_instance_valid(game_world) and game_world.has_method("get_team_spawn_position"):
+	if is_instance_valid(game_world) and game_world.has_method("get_spawn_position_for_id"):
 		var spawn_value: Variant = game_world.call(
-			"get_team_spawn_position", team_id, 2, get_instance_id()
+			"get_spawn_position_for_id", spawn_point_id, team_id, 2, get_instance_id()
 		)
-		if spawn_value is Vector3:
+		if spawn_value is Vector3 and spawn_value != Vector3.INF:
 			global_position = spawn_value
 	velocity = Vector3.ZERO
 	knockback_velocity = Vector3.ZERO
@@ -2251,6 +2256,91 @@ func _respawn_at_team_spawn() -> void:
 
 func get_combat_team() -> String:
 	return team_id
+
+
+func get_network_state() -> Dictionary:
+	return {
+		"ai_id": str(get_meta("network_ai_id", name)),
+		"ai_type": "farmer",
+		"name": name,
+		"team": team_id,
+		"position": global_position,
+		"yaw": rotation.y,
+		"hp": current_hp,
+		"max_hp": max_hp,
+		"dead": state == AIState.DEAD,
+		"respawn_left": 0.0,
+		"state": int(state),
+	}
+
+
+func apply_network_state(data: Dictionary) -> void:
+	global_position = data.get("position", global_position) as Vector3
+	rotation.y = float(data.get("yaw", rotation.y))
+	current_hp = float(data.get("hp", current_hp))
+	if data.has("state"):
+		state = int(data.get("state", state))
+	_update_team_marker_visibility()
+	if health_label != null:
+		health_label.visible = not bool(data.get("dead", false))
+		_update_health_label()
+
+
+func _ensure_team_marker_visual() -> void:
+	if is_instance_valid(team_marker):
+		_update_team_marker_visibility()
+		return
+	team_marker = MeshInstance3D.new()
+	team_marker.name = "TeamMarker"
+	team_marker.position = Vector3.UP * TEAM_MARKER_HEIGHT
+	team_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	team_marker.ignore_occlusion_culling = true
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.14
+	sphere.height = 0.28
+	sphere.radial_segments = 16
+	sphere.rings = 8
+	team_marker.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.no_depth_test = true
+	material.albedo_color = _team_marker_color()
+	material.emission_enabled = true
+	material.emission = _team_marker_color()
+	material.emission_energy_multiplier = 2.5
+	material.render_priority = 120
+	team_marker.material_override = material
+	add_child(team_marker)
+	_update_team_marker_visibility()
+
+
+func _team_marker_color() -> Color:
+	return Color("#F04455") if team_id == "red" else Color("#398CFF")
+
+
+func _local_viewer_team() -> String:
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is Node:
+			continue
+		if _has_property(node, "is_remote_proxy") and bool(node.get("is_remote_proxy")):
+			continue
+		var value := _get_combat_team(node)
+		if not value.is_empty():
+			return value
+	return ""
+
+
+func _update_team_marker_visibility() -> void:
+	if not is_instance_valid(team_marker):
+		return
+	var material := team_marker.material_override as StandardMaterial3D
+	var marker_color := _team_marker_color()
+	if material != null:
+		material.albedo_color = marker_color
+		material.emission = marker_color
+	var viewer_team := _local_viewer_team()
+	team_marker.visible = (viewer_team.is_empty() or viewer_team == team_id) \
+		and state != AIState.DEAD
 
 
 func _get_combat_team(node: Node) -> String:

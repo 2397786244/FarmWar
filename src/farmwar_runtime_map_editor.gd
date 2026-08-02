@@ -1,4 +1,4 @@
-## FarmWar Runtime Map Editor V7.1 - single script prototype
+## FarmWar Runtime Map Editor V9 - single script prototype
 ## Target: Godot 4.6.x
 ## Usage:
 ##   1. Copy this file to the FarmWar project, for example:
@@ -12,13 +12,19 @@
 ##   - Terrain raise/lower, smooth and flatten brushes.
 ##   - Surface-mask paint compatible with terrain_surface.gdshader.
 ##   - Explicit Ground StaticBody3D with chunked height collisions.
-##   - Upward terrain triangle winding, opaque double-sided editor rendering,
+
+##   - Renderer-compatible terrain triangle winding with upward vertex normals,
 ##     palette-derived default ground, safety floor and terrain edge skirt.
 ##   - Runtime-editable surface palette: add, rename, recolor and remove surfaces.
 ##   - Manual grass brush using chunked MultiMesh (independent of surface color).
 ##   - Place existing FarmWar tree scenes.
 ##   - Place existing FarmWar ore scenes.
 ##   - Place giant-crop and wild-animal spawn points.
+##   - Visual building asset browser for all res://buildings scenes except nature/.
+##   - Building placement with slope validation and live scene preview.
+##   - Unified object selection with runtime XYZ move gizmo, three-axis rotation,
+##     non-uniform XYZ scale, uniform scale, duplicate and delete for buildings,
+##     trees, ores and spawn points.
 ##   - FarmWar map skeleton: fixed editor daylight, environment, clouds,
 ##     navigation, roads root, surface-area root, terrain baker, boundaries,
 ##     size-aware far scenery, TreeForestManager and manual grass.
@@ -35,7 +41,6 @@
 ##   - Save generated map scene and authoritative editor data under user://maps/.
 ##
 ## Deliberately not implemented in this version:
-##   - Building placement.
 ##   - Farmland editing (the left toolbar entry is disabled).
 
 
@@ -50,8 +55,27 @@ enum ToolMode {
 	TREE,
 	ORE,
 	SPAWN,
+	BUILDING,
+	AUXILIARY,
+	AI,
+	OBJECT_EDIT,
 	ROAD,
+	WATER,
 	FARMLAND,
+}
+
+enum ObjectTransformMode {
+	MOVE,
+	ROTATE,
+	SCALE,
+}
+
+enum GizmoAxis {
+	NONE,
+	X,
+	Y,
+	Z,
+	UNIFORM,
 }
 
 enum HeightMode {
@@ -73,12 +97,20 @@ const SURFACE_DEFINITION_SCRIPT_PATH = "res://src/terrain/terrain_surface_defini
 const ROAD_SCRIPT_PATH = "res://src/terrain/road_path_3d.gd"
 const TREE_FOREST_MANAGER_PATH = "res://src/tree_forest_manager.gd"
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
-const FAR_SCENERY_PATH = "res://src/environment/far_scenery_ring_3d.gd"
+# The shared scenery implementation was moved out of src/environment.  Keep
+# the editor on the same script as the shipped maps; the old path silently
+# produced a plain Node3D and therefore no distant ring at all.
+const FAR_SCENERY_PATH = "res://src/far_scenery_ring_3d.gd"
 const CLOUD_SYSTEM_PATH = "res://worlds/shared/cloud_system.tscn"
 const DAY_NIGHT_SYSTEM_PATH = "res://worlds/shared/day_night_system.tscn"
+const WEATHER_SYSTEM_PATH = "res://worlds/shared/weather_system.tscn"
+const WATER_BODY_PATH = "res://worlds/shared/WaterBody3D.tscn"
+const TEAM_SPAWN_POINT_PATH = "res://buildings/TeamSpawnPoint.tscn"
+const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const MAP_ICON_FILE_NAME = "map_icon.png"
 const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
 const ROADS_FILE_NAME = "roads.dat"
+const WATER_BODIES_FILE_NAME = "water_bodies.dat"
 const SURFACE_PALETTE_FILE_NAME = "surface_palette.png"
 const MAP_ICON_SIZE = 128
 const FAR_SCENERY_GROUND_MARGIN = 768.0
@@ -87,12 +119,28 @@ const WILD_ANIMAL_GENERATOR_PATH = "res://src/wild_animal_generator.gd"
 const RARE_RESOURCE_SPAWN_PATH = "res://buildings/nature/RareResourceSpawnPoint.tscn"
 const SMALL_GRASS_PATH = "res://assets/environment/Grass_small.glb"
 const TALL_GRASS_PATH = "res://assets/environment/Grass_tall.glb"
+const BLACK_EYED_SUSAN_PATH = "res://assets/nature/Wildflower_BlackEyedSusan.glb"
+const CONEFLOWER_PATH = "res://assets/nature/Wildflower_Coneflower.glb"
+const FERN_CLUMP_PATH = "res://assets/nature/Fern_Clump.glb"
+const MANUAL_GRASS_SPECIES := {
+	"small": {"label": "Small Grass", "path": SMALL_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
+	"tall": {"label": "Tall Grass", "path": TALL_GRASS_PATH, "scale": Vector2(0.85, 1.20), "visibility": 120.0},
+	"black_eyed_susan": {"label": "Black-Eyed Susan", "path": BLACK_EYED_SUSAN_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
+	"coneflower": {"label": "Coneflower", "path": CONEFLOWER_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
+	"fern": {"label": "Fern Clump", "path": FERN_CLUMP_PATH, "scale": Vector2(0.80, 1.20), "visibility": 100.0},
+}
+const BUILDINGS_RESOURCE_ROOT = "res://buildings"
+const BUILDINGS_EXCLUDED_ROOT = "res://buildings/nature"
+const BUILDING_THUMBNAIL_SIZE = Vector2i(192, 128)
+const BUILDING_BROWSER_CARD_SIZE = Vector2(172.0, 178.0)
 
 const CRESTON_PALETTE_PATH = "res://worlds/creston_town/creston_town_surface_palette.tres"
 const REDPINE_PALETTE_PATH = "res://worlds/redpine_county/redpine_county_surface_palette.tres"
 
 const TERRAIN_COLLISION_LAYER = 1
 const BOUNDARY_COLLISION_LAYER = 2
+const WATER_COLLISION_LAYER = 65536
+const WATER_COLLISION_MASK = 8 | 8192
 const GRASS_CHUNK_SIZE = 32.0
 const MAX_RAY_DISTANCE = 6000.0
 const EDITOR_MARKER_META = &"farmwar_editor_visual_only"
@@ -101,6 +149,7 @@ const TREE_ASSETS = [
 	{"label": "CottonWood", "path": "res://buildings/nature/CottonWood.tscn", "id": "cottonwood"},
 	{"label": "Oak", "path": "res://buildings/nature/Oak.tscn", "id": "oak"},
 	{"label": "Redcedar", "path": "res://buildings/nature/Redcedar.tscn", "id": "redcedar"},
+	{"label": "RedMaple", "path": "res://buildings/nature/RedMaple.tscn", "id": "redmaple"},
 ]
 
 const ORE_ASSETS = [
@@ -108,6 +157,18 @@ const ORE_ASSETS = [
 	{"label": "Coal Ore", "path": "res://items/CoalOre.tscn", "id": "coal_ore"},
 	{"label": "Limestone Ore", "path": "res://items/LimestoneOre.tscn", "id": "limestone_ore"},
 	{"label": "Copper Ore", "path": "res://items/CopperOre.tscn", "id": "copper_ore"},
+	{"label": "Moss Rock", "path": "res://items/MossRock.tscn", "id": "moss_rock"},
+	{"label": "Granite Rock", "path": "res://items/GraniteRock.tscn", "id": "granite_rock"},
+	{"label": "Normal Mushroom", "path": "res://items/NormalMushroom.tscn", "id": "normal_mushroom"},
+	{"label": "Bolete Mushroom", "path": "res://items/BoleteMushroom.tscn", "id": "bolete_mushroom"},
+	{"label": "Red-White Mushroom", "path": "res://items/RedWhiteMushroom.tscn", "id": "redwhite_mushroom"},
+	{"label": "Truffle", "path": "res://items/Truffle.tscn", "id": "truffle"},
+]
+
+const AI_TYPES := [
+	{"id": "farmer", "label": "FarmerAI", "scene": "res://character/FarmerAI.tscn"},
+	{"id": "futurewarrior", "label": "FutureWarriorAI", "scene": "res://character/FutureWarriorAI.tscn"},
+	{"id": "assistant", "label": "AssistantAI", "scene": "res://character/AssistantAI.tscn"},
 ]
 
 const FALLBACK_SURFACES = [
@@ -139,6 +200,23 @@ const FALLBACK_SURFACES = [
 @export_category("Object Placement")
 @export var align_placed_objects_to_surface_normal = true
 @export_range(0.0, 2.0, 0.01) var placed_object_ground_offset = 0.02
+
+@export_category("Building Placement")
+@export_range(0.0, 45.0, 0.5) var building_max_slope_degrees = 12.0
+@export_range(1.0, 90.0, 1.0) var building_rotation_step_degrees = 15.0
+@export_range(0.0, 2.0, 0.01) var building_ground_offset = 0.02
+@export_range(0.0, 4.0, 0.05) var building_overlap_margin = 0.15
+@export var building_overlap_checks_resources = true
+@export_range(0.05, 0.95, 0.05) var building_preview_transparency = 0.55
+
+@export_category("Object Editing")
+@export_range(0.01, 5.0, 0.01) var object_move_snap = 0.25
+@export_range(1.0, 90.0, 1.0) var object_rotation_snap_degrees = 15.0
+@export_range(8.0, 96.0, 1.0) var object_pick_radius_px = 36.0
+@export_range(4.0, 32.0, 1.0) var gizmo_pick_radius_px = 12.0
+@export_range(0.01, 1.0, 0.01) var object_scale_snap = 0.05
+@export_range(0.01, 1.0, 0.01) var object_minimum_scale = 0.05
+@export_range(1.0, 100.0, 0.5) var object_maximum_scale = 30.0
 
 @export_category("Far Scenery")
 @export var force_guaranteed_far_ground = true
@@ -187,10 +265,12 @@ var _terrain_root: Node3D
 var _boundary_root: Node3D
 var _surface_areas_root: Node3D
 var _roads_root: Node3D
+var _water_root: Node3D
 var _manual_grass_root: Node3D
 var _trees_root: Node3D
 var _ores_root: Node3D
 var _spawns_root: Node3D
+var _buildings_root: Node3D
 var _tree_forest_manager: Node3D
 var _far_scenery_ring: Node3D
 var _terrain_baker: Node3D
@@ -198,6 +278,7 @@ var _terrain_foundation_root: Node3D
 var _terrain_skirt_mesh: MeshInstance3D
 var _ground_safety_mesh: MeshInstance3D
 var _day_night_system: Node
+var _weather_system: Node
 
 # Terrain chunks and collision shapes keyed by Vector2i.
 var _terrain_chunks: Dictionary = {}
@@ -207,11 +288,14 @@ var _collision_dirty_chunks: Dictionary = {}
 # Manual grass data:
 # {
 #   "small": {"x:z": Array[Transform3D]},
-#   "tall":  {"x:z": Array[Transform3D]}
+#   "tall":  {"x:z": Array[Transform3D]}, plus other species keys.
 # }
 var _manual_grass = {
 	"small": {},
 	"tall": {},
+	"black_eyed_susan": {},
+	"coneflower": {},
+	"fern": {},
 }
 var _grass_generated_nodes: Dictionary = {}
 var _grass_mesh_cache: Dictionary = {}
@@ -223,6 +307,10 @@ var _selected_surface_id = 0
 var _selected_grass_species = "small"
 var _selected_asset: Dictionary = TREE_ASSETS[0]
 var _selected_spawn_kind = "giant_crop"
+var _selected_team_spawn_team := "red"
+var _selected_auxiliary_kind := "message_area"
+var _ai_configurations: Array = []
+var _selected_ai_index := -1
 var _brush_radius = 8.0
 var _brush_strength = 2.5
 var _grass_density = 0.15
@@ -236,6 +324,73 @@ var _rng = RandomNumberGenerator.new()
 var _next_object_id = 1
 var _next_spawn_id = 1
 
+# Building browser and placement state. Assets are discovered at runtime, so
+# newly added building scenes automatically appear without editing this file.
+var _building_assets: Array[Dictionary] = []
+var _filtered_building_assets: Array[Dictionary] = []
+var _building_categories: PackedStringArray = PackedStringArray(["All"])
+var _selected_building_asset: Dictionary = {}
+var _building_search_text = ""
+var _building_category_filter = "All"
+var _building_preview: Node3D
+var _building_preview_yaw = 0.0
+var _building_preview_valid = false
+var _building_preview_block_reason = ""
+var _building_footprint_fill: MeshInstance3D
+var _building_footprint_fill_mesh: ImmediateMesh
+var _building_footprint_fill_material: StandardMaterial3D
+var _building_footprint_outline: MeshInstance3D
+var _building_footprint_outline_mesh: ImmediateMesh
+var _building_footprint_outline_material: StandardMaterial3D
+var _building_search_edit: LineEdit
+var _building_category_option: OptionButton
+var _building_count_label: Label
+var _building_grid: GridContainer
+var _building_thumbnail_cards: Dictionary = {}
+var _building_thumbnail_cache: Dictionary = {}
+var _building_thumbnail_queue: Array[String] = []
+var _building_thumbnail_rendering = false
+var _thumbnail_viewport: SubViewport
+var _thumbnail_viewport_texture: ViewportTexture
+var _thumbnail_scene_root: Node3D
+var _thumbnail_camera: Camera3D
+
+# Unified object transform state.
+var _object_transform_mode = ObjectTransformMode.MOVE
+var _selected_map_object: Node3D
+var _object_dragging = false
+var _object_drag_before_transform = Transform3D.IDENTITY
+var _object_drag_start_global_transform = Transform3D.IDENTITY
+var _object_drag_start_mouse = Vector2.ZERO
+var _object_drag_start_parameter = 0.0
+var _object_drag_start_vector = Vector3.ZERO
+var _object_drag_plane_normal = Vector3.UP
+var _object_drag_axis_world = Vector3.ZERO
+var _object_drag_axis = GizmoAxis.NONE
+var _object_transform_valid = true
+var _gizmo_local_space = true
+var _selection_visual: MeshInstance3D
+var _selection_visual_mesh: ImmediateMesh
+var _object_gizmo: MeshInstance3D
+var _object_gizmo_mesh: ImmediateMesh
+var _object_gizmo_material: StandardMaterial3D
+var _selection_status_label: Label
+var _object_move_button: Button
+var _object_rotate_button: Button
+var _object_scale_button: Button
+var _object_delete_button: Button
+var _object_duplicate_button: Button
+var _object_local_axes_check: CheckBox
+var _object_x_spin: SpinBox
+var _object_y_spin: SpinBox
+var _object_z_spin: SpinBox
+var _object_rot_x_spin: SpinBox
+var _object_rot_y_spin: SpinBox
+var _object_rot_z_spin: SpinBox
+var _object_scale_x_spin: SpinBox
+var _object_scale_y_spin: SpinBox
+var _object_scale_z_spin: SpinBox
+var _object_uniform_scale_spin: SpinBox
 
 # Continuous road editor state.
 var _selected_road: Path3D
@@ -261,6 +416,29 @@ var _road_delete_point_button: Button
 var _road_conform_button: Button
 var _road_delete_button: Button
 
+# Water body editor state. Lake outlines are drawn as closed polygons; river
+# centerlines are converted into a strip by WaterBody3D using river_width.
+var _selected_water: WaterBody3D
+var _water_body_type := WaterBody3D.BodyType.LAKE
+var _water_drawing_active := false
+var _water_points := PackedVector2Array()
+var _water_preview_root: Node3D
+var _water_preview_mesh: ImmediateMesh
+var _water_preview_line: MeshInstance3D
+var _water_marker_root: Node3D
+var _water_level := 0.5
+var _water_depth := 2.0
+var _water_width := 6.0
+var _water_type_option: OptionButton
+var _water_level_spin: SpinBox
+var _water_depth_spin: SpinBox
+var _water_width_spin: SpinBox
+var _water_finish_button: Button
+var _water_cancel_button: Button
+var _water_delete_button: Button
+var _water_list_option: OptionButton
+var _water_history_guard := false
+
 # Runtime undo/redo. A drag from mouse-down to mouse-up is one action.
 var _undo_redo = UndoRedo.new()
 var _saved_undo_version = 0
@@ -284,11 +462,27 @@ var _camera_look_active = false
 var _brush_preview: MeshInstance3D
 var _brush_preview_mesh: ImmediateMesh
 var _brush_preview_material: StandardMaterial3D
+var _height_boundary_preview: MeshInstance3D
+var _height_boundary_mesh: ImmediateMesh
+var _height_boundary_material: StandardMaterial3D
+var _height_contour_points := PackedVector2Array()
+var _height_contour_delta := 0.0
+var _persistent_height_contour_preview: MeshInstance3D
+var _persistent_height_contour_mesh: ImmediateMesh
+var _persistent_height_contour_material: StandardMaterial3D
+var _persistent_height_contour_visible := false
 
 # UI references.
 var _ui_layer: CanvasLayer
 var _ui_root: Control
-var _bottom_content: HFlowContainer
+var _bottom_content: Container
+var _building_browser_content: VBoxContainer
+var _right_content: VBoxContainer
+var _brush_settings_grid: GridContainer
+var _building_selected_info_label: Label
+var _bottom_dock_panel: PanelContainer
+var _right_dock_panel: PanelContainer
+var _left_toolbar_panel: PanelContainer
 var _status_label: Label
 var _tool_title_label: Label
 var _radius_label: Label
@@ -319,6 +513,11 @@ func _ready() -> void:
 	_undo_redo.max_steps = 100
 	_build_editor_camera()
 	_build_brush_preview()
+	_build_selection_visual()
+	_build_transform_gizmo()
+	_build_building_footprint_preview()
+	_build_thumbnail_renderer()
+	_scan_building_assets()
 	_build_editor_ui()
 	set_process(true)
 	set_physics_process(true)
@@ -344,18 +543,16 @@ func _build_editor_ui() -> void:
 
 	_ui_root = Control.new()
 	_ui_root.name = "Root"
-	# The full-screen UI root must not consume viewport input. Individual
-	# panels and buttons retain their normal mouse filters.
 	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_ui_layer.add_child(_ui_root)
 
 	_build_top_bar()
 	_build_left_toolbar()
+	_build_right_dock()
 	_build_bottom_dock()
 	_build_boundary_warning_ui()
 	_refresh_bottom_dock()
-
 
 func _build_boundary_warning_ui() -> void:
 	_boundary_warning_label = Label.new()
@@ -459,18 +656,28 @@ func _build_top_bar() -> void:
 	open_button.pressed.connect(_request_open_map)
 	primary_row.add_child(open_button)
 
-	var return_button := Button.new()
+	var return_button = Button.new()
 	return_button.name = "ReturnToMainMenuButton"
 	return_button.text = "返回主界面"
 	return_button.tooltip_text = "返回 FarmWar 主界面。"
-	return_button.custom_minimum_size = Vector2(150.0, 42.0)
+	return_button.custom_minimum_size = Vector2(148.0, 42.0)
 	return_button.add_theme_font_size_override("font_size", 18)
-	return_button.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 1.0))
-	return_button.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
-	return_button.add_theme_color_override("font_pressed_color", Color(1.0, 1.0, 1.0, 1.0))
-	return_button.add_theme_stylebox_override("normal", _editor_button_style(Color("#8f3d3d")))
-	return_button.add_theme_stylebox_override("hover", _editor_button_style(Color("#c65353")))
-	return_button.add_theme_stylebox_override("pressed", _editor_button_style(Color("#e07858")))
+	return_button.add_theme_color_override("font_color", Color.WHITE)
+	return_button.add_theme_color_override("font_hover_color", Color.WHITE)
+	return_button.add_theme_color_override("font_pressed_color", Color.WHITE)
+	var return_normal := StyleBoxFlat.new()
+	return_normal.bg_color = Color("8f3d3d")
+	return_normal.corner_radius_top_left = 6
+	return_normal.corner_radius_top_right = 6
+	return_normal.corner_radius_bottom_left = 6
+	return_normal.corner_radius_bottom_right = 6
+	var return_hover := return_normal.duplicate() as StyleBoxFlat
+	return_hover.bg_color = Color("bd5050")
+	var return_pressed := return_normal.duplicate() as StyleBoxFlat
+	return_pressed.bg_color = Color("d66a52")
+	return_button.add_theme_stylebox_override("normal", return_normal)
+	return_button.add_theme_stylebox_override("hover", return_hover)
+	return_button.add_theme_stylebox_override("pressed", return_pressed)
 	return_button.pressed.connect(_request_return_to_main_menu)
 	primary_row.add_child(return_button)
 
@@ -524,13 +731,14 @@ func _build_top_bar() -> void:
 
 func _build_left_toolbar() -> void:
 	var panel = PanelContainer.new()
+	_left_toolbar_panel = panel
 	panel.name = "LeftToolbar"
 	panel.anchor_top = 0.0
 	panel.anchor_bottom = 1.0
 	panel.offset_top = 104.0
 	panel.offset_left = 8.0
-	panel.offset_right = 190.0
-	panel.offset_bottom = -154.0
+	panel.offset_right = 198.0
+	panel.offset_bottom = -8.0
 	_ui_root.add_child(panel)
 
 	var column = VBoxContainer.new()
@@ -543,13 +751,18 @@ func _build_left_toolbar() -> void:
 	column.add_child(heading)
 
 	var group = ButtonGroup.new()
-	_add_tool_button(column, group, ToolMode.TERRAIN, "Terrain Height", "Raise, lower, smooth or flatten terrain")
-	_add_tool_button(column, group, ToolMode.SURFACE, "Surface Paint", "Paint FarmWar surface IDs")
-	_add_tool_button(column, group, ToolMode.GRASS, "Place Grass", "Manual MultiMesh grass brush")
-	_add_tool_button(column, group, ToolMode.TREE, "Place Trees", "Place complete harvestable tree scenes")
-	_add_tool_button(column, group, ToolMode.ORE, "Place Ores", "Place complete harvestable ore scenes")
-	_add_tool_button(column, group, ToolMode.SPAWN, "Place Spawn Points", "Giant crop or wild animal generators")
+	_add_tool_button(column, group, ToolMode.TERRAIN, "Terrain", "Raise, lower, smooth or flatten terrain")
+	_add_tool_button(column, group, ToolMode.SURFACE, "Surface Colors", "Paint and configure terrain surface colors")
 	_add_tool_button(column, group, ToolMode.ROAD, "Roads", "Draw and edit continuous curve roads")
+	_add_tool_button(column, group, ToolMode.WATER, "Water", "Draw irregular lakes and river centerlines")
+	_add_tool_button(column, group, ToolMode.GRASS, "Grass", "Manual MultiMesh grass brush")
+	_add_tool_button(column, group, ToolMode.TREE, "Trees", "Place complete harvestable tree scenes")
+	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
+	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
+	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
+	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
+	_add_tool_button(column, group, ToolMode.AI, "AI Players", "Configure map AI players, teams, spawn points and respawn times")
+	_add_tool_button(column, group, ToolMode.OBJECT_EDIT, "Transform Objects", "XYZ move, three-axis rotation and scale")
 
 	var farmland_button = Button.new()
 	farmland_button.text = "Farmland (later)"
@@ -561,12 +774,20 @@ func _build_left_toolbar() -> void:
 	(_tool_buttons[ToolMode.TERRAIN] as Button).button_pressed = true
 
 	var help = Label.new()
-	help.text = "LMB: use brush\nShift+LMB: lower / erase\nRMB: look around\nWASD + Q/E: move\nMouse wheel: camera speed\n[ / ]: brush radius\nCtrl+Z / Cmd+Z: undo\nCtrl+Y / Shift+Cmd+Z: redo\nCtrl/Cmd+S: save\n7: road tool\nEnter: finish road"
+	help.text = "LMB: use/select gizmo
+RMB: camera look
+WASD + Q/E: camera
+G: move gizmo
+R: rotate gizmo
+S: scale gizmo
+Delete: delete selected
+Ctrl/Cmd+D: duplicate
+Ctrl/Cmd+Z: undo
+Ctrl/Cmd+S: save"
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	column.add_child(help)
-
 
 func _add_tool_button(
 	parent: Control,
@@ -585,76 +806,130 @@ func _add_tool_button(
 	_tool_buttons[mode] = button
 
 
-func _build_bottom_dock() -> void:
+func _build_right_dock() -> void:
 	var panel = PanelContainer.new()
-	panel.name = "BottomDock"
-	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	panel.offset_left = 8.0
+	_right_dock_panel = panel
+	panel.name = "ToolInspectorDock"
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 1.0
+	# Keep the dock attached to the viewport's right edge.  Some inspector
+	# controls have a larger minimum width; growing toward BEGIN prevents that
+	# minimum size from pushing half of the dock beyond the right screen edge.
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.custom_minimum_size = Vector2(340.0, 0.0)
+	panel.offset_left = -348.0
 	panel.offset_right = -8.0
-	panel.offset_top = -146.0
+	panel.offset_top = 104.0
 	panel.offset_bottom = -8.0
 	_ui_root.add_child(panel)
 
 	var layout = VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 6)
 	panel.add_child(layout)
 
-	var header = HBoxContainer.new()
-	layout.add_child(header)
-
 	_tool_title_label = Label.new()
-	_tool_title_label.text = "Terrain Height"
-	_tool_title_label.custom_minimum_size.x = 180.0
-	header.add_child(_tool_title_label)
+	_tool_title_label.text = "Terrain"
+	_tool_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(_tool_title_label)
+
+	_brush_settings_grid = GridContainer.new()
+	_brush_settings_grid.columns = 2
+	layout.add_child(_brush_settings_grid)
 
 	_radius_label = Label.new()
 	_radius_label.text = "Radius: %.1f m" % _brush_radius
-	header.add_child(_radius_label)
-
+	_radius_label.custom_minimum_size.x = 88.0
+	_brush_settings_grid.add_child(_radius_label)
 	var radius_slider = HSlider.new()
 	radius_slider.min_value = 1.0
 	radius_slider.max_value = 64.0
 	radius_slider.step = 0.5
 	radius_slider.value = _brush_radius
-	radius_slider.custom_minimum_size.x = 180.0
+	radius_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	radius_slider.custom_minimum_size = Vector2(158.0, 26.0)
 	radius_slider.value_changed.connect(_on_radius_changed)
-	header.add_child(radius_slider)
+	_brush_settings_grid.add_child(radius_slider)
 
 	_strength_label = Label.new()
 	_strength_label.text = "Strength: %.2f" % _brush_strength
-	header.add_child(_strength_label)
-
+	_strength_label.custom_minimum_size.x = 88.0
+	_brush_settings_grid.add_child(_strength_label)
 	var strength_slider = HSlider.new()
 	strength_slider.min_value = 0.05
 	strength_slider.max_value = 12.0
 	strength_slider.step = 0.05
 	strength_slider.value = _brush_strength
-	strength_slider.custom_minimum_size.x = 180.0
+	strength_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strength_slider.custom_minimum_size = Vector2(158.0, 26.0)
 	strength_slider.value_changed.connect(_on_strength_changed)
-	header.add_child(strength_slider)
+	_brush_settings_grid.add_child(strength_slider)
+
+	var separator = HSeparator.new()
+	layout.add_child(separator)
 
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	layout.add_child(scroll)
 
-	_bottom_content = HFlowContainer.new()
-	_bottom_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_bottom_content.add_theme_constant_override("h_separation", 8)
-	_bottom_content.add_theme_constant_override("v_separation", 6)
-	scroll.add_child(_bottom_content)
+	_right_content = VBoxContainer.new()
+	_right_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_right_content.custom_minimum_size.x = 0.0
+	_right_content.add_theme_constant_override("separation", 7)
+	scroll.add_child(_right_content)
 
+func _build_bottom_dock() -> void:
+	var panel = PanelContainer.new()
+	_bottom_dock_panel = panel
+	panel.name = "BuildingAssetBrowserDock"
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	panel.offset_left = 206.0
+	panel.offset_right = -338.0
+	panel.offset_top = -338.0
+	panel.offset_bottom = -8.0
+	panel.visible = false
+	_ui_root.add_child(panel)
+
+	var layout = VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 6)
+	panel.add_child(layout)
+
+	var title = Label.new()
+	title.text = "BUILDING ASSET BROWSER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(title)
+
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(scroll)
+
+	_building_browser_content = VBoxContainer.new()
+	_building_browser_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_building_browser_content.add_theme_constant_override("separation", 6)
+	scroll.add_child(_building_browser_content)
 
 func _refresh_bottom_dock() -> void:
-	if _bottom_content == null:
+	if _right_content == null or _building_browser_content == null:
 		return
-	for child in _bottom_content.get_children():
+	_configure_bottom_dock_for_tool()
+	for child in _right_content.get_children():
+		_right_content.remove_child(child)
+		child.queue_free()
+	for child in _building_browser_content.get_children():
+		_building_browser_content.remove_child(child)
 		child.queue_free()
 
+	_bottom_content = _right_content
 	match _tool_mode:
 		ToolMode.TERRAIN:
 			_tool_title_label.text = "Terrain Height"
 			_add_height_mode_buttons()
 		ToolMode.SURFACE:
-			_tool_title_label.text = "Surface Paint"
+			_tool_title_label.text = "Surface Colors"
 			_add_surface_buttons()
 		ToolMode.GRASS:
 			_tool_title_label.text = "Manual Grass"
@@ -668,12 +943,39 @@ func _refresh_bottom_dock() -> void:
 		ToolMode.SPAWN:
 			_tool_title_label.text = "Spawn Points"
 			_add_spawn_buttons()
+		ToolMode.BUILDING:
+			_tool_title_label.text = "Building Placement"
+			_add_building_placement_controls()
+			_bottom_content = _building_browser_content
+			_add_building_browser()
+		ToolMode.AUXILIARY:
+			_tool_title_label.text = "Auxiliary Areas"
+			_add_auxiliary_buttons()
+		ToolMode.AI:
+			_tool_title_label.text = "Map AI Players"
+			_add_ai_configuration_controls()
+		ToolMode.OBJECT_EDIT:
+			_tool_title_label.text = "Object Transform"
+			_add_object_edit_controls()
 		ToolMode.ROAD:
 			_tool_title_label.text = "Continuous Roads"
 			_add_road_buttons()
+		ToolMode.WATER:
+			_tool_title_label.text = "Water Bodies"
+			_add_water_buttons()
 		_:
 			_tool_title_label.text = "Unavailable"
 
+func _configure_bottom_dock_for_tool() -> void:
+	var building_mode = _tool_mode == ToolMode.BUILDING
+	if _brush_settings_grid != null:
+		_brush_settings_grid.visible = _tool_mode in [ToolMode.TERRAIN, ToolMode.SURFACE, ToolMode.GRASS, ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.AUXILIARY]
+	if _bottom_dock_panel != null:
+		_bottom_dock_panel.visible = building_mode
+	if _left_toolbar_panel != null:
+		_left_toolbar_panel.offset_bottom = -346.0 if building_mode else -8.0
+	if _right_dock_panel != null:
+		_right_dock_panel.offset_bottom = -346.0 if building_mode else -8.0
 
 func _add_height_mode_buttons() -> void:
 	var group = ButtonGroup.new()
@@ -771,16 +1073,16 @@ func _add_surface_buttons() -> void:
 		+ "LMB paints the selected color; Shift+LMB restores the first color."
 	)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size.x = 360.0
+	hint.custom_minimum_size.x = 0.0
 	_bottom_content.add_child(hint)
 
 
 func _add_grass_buttons() -> void:
 	var group = ButtonGroup.new()
-	for entry in [
-		{"label": "Small Grass", "species": "small"},
-		{"label": "Tall Grass", "species": "tall"},
-	]:
+	for species_value in MANUAL_GRASS_SPECIES.keys():
+		var species := str(species_value)
+		var definition := MANUAL_GRASS_SPECIES[species] as Dictionary
+		var entry := {"label": str(definition.get("label", species)), "species": species}
 		var button = Button.new()
 		button.text = entry["label"]
 		button.toggle_mode = true
@@ -803,7 +1105,7 @@ func _add_grass_buttons() -> void:
 	_bottom_content.add_child(density)
 
 	var hint = Label.new()
-	hint.text = "Grass is stored as manually painted points and rebuilt into 32 m MultiMesh chunks. Shift+LMB erases."
+	hint.text = "Vegetation is stored as manually painted points and rebuilt into 32 m MultiMesh chunks. Shift+LMB erases the selected species."
 	_bottom_content.add_child(hint)
 
 
@@ -828,6 +1130,7 @@ func _add_asset_buttons(assets: Array) -> void:
 func _add_spawn_buttons() -> void:
 	var group = ButtonGroup.new()
 	for entry in [
+		{"label": "Player Spawn Point", "kind": "player"},
 		{"label": "Giant Crop Spawn", "kind": "giant_crop"},
 		{"label": "Wild Animal Spawn", "kind": "wild_animal"},
 	]:
@@ -839,10 +1142,861 @@ func _add_spawn_buttons() -> void:
 		button.pressed.connect(_select_spawn_kind.bind(str(entry["kind"])))
 		_bottom_content.add_child(button)
 
+	var team_row = HBoxContainer.new()
+	team_row.add_child(_make_label("Inspector · Player Spawn Team"))
+	var team_option = OptionButton.new()
+	team_option.add_item("Red Team")
+	team_option.add_item("Blue Team")
+	team_option.select(0 if _selected_team_spawn_team == "red" else 1)
+	team_option.item_selected.connect(func(index: int) -> void:
+		_selected_team_spawn_team = "red" if index == 0 else "blue"
+	)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
 	var hint = Label.new()
-	hint.text = "One generator is placed per click. Shift+LMB removes generators inside the brush."
+	hint.text = "Select Player Spawn Point, set its team in Inspector, then place it. Every playable map needs at least one red and one blue point; these points are independent from buses."
 	_bottom_content.add_child(hint)
 
+
+func _add_auxiliary_buttons() -> void:
+	var title := Label.new()
+	title.text = "Tutorial Auxiliary"
+	_bottom_content.add_child(title)
+	var message_button := Button.new()
+	message_button.text = "Message Area"
+	message_button.toggle_mode = true
+	message_button.button_pressed = _selected_auxiliary_kind == "message_area"
+	message_button.pressed.connect(func() -> void:
+		_selected_auxiliary_kind = "message_area"
+	)
+	_bottom_content.add_child(message_button)
+	var hint := Label.new()
+	hint.text = "Left-click the terrain to place a message area. Select it with Transform Objects to edit its text, boundary color, and visibility in the Inspector."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_ai_configuration_controls() -> void:
+	var explanation := Label.new()
+	explanation.text = "地图 AI 是可选规则：没有配置时不会生成任何 AI。AI 由房主/本地权威生成；合作客户端只接收同步结果。"
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(explanation)
+
+	var list_row := HBoxContainer.new()
+	list_row.add_child(_make_label("AI 列表"))
+	var list_option := OptionButton.new()
+	list_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for index in range(_ai_configurations.size()):
+		var entry := _ai_configurations[index] as Dictionary
+		list_option.add_item("%02d  %s · %s · %s" % [
+			index + 1,
+			_ai_type_label(str(entry.get("ai_type", ""))),
+			"红队" if str(entry.get("team", "red")) == "red" else "蓝队",
+			("随机出生点" if str(entry.get("spawn_point_id", "")).is_empty() else str(entry.get("spawn_point_id", ""))),
+		])
+	list_option.disabled = _ai_configurations.is_empty()
+	if _selected_ai_index >= 0 and _selected_ai_index < list_option.item_count:
+		list_option.select(_selected_ai_index)
+	list_option.item_selected.connect(func(index: int) -> void:
+		_selected_ai_index = index
+		_refresh_bottom_dock()
+	)
+	list_row.add_child(list_option)
+	var add_button := Button.new()
+	add_button.text = "+ 添加 AI"
+	add_button.pressed.connect(_add_ai_configuration)
+	list_row.add_child(add_button)
+	_bottom_content.add_child(list_row)
+
+	if _ai_configurations.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "当前地图没有 AI 配置。点击“添加 AI”后再选择类型、队伍和出生点。"
+		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(empty_label)
+		return
+	if _selected_ai_index < 0 or _selected_ai_index >= _ai_configurations.size():
+		_selected_ai_index = 0
+
+	var entry := _ai_configurations[_selected_ai_index] as Dictionary
+	var type_row := HBoxContainer.new()
+	type_row.add_child(_make_label("AI 类型"))
+	var type_option := OptionButton.new()
+	for ai_type_value in AI_TYPES:
+		var ai_type := ai_type_value as Dictionary
+		type_option.add_item(str(ai_type.get("label", "AI")))
+		type_option.set_item_metadata(type_option.item_count - 1, str(ai_type.get("id", "")))
+		if str(ai_type.get("id", "")) == str(entry.get("ai_type", "")):
+			type_option.select(type_option.item_count - 1)
+	type_option.item_selected.connect(func(index: int) -> void:
+		_update_selected_ai_configuration("ai_type", str(type_option.get_item_metadata(index)))
+	)
+	type_row.add_child(type_option)
+	_bottom_content.add_child(type_row)
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("队伍"))
+	var team_option := OptionButton.new()
+	team_option.add_item("红队")
+	team_option.add_item("蓝队")
+	team_option.select(0 if str(entry.get("team", "red")) == "red" else 1)
+	team_option.item_selected.connect(func(index: int) -> void:
+		_update_selected_ai_configuration("team", "red" if index == 0 else "blue")
+	)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
+	var spawn_row := HBoxContainer.new()
+	spawn_row.add_child(_make_label("出生点"))
+	var spawn_option := OptionButton.new()
+	spawn_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spawn_option.add_item("随机选择本队出生点")
+	spawn_option.set_item_metadata(0, "")
+	var spawn_id := str(entry.get("spawn_point_id", ""))
+	var spawn_index := 0
+	for point_value in _get_editor_team_spawn_points(str(entry.get("team", "red"))):
+		var point := point_value as TeamSpawnPoint
+		var label := _spawn_point_display_label(point)
+		spawn_option.add_item(label)
+		spawn_option.set_item_metadata(spawn_option.item_count - 1, point.spawn_point_id)
+		if point.spawn_point_id == spawn_id:
+			spawn_index = spawn_option.item_count - 1
+	spawn_option.select(spawn_index)
+	spawn_option.item_selected.connect(func(index: int) -> void:
+		_update_selected_ai_configuration("spawn_point_id", str(spawn_option.get_item_metadata(index)))
+	)
+	spawn_row.add_child(spawn_option)
+	_bottom_content.add_child(spawn_row)
+
+	var respawn_row := HBoxContainer.new()
+	respawn_row.add_child(_make_label("复活时间 (秒)"))
+	var respawn_spin := SpinBox.new()
+	respawn_spin.min_value = 1.0
+	respawn_spin.max_value = 600.0
+	respawn_spin.step = 1.0
+	respawn_spin.value = clampf(float(entry.get("respawn_seconds", 10.0)), 1.0, 600.0)
+	respawn_spin.value_changed.connect(func(value: float) -> void:
+		_update_selected_ai_configuration("respawn_seconds", value)
+	)
+	respawn_row.add_child(respawn_spin)
+	_bottom_content.add_child(respawn_row)
+
+	var delete_button := Button.new()
+	delete_button.text = "删除当前 AI 配置"
+	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.pressed.connect(_remove_selected_ai_configuration)
+	_bottom_content.add_child(delete_button)
+
+	var hint := Label.new()
+	hint.text = "出生点编号只在编辑器预览中显示（R#01 / B#01），实际游戏不会显示。空出生点表示从所选队伍的出生点中随机选择。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _ai_type_label(ai_type: String) -> String:
+	for value in AI_TYPES:
+		var entry := value as Dictionary
+		if str(entry.get("id", "")) == ai_type.to_lower():
+			return str(entry.get("label", ai_type))
+	return ai_type if not ai_type.is_empty() else "未设置"
+
+
+func _default_ai_configuration() -> Dictionary:
+	return {
+		"ai_type": "farmer",
+		"team": "blue",
+		"spawn_point_id": "",
+		"respawn_seconds": 10.0,
+		"name": "",
+	}
+
+
+func _add_ai_configuration() -> void:
+	var before := _ai_configurations.duplicate(true)
+	var after := _ai_configurations.duplicate(true)
+	after.append(_default_ai_configuration())
+	_selected_ai_index = after.size() - 1
+	_record_ai_configuration_change(before, after, "Add Map AI")
+
+
+func _remove_selected_ai_configuration() -> void:
+	if _selected_ai_index < 0 or _selected_ai_index >= _ai_configurations.size():
+		return
+	var before := _ai_configurations.duplicate(true)
+	var after := _ai_configurations.duplicate(true)
+	after.remove_at(_selected_ai_index)
+	_selected_ai_index = mini(_selected_ai_index, after.size() - 1)
+	_record_ai_configuration_change(before, after, "Remove Map AI")
+
+
+func _update_selected_ai_configuration(property_name: String, value: Variant) -> void:
+	if _selected_ai_index < 0 or _selected_ai_index >= _ai_configurations.size():
+		return
+	var before := _ai_configurations.duplicate(true)
+	var after := _ai_configurations.duplicate(true)
+	var entry := after[_selected_ai_index] as Dictionary
+	entry[property_name] = value
+	after[_selected_ai_index] = entry
+	_record_ai_configuration_change(before, after, "Edit Map AI")
+
+
+func _record_ai_configuration_change(before: Array, after: Array, action_name: String) -> void:
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_ai_configuration.bind(after))
+	_undo_redo.add_undo_method(_apply_ai_configuration.bind(before))
+	_undo_redo.commit_action(false)
+	_apply_ai_configuration(after)
+
+
+func _apply_ai_configuration(value: Array) -> void:
+	_ai_configurations = value.duplicate(true)
+	if _map_root != null:
+		_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
+	_refresh_bottom_dock()
+
+
+func _get_editor_team_spawn_points(team_filter: String = "") -> Array[TeamSpawnPoint]:
+	var result: Array[TeamSpawnPoint] = []
+	if _spawns_root == null:
+		return result
+	for child in _spawns_root.get_children():
+		if child is TeamSpawnPoint:
+			var point := child as TeamSpawnPoint
+			if team_filter.is_empty() or str(point.team) == team_filter:
+				result.append(point)
+	result.sort_custom(func(left: TeamSpawnPoint, right: TeamSpawnPoint) -> bool:
+		return left.spawn_point_id < right.spawn_point_id
+	)
+	return result
+
+
+func _spawn_point_display_label(point: TeamSpawnPoint) -> String:
+	if point == null:
+		return "未知出生点"
+	var prefix := "R" if str(point.team) == "red" else "B"
+	var id_parts := str(point.spawn_point_id).split("_")
+	var suffix := str(id_parts[id_parts.size() - 1]) if not id_parts.is_empty() else ""
+	var number := int(suffix) if suffix.is_valid_int() else 0
+	return "%s#%02d (%s)" % [prefix, number, point.spawn_point_id]
+
+
+
+func _add_building_placement_controls() -> void:
+	_building_selected_info_label = Label.new()
+	_building_selected_info_label.text = "Selected: %s" % str(_selected_building_asset.get("label", "None"))
+	_building_selected_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(_building_selected_info_label)
+
+	var rotate_button = Button.new()
+	rotate_button.text = "Rotate Preview +%d° (R)" % int(building_rotation_step_degrees)
+	rotate_button.pressed.connect(_rotate_building_preview_once)
+	_bottom_content.add_child(rotate_button)
+
+	var rules = Label.new()
+	rules.text = "The full building model follows the mouse. The translucent footprint is green when valid and red when outside the map, too steep, or overlapping another placed object."
+	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(rules)
+
+	var slope = Label.new()
+	slope.text = "Maximum slope: %.1f°
+Overlap margin: %.2f m" % [building_max_slope_degrees, building_overlap_margin]
+	_bottom_content.add_child(slope)
+
+func _add_building_browser() -> void:
+	var browser = VBoxContainer.new()
+	browser.name = "BuildingBrowser"
+	browser.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	browser.add_theme_constant_override("separation", 6)
+	_bottom_content.add_child(browser)
+
+	var toolbar = HBoxContainer.new()
+	toolbar.add_theme_constant_override("separation", 8)
+	browser.add_child(toolbar)
+
+	var search_label = Label.new()
+	search_label.text = "Search"
+	toolbar.add_child(search_label)
+
+	_building_search_edit = LineEdit.new()
+	_building_search_edit.placeholder_text = "Building name or path"
+	_building_search_edit.text = _building_search_text
+	_building_search_edit.custom_minimum_size.x = 260.0
+	_building_search_edit.text_changed.connect(_on_building_search_changed)
+	toolbar.add_child(_building_search_edit)
+
+	var category_label = Label.new()
+	category_label.text = "Folder"
+	toolbar.add_child(category_label)
+
+	_building_category_option = OptionButton.new()
+	_building_category_option.custom_minimum_size.x = 180.0
+	for category in _building_categories:
+		_building_category_option.add_item(category)
+		if category == _building_category_filter:
+			_building_category_option.select(_building_category_option.item_count - 1)
+	_building_category_option.item_selected.connect(_on_building_category_selected)
+	toolbar.add_child(_building_category_option)
+
+	var refresh_button = Button.new()
+	refresh_button.text = "Rescan"
+	refresh_button.tooltip_text = "Scan res://buildings again. The nature/ folder is always excluded."
+	refresh_button.pressed.connect(_rescan_building_assets)
+	toolbar.add_child(refresh_button)
+
+	var rotate_button = Button.new()
+	rotate_button.text = "Rotate Preview +%d°" % int(building_rotation_step_degrees)
+	rotate_button.pressed.connect(_rotate_building_preview_once)
+	toolbar.add_child(rotate_button)
+
+	_building_count_label = Label.new()
+	_building_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_building_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	toolbar.add_child(_building_count_label)
+
+	_building_grid = GridContainer.new()
+	_building_grid.columns = maxi(2, int((get_viewport().get_visible_rect().size.x - 570.0) / BUILDING_BROWSER_CARD_SIZE.x))
+	_building_grid.add_theme_constant_override("h_separation", 8)
+	_building_grid.add_theme_constant_override("v_separation", 8)
+	browser.add_child(_building_grid)
+	_refresh_building_browser_grid()
+
+
+func _add_object_edit_controls() -> void:
+	var mode_label = Label.new()
+	mode_label.text = "Transform Mode"
+	_bottom_content.add_child(mode_label)
+
+	var mode_row = HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 4)
+	_bottom_content.add_child(mode_row)
+	var group = ButtonGroup.new()
+
+	_object_move_button = Button.new()
+	_object_move_button.text = "Move (G)"
+	_object_move_button.toggle_mode = true
+	_object_move_button.button_group = group
+	_object_move_button.button_pressed = _object_transform_mode == ObjectTransformMode.MOVE
+	_object_move_button.pressed.connect(_set_object_transform_mode.bind(ObjectTransformMode.MOVE))
+	mode_row.add_child(_object_move_button)
+
+	_object_rotate_button = Button.new()
+	_object_rotate_button.text = "Rotate (R)"
+	_object_rotate_button.toggle_mode = true
+	_object_rotate_button.button_group = group
+	_object_rotate_button.button_pressed = _object_transform_mode == ObjectTransformMode.ROTATE
+	_object_rotate_button.pressed.connect(_set_object_transform_mode.bind(ObjectTransformMode.ROTATE))
+	mode_row.add_child(_object_rotate_button)
+
+	_object_scale_button = Button.new()
+	_object_scale_button.text = "Scale (S)"
+	_object_scale_button.toggle_mode = true
+	_object_scale_button.button_group = group
+	_object_scale_button.button_pressed = _object_transform_mode == ObjectTransformMode.SCALE
+	_object_scale_button.pressed.connect(_set_object_transform_mode.bind(ObjectTransformMode.SCALE))
+	mode_row.add_child(_object_scale_button)
+
+	_object_local_axes_check = CheckBox.new()
+	_object_local_axes_check.text = "Local axes"
+	_object_local_axes_check.button_pressed = _gizmo_local_space
+	_object_local_axes_check.toggled.connect(func(value: bool) -> void:
+		_gizmo_local_space = value
+		_refresh_transform_gizmo()
+	)
+	_bottom_content.add_child(_object_local_axes_check)
+
+	_selection_status_label = Label.new()
+	_selection_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(_selection_status_label)
+
+	_add_transform_spin_group("Position", "m")
+	_add_transform_spin_group("Rotation", "°")
+	_add_transform_spin_group("Scale", "")
+
+	var uniform_row = HBoxContainer.new()
+	uniform_row.add_child(_make_label("Uniform"))
+	_object_uniform_scale_spin = SpinBox.new()
+	_object_uniform_scale_spin.min_value = object_minimum_scale
+	_object_uniform_scale_spin.max_value = object_maximum_scale
+	_object_uniform_scale_spin.step = object_scale_snap
+	_object_uniform_scale_spin.value = 1.0
+	_object_uniform_scale_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	uniform_row.add_child(_object_uniform_scale_spin)
+	var uniform_button = Button.new()
+	uniform_button.text = "Set XYZ"
+	uniform_button.pressed.connect(_apply_uniform_scale_from_inspector)
+	uniform_row.add_child(uniform_button)
+	_bottom_content.add_child(uniform_row)
+
+	var apply_numeric = Button.new()
+	apply_numeric.text = "Apply Exact Transform"
+	apply_numeric.pressed.connect(_apply_numeric_object_transform)
+	_bottom_content.add_child(apply_numeric)
+
+	if _selected_map_object is TeamSpawnPoint:
+		var spawn_team_row = HBoxContainer.new()
+		spawn_team_row.add_child(_make_label("Inspector · Spawn Team"))
+		var spawn_team_option = OptionButton.new()
+		spawn_team_option.add_item("Red Team")
+		spawn_team_option.add_item("Blue Team")
+		spawn_team_option.select(0 if str((_selected_map_object as TeamSpawnPoint).team) == "red" else 1)
+		spawn_team_option.item_selected.connect(func(index: int) -> void:
+			_set_selected_team_spawn_team("red" if index == 0 else "blue")
+		)
+		spawn_team_row.add_child(spawn_team_option)
+		_bottom_content.add_child(spawn_team_row)
+
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary":
+		_add_message_area_inspector_controls()
+
+	var action_row = HBoxContainer.new()
+	_bottom_content.add_child(action_row)
+	_object_duplicate_button = Button.new()
+	_object_duplicate_button.text = "Duplicate"
+	_object_duplicate_button.pressed.connect(_duplicate_selected_object)
+	action_row.add_child(_object_duplicate_button)
+	_object_delete_button = Button.new()
+	_object_delete_button.text = "Delete"
+	_object_delete_button.pressed.connect(_delete_selected_object)
+	action_row.add_child(_object_delete_button)
+	var align_button = Button.new()
+	align_button.text = "Drop To Ground"
+	align_button.pressed.connect(_align_selected_object_to_ground)
+	action_row.add_child(align_button)
+
+	var hint = Label.new()
+	hint.text = "Click an object, then drag the colored gizmo. Move supports X/Y/Z, Rotate supports all three axes, and Scale supports X/Y/Z plus the center uniform handle."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+	_update_object_edit_status()
+	_sync_object_numeric_controls()
+
+
+func _add_message_area_inspector_controls() -> void:
+	var message_area := _selected_map_object
+	var heading := Label.new()
+	heading.text = "Message Area Inspector"
+	_bottom_content.add_child(heading)
+
+	var prompt_label := Label.new()
+	prompt_label.text = "Prompt Text"
+	_bottom_content.add_child(prompt_label)
+	var prompt_edit := TextEdit.new()
+	prompt_edit.custom_minimum_size = Vector2(0.0, 86.0)
+	prompt_edit.text = str(message_area.get("prompt_text"))
+	prompt_edit.placeholder_text = "Enter tutorial message..."
+	prompt_edit.text_changed.connect(func() -> void:
+		_set_message_area_property("prompt_text", prompt_edit.text)
+	)
+	_bottom_content.add_child(prompt_edit)
+
+	var color_row := HBoxContainer.new()
+	color_row.add_child(_make_label("Boundary Color"))
+	var color_picker := ColorPickerButton.new()
+	color_picker.color = message_area.get("boundary_color") as Color
+	color_picker.custom_minimum_size = Vector2(72.0, 30.0)
+	color_picker.color_changed.connect(func(value: Color) -> void:
+		_set_message_area_property("boundary_color", value)
+	)
+	color_row.add_child(color_picker)
+	_bottom_content.add_child(color_row)
+
+	var boundary_check := CheckBox.new()
+	boundary_check.text = "Show Boundary"
+	boundary_check.button_pressed = bool(message_area.get("show_boundary"))
+	boundary_check.toggled.connect(func(value: bool) -> void:
+		_set_message_area_property("show_boundary", value)
+	)
+	_bottom_content.add_child(boundary_check)
+
+
+func _set_message_area_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or str(_selected_map_object.get_meta("map_editor_category", "")) != "auxiliary":
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	_undo_redo.create_action("Edit Message Area")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _apply_object_property_by_uuid(uuid: String, property_name: String, value: Variant) -> void:
+	var node := _find_editor_object_by_uuid(uuid)
+	if node == null or not _has_property(node, property_name):
+		return
+	node.set(property_name, value)
+	if node.has_method("refresh_visuals"):
+		node.call("refresh_visuals")
+
+
+func _add_transform_spin_group(title: String, suffix_text: String) -> void:
+	var heading = Label.new()
+	heading.text = title
+	_bottom_content.add_child(heading)
+	var grid = GridContainer.new()
+	grid.columns = 2
+	_bottom_content.add_child(grid)
+	for axis_name in ["X", "Y", "Z"]:
+		grid.add_child(_make_label(axis_name))
+		var spin = SpinBox.new()
+		spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if title == "Position":
+			spin.min_value = -100000.0
+			spin.max_value = 100000.0
+			spin.step = object_move_snap
+		elif title == "Rotation":
+			spin.min_value = -360.0
+			spin.max_value = 360.0
+			spin.step = object_rotation_snap_degrees
+		else:
+			spin.min_value = object_minimum_scale
+			spin.max_value = object_maximum_scale
+			spin.step = object_scale_snap
+		spin.suffix = suffix_text
+		grid.add_child(spin)
+		if title == "Position":
+			if axis_name == "X":
+				_object_x_spin = spin
+			elif axis_name == "Y":
+				_object_y_spin = spin
+			else:
+				_object_z_spin = spin
+		elif title == "Rotation":
+			if axis_name == "X":
+				_object_rot_x_spin = spin
+			elif axis_name == "Y":
+				_object_rot_y_spin = spin
+			else:
+				_object_rot_z_spin = spin
+		else:
+			if axis_name == "X":
+				_object_scale_x_spin = spin
+			elif axis_name == "Y":
+				_object_scale_y_spin = spin
+			else:
+				_object_scale_z_spin = spin
+
+func _scan_building_assets() -> void:
+	_building_assets.clear()
+	var category_set: Dictionary = {"All": true}
+	_scan_building_directory(BUILDINGS_RESOURCE_ROOT, "", _building_assets, category_set)
+	_building_assets.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("label", "")).naturalnocasecmp_to(str(b.get("label", ""))) < 0
+	)
+	_building_categories = PackedStringArray(category_set.keys())
+	_building_categories.sort()
+	if _building_categories.has("All"):
+		_building_categories.remove_at(_building_categories.find("All"))
+	_building_categories.insert(0, "All")
+	if _selected_building_asset.is_empty() and not _building_assets.is_empty():
+		_selected_building_asset = _building_assets[0].duplicate(true)
+
+
+func _scan_building_directory(
+	directory_path: String,
+	relative_category: String,
+	result: Array[Dictionary],
+	category_set: Dictionary
+) -> void:
+	if directory_path == BUILDINGS_EXCLUDED_ROOT or directory_path.begins_with(BUILDINGS_EXCLUDED_ROOT + "/"):
+		return
+	var entries = ResourceLoader.list_directory(directory_path)
+	for entry_value in entries:
+		var entry = str(entry_value)
+		if entry.ends_with("/"):
+			var directory_name = entry.trim_suffix("/")
+			if directory_name.to_lower() == "nature":
+				continue
+			var next_category = directory_name if relative_category.is_empty() else relative_category.path_join(directory_name)
+			_scan_building_directory(directory_path.path_join(directory_name), next_category, result, category_set)
+			continue
+		if entry.get_extension().to_lower() != "tscn":
+			continue
+		var resource_path = directory_path.path_join(entry)
+		if resource_path.begins_with(BUILDINGS_EXCLUDED_ROOT):
+			continue
+		var category = "Root" if relative_category.is_empty() else relative_category
+		category_set[category] = true
+		result.append({
+			"label": _humanize_asset_name(entry.get_basename()),
+			"path": resource_path,
+			"id": entry.get_basename().to_snake_case(),
+			"category": category,
+		})
+
+
+func _humanize_asset_name(value: String) -> String:
+	var result = value.replace("_", " ").replace("-", " ")
+	var output = ""
+	for index in range(result.length()):
+		var character = result[index]
+		if index > 0 and character == character.to_upper() and character != character.to_lower():
+			var previous = result[index - 1]
+			if previous != " " and previous == previous.to_lower():
+				output += " "
+		output += character
+	return output.strip_edges()
+
+
+func _rescan_building_assets() -> void:
+	_building_thumbnail_queue.clear()
+	_scan_building_assets()
+	_refresh_bottom_dock()
+	_set_status("Found %d building scenes outside nature/." % _building_assets.size())
+
+
+func _on_building_search_changed(value: String) -> void:
+	_building_search_text = value.strip_edges().to_lower()
+	_refresh_building_browser_grid()
+
+
+func _on_building_category_selected(index: int) -> void:
+	if _building_category_option == null or index < 0 or index >= _building_category_option.item_count:
+		return
+	_building_category_filter = _building_category_option.get_item_text(index)
+	_refresh_building_browser_grid()
+
+
+func _refresh_building_browser_grid() -> void:
+	if _building_grid == null:
+		return
+	for child in _building_grid.get_children():
+		_building_grid.remove_child(child)
+		child.queue_free()
+	_building_thumbnail_cards.clear()
+	_filtered_building_assets.clear()
+
+	for asset_value in _building_assets:
+		var asset = asset_value as Dictionary
+		var category = str(asset.get("category", "Root"))
+		if _building_category_filter != "All" and category != _building_category_filter:
+			continue
+		var searchable = (str(asset.get("label", "")) + " " + str(asset.get("path", ""))).to_lower()
+		if not _building_search_text.is_empty() and not searchable.contains(_building_search_text):
+			continue
+		_filtered_building_assets.append(asset)
+
+	for asset_value in _filtered_building_assets:
+		_add_building_asset_card(asset_value as Dictionary)
+	if _building_count_label != null:
+		_building_count_label.text = "%d / %d assets" % [_filtered_building_assets.size(), _building_assets.size()]
+
+
+func _add_building_asset_card(asset: Dictionary) -> void:
+	var path = str(asset.get("path", ""))
+	var card = PanelContainer.new()
+	card.custom_minimum_size = BUILDING_BROWSER_CARD_SIZE
+	_building_grid.add_child(card)
+
+	var column = VBoxContainer.new()
+	column.add_theme_constant_override("separation", 3)
+	card.add_child(column)
+
+	var preview = TextureRect.new()
+	preview.custom_minimum_size = Vector2(BUILDING_THUMBNAIL_SIZE)
+	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview.texture = _building_thumbnail_cache.get(path, _make_thumbnail_placeholder()) as Texture2D
+	column.add_child(preview)
+	_building_thumbnail_cards[path] = preview
+
+	var select_button = Button.new()
+	select_button.text = str(asset.get("label", "Building"))
+	select_button.toggle_mode = true
+	select_button.button_pressed = path == str(_selected_building_asset.get("path", ""))
+	select_button.tooltip_text = path
+	select_button.pressed.connect(_select_building_asset.bind(asset))
+	column.add_child(select_button)
+
+	var category_label = Label.new()
+	category_label.text = str(asset.get("category", "Root"))
+	category_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	category_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
+	column.add_child(category_label)
+	_queue_building_thumbnail(path)
+
+
+func _select_building_asset(asset: Dictionary) -> void:
+	_selected_building_asset = asset.duplicate(true)
+	_building_preview_yaw = 0.0
+	_rebuild_building_preview()
+	_refresh_building_browser_grid()
+	if is_instance_valid(_building_selected_info_label):
+		_building_selected_info_label.text = "Selected: %s" % str(asset.get("label", "Building"))
+	_set_status("Building selected: %s" % str(asset.get("label", "Building")))
+
+
+func _rotate_building_preview_once() -> void:
+	_building_preview_yaw += deg_to_rad(building_rotation_step_degrees)
+	_update_building_preview_from_latest_hit()
+
+
+func _queue_building_thumbnail(path: String) -> void:
+	if path.is_empty() or _building_thumbnail_cache.has(path) or _building_thumbnail_queue.has(path):
+		return
+	_building_thumbnail_queue.append(path)
+	if not _building_thumbnail_rendering:
+		call_deferred("_render_building_thumbnail_queue")
+
+
+func _build_thumbnail_renderer() -> void:
+	_thumbnail_viewport = SubViewport.new()
+	_thumbnail_viewport.name = "BuildingThumbnailViewport"
+	_thumbnail_viewport.size = Vector2i(256, 192)
+	_thumbnail_viewport.own_world_3d = true
+	_thumbnail_viewport.transparent_bg = false
+	_thumbnail_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(_thumbnail_viewport)
+	_thumbnail_viewport_texture = _thumbnail_viewport.get_texture()
+
+	var environment_node = WorldEnvironment.new()
+	var environment = Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color(0.075, 0.085, 0.10, 1.0)
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(0.75, 0.78, 0.82, 1.0)
+	environment.ambient_light_energy = 0.9
+	environment_node.environment = environment
+	_thumbnail_viewport.add_child(environment_node)
+
+	var key_light = DirectionalLight3D.new()
+	key_light.rotation_degrees = Vector3(-48.0, -35.0, 0.0)
+	key_light.light_energy = 1.35
+	key_light.shadow_enabled = true
+	_thumbnail_viewport.add_child(key_light)
+
+	var fill_light = DirectionalLight3D.new()
+	fill_light.rotation_degrees = Vector3(-20.0, 145.0, 0.0)
+	fill_light.light_energy = 0.55
+	fill_light.shadow_enabled = false
+	_thumbnail_viewport.add_child(fill_light)
+
+	_thumbnail_camera = Camera3D.new()
+	_thumbnail_camera.current = true
+	_thumbnail_camera.fov = 42.0
+	_thumbnail_camera.near = 0.01
+	_thumbnail_camera.far = 1000.0
+	_thumbnail_viewport.add_child(_thumbnail_camera)
+
+	_thumbnail_scene_root = Node3D.new()
+	_thumbnail_scene_root.name = "PreviewScene"
+	_thumbnail_viewport.add_child(_thumbnail_scene_root)
+
+
+func _render_building_thumbnail_queue() -> void:
+	if _building_thumbnail_rendering:
+		return
+	_building_thumbnail_rendering = true
+	while not _building_thumbnail_queue.is_empty():
+		var path = _building_thumbnail_queue.pop_front()
+		if _building_thumbnail_cache.has(path):
+			continue
+		var texture = await _render_one_building_thumbnail(path)
+		if texture != null:
+			_building_thumbnail_cache[path] = texture
+			# Browser refreshes can free old cards while this coroutine awaits a
+			# viewport frame. Validate the raw Variant before casting it.
+			var card_value: Variant = _building_thumbnail_cards.get(path, null)
+			if is_instance_valid(card_value) and card_value is TextureRect:
+				var card := card_value as TextureRect
+				card.texture = texture
+			elif card_value != null:
+				_building_thumbnail_cards.erase(path)
+		await get_tree().process_frame
+	_building_thumbnail_rendering = false
+
+
+func _render_one_building_thumbnail(path: String) -> Texture2D:
+	var packed = _load_resource_or_null(path) as PackedScene
+	if packed == null:
+		return _make_thumbnail_placeholder()
+	var instance = packed.instantiate() as Node3D
+	if instance == null:
+		return _make_thumbnail_placeholder()
+	_prepare_thumbnail_scene(instance)
+	_thumbnail_scene_root.add_child(instance)
+	await get_tree().process_frame
+
+	var bounds = _calculate_node_aabb_relative_to(instance, instance)
+	if bounds.size.length_squared() <= 0.000001:
+		_thumbnail_scene_root.remove_child(instance)
+		instance.free()
+		return _make_thumbnail_placeholder()
+	instance.position = -bounds.get_center()
+	var diameter = maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
+	var radius = maxf(0.5, diameter * 0.5)
+	var target = Vector3(0.0, maxf(0.0, bounds.size.y * 0.06), 0.0)
+	_thumbnail_camera.position = Vector3(radius * 1.65, radius * 1.15, radius * 1.65)
+	_thumbnail_camera.look_at(target, Vector3.UP)
+	_thumbnail_camera.near = maxf(0.01, radius * 0.01)
+	_thumbnail_camera.far = maxf(100.0, radius * 12.0)
+	_thumbnail_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	await RenderingServer.frame_post_draw
+	var image = _thumbnail_viewport_texture.get_image()
+	if image == null or image.is_empty():
+		_thumbnail_scene_root.remove_child(instance)
+		instance.free()
+		return _make_thumbnail_placeholder()
+	image.resize(BUILDING_THUMBNAIL_SIZE.x, BUILDING_THUMBNAIL_SIZE.y, Image.INTERPOLATE_LANCZOS)
+	var texture = ImageTexture.create_from_image(image)
+	_thumbnail_scene_root.remove_child(instance)
+	instance.free()
+	return texture
+
+
+func _prepare_thumbnail_scene(node: Node) -> void:
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	if node.get_script() != null:
+		node.set_script(null)
+	if node is CollisionObject3D:
+		var collision_object = node as CollisionObject3D
+		collision_object.collision_layer = 0
+		collision_object.collision_mask = 0
+	if node is Light3D:
+		(node as Light3D).visible = false
+	if node is Camera3D:
+		(node as Camera3D).current = false
+	if node is GPUParticles3D:
+		(node as GPUParticles3D).emitting = false
+	if node is WorldEnvironment:
+		(node as WorldEnvironment).environment = null
+	for child in node.get_children():
+		_prepare_thumbnail_scene(child)
+
+
+func _calculate_node_aabb_relative_to(node: Node, root: Node3D) -> AABB:
+	var found = false
+	var result = AABB()
+	if node is VisualInstance3D and node.has_method("get_aabb"):
+		var visual = node as Node3D
+		var local_aabb: AABB = node.call("get_aabb")
+		if local_aabb.size.length_squared() > 0.000001:
+			var relative_transform = root.global_transform.affine_inverse() * visual.global_transform
+			result = relative_transform * local_aabb
+			found = true
+	for child in node.get_children():
+		var child_aabb = _calculate_node_aabb_relative_to(child, root)
+		if child_aabb.size.length_squared() <= 0.000001:
+			continue
+		if not found:
+			result = child_aabb
+			found = true
+		else:
+			result = result.merge(child_aabb)
+	return result if found else AABB()
+
+
+func _make_thumbnail_placeholder() -> Texture2D:
+	var image = Image.create(BUILDING_THUMBNAIL_SIZE.x, BUILDING_THUMBNAIL_SIZE.y, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0.12, 0.13, 0.15, 1.0))
+	return ImageTexture.create_from_image(image)
 
 func _add_road_buttons() -> void:
 	var new_road_button = Button.new()
@@ -912,7 +2066,7 @@ func _add_road_buttons() -> void:
 	var hint = Label.new()
 	hint.text = "New Road, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. The road is one continuous procedural strip, not separate GLB blocks."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size.x = 480.0
+	hint.custom_minimum_size.x = 0.0
 	_bottom_content.add_child(hint)
 	_update_road_control_states()
 
@@ -928,6 +2082,131 @@ func _update_road_control_states() -> void:
 		_road_conform_button.disabled = _selected_road == null
 	if _road_delete_button != null:
 		_road_delete_button.disabled = _selected_road == null
+
+
+func _add_water_buttons() -> void:
+	var new_lake_button := Button.new()
+	new_lake_button.text = "New Lake"
+	new_lake_button.pressed.connect(_begin_new_lake)
+	_bottom_content.add_child(new_lake_button)
+
+	var new_river_button := Button.new()
+	new_river_button.text = "New River"
+	new_river_button.pressed.connect(_begin_new_river)
+	_bottom_content.add_child(new_river_button)
+
+	_water_finish_button = Button.new()
+	_water_finish_button.text = "Finish Water"
+	_water_finish_button.pressed.connect(_finish_active_water)
+	_bottom_content.add_child(_water_finish_button)
+
+	_water_cancel_button = Button.new()
+	_water_cancel_button.text = "Cancel Drawing"
+	_water_cancel_button.pressed.connect(_cancel_active_water)
+	_bottom_content.add_child(_water_cancel_button)
+
+	_water_delete_button = Button.new()
+	_water_delete_button.text = "Delete Water"
+	_water_delete_button.pressed.connect(_delete_selected_water)
+	_bottom_content.add_child(_water_delete_button)
+
+	_bottom_content.add_child(_make_label("Water Body"))
+	_water_list_option = OptionButton.new()
+	_water_list_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_water_list_option.item_selected.connect(_on_water_list_selected)
+	_bottom_content.add_child(_water_list_option)
+
+	_bottom_content.add_child(_make_label("Type"))
+	_water_type_option = OptionButton.new()
+	_water_type_option.add_item("Lake", WaterBody3D.BodyType.LAKE)
+	_water_type_option.add_item("River Centerline", WaterBody3D.BodyType.RIVER)
+	_water_type_option.item_selected.connect(_on_water_type_selected)
+	_bottom_content.add_child(_water_type_option)
+
+	_bottom_content.add_child(_make_label("Water Level (world Y)"))
+	_water_level_spin = SpinBox.new()
+	_water_level_spin.min_value = -40.0
+	_water_level_spin.max_value = 120.0
+	_water_level_spin.step = 0.05
+	_water_level_spin.value = _water_level
+	_water_level_spin.value_changed.connect(_on_water_level_changed)
+	_bottom_content.add_child(_water_level_spin)
+
+	_bottom_content.add_child(_make_label("Depth"))
+	_water_depth_spin = SpinBox.new()
+	_water_depth_spin.min_value = 0.1
+	_water_depth_spin.max_value = 100.0
+	_water_depth_spin.step = 0.1
+	_water_depth_spin.value = _water_depth
+	_water_depth_spin.value_changed.connect(_on_water_depth_changed)
+	_bottom_content.add_child(_water_depth_spin)
+
+	_bottom_content.add_child(_make_label("River Width (River only)"))
+	_water_width_spin = SpinBox.new()
+	_water_width_spin.min_value = 0.5
+	_water_width_spin.max_value = 100.0
+	_water_width_spin.step = 0.1
+	_water_width_spin.value = _water_width
+	_water_width_spin.value_changed.connect(_on_water_width_changed)
+	_bottom_content.add_child(_water_width_spin)
+
+	var hint := Label.new()
+	hint.text = "Lake: click at least 3 points around an irregular boundary. River: click a centerline, then set width. Enter completes. Water has a slow low-poly flow animation; direction is fixed. Depth changes transparency and darkness. WaterBody3D stays at Y=0; players can enter the water, while AI, wildlife and livestock avoid it."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+	_refresh_water_list_option()
+	_update_water_control_states()
+
+
+func _update_water_control_states() -> void:
+	if _water_finish_button != null:
+		_water_finish_button.disabled = not _water_drawing_active
+	if _water_cancel_button != null:
+		_water_cancel_button.disabled = not _water_drawing_active
+	if _water_delete_button != null:
+		_water_delete_button.disabled = _selected_water == null
+	if _water_width_spin != null:
+		# Width only affects a river generated from a centerline; lakes use the
+		# polygon drawn by the user and therefore have no width parameter.
+		_water_width_spin.editable = _water_body_type == WaterBody3D.BodyType.RIVER
+
+
+func _on_water_type_selected(index: int) -> void:
+	_water_body_type = _water_type_option.get_item_id(index)
+	if _selected_water != null and not _water_drawing_active:
+		var before := _serialize_water(_selected_water)
+		_selected_water.body_type = _water_body_type
+		_selected_water.rebuild_water_body()
+		_commit_water_state_change("Change Water Type", before, _serialize_water(_selected_water))
+	_update_water_control_states()
+
+
+func _on_water_level_changed(value: float) -> void:
+	_water_level = value
+	if _selected_water != null:
+		_apply_water_numeric_property(_selected_water, "water_level", value, "Change Water Level")
+
+
+func _on_water_depth_changed(value: float) -> void:
+	_water_depth = value
+	if _selected_water != null:
+		_apply_water_numeric_property(_selected_water, "water_depth", value, "Change Water Depth")
+
+
+func _on_water_width_changed(value: float) -> void:
+	_water_width = value
+	if _selected_water != null:
+		_apply_water_numeric_property(_selected_water, "river_width", value, "Change River Width")
+
+
+func _apply_water_numeric_property(water: WaterBody3D, property_name: String, value: float, action_name: String) -> void:
+	if water == null or _water_history_guard:
+		return
+	var before := _serialize_water(water)
+	_set_property_if_present(water, property_name, value)
+	water.rebuild_water_body()
+	if not _water_drawing_active:
+		_commit_water_state_change(action_name, before, _serialize_water(water))
 
 
 func _make_label(text_value: String) -> Label:
@@ -959,11 +2238,22 @@ func _on_strength_changed(value: float) -> void:
 func _select_tool(mode: ToolMode) -> void:
 	if _tool_mode == ToolMode.ROAD and mode != ToolMode.ROAD:
 		_finish_active_road()
+	if _tool_mode == ToolMode.WATER and mode != ToolMode.WATER:
+		_finish_active_water()
+	if _tool_mode == ToolMode.OBJECT_EDIT and mode != ToolMode.OBJECT_EDIT:
+		_end_object_transform_drag()
 	_tool_mode = mode
 	_set_road_edit_visuals_visible(mode == ToolMode.ROAD)
+	_set_water_edit_visuals_visible(mode == ToolMode.WATER)
+	if mode != ToolMode.BUILDING:
+		_set_building_preview_visible(false)
+		if _brush_preview_material != null:
+			_brush_preview_material.albedo_color = Color(1.0, 0.8, 0.1, 0.95)
+	elif not _selected_building_asset.is_empty():
+		_rebuild_building_preview()
+	_set_selection_visual_visible(mode == ToolMode.OBJECT_EDIT)
 	_refresh_bottom_dock()
 	_set_status("Tool: %s" % _tool_name(mode))
-
 
 func _select_height_mode(mode: int) -> void:
 	_height_mode = mode
@@ -1219,7 +2509,12 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.TREE: return "Trees"
 		ToolMode.ORE: return "Ores"
 		ToolMode.SPAWN: return "Spawn Points"
+		ToolMode.BUILDING: return "Buildings"
+		ToolMode.AUXILIARY: return "Auxiliary Areas"
+		ToolMode.AI: return "Map AI Players"
+		ToolMode.OBJECT_EDIT: return "Object Edit"
 		ToolMode.ROAD: return "Roads"
+		ToolMode.WATER: return "Water Bodies"
 		_: return "Unavailable"
 
 
@@ -1278,6 +2573,106 @@ func _build_brush_preview() -> void:
 	_brush_preview.visible = false
 	add_child(_brush_preview)
 
+	_height_boundary_mesh = ImmediateMesh.new()
+	_height_boundary_material = StandardMaterial3D.new()
+	_height_boundary_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_height_boundary_material.no_depth_test = true
+	_height_boundary_material.albedo_color = Color(0.25, 0.85, 1.0, 0.95)
+	_height_boundary_preview = MeshInstance3D.new()
+	_height_boundary_preview.name = "TerrainHeightBoundary"
+	_height_boundary_preview.mesh = _height_boundary_mesh
+	_height_boundary_preview.material_override = _height_boundary_material
+	_height_boundary_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_height_boundary_preview.visible = false
+	_height_boundary_preview.set_meta(EDITOR_MARKER_META, true)
+	add_child(_height_boundary_preview)
+
+	# Persistent topographic contours remain visible after a terrain stroke ends.
+	# They are separate from the one-stroke boundary above, so starting a new
+	# brush stroke no longer erases the previously sculpted terrain information.
+	_persistent_height_contour_mesh = ImmediateMesh.new()
+	_persistent_height_contour_material = StandardMaterial3D.new()
+	_persistent_height_contour_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_persistent_height_contour_material.no_depth_test = true
+	_persistent_height_contour_material.vertex_color_use_as_albedo = true
+	_persistent_height_contour_preview = MeshInstance3D.new()
+	_persistent_height_contour_preview.name = "PersistentTerrainHeightContours"
+	_persistent_height_contour_preview.mesh = _persistent_height_contour_mesh
+	_persistent_height_contour_preview.material_override = _persistent_height_contour_material
+	_persistent_height_contour_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_persistent_height_contour_preview.visible = false
+	_persistent_height_contour_preview.set_meta(EDITOR_MARKER_META, true)
+	add_child(_persistent_height_contour_preview)
+
+
+
+func _build_selection_visual() -> void:
+	_selection_visual_mesh = ImmediateMesh.new()
+	_selection_visual = MeshInstance3D.new()
+	_selection_visual.name = "ObjectSelectionBounds"
+	_selection_visual.mesh = _selection_visual_mesh
+	_selection_visual.material_override = _make_unshaded_material(Color(0.1, 0.9, 1.0, 1.0))
+	_selection_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_selection_visual.visible = false
+	_selection_visual.set_meta(EDITOR_MARKER_META, true)
+	add_child(_selection_visual)
+
+func _build_transform_gizmo() -> void:
+	_object_gizmo_mesh = ImmediateMesh.new()
+	_object_gizmo_material = StandardMaterial3D.new()
+	_object_gizmo_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_object_gizmo_material.vertex_color_use_as_albedo = true
+	_object_gizmo_material.no_depth_test = true
+	_object_gizmo_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_object_gizmo = MeshInstance3D.new()
+	_object_gizmo.name = "RuntimeTransformGizmo"
+	_object_gizmo.mesh = _object_gizmo_mesh
+	_object_gizmo.material_override = _object_gizmo_material
+	_object_gizmo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_object_gizmo.visible = false
+	_object_gizmo.set_meta(EDITOR_MARKER_META, true)
+	add_child(_object_gizmo)
+
+
+func _build_building_footprint_preview() -> void:
+	_building_footprint_fill_mesh = ImmediateMesh.new()
+	_building_footprint_fill_material = StandardMaterial3D.new()
+	_building_footprint_fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_building_footprint_fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_building_footprint_fill_material.no_depth_test = false
+	_building_footprint_fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_building_footprint_fill = MeshInstance3D.new()
+	_building_footprint_fill.name = "BuildingFootprintFill"
+	_building_footprint_fill.mesh = _building_footprint_fill_mesh
+	_building_footprint_fill.material_override = _building_footprint_fill_material
+	_building_footprint_fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_building_footprint_fill.visible = false
+	_building_footprint_fill.set_meta(EDITOR_MARKER_META, true)
+	add_child(_building_footprint_fill)
+
+	_building_footprint_outline_mesh = ImmediateMesh.new()
+	_building_footprint_outline_material = StandardMaterial3D.new()
+	_building_footprint_outline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_building_footprint_outline_material.no_depth_test = true
+	_building_footprint_outline = MeshInstance3D.new()
+	_building_footprint_outline.name = "BuildingFootprintOutline"
+	_building_footprint_outline.mesh = _building_footprint_outline_mesh
+	_building_footprint_outline.material_override = _building_footprint_outline_material
+	_building_footprint_outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_building_footprint_outline.visible = false
+	_building_footprint_outline.set_meta(EDITOR_MARKER_META, true)
+	add_child(_building_footprint_outline)
+
+func _set_selection_visual_visible(value: bool) -> void:
+	if _selection_visual != null:
+		_selection_visual.visible = value and is_instance_valid(_selected_map_object)
+	if _object_gizmo != null:
+		_object_gizmo.visible = value and is_instance_valid(_selected_map_object)
+	if value:
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+	else:
+		_hide_building_footprint_preview()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -1295,11 +2690,19 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				if _tool_mode == ToolMode.ROAD:
 					_handle_road_left_press()
+				elif _tool_mode == ToolMode.WATER:
+					_handle_water_left_press()
+				elif _tool_mode == ToolMode.OBJECT_EDIT:
+					_handle_object_edit_left_press()
 				else:
 					_begin_stroke()
 			else:
 				if _tool_mode == ToolMode.ROAD:
 					_end_road_point_drag()
+				elif _tool_mode == ToolMode.WATER:
+					_update_water_preview_from_latest_hit()
+				elif _tool_mode == ToolMode.OBJECT_EDIT:
+					_end_object_transform_drag()
 				else:
 					_end_stroke()
 			get_viewport().set_input_as_handled()
@@ -1313,6 +2716,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_camera_speed = maxf(_camera_speed / 1.15, 2.0)
 			_set_status("Camera speed: %.1f" % _camera_speed)
 			return
+
+	if event is InputEventMouseMotion and _object_dragging and _tool_mode == ToolMode.OBJECT_EDIT:
+		_update_object_gizmo_drag(get_viewport().get_mouse_position())
+		get_viewport().set_input_as_handled()
+		return
 
 	if event is InputEventMouseMotion and _camera_look_active:
 		var motion = event as InputEventMouseMotion
@@ -1329,6 +2737,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var command_pressed = key_event.ctrl_pressed or key_event.meta_pressed
 		if command_pressed and key_event.keycode == KEY_Z:
 			_end_stroke()
+			_end_object_transform_drag()
 			if key_event.shift_pressed:
 				_redo_last_action()
 			else:
@@ -1337,6 +2746,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if command_pressed and key_event.keycode == KEY_Y:
 			_end_stroke()
+			_end_object_transform_drag()
 			_redo_last_action()
 			get_viewport().set_input_as_handled()
 			return
@@ -1344,12 +2754,45 @@ func _unhandled_input(event: InputEvent) -> void:
 			save_current_map()
 			get_viewport().set_input_as_handled()
 			return
+		if command_pressed and key_event.keycode == KEY_D and _tool_mode == ToolMode.OBJECT_EDIT:
+			_duplicate_selected_object()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.BUILDING and key_event.keycode == KEY_R:
+			_building_preview_yaw += deg_to_rad(building_rotation_step_degrees)
+			_update_building_preview_from_latest_hit()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.OBJECT_EDIT and key_event.keycode == KEY_G:
+			_set_object_transform_mode(ObjectTransformMode.MOVE)
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.OBJECT_EDIT and key_event.keycode == KEY_R:
+			_set_object_transform_mode(ObjectTransformMode.ROTATE)
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.OBJECT_EDIT and key_event.keycode == KEY_S:
+			_set_object_transform_mode(ObjectTransformMode.SCALE)
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.OBJECT_EDIT and key_event.keycode == KEY_DELETE:
+			_delete_selected_object()
+			get_viewport().set_input_as_handled()
+			return
 		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_ENTER:
 			_finish_active_road()
 			get_viewport().set_input_as_handled()
 			return
+		if _tool_mode == ToolMode.WATER and key_event.keycode == KEY_ENTER:
+			_finish_active_water()
+			get_viewport().set_input_as_handled()
+			return
 		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_ESCAPE:
 			_cancel_active_road()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.WATER and key_event.keycode == KEY_ESCAPE:
+			_cancel_active_water()
 			get_viewport().set_input_as_handled()
 			return
 		if _tool_mode == ToolMode.ROAD and key_event.keycode == KEY_DELETE:
@@ -1357,6 +2800,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_delete_selected_road_point()
 			else:
 				_delete_selected_road()
+			get_viewport().set_input_as_handled()
+			return
+		if _tool_mode == ToolMode.WATER and key_event.keycode == KEY_DELETE:
+			_delete_selected_water()
 			get_viewport().set_input_as_handled()
 			return
 		if key_event.keycode == KEY_BRACKETLEFT:
@@ -1370,12 +2817,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key_event.keycode:
 			KEY_1: _press_tool_shortcut(ToolMode.TERRAIN)
 			KEY_2: _press_tool_shortcut(ToolMode.SURFACE)
-			KEY_3: _press_tool_shortcut(ToolMode.GRASS)
-			KEY_4: _press_tool_shortcut(ToolMode.TREE)
-			KEY_5: _press_tool_shortcut(ToolMode.ORE)
-			KEY_6: _press_tool_shortcut(ToolMode.SPAWN)
-			KEY_7: _press_tool_shortcut(ToolMode.ROAD)
-
+			KEY_3: _press_tool_shortcut(ToolMode.ROAD)
+			KEY_4: _press_tool_shortcut(ToolMode.GRASS)
+			KEY_5: _press_tool_shortcut(ToolMode.TREE)
+			KEY_6: _press_tool_shortcut(ToolMode.ORE)
+			KEY_7: _press_tool_shortcut(ToolMode.SPAWN)
+			KEY_8: _press_tool_shortcut(ToolMode.BUILDING)
+			KEY_9: _press_tool_shortcut(ToolMode.OBJECT_EDIT)
 
 func _press_tool_shortcut(mode: ToolMode) -> void:
 	var button = _tool_buttons.get(mode, null) as Button
@@ -1397,26 +2845,60 @@ func _process(delta: float) -> void:
 	# onto a panel, so also finish the stroke by polling the physical button.
 	if _stroke_active and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_end_stroke()
+	if _object_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_end_object_transform_drag()
 
 
 func _physics_process(delta: float) -> void:
 	if _map_root == null or _editor_camera == null:
 		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
+		_set_persistent_height_contour_visible(false)
 		return
+	_set_persistent_height_contour_visible(
+		_tool_mode == ToolMode.TERRAIN
+		and not (_stroke_active and _stroke_tool_mode == ToolMode.TERRAIN)
+	)
 
 	_latest_hit = _raycast_terrain()
+	if _tool_mode == ToolMode.OBJECT_EDIT:
+		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
+		_set_building_preview_visible(false)
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+		return
+
 	if _latest_hit.is_empty():
 		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
+		if _tool_mode == ToolMode.BUILDING:
+			_set_building_preview_visible(false)
 		return
 
 	var hit_position = _latest_hit.get("position", Vector3.ZERO) as Vector3
 	if _tool_mode == ToolMode.ROAD:
 		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
 		_update_road_preview(hit_position)
 		if _road_dragging and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _pointer_is_over_ui():
 			_drag_selected_road_point(hit_position)
 		return
+	if _tool_mode == ToolMode.WATER:
+		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
+		_update_water_preview(hit_position)
+		return
+	if _tool_mode == ToolMode.BUILDING:
+		_set_height_boundary_visible(false)
+		_update_building_preview(hit_position)
+	else:
+		_set_building_preview_visible(false)
 	_update_contact_brush(hit_position)
+	if _tool_mode == ToolMode.TERRAIN:
+		_update_height_boundary()
+	else:
+		_set_height_boundary_visible(false)
 
 	if not _stroke_active or _camera_look_active or _pointer_is_over_ui():
 		return
@@ -1434,7 +2916,10 @@ func _physics_process(delta: float) -> void:
 			_apply_scene_placement_brush(hit_position, delta, _ores_root, "ore")
 		ToolMode.SPAWN:
 			_apply_spawn_brush(hit_position)
-
+		ToolMode.AUXILIARY:
+			_apply_auxiliary_brush(hit_position)
+		ToolMode.BUILDING:
+			_apply_building_placement(hit_position)
 
 func _update_free_camera(delta: float) -> void:
 	if _editor_camera == null or _camera_rig == null:
@@ -1487,6 +2972,14 @@ func _begin_stroke() -> void:
 	_stroke_placed_once = false
 	_placement_timer = 0.0
 	_stroke_height_before.clear()
+	if _stroke_tool_mode == ToolMode.TERRAIN:
+		_height_contour_points.clear()
+		_height_contour_delta = 0.0
+		_set_height_boundary_visible(false)
+		# The current stroke is shown by the temporary boundary. Hide the saved
+		# contour layer underneath it so the same region never renders duplicate
+		# outlines while it is being sculpted.
+		_set_persistent_height_contour_visible(false)
 	_stroke_surface_before.clear()
 	_stroke_grass_before.clear()
 	_stroke_added_objects.clear()
@@ -1505,12 +2998,17 @@ func _end_stroke() -> void:
 	match _stroke_tool_mode:
 		ToolMode.TERRAIN:
 			_commit_height_stroke()
+			_rebuild_persistent_height_contours()
+			_height_contour_points.clear()
+			_height_contour_delta = 0.0
+			_set_height_boundary_visible(false)
+			_set_persistent_height_contour_visible(_tool_mode == ToolMode.TERRAIN)
 			call_deferred("_rebuild_all_roads_to_terrain")
 		ToolMode.SURFACE:
 			_commit_surface_stroke()
 		ToolMode.GRASS:
 			_commit_grass_stroke()
-		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN:
+		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.BUILDING, ToolMode.AUXILIARY:
 			_commit_object_stroke()
 
 	_stroke_height_before.clear()
@@ -1570,7 +3068,154 @@ func _update_contact_brush(center: Vector3) -> void:
 		var y = get_terrain_height_world(Vector2(x, z)) + 0.08
 		_brush_preview_mesh.surface_add_vertex(Vector3(x, y, z))
 	_brush_preview_mesh.surface_end()
+	# The original brush ring remains a terrain-following cursor preview. The
+	# height-change contour is rendered separately from actual changed samples.
 	_brush_preview.visible = true
+
+
+func _set_height_boundary_visible(value: bool) -> void:
+	if _height_boundary_preview != null:
+		_height_boundary_preview.visible = value
+
+
+func _set_persistent_height_contour_visible(value: bool) -> void:
+	_persistent_height_contour_visible = value
+	if _persistent_height_contour_preview != null:
+		_persistent_height_contour_preview.visible = value \
+			and _persistent_height_contour_mesh != null \
+			and _persistent_height_contour_mesh.get_surface_count() > 0
+
+
+func _rebuild_persistent_height_contours() -> void:
+	if _persistent_height_contour_mesh == null or _persistent_height_contour_material == null:
+		return
+	_persistent_height_contour_mesh.clear_surfaces()
+	if _height_samples.is_empty() or _sample_width < 2 or _sample_depth < 2:
+		_set_persistent_height_contour_visible(false)
+		return
+
+	# Keep the editor responsive on 1024 m maps by sampling at most a 192 x 192
+	# contour grid. Small maps retain their full height-sample resolution.
+	var contour_grid_limit := 192
+	var largest_dimension := maxi(_sample_width, _sample_depth) - 1
+	var sample_step := maxi(1, ceili(float(largest_dimension) / float(contour_grid_limit)))
+	var contour_offsets: Array[float] = [-4.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 4.0]
+	var baseline := float(initial_ground_height)
+	var contour_vertices: Array[Vector3] = []
+	var contour_colors: Array[Color] = []
+	for offset in contour_offsets:
+		var threshold := baseline + offset
+		var contour_color := Color(0.78, 0.35, 1.0, 0.78)
+		if offset > 0.0:
+			contour_color = Color(1.0, 0.22, 0.08, 0.82)
+		elif offset < 0.0:
+			contour_color = Color(0.12, 0.48, 1.0, 0.82)
+		for sample_z in range(0, _sample_depth - sample_step, sample_step):
+			for sample_x in range(0, _sample_width - sample_step, sample_step):
+				var p00 := Vector2(
+					_terrain_origin.x + float(sample_x) * vertex_spacing,
+					_terrain_origin.y + float(sample_z) * vertex_spacing
+				)
+				var p10 := Vector2(
+					_terrain_origin.x + float(sample_x + sample_step) * vertex_spacing,
+					_terrain_origin.y + float(sample_z) * vertex_spacing
+				)
+				var p11 := Vector2(
+					_terrain_origin.x + float(sample_x + sample_step) * vertex_spacing,
+					_terrain_origin.y + float(sample_z + sample_step) * vertex_spacing
+				)
+				var p01 := Vector2(
+					_terrain_origin.x + float(sample_x) * vertex_spacing,
+					_terrain_origin.y + float(sample_z + sample_step) * vertex_spacing
+				)
+				var h00 := _get_height_sample(sample_x, sample_z)
+				var h10 := _get_height_sample(sample_x + sample_step, sample_z)
+				var h11 := _get_height_sample(sample_x + sample_step, sample_z + sample_step)
+				var h01 := _get_height_sample(sample_x, sample_z + sample_step)
+				var intersections: Array[Vector2] = []
+				_append_height_contour_intersection(intersections, p00, h00, p10, h10, threshold)
+				_append_height_contour_intersection(intersections, p10, h10, p11, h11, threshold)
+				_append_height_contour_intersection(intersections, p11, h11, p01, h01, threshold)
+				_append_height_contour_intersection(intersections, p01, h01, p00, h00, threshold)
+				if intersections.size() == 2:
+					_append_height_contour_segment(contour_vertices, contour_colors, intersections[0], intersections[1], threshold, contour_color)
+				elif intersections.size() == 4:
+					_append_height_contour_segment(contour_vertices, contour_colors, intersections[0], intersections[1], threshold, contour_color)
+					_append_height_contour_segment(contour_vertices, contour_colors, intersections[2], intersections[3], threshold, contour_color)
+
+	if contour_vertices.size() < 2:
+		_set_persistent_height_contour_visible(false)
+		return
+	_persistent_height_contour_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _persistent_height_contour_material)
+	for index in contour_vertices.size():
+		_persistent_height_contour_mesh.surface_set_color(contour_colors[index])
+		_persistent_height_contour_mesh.surface_add_vertex(contour_vertices[index])
+	_persistent_height_contour_mesh.surface_end()
+	_set_persistent_height_contour_visible(_persistent_height_contour_visible)
+
+
+func _append_height_contour_intersection(
+	intersections: Array[Vector2],
+	from_point: Vector2,
+	from_height: float,
+	to_point: Vector2,
+	to_height: float,
+	threshold: float
+) -> void:
+	if is_equal_approx(from_height, to_height):
+		return
+	var low := minf(from_height, to_height)
+	var high := maxf(from_height, to_height)
+	if threshold < low or threshold > high:
+		return
+	var ratio := clampf((threshold - from_height) / (to_height - from_height), 0.0, 1.0)
+	var point := from_point.lerp(to_point, ratio)
+	for existing in intersections:
+		if existing.distance_squared_to(point) < 0.0001:
+			return
+	intersections.append(point)
+
+
+func _append_height_contour_segment(
+	vertices: Array[Vector3],
+	colors: Array[Color],
+	from_point: Vector2,
+	to_point: Vector2,
+	threshold: float,
+	color: Color
+) -> void:
+	var contour_y := threshold + 0.10
+	vertices.append(Vector3(from_point.x, contour_y, from_point.y))
+	vertices.append(Vector3(to_point.x, contour_y, to_point.y))
+	colors.append(color)
+	colors.append(color)
+
+
+func _update_height_boundary() -> void:
+	if _height_boundary_mesh == null or _height_boundary_material == null:
+		return
+	_height_boundary_mesh.clear_surfaces()
+	if _height_contour_points.size() < 2:
+		_set_height_boundary_visible(false)
+		return
+	var boundary_color := Color(0.25, 0.85, 1.0, 0.95)
+	if _height_contour_delta > 0.001:
+		boundary_color = Color(1.0, 0.38, 0.12, 0.98)
+	elif _height_contour_delta < -0.001:
+		boundary_color = Color(0.20, 0.52, 1.0, 0.98)
+	else:
+		boundary_color = Color(0.78, 0.35, 1.0, 0.98)
+	_height_boundary_material.albedo_color = boundary_color
+	_height_boundary_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, _height_boundary_material)
+	for point in _height_contour_points:
+		var y := get_terrain_height_world(point) + 0.12
+		_height_boundary_mesh.surface_add_vertex(Vector3(point.x, y, point.y))
+	var first_point := _height_contour_points[0]
+	_height_boundary_mesh.surface_add_vertex(
+		Vector3(first_point.x, get_terrain_height_world(first_point) + 0.12, first_point.y)
+	)
+	_height_boundary_mesh.surface_end()
+	_set_height_boundary_visible(true)
 
 
 # -----------------------------------------------------------------------------
@@ -1609,6 +3254,9 @@ func create_new_map(
 	_end_stroke()
 	_current_map_folder = ""
 	_reset_road_editor_state()
+	_reset_water_editor_state()
+	_clear_selected_map_object()
+	_clear_building_preview()
 
 	if is_instance_valid(_map_root):
 		var previous_map = _map_root
@@ -1665,32 +3313,37 @@ func create_new_map(
 	_surface_mask_image.fill(Color(default_encoded, default_encoded, 0.0, 1.0))
 	_surface_mask_texture = ImageTexture.create_from_image(_surface_mask_image)
 
-	_manual_grass = {"small": {}, "tall": {}}
+	_manual_grass = _new_manual_grass_data()
 	_grass_generated_nodes.clear()
 	_terrain_chunks.clear()
 	_terrain_collision_shapes.clear()
 	_collision_dirty_chunks.clear()
 	_next_object_id = 1
 	_next_spawn_id = 1
+	_ai_configurations = []
+	_selected_ai_index = -1
 	_clear_map_icon()
 
 	_create_terrain_material()
 
 	_map_root = Node3D.new()
 	_map_root.name = _map_id.validate_node_name()
-	_map_root.set_meta("farmwar_map_format_version", 3)
+	_map_root.set_meta("farmwar_map_format_version", 5)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
 	_map_root.set_meta("farmwar_map_name", _map_id)
 	_map_root.set_meta("farmwar_map_size", _map_size)
+	_map_root.set_meta("farmwar_terrain_winding_version", 2)
 	_map_root.set_meta("farmwar_editor_generated", true)
+	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
 	add_child(_map_root)
 
 	_create_environment_skeleton()
 	_create_map_content_roots()
 	_create_boundary_walls()
 	_create_terrain_chunks()
+	_rebuild_persistent_height_contours()
 	_create_terrain_foundation()
 	_configure_integrated_systems()
 	_configure_camera_for_map_and_far_scenery()
@@ -1729,7 +3382,7 @@ func _extract_surface_entries(palette: Resource) -> Array:
 	if palette == null or not _has_property(palette, "surfaces"):
 		return result
 
-	var surfaces_value: Variant = palette.get("surfaces")
+	var surfaces_value = palette.get("surfaces")
 	if not (surfaces_value is Array):
 		return result
 
@@ -1846,15 +3499,9 @@ func _create_terrain_material() -> void:
 		push_error("FarmWar map editor: missing terrain shader: %s" % TERRAIN_SHADER_PATH)
 		return
 
-	# Use an editor/runtime copy with culling disabled. Correct winding is still
-	# generated below, but this prevents a terrain surface from appearing
-	# transparent if a future mesh edit accidentally flips one triangle.
-	var runtime_shader = Shader.new()
-	var shader_code = source_shader.code
-	if shader_code.contains("cull_back"):
-		shader_code = shader_code.replace("cull_back", "cull_disabled")
-	runtime_shader.code = shader_code
-	_terrain_material.shader = runtime_shader
+	# Use the same single-sided receiver as Creston. The generated index order
+	# follows Godot's renderer front-face convention; vertex normals remain +Y.
+	_terrain_material.shader = source_shader
 	_terrain_material.set_shader_parameter("surface_mask", _surface_mask_texture)
 	_terrain_material.set_shader_parameter("surface_palette", _surface_palette_lookup)
 	_terrain_material.set_shader_parameter("terrain_origin", _terrain_origin)
@@ -1866,6 +3513,10 @@ func _create_environment_skeleton() -> void:
 	sun.name = "Sun"
 	sun.light_color = Color(1.0, 0.945, 0.816)
 	sun.shadow_enabled = true
+	# Match Creston Town's stable default directional-shadow setup. Enlarging a
+	# cascaded shadow map to 512m produced a visible camera-following square on
+	# generated terrain instead of a natural local object shadow.
+	sun.directional_shadow_max_distance = 100.0
 	sun.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
 	_map_root.add_child(sun)
 
@@ -1908,9 +3559,19 @@ func _create_environment_skeleton() -> void:
 	if day_night_scene != null:
 		_day_night_system = day_night_scene.instantiate()
 		_day_night_system.name = "DayNightSystem"
-		_set_property_if_present(_day_night_system, "initial_hour", 12.0)
+		# Match Creston Town's morning lighting.  Noon pushes directional shadows
+		# almost directly underneath props, which makes newly generated maps look
+		# as if they have no shadows at all even when shadow rendering is active.
+		_set_property_if_present(_day_night_system, "initial_hour", 10.0)
 		_day_night_system.process_mode = Node.PROCESS_MODE_DISABLED
 		_map_root.add_child(_day_night_system)
+
+	var weather_scene = _load_resource_or_null(WEATHER_SYSTEM_PATH) as PackedScene
+	if weather_scene != null:
+		_weather_system = weather_scene.instantiate()
+		_weather_system.name = "WeatherSystem"
+		_weather_system.process_mode = Node.PROCESS_MODE_DISABLED
+		_map_root.add_child(_weather_system)
 
 
 func _create_map_content_roots() -> void:
@@ -1928,10 +3589,12 @@ func _create_map_content_roots() -> void:
 	_boundary_root = _new_child_node3d(_map_root, "MapBoundaryWalls")
 	_surface_areas_root = _new_child_node3d(_map_root, "SurfaceAreas")
 	_roads_root = _new_child_node3d(_map_root, "Roads")
+	_water_root = _new_child_node3d(_map_root, "WaterBodies")
 	_manual_grass_root = _new_child_node3d(_map_root, "ManualGrass")
 	_trees_root = _new_child_node3d(_map_root, "Trees")
 	_ores_root = _new_child_node3d(_map_root, "Ores")
 	_spawns_root = _new_child_node3d(_map_root, "SpawnPoints")
+	_buildings_root = _new_child_node3d(_map_root, "Buildings")
 
 	var tree_script = _load_resource_or_null(TREE_FOREST_MANAGER_PATH) as Script
 	_tree_forest_manager = Node3D.new()
@@ -2138,7 +3801,9 @@ func _create_terrain_chunks() -> void:
 			var mesh_instance = MeshInstance3D.new()
 			mesh_instance.name = "Mesh"
 			mesh_instance.material_override = _terrain_material
-			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			# Terrain is a receiver, not a caster. A full-map terrain mesh in the
+			# directional shadow pass creates a camera-following square/self-shadow.
+			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			chunk_root.add_child(mesh_instance)
 
 			# CollisionShape3D is a direct child of the one explicit Ground
@@ -2190,14 +3855,12 @@ func _verify_terrain_mesh_visibility() -> void:
 		var arrays = first_mesh_instance.mesh.surface_get_arrays(0)
 		var vertices = arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 		var indices = arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+		var normals = arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array
 		if indices.size() >= 3:
-			var a = vertices[indices[0]]
-			var b = vertices[indices[1]]
-			var c = vertices[indices[2]]
-			var geometric_normal = (b - a).cross(c - a).normalized()
-			if geometric_normal.dot(Vector3.UP) <= 0.0:
+			var normal_index: int = indices[0]
+			if normals.size() <= normal_index or normals[normal_index].dot(Vector3.UP) <= 0.0:
 				push_error(
-					"FarmWar map editor: terrain triangle winding faces downward."
+					"FarmWar map editor: terrain vertex normal faces downward."
 				)
 	if first_collision == null or first_collision.shape == null:
 		push_error("FarmWar map editor: first terrain chunk has no collision shape.")
@@ -2250,14 +3913,15 @@ func _rebuild_terrain_chunk(coordinate: Vector2i, update_collision: bool) -> voi
 			var i2 = i0 + row_width
 			var i3 = i2 + 1
 
-			# With +X to the right and +Z toward the bottom of the map,
-			# i0 -> i2 -> i1 produces an upward-facing geometric normal.
+			# Godot's front-face order is intentionally paired with +Y vertex
+			# normals. Do not swap these indices without changing the material cull
+			# mode as well.
 			indices[write_index] = i0
-			indices[write_index + 1] = i2
-			indices[write_index + 2] = i1
+			indices[write_index + 1] = i1
+			indices[write_index + 2] = i2
 			indices[write_index + 3] = i1
-			indices[write_index + 4] = i2
-			indices[write_index + 5] = i3
+			indices[write_index + 4] = i3
+			indices[write_index + 5] = i2
 			write_index += 6
 
 	var arrays = []
@@ -2276,7 +3940,7 @@ func _rebuild_terrain_chunk(coordinate: Vector2i, update_collision: bool) -> voi
 	if mesh_instance != null:
 		mesh_instance.mesh = mesh
 		mesh_instance.material_override = _terrain_material
-		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	if update_collision:
 		_rebuild_terrain_chunk_collision(chunk_root, start_sample, cell_size)
@@ -2368,9 +4032,44 @@ func _apply_height_brush(center: Vector3, delta: float) -> void:
 				changed = true
 
 	if changed:
+		_refresh_height_change_contour()
 		_rebuild_chunks_for_sample_rect(bounds)
 		if _rect_touches_terrain_edge(bounds):
 			_rebuild_terrain_skirt()
+
+
+func _refresh_height_change_contour() -> void:
+	var changed_points := PackedVector2Array()
+	var total_delta := 0.0
+	var changed_count := 0
+	for index_value in _stroke_height_before.keys():
+		var index := int(index_value)
+		if index < 0 or index >= _height_samples.size():
+			continue
+		var old_height := float(_stroke_height_before[index])
+		var new_height := float(_height_samples[index])
+		var difference := new_height - old_height
+		if is_zero_approx(difference):
+			continue
+		var sample_x: int = index % _sample_width
+		var sample_z: int = index / _sample_width
+		changed_points.append(Vector2(
+			_terrain_origin.x + float(sample_x) * vertex_spacing,
+			_terrain_origin.y + float(sample_z) * vertex_spacing
+		))
+		total_delta += difference
+		changed_count += 1
+	if changed_points.size() < 2:
+		_height_contour_points.clear()
+		_height_contour_delta = 0.0
+		return
+	var hull := Geometry2D.convex_hull(changed_points)
+	if hull.size() < 2:
+		_height_contour_points.clear()
+		_height_contour_delta = 0.0
+		return
+	_height_contour_points = hull
+	_height_contour_delta = total_delta / float(maxi(1, changed_count))
 
 
 func _commit_height_stroke() -> void:
@@ -2404,6 +4103,9 @@ func _commit_height_stroke() -> void:
 func _apply_height_patch(patch: Dictionary) -> void:
 	if patch.is_empty() or _height_samples.is_empty():
 		return
+	_height_contour_points.clear()
+	_height_contour_delta = 0.0
+	_set_height_boundary_visible(false)
 
 	var min_x = _sample_width - 1
 	var min_z = _sample_depth - 1
@@ -2439,6 +4141,7 @@ func _apply_height_patch(patch: Dictionary) -> void:
 		_camera_rig.global_position = _clamp_editor_camera_above_ground(
 			_camera_rig.global_position
 		)
+	_rebuild_persistent_height_contours()
 	call_deferred("_rebuild_all_roads_to_terrain")
 
 
@@ -2810,7 +4513,22 @@ func _make_fallback_palette_lookup() -> ImageTexture:
 # Manual grass brush and chunked MultiMesh rendering
 # -----------------------------------------------------------------------------
 
+func _new_manual_grass_data() -> Dictionary:
+	var result: Dictionary = {}
+	for species_value in MANUAL_GRASS_SPECIES.keys():
+		result[str(species_value)] = {}
+	return result
+
+
+func _ensure_manual_grass_species() -> void:
+	for species_value in MANUAL_GRASS_SPECIES.keys():
+		var species := str(species_value)
+		if not _manual_grass.has(species) or not _manual_grass[species] is Dictionary:
+			_manual_grass[species] = {}
+
+
 func _apply_grass_brush(center: Vector3, delta: float) -> void:
+	_ensure_manual_grass_species()
 	if Input.is_key_pressed(KEY_SHIFT):
 		_erase_grass(center, _brush_radius)
 		return
@@ -2835,7 +4553,8 @@ func _apply_grass_brush(center: Vector3, delta: float) -> void:
 		if not species_chunks.has(key):
 			species_chunks[key] = []
 		var transforms = species_chunks[key] as Array
-		var scale_range = Vector2(0.85, 1.15) if _selected_grass_species == "small" else Vector2(0.85, 1.20)
+		var species_definition := MANUAL_GRASS_SPECIES.get(_selected_grass_species, MANUAL_GRASS_SPECIES["small"]) as Dictionary
+		var scale_range := species_definition.get("scale", Vector2(0.85, 1.15)) as Vector2
 		var scale_value = _rng.randf_range(scale_range.x, scale_range.y)
 		var transform = Transform3D(
 			Basis(Vector3.UP, _rng.randf_range(-PI, PI)).scaled(Vector3.ONE * scale_value),
@@ -2978,7 +4697,8 @@ func _rebuild_manual_grass_chunk(species: String, key: String) -> void:
 	_manual_grass_root.add_child(chunk_root)
 	_grass_generated_nodes[generated_key] = chunk_root
 
-	var source_path = SMALL_GRASS_PATH if species == "small" else TALL_GRASS_PATH
+	var species_definition := MANUAL_GRASS_SPECIES.get(species, MANUAL_GRASS_SPECIES["small"]) as Dictionary
+	var source_path := str(species_definition.get("path", SMALL_GRASS_PATH))
 	var components = _get_grass_mesh_components(source_path)
 	for component_index in range(components.size()):
 		var component = components[component_index] as Dictionary
@@ -3000,8 +4720,10 @@ func _rebuild_manual_grass_chunk(species: String, key: String) -> void:
 		instance.name = "Mesh_%d" % component_index
 		instance.multimesh = multi
 		instance.material_override = component.get("material", null) as Material
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		instance.visibility_range_end = 100.0 if species == "small" else 120.0
+		# Painted grass is local/chunked, so unlike far-distance grass it should
+		# participate in the normal shadow pass with trees, buildings and players.
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		instance.visibility_range_end = float(species_definition.get("visibility", 100.0))
 		instance.extra_cull_margin = 2.0
 		chunk_root.add_child(instance)
 
@@ -3102,6 +4824,11 @@ func _apply_scene_placement_brush(
 		point_xz = _random_point_in_disc(point_xz, _brush_radius * 0.65)
 	if not _point_inside_map(point_xz, 0.5):
 		return
+	# Only trees are excluded from water. Rocks and mushroom resources remain
+	# placeable for now, as requested.
+	if category_name == "tree" and _is_point_in_water(point_xz, get_terrain_height_world(point_xz)):
+		_set_status("Resource placement blocked: point is inside water")
+		return
 
 	var scene_path = str(_selected_asset.get("path", ""))
 	var packed = _load_resource_or_null(scene_path) as PackedScene
@@ -3120,6 +4847,8 @@ func _apply_scene_placement_brush(
 	instance.set_meta("map_editor_category", category_name)
 	instance.set_meta("map_editor_asset_path", scene_path)
 	instance.set_meta("map_editor_uuid", _new_editor_uuid(category_name))
+	instance.set_meta("map_editor_align_mode", "surface_normal")
+	instance.set_meta("map_editor_ground_offset", placed_object_ground_offset)
 	category_root.add_child(instance)
 
 	# Place the complete interactive scene on the authoritative terrain. Its
@@ -3145,13 +4874,15 @@ func _apply_scene_placement_brush(
 	_rebuild_resource_multimeshes_deferred()
 
 
-func _erase_nodes_in_radius(category_root: Node3D, center: Vector3, radius: float) -> void:
+func _erase_nodes_in_radius(category_root: Node3D, center: Vector3, radius: float, category_filter: String = "") -> void:
 	var center_xz = Vector2(center.x, center.z)
 	var erased = 0
 	for child in category_root.get_children():
 		if not child is Node3D:
 			continue
 		var node = child as Node3D
+		if not category_filter.is_empty() and str(node.get_meta("map_editor_category", "")) != category_filter:
+			continue
 		var node_xz = Vector2(node.position.x, node.position.z)
 		if node_xz.distance_to(center_xz) <= radius:
 			_stroke_removed_objects.append(_serialize_editor_object(node))
@@ -3174,12 +4905,59 @@ func _apply_spawn_brush(center: Vector3) -> void:
 		return
 	if _stroke_placed_once:
 		return
+	if _is_point_in_water(Vector2(center.x, center.z), center.y):
+		_set_status("Spawn placement blocked: point is inside water")
+		return
 
-	if _selected_spawn_kind == "wild_animal":
+	if _selected_spawn_kind == "player":
+		_place_team_spawn(center, _selected_team_spawn_team)
+	elif _selected_spawn_kind == "wild_animal":
 		_place_wild_animal_spawn(center)
 	else:
 		_place_giant_crop_spawn(center)
 	_stroke_placed_once = true
+
+
+func _place_team_spawn(center: Vector3, team: String, record_undo := true) -> void:
+	var packed = _load_resource_or_null(TEAM_SPAWN_POINT_PATH) as PackedScene
+	if packed == null:
+		_set_status("Missing TeamSpawnPoint scene")
+		return
+	var spawn := packed.instantiate() as Node3D
+	if spawn == null:
+		return
+	spawn.name = "%sTeamSpawn" % ("Red" if team == "red" else "Blue")
+	spawn.set_meta("map_editor_spawn_kind", "team_%s" % team)
+	spawn.set_meta("map_editor_category", "spawn")
+	spawn.set_meta("map_editor_asset_path", TEAM_SPAWN_POINT_PATH)
+	spawn.set_meta("map_editor_uuid", _new_editor_uuid("spawn"))
+	spawn.set_meta("map_editor_align_mode", "upright")
+	spawn.set_meta("map_editor_ground_offset", 0.05)
+	_spawns_root.add_child(spawn)
+	_place_node_on_terrain(spawn, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+	_set_property_if_present(spawn, "team", team)
+	_set_property_if_present(spawn, "spawn_point_id", _next_team_spawn_id(team))
+	_add_spawn_editor_marker(spawn, Color(0.95, 0.2, 0.2, 1.0) if team == "red" else Color(0.2, 0.45, 1.0, 1.0))
+	if record_undo:
+		_stroke_added_objects.append(_serialize_editor_object(spawn))
+	_next_spawn_id += 1
+	_set_status("Placed %s team player spawn" % team)
+
+
+func _next_team_spawn_id(team: String) -> String:
+	var highest := 0
+	if _spawns_root != null:
+		for child in _spawns_root.get_children():
+			if not child is TeamSpawnPoint:
+				continue
+			var point := child as TeamSpawnPoint
+			if str(point.team) != team:
+				continue
+			var id_parts := str(point.spawn_point_id).split("_")
+			var suffix := str(id_parts[id_parts.size() - 1]) if not id_parts.is_empty() else ""
+			if suffix.is_valid_int():
+				highest = maxi(highest, int(suffix))
+	return "%s_spawn_%02d" % [team, highest + 1]
 
 
 func _place_giant_crop_spawn(center: Vector3) -> void:
@@ -3197,6 +4975,8 @@ func _place_giant_crop_spawn(center: Vector3) -> void:
 	spawn.set_meta("map_editor_category", "spawn")
 	spawn.set_meta("map_editor_asset_path", RARE_RESOURCE_SPAWN_PATH)
 	spawn.set_meta("map_editor_uuid", _new_editor_uuid("spawn"))
+	spawn.set_meta("map_editor_align_mode", "upright")
+	spawn.set_meta("map_editor_ground_offset", 0.05)
 	_spawns_root.add_child(spawn)
 	_place_node_on_terrain(
 		spawn,
@@ -3230,6 +5010,8 @@ func _place_wild_animal_spawn(center: Vector3) -> void:
 	spawn.set_meta("map_editor_category", "spawn")
 	spawn.set_meta("map_editor_asset_path", WILD_ANIMAL_GENERATOR_PATH)
 	spawn.set_meta("map_editor_uuid", _new_editor_uuid("spawn"))
+	spawn.set_meta("map_editor_align_mode", "upright")
+	spawn.set_meta("map_editor_ground_offset", 0.05)
 	_spawns_root.add_child(spawn)
 	_place_node_on_terrain(
 		spawn,
@@ -3243,6 +5025,39 @@ func _place_wild_animal_spawn(center: Vector3) -> void:
 	_stroke_added_objects.append(_serialize_editor_object(spawn))
 	_next_spawn_id += 1
 	_set_status("Placed wild animal spawn")
+
+
+func _apply_auxiliary_brush(center: Vector3) -> void:
+	if Input.is_key_pressed(KEY_SHIFT):
+		_erase_nodes_in_radius(_buildings_root, center, _brush_radius, "auxiliary")
+		return
+	if _stroke_placed_once or _selected_auxiliary_kind != "message_area":
+		return
+	if not _point_inside_map(Vector2(center.x, center.z), 0.5):
+		return
+	if _is_point_in_water(Vector2(center.x, center.z), center.y):
+		_set_status("Auxiliary placement blocked: point is inside water")
+		return
+	var packed := _load_resource_or_null(MESSAGE_AREA_PATH) as PackedScene
+	if packed == null:
+		_set_status("Missing MessageArea scene")
+		return
+	var instance := packed.instantiate() as Node3D
+	if instance == null:
+		_set_status("MessageArea root is not Node3D")
+		return
+	instance.name = "MessageArea_%04d" % _next_object_id
+	instance.set_meta("map_editor_category", "auxiliary")
+	instance.set_meta("map_editor_asset_path", MESSAGE_AREA_PATH)
+	instance.set_meta("map_editor_uuid", _new_editor_uuid("auxiliary"))
+	instance.set_meta("map_editor_align_mode", "upright")
+	instance.set_meta("map_editor_ground_offset", 0.02)
+	_buildings_root.add_child(instance)
+	_place_node_on_terrain(instance, Vector2(center.x, center.z), 0.0, 1.0, 0.02)
+	_stroke_added_objects.append(_serialize_editor_object(instance))
+	_next_object_id += 1
+	_stroke_placed_once = true
+	_set_status("Placed MessageArea; use Transform Objects to edit its Inspector")
 
 
 func _new_editor_uuid(category: String) -> String:
@@ -3264,6 +5079,8 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"name": node.name,
 		"transform": node.transform,
 		"process_mode": int(node.process_mode),
+		"align_mode": str(node.get_meta("map_editor_align_mode", "surface_normal")),
+		"ground_offset": float(node.get_meta("map_editor_ground_offset", placed_object_ground_offset)),
 		"properties": {},
 	}
 	node.set_meta("map_editor_uuid", record["uuid"])
@@ -3272,9 +5089,14 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 	for property_name in [
 		"tree_id",
 		"resource_id",
+		"team",
 		"spawn_point_id",
 		"generator_id",
 		"allowed_resource_ids",
+		"prompt_text",
+		"boundary_color",
+		"show_boundary",
+		"area_size",
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
@@ -3356,6 +5178,8 @@ func _restore_object_records(records: Array) -> void:
 		node.set_meta("map_editor_uuid", uuid)
 		node.set_meta("map_editor_category", category)
 		node.set_meta("map_editor_asset_path", asset_path)
+		node.set_meta("map_editor_align_mode", str(record.get("align_mode", "surface_normal")))
+		node.set_meta("map_editor_ground_offset", float(record.get("ground_offset", placed_object_ground_offset)))
 		if not spawn_kind.is_empty():
 			node.set_meta("map_editor_spawn_kind", spawn_kind)
 
@@ -3369,11 +5193,17 @@ func _restore_object_records(records: Array) -> void:
 		for property_name_value in properties.keys():
 			var property_name = str(property_name_value)
 			_set_property_if_present(node, property_name, properties[property_name])
+		if node.has_method("refresh_visuals"):
+			node.call("refresh_visuals")
 
 		if category == "spawn":
 			node.process_mode = Node.PROCESS_MODE_DISABLED
 			if spawn_kind == "wild_animal":
 				_add_spawn_editor_marker(node, Color(0.2, 0.75, 1.0, 1.0))
+			elif spawn_kind == "team_red":
+				_add_spawn_editor_marker(node, Color(0.95, 0.2, 0.2, 1.0))
+			elif spawn_kind == "team_blue":
+				_add_spawn_editor_marker(node, Color(0.2, 0.45, 1.0, 1.0))
 			else:
 				_add_spawn_editor_marker(node, Color(1.0, 0.45, 0.1, 1.0))
 
@@ -3384,6 +5214,10 @@ func _category_root_for_record(category: String) -> Node3D:
 			return _trees_root
 		"ore":
 			return _ores_root
+		"building":
+			return _buildings_root
+		"auxiliary":
+			return _buildings_root
 		_:
 			return _spawns_root
 
@@ -3391,7 +5225,7 @@ func _category_root_for_record(category: String) -> Node3D:
 func _find_editor_object_by_uuid(uuid: String) -> Node3D:
 	if uuid.is_empty():
 		return null
-	for root in [_trees_root, _ores_root, _spawns_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -3417,11 +5251,1030 @@ func _add_spawn_editor_marker(spawn: Node3D, color: Color) -> void:
 	marker.material_override = material
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	spawn.add_child(marker)
+	if spawn is TeamSpawnPoint:
+		var label := Label3D.new()
+		label.name = "_EditorSpawnLabel"
+		label.set_meta(EDITOR_MARKER_META, true)
+		label.position = Vector3(0.0, 4.6, 0.0)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.font_size = 48
+		label.outline_size = 8
+		label.modulate = color
+		label.no_depth_test = true
+		spawn.add_child(label)
+		_refresh_spawn_editor_label(spawn as TeamSpawnPoint)
 
 
-# The current toolbar intentionally has no road button, but newly generated maps
-# include the same Roads root and RoadPath3D script used by FarmWar. This API can
-# be connected to a future curve-editing tool without changing the map format.
+func _refresh_spawn_editor_label(point: TeamSpawnPoint) -> void:
+	if point == null:
+		return
+	var label := point.get_node_or_null("_EditorSpawnLabel") as Label3D
+	if label == null:
+		return
+	label.text = _spawn_point_display_label(point).get_slice(" (", 0)
+	label.modulate = Color(0.95, 0.2, 0.2, 1.0) if str(point.team) == "red" else Color(0.2, 0.45, 1.0, 1.0)
+
+
+# -----------------------------------------------------------------------------
+# Building placement and unified object transform tool
+# -----------------------------------------------------------------------------
+
+func _apply_building_placement(center: Vector3) -> void:
+	if _stroke_placed_once or _selected_building_asset.is_empty():
+		return
+	if not _building_preview_valid:
+		_set_status("Building placement blocked: %s" % _building_preview_block_reason)
+		return
+	var scene_path = str(_selected_building_asset.get("path", ""))
+	if not scene_path.begins_with(BUILDINGS_RESOURCE_ROOT + "/") or scene_path.begins_with(BUILDINGS_EXCLUDED_ROOT + "/"):
+		_set_status("Rejected building path: %s" % scene_path)
+		return
+	var packed = _load_resource_or_null(scene_path) as PackedScene
+	if packed == null:
+		_set_status("Missing building scene: %s" % scene_path)
+		return
+	var instance = packed.instantiate() as Node3D
+	if instance == null:
+		_set_status("Building scene root is not Node3D: %s" % scene_path)
+		return
+	instance.name = "%s_%04d" % [str(_selected_building_asset.get("id", "building")).capitalize(), _next_object_id]
+	instance.set_meta("map_editor_category", "building")
+	instance.set_meta("map_editor_asset_path", scene_path)
+	instance.set_meta("map_editor_uuid", _new_editor_uuid("building"))
+	instance.set_meta("map_editor_align_mode", "upright")
+	instance.set_meta("map_editor_ground_offset", building_ground_offset)
+	_buildings_root.add_child(instance)
+	_place_map_object_at_terrain(instance, Vector2(center.x, center.z), _building_preview_yaw, false, building_ground_offset)
+	var validation = _validate_building_node(instance, instance)
+	if not bool(validation.get("valid", false)):
+		_buildings_root.remove_child(instance)
+		instance.queue_free()
+		_set_status("Building placement blocked: %s" % str(validation.get("reason", "overlap")))
+		return
+	_stroke_added_objects.append(_serialize_editor_object(instance))
+	_next_object_id += 1
+	_stroke_placed_once = true
+	_set_status("Placed building: %s" % str(_selected_building_asset.get("label", instance.name)))
+
+func _rebuild_building_preview() -> void:
+	_clear_building_preview()
+	if _selected_building_asset.is_empty():
+		return
+	var path = str(_selected_building_asset.get("path", ""))
+	var packed = _load_resource_or_null(path) as PackedScene
+	if packed == null:
+		return
+	var preview = packed.instantiate() as Node3D
+	if preview == null:
+		return
+	_prepare_editor_preview_scene(preview)
+	preview.name = "BuildingPlacementPreview"
+	preview.set_meta(EDITOR_MARKER_META, true)
+	add_child(preview)
+	_building_preview = preview
+	_update_building_preview_from_latest_hit()
+
+
+func _prepare_editor_preview_scene(node: Node) -> void:
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	if node.get_script() != null:
+		node.set_script(null)
+	if node is CollisionObject3D:
+		var collision_object = node as CollisionObject3D
+		collision_object.collision_layer = 0
+		collision_object.collision_mask = 0
+	if node is GeometryInstance3D:
+		var geometry = node as GeometryInstance3D
+		geometry.transparency = clampf(building_preview_transparency, 0.05, 0.95)
+		geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if node is Light3D:
+		(node as Light3D).visible = false
+	if node is Camera3D:
+		(node as Camera3D).current = false
+	if node is GPUParticles3D:
+		(node as GPUParticles3D).emitting = false
+	if node is WorldEnvironment:
+		(node as WorldEnvironment).environment = null
+	for child in node.get_children():
+		_prepare_editor_preview_scene(child)
+
+func _clear_building_preview() -> void:
+	if is_instance_valid(_building_preview):
+		if _building_preview.get_parent() != null:
+			_building_preview.get_parent().remove_child(_building_preview)
+		_building_preview.queue_free()
+	_building_preview = null
+	_building_preview_valid = false
+	_building_preview_block_reason = ""
+	_hide_building_footprint_preview()
+
+func _set_building_preview_visible(value: bool) -> void:
+	if is_instance_valid(_building_preview):
+		_building_preview.visible = value
+	if not value:
+		_hide_building_footprint_preview()
+
+func _update_building_preview_from_latest_hit() -> void:
+	if _latest_hit.is_empty():
+		_set_building_preview_visible(false)
+		return
+	_update_building_preview(_latest_hit.get("position", Vector3.ZERO) as Vector3)
+
+
+func _update_building_preview(center: Vector3) -> void:
+	if not is_instance_valid(_building_preview):
+		if not _selected_building_asset.is_empty():
+			_rebuild_building_preview()
+		if not is_instance_valid(_building_preview):
+			return
+	var world_xz = Vector2(center.x, center.z)
+	_place_map_object_at_terrain(_building_preview, world_xz, _building_preview_yaw, false, building_ground_offset)
+	var validation = _validate_building_node(_building_preview, null)
+	_building_preview_valid = bool(validation.get("valid", false))
+	_building_preview_block_reason = str(validation.get("reason", ""))
+	_building_preview.visible = true
+	_draw_building_footprint(_get_node_footprint_polygon(_building_preview), _building_preview_valid)
+	_brush_preview_material.albedo_color = Color(0.2, 1.0, 0.25, 0.95) if _building_preview_valid else Color(1.0, 0.1, 0.05, 0.95)
+
+func _validate_building_node(node: Node3D, ignore_node: Node3D) -> Dictionary:
+	var polygon = _get_node_footprint_polygon(node)
+	if polygon.size() < 3:
+		return {"valid": false, "reason": "building has no usable visual bounds"}
+	for corner in polygon:
+		if not _point_inside_map(corner, 0.05):
+			return {"valid": false, "reason": "footprint crosses the map boundary"}
+	var center_xz = Vector2(node.global_position.x, node.global_position.z)
+	if _is_point_in_water(center_xz, node.global_position.y):
+		return {"valid": false, "reason": "footprint is inside water"}
+	for corner in polygon:
+		if _is_point_in_water(corner, get_terrain_height_world(corner)):
+			return {"valid": false, "reason": "footprint overlaps water"}
+	var normal = get_terrain_normal_world(center_xz)
+	var slope_degrees = rad_to_deg(acos(clampf(normal.dot(Vector3.UP), -1.0, 1.0)))
+	if slope_degrees > building_max_slope_degrees:
+		return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [slope_degrees, building_max_slope_degrees]}
+	for candidate in _get_building_overlap_candidates():
+		if candidate == ignore_node or not is_instance_valid(candidate):
+			continue
+		var candidate_polygon = _get_node_footprint_polygon(candidate)
+		if candidate_polygon.size() < 3:
+			continue
+		if _footprint_polygons_overlap(polygon, candidate_polygon, building_overlap_margin):
+			return {"valid": false, "reason": "overlaps %s" % candidate.name}
+	return {"valid": true, "reason": ""}
+
+
+func _get_building_overlap_candidates() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	for root in [_buildings_root, _trees_root, _ores_root]:
+		if root == null:
+			continue
+		if root != _buildings_root and not building_overlap_checks_resources:
+			continue
+		for child in root.get_children():
+			if child is Node3D and not bool(child.get_meta(EDITOR_MARKER_META, false)):
+				result.append(child as Node3D)
+	return result
+
+
+func _get_node_footprint_polygon(node: Node3D) -> PackedVector2Array:
+	var local_aabb = _calculate_node_aabb_relative_to(node, node)
+	if local_aabb.size.length_squared() <= 0.000001:
+		local_aabb = AABB(Vector3(-0.5, 0.0, -0.5), Vector3(1.0, 1.0, 1.0))
+	var projected_points = PackedVector2Array()
+	for x_index in [0, 1]:
+		for y_index in [0, 1]:
+			for z_index in [0, 1]:
+				var local_corner = local_aabb.position + Vector3(
+					local_aabb.size.x * x_index,
+					local_aabb.size.y * y_index,
+					local_aabb.size.z * z_index
+				)
+				var world_corner = node.to_global(local_corner)
+				projected_points.append(Vector2(world_corner.x, world_corner.z))
+	var hull = Geometry2D.convex_hull(projected_points)
+	if hull.size() > 1 and hull[0].is_equal_approx(hull[hull.size() - 1]):
+		hull.resize(hull.size() - 1)
+	return hull
+
+func _footprint_polygons_overlap(first: PackedVector2Array, second: PackedVector2Array, margin: float) -> bool:
+	for polygon in [first, second]:
+		for index in range(polygon.size()):
+			var edge = polygon[(index + 1) % polygon.size()] - polygon[index]
+			if edge.length_squared() <= 0.000001:
+				continue
+			var axis = Vector2(-edge.y, edge.x).normalized()
+			var first_range = _project_footprint_polygon(first, axis)
+			var second_range = _project_footprint_polygon(second, axis)
+			if first_range.y + margin < second_range.x or second_range.y + margin < first_range.x:
+				return false
+	return true
+
+
+func _project_footprint_polygon(polygon: PackedVector2Array, axis: Vector2) -> Vector2:
+	var minimum = polygon[0].dot(axis)
+	var maximum = minimum
+	for point in polygon:
+		var value = point.dot(axis)
+		minimum = minf(minimum, value)
+		maximum = maxf(maximum, value)
+	return Vector2(minimum, maximum)
+
+
+func _draw_building_footprint(polygon: PackedVector2Array, valid: bool) -> void:
+	if polygon.size() < 3 or _building_footprint_fill_mesh == null:
+		_hide_building_footprint_preview()
+		return
+	var fill_color = Color(0.15, 1.0, 0.25, 0.26) if valid else Color(1.0, 0.08, 0.04, 0.34)
+	var outline_color = Color(0.15, 1.0, 0.25, 0.98) if valid else Color(1.0, 0.08, 0.04, 1.0)
+	_building_footprint_fill_material.albedo_color = fill_color
+	_building_footprint_outline_material.albedo_color = outline_color
+	var vertices: Array[Vector3] = []
+	for corner in polygon:
+		vertices.append(Vector3(corner.x, get_terrain_height_world(corner) + 0.045, corner.y))
+	var triangles = Geometry2D.triangulate_polygon(polygon)
+	_building_footprint_fill_mesh.clear_surfaces()
+	if triangles.size() >= 3:
+		_building_footprint_fill_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		for index in triangles:
+			_building_footprint_fill_mesh.surface_add_vertex(vertices[int(index)])
+		_building_footprint_fill_mesh.surface_end()
+	_building_footprint_outline_mesh.clear_surfaces()
+	_building_footprint_outline_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for index in range(vertices.size()):
+		_building_footprint_outline_mesh.surface_add_vertex(vertices[index])
+		_building_footprint_outline_mesh.surface_add_vertex(vertices[(index + 1) % vertices.size()])
+	_building_footprint_outline_mesh.surface_end()
+	_building_footprint_fill.global_transform = Transform3D.IDENTITY
+	_building_footprint_outline.global_transform = Transform3D.IDENTITY
+	_building_footprint_fill.visible = triangles.size() >= 3
+	_building_footprint_outline.visible = true
+
+func _hide_building_footprint_preview() -> void:
+	if _building_footprint_fill != null:
+		_building_footprint_fill.visible = false
+	if _building_footprint_outline != null:
+		_building_footprint_outline.visible = false
+
+func _place_map_object_at_terrain(
+	node: Node3D,
+	world_xz: Vector2,
+	yaw_radians: float,
+	align_to_normal: bool,
+	ground_offset: float
+) -> void:
+	var surface_normal = get_terrain_normal_world(world_xz) if align_to_normal else Vector3.UP
+	var scale_value = node.global_basis.get_scale()
+	var basis = _basis_from_surface_normal_explicit(surface_normal, yaw_radians, scale_value, align_to_normal)
+	node.global_transform = Transform3D(
+		basis,
+		Vector3(world_xz.x, get_terrain_height_world(world_xz) + ground_offset, world_xz.y)
+	)
+
+
+func _basis_from_surface_normal_explicit(
+	surface_normal: Vector3,
+	yaw_radians: float,
+	scale_value: Vector3,
+	align_to_normal: bool
+) -> Basis:
+	if not align_to_normal:
+		return Basis(Vector3.UP, yaw_radians).scaled(scale_value)
+	var up_axis = surface_normal.normalized()
+	if up_axis.length_squared() <= 0.000001:
+		up_axis = Vector3.UP
+	var yaw_basis = Basis(Vector3.UP, yaw_radians)
+	var z_axis = yaw_basis.z - up_axis * yaw_basis.z.dot(up_axis)
+	if z_axis.length_squared() <= 0.000001:
+		z_axis = Vector3.FORWARD - up_axis * Vector3.FORWARD.dot(up_axis)
+	if z_axis.length_squared() <= 0.000001:
+		z_axis = Vector3.RIGHT - up_axis * Vector3.RIGHT.dot(up_axis)
+	z_axis = z_axis.normalized()
+	var x_axis = up_axis.cross(z_axis).normalized()
+	z_axis = x_axis.cross(up_axis).normalized()
+	return Basis(x_axis, up_axis, z_axis).orthonormalized().scaled(scale_value)
+
+
+func _refresh_transform_gizmo() -> void:
+	if _object_gizmo_mesh == null or not is_instance_valid(_selected_map_object) or _tool_mode != ToolMode.OBJECT_EDIT:
+		if _object_gizmo != null:
+			_object_gizmo.visible = false
+		return
+	var pivot = _selected_map_object.global_position
+	var length = _get_transform_gizmo_length()
+	_object_gizmo_mesh.clear_surfaces()
+	_object_gizmo_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	if _object_transform_mode == ObjectTransformMode.ROTATE:
+		_draw_gizmo_rotation_ring(pivot, _get_gizmo_axis_world(GizmoAxis.X), length * 0.78, _gizmo_axis_color(GizmoAxis.X))
+		_draw_gizmo_rotation_ring(pivot, _get_gizmo_axis_world(GizmoAxis.Y), length * 0.78, _gizmo_axis_color(GizmoAxis.Y))
+		_draw_gizmo_rotation_ring(pivot, _get_gizmo_axis_world(GizmoAxis.Z), length * 0.78, _gizmo_axis_color(GizmoAxis.Z))
+	else:
+		for axis in [GizmoAxis.X, GizmoAxis.Y, GizmoAxis.Z]:
+			var direction = _get_gizmo_axis_world(axis)
+			var color = _gizmo_axis_color(axis)
+			_draw_gizmo_line(pivot, pivot + direction * length, color)
+			_draw_gizmo_tip(pivot + direction * length, length * 0.07, color)
+		if _object_transform_mode == ObjectTransformMode.SCALE:
+			_draw_gizmo_tip(pivot, length * 0.09, Color(1.0, 0.92, 0.2, 1.0))
+	_object_gizmo_mesh.surface_end()
+	_object_gizmo.global_transform = Transform3D.IDENTITY
+	_object_gizmo.visible = true
+
+
+func _get_transform_gizmo_length() -> float:
+	if _editor_camera == null or not is_instance_valid(_selected_map_object):
+		return 2.0
+	var distance = _editor_camera.global_position.distance_to(_selected_map_object.global_position)
+	return clampf(distance * 0.09, 1.25, 18.0)
+
+
+func _get_gizmo_axis_world(axis: int) -> Vector3:
+	var local_axis = Vector3.RIGHT
+	if axis == GizmoAxis.Y:
+		local_axis = Vector3.UP
+	elif axis == GizmoAxis.Z:
+		local_axis = Vector3.BACK
+	if not _gizmo_local_space or not is_instance_valid(_selected_map_object):
+		return local_axis
+	var rotation_basis = _selected_map_object.global_basis.orthonormalized()
+	return (rotation_basis * local_axis).normalized()
+
+
+func _gizmo_axis_color(axis: int) -> Color:
+	var color = Color.WHITE
+	if axis == GizmoAxis.X:
+		color = Color(1.0, 0.18, 0.16, 1.0)
+	elif axis == GizmoAxis.Y:
+		color = Color(0.2, 1.0, 0.28, 1.0)
+	elif axis == GizmoAxis.Z:
+		color = Color(0.2, 0.48, 1.0, 1.0)
+	if _object_dragging and _object_drag_axis == axis:
+		color = Color(1.0, 0.95, 0.25, 1.0)
+	return color
+
+
+func _draw_gizmo_line(from: Vector3, to: Vector3, color: Color) -> void:
+	_object_gizmo_mesh.surface_set_color(color)
+	_object_gizmo_mesh.surface_add_vertex(from)
+	_object_gizmo_mesh.surface_add_vertex(to)
+
+
+func _draw_gizmo_tip(center: Vector3, half_size: float, color: Color) -> void:
+	var right = _editor_camera.global_basis.x.normalized() * half_size
+	var up = _editor_camera.global_basis.y.normalized() * half_size
+	_draw_gizmo_line(center - right, center + right, color)
+	_draw_gizmo_line(center - up, center + up, color)
+	_draw_gizmo_line(center - right - up, center + right + up, color)
+	_draw_gizmo_line(center - right + up, center + right - up, color)
+
+
+func _draw_gizmo_rotation_ring(center: Vector3, normal: Vector3, radius: float, color: Color) -> void:
+	var reference = Vector3.UP if absf(normal.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+	var tangent = normal.cross(reference).normalized()
+	var bitangent = normal.cross(tangent).normalized()
+	var segments = 64
+	for index in range(segments):
+		var angle_a = TAU * float(index) / float(segments)
+		var angle_b = TAU * float(index + 1) / float(segments)
+		var point_a = center + (tangent * cos(angle_a) + bitangent * sin(angle_a)) * radius
+		var point_b = center + (tangent * cos(angle_b) + bitangent * sin(angle_b)) * radius
+		_draw_gizmo_line(point_a, point_b, color)
+
+
+func _pick_transform_gizmo_handle(mouse_position: Vector2) -> int:
+	if not is_instance_valid(_selected_map_object) or _editor_camera == null:
+		return GizmoAxis.NONE
+	var pivot = _selected_map_object.global_position
+	var length = _get_transform_gizmo_length()
+	var best_axis = GizmoAxis.NONE
+	var best_distance = gizmo_pick_radius_px + 1.0
+	var pivot_screen = _editor_camera.unproject_position(pivot)
+	if _object_transform_mode == ObjectTransformMode.SCALE and mouse_position.distance_to(pivot_screen) <= gizmo_pick_radius_px:
+		return GizmoAxis.UNIFORM
+	if _object_transform_mode == ObjectTransformMode.ROTATE:
+		for axis in [GizmoAxis.X, GizmoAxis.Y, GizmoAxis.Z]:
+			var distance = _screen_distance_to_rotation_ring(mouse_position, pivot, _get_gizmo_axis_world(axis), length * 0.78)
+			if distance < best_distance:
+				best_distance = distance
+				best_axis = axis
+	else:
+		for axis in [GizmoAxis.X, GizmoAxis.Y, GizmoAxis.Z]:
+			var end_screen = _editor_camera.unproject_position(pivot + _get_gizmo_axis_world(axis) * length)
+			var distance = _point_segment_distance_2d(mouse_position, pivot_screen, end_screen)
+			if distance < best_distance:
+				best_distance = distance
+				best_axis = axis
+	return best_axis if best_distance <= gizmo_pick_radius_px else GizmoAxis.NONE
+
+
+func _screen_distance_to_rotation_ring(mouse_position: Vector2, center: Vector3, normal: Vector3, radius: float) -> float:
+	var reference = Vector3.UP if absf(normal.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+	var tangent = normal.cross(reference).normalized()
+	var bitangent = normal.cross(tangent).normalized()
+	var best = 1000000.0
+	var segments = 64
+	for index in range(segments):
+		var angle_a = TAU * float(index) / float(segments)
+		var angle_b = TAU * float(index + 1) / float(segments)
+		var world_a = center + (tangent * cos(angle_a) + bitangent * sin(angle_a)) * radius
+		var world_b = center + (tangent * cos(angle_b) + bitangent * sin(angle_b)) * radius
+		var screen_a = _editor_camera.unproject_position(world_a)
+		var screen_b = _editor_camera.unproject_position(world_b)
+		best = minf(best, _point_segment_distance_2d(mouse_position, screen_a, screen_b))
+	return best
+
+
+func _point_segment_distance_2d(point: Vector2, start: Vector2, end: Vector2) -> float:
+	var segment = end - start
+	var length_squared = segment.length_squared()
+	if length_squared <= 0.000001:
+		return point.distance_to(start)
+	var amount = clampf((point - start).dot(segment) / length_squared, 0.0, 1.0)
+	return point.distance_to(start + segment * amount)
+
+
+func _begin_object_gizmo_drag(axis: int, mouse_position: Vector2) -> void:
+	if not is_instance_valid(_selected_map_object):
+		return
+	_object_dragging = true
+	_object_drag_axis = axis
+	_object_drag_before_transform = _selected_map_object.transform
+	_object_drag_start_global_transform = _selected_map_object.global_transform
+	_object_drag_start_mouse = mouse_position
+	_object_transform_valid = true
+	var pivot = _selected_map_object.global_position
+	if axis == GizmoAxis.UNIFORM:
+		_refresh_transform_gizmo()
+		return
+	_object_drag_axis_world = _get_gizmo_axis_world(axis)
+	var ray = _get_editor_mouse_ray(mouse_position)
+	var ray_origin = ray["origin"] as Vector3
+	var ray_direction = ray["direction"] as Vector3
+	if _object_transform_mode == ObjectTransformMode.ROTATE:
+		_object_drag_plane_normal = _object_drag_axis_world
+		var rotation_hit = _intersect_ray_plane(ray_origin, ray_direction, pivot, _object_drag_plane_normal)
+		if rotation_hit != null:
+			_object_drag_start_vector = ((rotation_hit as Vector3) - pivot).normalized()
+	else:
+		var camera_forward = -_editor_camera.global_basis.z.normalized()
+		var side = _object_drag_axis_world.cross(camera_forward)
+		if side.length_squared() <= 0.000001:
+			side = _object_drag_axis_world.cross(_editor_camera.global_basis.y.normalized())
+		_object_drag_plane_normal = side.cross(_object_drag_axis_world).normalized()
+		var axis_hit = _intersect_ray_plane(ray_origin, ray_direction, pivot, _object_drag_plane_normal)
+		if axis_hit != null:
+			_object_drag_start_parameter = ((axis_hit as Vector3) - pivot).dot(_object_drag_axis_world)
+	_refresh_transform_gizmo()
+
+
+func _get_editor_mouse_ray(mouse_position: Vector2) -> Dictionary:
+	return {
+		"origin": _editor_camera.project_ray_origin(mouse_position),
+		"direction": _editor_camera.project_ray_normal(mouse_position).normalized(),
+	}
+
+
+func _intersect_ray_plane(ray_origin: Vector3, ray_direction: Vector3, plane_point: Vector3, plane_normal: Vector3):
+	var denominator = plane_normal.dot(ray_direction)
+	if absf(denominator) <= 0.000001:
+		return null
+	var distance = plane_normal.dot(plane_point - ray_origin) / denominator
+	if distance < 0.0:
+		return null
+	return ray_origin + ray_direction * distance
+
+
+func _update_object_gizmo_drag(mouse_position: Vector2) -> void:
+	if not _object_dragging or not is_instance_valid(_selected_map_object):
+		return
+	if _object_transform_mode == ObjectTransformMode.MOVE:
+		_update_move_gizmo_drag(mouse_position)
+	elif _object_transform_mode == ObjectTransformMode.ROTATE:
+		_update_rotate_gizmo_drag(mouse_position)
+	else:
+		_update_scale_gizmo_drag(mouse_position)
+	_update_selected_object_transform_validity()
+	_refresh_selection_visual()
+	_refresh_transform_gizmo()
+	_sync_object_numeric_controls()
+
+
+func _update_move_gizmo_drag(mouse_position: Vector2) -> void:
+	var ray = _get_editor_mouse_ray(mouse_position)
+	var hit = _intersect_ray_plane(ray["origin"] as Vector3, ray["direction"] as Vector3, _object_drag_start_global_transform.origin, _object_drag_plane_normal)
+	if hit == null:
+		return
+	var parameter = ((hit as Vector3) - _object_drag_start_global_transform.origin).dot(_object_drag_axis_world)
+	var delta = snappedf(parameter - _object_drag_start_parameter, object_move_snap)
+	var transform_value = _object_drag_start_global_transform
+	transform_value.origin += _object_drag_axis_world * delta
+	if not _point_inside_map(Vector2(transform_value.origin.x, transform_value.origin.z), 0.0):
+		_show_boundary_warning()
+		return
+	_selected_map_object.global_transform = transform_value
+
+
+func _update_rotate_gizmo_drag(mouse_position: Vector2) -> void:
+	var pivot = _object_drag_start_global_transform.origin
+	var ray = _get_editor_mouse_ray(mouse_position)
+	var hit = _intersect_ray_plane(ray["origin"] as Vector3, ray["direction"] as Vector3, pivot, _object_drag_axis_world)
+	if hit == null:
+		return
+	var current_vector = ((hit as Vector3) - pivot).normalized()
+	if current_vector.length_squared() <= 0.000001 or _object_drag_start_vector.length_squared() <= 0.000001:
+		return
+	var angle = atan2(
+		_object_drag_axis_world.dot(_object_drag_start_vector.cross(current_vector)),
+		_object_drag_start_vector.dot(current_vector)
+	)
+	angle = snappedf(angle, deg_to_rad(object_rotation_snap_degrees))
+	var start_scale = _object_drag_start_global_transform.basis.get_scale()
+	var start_rotation = _object_drag_start_global_transform.basis.orthonormalized()
+	var new_rotation: Basis
+	if _gizmo_local_space:
+		var local_axis = Vector3.RIGHT
+		if _object_drag_axis == GizmoAxis.Y:
+			local_axis = Vector3.UP
+		elif _object_drag_axis == GizmoAxis.Z:
+			local_axis = Vector3.BACK
+		new_rotation = start_rotation * Basis(local_axis, angle)
+	else:
+		new_rotation = Basis(_object_drag_axis_world, angle) * start_rotation
+	_selected_map_object.global_transform = Transform3D(new_rotation * Basis.from_scale(start_scale), pivot)
+
+
+func _update_scale_gizmo_drag(mouse_position: Vector2) -> void:
+	var start_scale = _object_drag_start_global_transform.basis.get_scale()
+	var new_scale = start_scale
+	if _object_drag_axis == GizmoAxis.UNIFORM:
+		var factor = 1.0 + (_object_drag_start_mouse.y - mouse_position.y) * 0.01
+		factor = maxf(0.01, factor)
+		new_scale = start_scale * factor
+	else:
+		var ray = _get_editor_mouse_ray(mouse_position)
+		var hit = _intersect_ray_plane(ray["origin"] as Vector3, ray["direction"] as Vector3, _object_drag_start_global_transform.origin, _object_drag_plane_normal)
+		if hit == null:
+			return
+		var parameter = ((hit as Vector3) - _object_drag_start_global_transform.origin).dot(_object_drag_axis_world)
+		var delta = parameter - _object_drag_start_parameter
+		var factor = maxf(0.01, 1.0 + delta / maxf(_get_transform_gizmo_length(), 0.1))
+		if _object_drag_axis == GizmoAxis.X:
+			new_scale.x = start_scale.x * factor
+		elif _object_drag_axis == GizmoAxis.Y:
+			new_scale.y = start_scale.y * factor
+		else:
+			new_scale.z = start_scale.z * factor
+	new_scale.x = clampf(snappedf(new_scale.x, object_scale_snap), object_minimum_scale, object_maximum_scale)
+	new_scale.y = clampf(snappedf(new_scale.y, object_scale_snap), object_minimum_scale, object_maximum_scale)
+	new_scale.z = clampf(snappedf(new_scale.z, object_scale_snap), object_minimum_scale, object_maximum_scale)
+	var rotation = _object_drag_start_global_transform.basis.orthonormalized()
+	_selected_map_object.global_transform = Transform3D(rotation * Basis.from_scale(new_scale), _object_drag_start_global_transform.origin)
+
+
+func _update_selected_object_transform_validity() -> void:
+	_object_transform_valid = true
+	if not is_instance_valid(_selected_map_object):
+		return
+	if str(_selected_map_object.get_meta("map_editor_category", "")) == "building":
+		var validation = _validate_building_node(_selected_map_object, _selected_map_object)
+		_object_transform_valid = bool(validation.get("valid", false))
+		_draw_building_footprint(_get_node_footprint_polygon(_selected_map_object), _object_transform_valid)
+	else:
+		_hide_building_footprint_preview()
+
+func _handle_object_edit_left_press() -> void:
+	if is_instance_valid(_selected_map_object):
+		var axis = _pick_transform_gizmo_handle(get_viewport().get_mouse_position())
+		if axis != GizmoAxis.NONE:
+			_begin_object_gizmo_drag(axis, get_viewport().get_mouse_position())
+			return
+	var picked = _pick_editor_object_at_mouse()
+	if picked == null:
+		_clear_selected_map_object()
+		return
+	_select_map_object(picked)
+
+func _pick_editor_object_at_mouse() -> Node3D:
+	if _editor_camera == null:
+		return null
+	var mouse_position = get_viewport().get_mouse_position()
+	var ray_from = _editor_camera.project_ray_origin(mouse_position)
+	var ray_to = ray_from + _editor_camera.project_ray_normal(mouse_position) * MAX_RAY_DISTANCE
+	var query = PhysicsRayQueryParameters3D.create(ray_from, ray_to, 0x7FFFFFFF)
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
+	if _camera_rig != null:
+		query.exclude = [_camera_rig.get_rid()]
+	var hit = get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		var collider = hit.get("collider", null) as Node
+		var root = _find_editable_object_root(collider)
+		if root != null:
+			return root
+
+	var best: Node3D = null
+	var best_score = INF
+	for candidate in _get_all_editable_objects():
+		var center = _get_object_selection_center(candidate)
+		if _editor_camera.is_position_behind(center):
+			continue
+		var screen = _editor_camera.unproject_position(center)
+		var pixel_distance = screen.distance_to(mouse_position)
+		if pixel_distance > object_pick_radius_px:
+			continue
+		var score = pixel_distance + _editor_camera.global_position.distance_to(center) * 0.002
+		if score < best_score:
+			best_score = score
+			best = candidate
+	return best
+
+
+func _find_editable_object_root(node: Node) -> Node3D:
+	var cursor = node
+	while cursor != null:
+		if cursor is Node3D and _is_direct_editable_object(cursor as Node3D):
+			return cursor as Node3D
+		cursor = cursor.get_parent()
+	return null
+
+
+func _is_direct_editable_object(node: Node3D) -> bool:
+	if node == null:
+		return false
+	return node.get_parent() in [_trees_root, _ores_root, _spawns_root, _buildings_root]
+
+
+func _get_all_editable_objects() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
+		if root == null:
+			continue
+		for child in root.get_children():
+			if child is Node3D:
+				result.append(child as Node3D)
+	return result
+
+
+func _get_object_selection_center(node: Node3D) -> Vector3:
+	var aabb = _calculate_node_aabb_relative_to(node, node)
+	if aabb.size.length_squared() <= 0.000001:
+		return node.global_position
+	return node.to_global(aabb.get_center())
+
+
+func _select_map_object(node: Node3D) -> void:
+	_selected_map_object = node
+	_object_transform_valid = true
+	_refresh_selection_visual()
+	_refresh_transform_gizmo()
+	_update_object_edit_status()
+	_sync_object_numeric_controls()
+	if _tool_mode == ToolMode.OBJECT_EDIT:
+		_refresh_bottom_dock()
+	_set_status("Selected: %s" % node.name)
+
+
+func _set_selected_team_spawn_team(team: String) -> void:
+	if not _selected_map_object is TeamSpawnPoint:
+		return
+	var point := _selected_map_object as TeamSpawnPoint
+	var previous_team := str(point.team)
+	if previous_team == team:
+		return
+	var uuid := str(point.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	var previous_spawn_id := point.spawn_point_id
+	var next_spawn_id := _next_team_spawn_id(team)
+	_apply_team_spawn_team(uuid, team, next_spawn_id)
+	_undo_redo.create_action("Set Spawn Team")
+	_undo_redo.add_do_method(_apply_team_spawn_team.bind(uuid, team, next_spawn_id))
+	_undo_redo.add_undo_method(_apply_team_spawn_team.bind(uuid, previous_team, previous_spawn_id))
+	_undo_redo.commit_action(false)
+	_refresh_bottom_dock()
+
+
+func _apply_team_spawn_team(uuid: String, team: String, spawn_id_override: String = "") -> void:
+	var node := _find_editor_object_by_uuid(uuid)
+	if not node is TeamSpawnPoint:
+		return
+	var point := node as TeamSpawnPoint
+	point.team = team
+	point.spawn_point_id = spawn_id_override if not spawn_id_override.is_empty() else _next_team_spawn_id(team)
+	point.name = "%sTeamSpawn" % ("Red" if team == "red" else "Blue")
+	var marker := point.get_node_or_null("_EditorMarker") as MeshInstance3D
+	if marker != null:
+		var material := marker.material_override as StandardMaterial3D
+		if material != null:
+			material.albedo_color = Color(0.95, 0.2, 0.2, 0.65) if team == "red" else Color(0.2, 0.45, 1.0, 0.65)
+	_refresh_spawn_editor_label(point)
+
+func _clear_selected_map_object() -> void:
+	_end_object_transform_drag()
+	_selected_map_object = null
+	_object_transform_valid = true
+	if _selection_visual != null:
+		_selection_visual.visible = false
+	if _object_gizmo != null:
+		_object_gizmo.visible = false
+	_hide_building_footprint_preview()
+	_update_object_edit_status()
+	_sync_object_numeric_controls()
+
+func _set_object_transform_mode(mode: int) -> void:
+	_end_object_transform_drag()
+	_object_transform_mode = mode
+	if _object_move_button != null:
+		_object_move_button.button_pressed = mode == ObjectTransformMode.MOVE
+	if _object_rotate_button != null:
+		_object_rotate_button.button_pressed = mode == ObjectTransformMode.ROTATE
+	if _object_scale_button != null:
+		_object_scale_button.button_pressed = mode == ObjectTransformMode.SCALE
+	_update_object_edit_status()
+	_refresh_transform_gizmo()
+
+func _move_selected_object_to_terrain(hit_position: Vector3) -> void:
+	# Retained for compatibility with older callers. The V9 editor uses the XYZ gizmo.
+	if not is_instance_valid(_selected_map_object):
+		return
+	var transform_value = _selected_map_object.global_transform
+	transform_value.origin = hit_position
+	_selected_map_object.global_transform = transform_value
+	_refresh_selection_visual()
+	_refresh_transform_gizmo()
+
+func _rotate_selected_object_from_mouse(relative_x: float) -> void:
+	# Retained for compatibility. Rotation is handled by the three-axis gizmo.
+	return
+
+func _end_object_transform_drag() -> void:
+	if not _object_dragging:
+		return
+	_object_dragging = false
+	_object_drag_axis = GizmoAxis.NONE
+	if not is_instance_valid(_selected_map_object):
+		return
+	if not _object_transform_valid:
+		_selected_map_object.transform = _object_drag_before_transform
+		_set_status("Transform cancelled: building footprint overlaps another object or leaves the map.")
+		_object_transform_valid = true
+		_hide_building_footprint_preview()
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+		_sync_object_numeric_controls()
+		return
+	var after = _selected_map_object.transform
+	if _object_drag_before_transform.is_equal_approx(after):
+		_hide_building_footprint_preview()
+		_refresh_transform_gizmo()
+		return
+	var uuid = str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	var action_name = "Move Map Object"
+	if _object_transform_mode == ObjectTransformMode.ROTATE:
+		action_name = "Rotate Map Object"
+	elif _object_transform_mode == ObjectTransformMode.SCALE:
+		action_name = "Scale Map Object"
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_object_transform_by_uuid.bind(uuid, after))
+	_undo_redo.add_undo_method(_apply_object_transform_by_uuid.bind(uuid, _object_drag_before_transform))
+	_undo_redo.commit_action(false)
+	_hide_building_footprint_preview()
+	var category = str(_selected_map_object.get_meta("map_editor_category", ""))
+	if category in ["tree", "ore"]:
+		_rebuild_resource_multimeshes_deferred()
+	_refresh_transform_gizmo()
+
+func _apply_object_transform_by_uuid(uuid: String, transform_value: Transform3D) -> void:
+	var node = _find_editor_object_by_uuid(uuid)
+	if node == null:
+		return
+	node.transform = transform_value
+	if node == _selected_map_object:
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+		_sync_object_numeric_controls()
+	var category = str(node.get_meta("map_editor_category", ""))
+	if category in ["tree", "ore"]:
+		_rebuild_resource_multimeshes_deferred()
+
+func _delete_selected_object() -> void:
+	if not is_instance_valid(_selected_map_object):
+		return
+	var record = _serialize_editor_object(_selected_map_object)
+	var records: Array = [record]
+	_remove_object_records(records)
+	_clear_selected_map_object()
+	_undo_redo.create_action("Delete Map Object")
+	_undo_redo.add_do_method(_remove_object_records.bind(records))
+	_undo_redo.add_undo_method(_restore_object_records.bind(records))
+	_undo_redo.commit_action(false)
+	_rebuild_resource_multimeshes_deferred()
+
+
+func _duplicate_selected_object() -> void:
+	if not is_instance_valid(_selected_map_object):
+		return
+	var record = _serialize_editor_object(_selected_map_object)
+	record["uuid"] = _new_editor_uuid(str(record.get("category", "object")))
+	record["name"] = "%s_Copy" % str(record.get("name", "MapObject"))
+	var transform_value = record.get("transform", Transform3D.IDENTITY) as Transform3D
+	var local_aabb = _calculate_node_aabb_relative_to(_selected_map_object, _selected_map_object)
+	var offset_distance = maxf(1.0, local_aabb.size.x + building_overlap_margin + 0.5)
+	transform_value.origin += Vector3(offset_distance, 0.0, 0.0)
+	record["transform"] = transform_value
+	var records: Array = [record]
+	_restore_object_records(records)
+	var duplicated = _find_editor_object_by_uuid(str(record["uuid"]))
+	if duplicated == null:
+		return
+	if str(record.get("category", "")) == "building":
+		var validation = _validate_building_node(duplicated, duplicated)
+		if not bool(validation.get("valid", false)):
+			_remove_object_records(records)
+			_set_status("Duplicate blocked: %s" % str(validation.get("reason", "overlap")))
+			return
+	_undo_redo.create_action("Duplicate Map Object")
+	_undo_redo.add_do_method(_restore_object_records.bind(records))
+	_undo_redo.add_undo_method(_remove_object_records.bind(records))
+	_undo_redo.commit_action(false)
+	_select_map_object(duplicated)
+	_rebuild_resource_multimeshes_deferred()
+
+func _align_selected_object_to_ground() -> void:
+	if not is_instance_valid(_selected_map_object):
+		return
+	var before = _selected_map_object.transform
+	var category = str(_selected_map_object.get_meta("map_editor_category", "spawn"))
+	var align_to_normal = category in ["tree", "ore"]
+	var xz = Vector2(_selected_map_object.global_position.x, _selected_map_object.global_position.z)
+	var yaw = _extract_world_yaw(_selected_map_object.global_basis)
+	var ground_offset = float(_selected_map_object.get_meta("map_editor_ground_offset", placed_object_ground_offset))
+	_place_map_object_at_terrain(_selected_map_object, xz, yaw, align_to_normal, ground_offset)
+	var after = _selected_map_object.transform
+	if before.is_equal_approx(after):
+		return
+	var uuid = str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	_undo_redo.create_action("Align Map Object To Ground")
+	_undo_redo.add_do_method(_apply_object_transform_by_uuid.bind(uuid, after))
+	_undo_redo.add_undo_method(_apply_object_transform_by_uuid.bind(uuid, before))
+	_undo_redo.commit_action(false)
+	_refresh_selection_visual()
+
+
+func _extract_world_yaw(basis: Basis) -> float:
+	var z_axis = basis.z
+	z_axis.y = 0.0
+	if z_axis.length_squared() <= 0.000001:
+		return 0.0
+	z_axis = z_axis.normalized()
+	return atan2(z_axis.x, z_axis.z)
+
+
+func _refresh_selection_visual() -> void:
+	if _selection_visual_mesh == null or not is_instance_valid(_selected_map_object) or _tool_mode != ToolMode.OBJECT_EDIT:
+		if _selection_visual != null:
+			_selection_visual.visible = false
+		return
+	var local_aabb = _calculate_node_aabb_relative_to(_selected_map_object, _selected_map_object)
+	if local_aabb.size.length_squared() <= 0.000001:
+		local_aabb = AABB(Vector3(-0.5, 0.0, -0.5), Vector3.ONE)
+	var corners: Array[Vector3] = []
+	for x in [0, 1]:
+		for y in [0, 1]:
+			for z in [0, 1]:
+				corners.append(local_aabb.position + Vector3(local_aabb.size.x * x, local_aabb.size.y * y, local_aabb.size.z * z))
+	var edge_pairs = [
+		[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3],
+		[2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7],
+	]
+	_selection_visual_mesh.clear_surfaces()
+	_selection_visual_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for pair in edge_pairs:
+		_selection_visual_mesh.surface_add_vertex(_selected_map_object.to_global(corners[int(pair[0])]))
+		_selection_visual_mesh.surface_add_vertex(_selected_map_object.to_global(corners[int(pair[1])]))
+	_selection_visual_mesh.surface_end()
+	_selection_visual.global_transform = Transform3D.IDENTITY
+	var material = _selection_visual.material_override as StandardMaterial3D
+	if material != null:
+		material.albedo_color = Color(0.1, 0.9, 1.0, 1.0) if _object_transform_valid else Color(1.0, 0.08, 0.04, 1.0)
+	_selection_visual.visible = true
+
+func _apply_numeric_object_transform() -> void:
+	if not is_instance_valid(_selected_map_object):
+		return
+	for control in [
+		_object_x_spin, _object_y_spin, _object_z_spin,
+		_object_rot_x_spin, _object_rot_y_spin, _object_rot_z_spin,
+		_object_scale_x_spin, _object_scale_y_spin, _object_scale_z_spin,
+	]:
+		if control == null:
+			return
+	var position = Vector3(_object_x_spin.value, _object_y_spin.value, _object_z_spin.value)
+	if not _point_inside_map(Vector2(position.x, position.z), 0.0):
+		_show_boundary_warning()
+		return
+	var rotation = Vector3(
+		deg_to_rad(_object_rot_x_spin.value),
+		deg_to_rad(_object_rot_y_spin.value),
+		deg_to_rad(_object_rot_z_spin.value)
+	)
+	var scale_value = Vector3(
+		clampf(_object_scale_x_spin.value, object_minimum_scale, object_maximum_scale),
+		clampf(_object_scale_y_spin.value, object_minimum_scale, object_maximum_scale),
+		clampf(_object_scale_z_spin.value, object_minimum_scale, object_maximum_scale)
+	)
+	var before = _selected_map_object.transform
+	var global_before = _selected_map_object.global_transform
+	_selected_map_object.global_transform = Transform3D(
+		Basis.from_euler(rotation) * Basis.from_scale(scale_value),
+		position
+	)
+	if str(_selected_map_object.get_meta("map_editor_category", "")) == "building":
+		var validation = _validate_building_node(_selected_map_object, _selected_map_object)
+		if not bool(validation.get("valid", false)):
+			_selected_map_object.global_transform = global_before
+			_set_status("Exact transform rejected: %s" % str(validation.get("reason", "overlap")))
+			_sync_object_numeric_controls()
+			return
+	var after = _selected_map_object.transform
+	if before.is_equal_approx(after):
+		return
+	var uuid = str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	_undo_redo.create_action("Set Exact Object Transform")
+	_undo_redo.add_do_method(_apply_object_transform_by_uuid.bind(uuid, after))
+	_undo_redo.add_undo_method(_apply_object_transform_by_uuid.bind(uuid, before))
+	_undo_redo.commit_action(false)
+	_refresh_selection_visual()
+	_refresh_transform_gizmo()
+	_sync_object_numeric_controls()
+	var category = str(_selected_map_object.get_meta("map_editor_category", ""))
+	if category in ["tree", "ore"]:
+		_rebuild_resource_multimeshes_deferred()
+
+func _apply_uniform_scale_from_inspector() -> void:
+	if not is_instance_valid(_selected_map_object) or _object_uniform_scale_spin == null:
+		return
+	var value = clampf(_object_uniform_scale_spin.value, object_minimum_scale, object_maximum_scale)
+	if _object_scale_x_spin != null:
+		_object_scale_x_spin.value = value
+	if _object_scale_y_spin != null:
+		_object_scale_y_spin.value = value
+	if _object_scale_z_spin != null:
+		_object_scale_z_spin.value = value
+	_apply_numeric_object_transform()
+
+func _sync_object_numeric_controls() -> void:
+	var has_selection = is_instance_valid(_selected_map_object)
+	for spin in [
+		_object_x_spin, _object_y_spin, _object_z_spin,
+		_object_rot_x_spin, _object_rot_y_spin, _object_rot_z_spin,
+		_object_scale_x_spin, _object_scale_y_spin, _object_scale_z_spin,
+		_object_uniform_scale_spin,
+	]:
+		if spin != null:
+			spin.editable = has_selection
+	if not has_selection:
+		return
+	var position = _selected_map_object.global_position
+	var rotation = _selected_map_object.global_basis.orthonormalized().get_euler()
+	var scale_value = _selected_map_object.global_basis.get_scale()
+	if _object_x_spin != null:
+		_object_x_spin.value = position.x
+	if _object_y_spin != null:
+		_object_y_spin.value = position.y
+	if _object_z_spin != null:
+		_object_z_spin.value = position.z
+	if _object_rot_x_spin != null:
+		_object_rot_x_spin.value = rad_to_deg(rotation.x)
+	if _object_rot_y_spin != null:
+		_object_rot_y_spin.value = rad_to_deg(rotation.y)
+	if _object_rot_z_spin != null:
+		_object_rot_z_spin.value = rad_to_deg(rotation.z)
+	if _object_scale_x_spin != null:
+		_object_scale_x_spin.value = scale_value.x
+	if _object_scale_y_spin != null:
+		_object_scale_y_spin.value = scale_value.y
+	if _object_scale_z_spin != null:
+		_object_scale_z_spin.value = scale_value.z
+	if _object_uniform_scale_spin != null:
+		_object_uniform_scale_spin.value = (scale_value.x + scale_value.y + scale_value.z) / 3.0
+
+func _update_object_edit_status() -> void:
+	if _selection_status_label != null:
+		var selected_name = _selected_map_object.name if is_instance_valid(_selected_map_object) else "None"
+		var mode_name = "Move"
+		if _object_transform_mode == ObjectTransformMode.ROTATE:
+			mode_name = "Rotate"
+		elif _object_transform_mode == ObjectTransformMode.SCALE:
+			mode_name = "Scale"
+		var space_name = "Local" if _gizmo_local_space else "World"
+		_selection_status_label.text = "Selected: %s
+Mode: %s | Axes: %s" % [selected_name, mode_name, space_name]
+	if _object_delete_button != null:
+		_object_delete_button.disabled = not is_instance_valid(_selected_map_object)
+	if _object_duplicate_button != null:
+		_object_duplicate_button.disabled = not is_instance_valid(_selected_map_object)
+
 func create_road_from_points(points: PackedVector3Array, road_type: int = 1) -> Path3D:
 	if _roads_root == null or points.size() < 2:
 		return null
@@ -3456,11 +6309,20 @@ func save_current_map() -> void:
 		return
 
 	_update_map_metadata_before_save()
+	var map_validation_error := _get_playable_map_validation_error()
+	if not map_validation_error.is_empty():
+		_set_status(map_validation_error)
+		return
+	# An imported icon always wins.  Otherwise render a small local preview of
+	# the map before writing the sidecar manifest; _save_map_icon() will then
+	# persist the generated 128x128 image exactly like an imported one.
+	if _map_icon_image == null or _map_icon_image.is_empty():
+		await _capture_generated_map_icon()
 	_save_editor_sidecar_data(folder)
 
 	# The runtime map needs FarmWorldInitializer, but attaching it while editing
 	# would trigger game-specific initialization. Attach only while packing.
-	var previous_script: Variant = _map_root.get_script()
+	var previous_script = _map_root.get_script()
 	var initializer_script = _load_resource_or_null(FARM_INITIALIZER_PATH) as Script
 	if initializer_script != null:
 		_map_root.set_script(initializer_script)
@@ -3470,6 +6332,10 @@ func save_current_map() -> void:
 	if is_instance_valid(_day_night_system):
 		previous_day_night_process_mode = _day_night_system.process_mode
 		_day_night_system.process_mode = Node.PROCESS_MODE_INHERIT
+	var previous_weather_process_mode = Node.PROCESS_MODE_DISABLED
+	if is_instance_valid(_weather_system):
+		previous_weather_process_mode = _weather_system.process_mode
+		_weather_system.process_mode = Node.PROCESS_MODE_INHERIT
 
 	var disabled_spawn_nodes: Array[Node] = []
 	for child in _spawns_root.get_children():
@@ -3490,6 +6356,8 @@ func save_current_map() -> void:
 			spawn_node.process_mode = Node.PROCESS_MODE_DISABLED
 	if is_instance_valid(_day_night_system):
 		_day_night_system.process_mode = previous_day_night_process_mode
+	if is_instance_valid(_weather_system):
+		_weather_system.process_mode = previous_weather_process_mode
 	_map_root.set_script(previous_script)
 
 	if pack_error != OK:
@@ -3503,13 +6371,89 @@ func save_current_map() -> void:
 	_set_status("Saved: %s" % scene_path)
 
 
+func _capture_generated_map_icon() -> void:
+	if _map_root == null or (_map_icon_image != null and not _map_icon_image.is_empty()):
+		return
+
+	# Render the actual map root in an isolated viewport.  The preview camera is
+	# never made current in the editor viewport, so the user's editing camera
+	# and its position remain untouched.
+	var preview_viewport := SubViewport.new()
+	preview_viewport.name = "GeneratedMapIconViewport"
+	preview_viewport.size = Vector2i(MAP_ICON_SIZE * 2, MAP_ICON_SIZE * 2)
+	preview_viewport.own_world_3d = true
+	preview_viewport.transparent_bg = false
+	preview_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(preview_viewport)
+
+	var map_parent := _map_root.get_parent()
+	if map_parent == null:
+		preview_viewport.queue_free()
+		return
+	var map_index := _map_root.get_index()
+	var map_transform := _map_root.transform
+	var map_process_mode := _map_root.process_mode
+	map_parent.remove_child(_map_root)
+	preview_viewport.add_child(_map_root)
+	_map_root.process_mode = Node.PROCESS_MODE_DISABLED
+
+	var preview_camera := Camera3D.new()
+	preview_camera.name = "GeneratedMapIconCamera"
+	preview_camera.position = Vector3(0.0, 0.0, 2.0)
+	preview_camera.rotation = Vector3(
+		deg_to_rad(-18.0),
+		_rng.randf_range(-PI, PI),
+		0.0
+	)
+	preview_camera.fov = 70.0
+	preview_camera.near = 0.05
+	preview_camera.far = maxf(500.0, _map_size.length() * 2.0)
+	preview_viewport.add_child(preview_camera)
+	preview_camera.current = false
+	# The requested map camera remains non-current.  A short-lived copy is used
+	# only by the isolated viewport because Godot renders a viewport through its
+	# current camera; both cameras have exactly the same transform and lens.
+	var capture_camera := preview_camera.duplicate() as Camera3D
+	capture_camera.name = "GeneratedMapIconCaptureCamera"
+	capture_camera.current = true
+	preview_viewport.add_child(capture_camera)
+	preview_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var captured := preview_viewport.get_texture().get_image()
+
+	capture_camera.current = false
+	preview_viewport.remove_child(capture_camera)
+	capture_camera.free()
+	preview_viewport.remove_child(preview_camera)
+	preview_camera.free()
+	preview_viewport.remove_child(_map_root)
+	map_parent.add_child(_map_root)
+	map_parent.move_child(_map_root, mini(map_index, map_parent.get_child_count() - 1))
+	_map_root.transform = map_transform
+	_map_root.process_mode = map_process_mode
+	preview_viewport.queue_free()
+
+	if captured == null or captured.is_empty():
+		_set_status("Map saved without an icon: preview capture failed")
+		return
+	_map_icon_image = _make_letterboxed_icon(captured)
+	_map_icon_texture = ImageTexture.create_from_image(_map_icon_image)
+	_map_icon_source_path = "generated://map_icon.png"
+	if _icon_preview != null:
+		_icon_preview.texture = _map_icon_texture
+	if _icon_status_label != null:
+		_icon_status_label.text = "Generated preview -> 128x128"
+
+
 func _update_map_metadata_before_save() -> void:
-	_map_root.set_meta("farmwar_map_format_version", 3)
+	_map_root.set_meta("farmwar_map_format_version", 5)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
 	_map_root.set_meta("farmwar_map_name", _map_id)
 	_map_root.set_meta("farmwar_map_size", _map_size)
+	_map_root.set_meta("farmwar_terrain_winding_version", 2)
 	_map_root.set_meta("terrain_origin", _terrain_origin)
 	_map_root.set_meta("terrain_vertex_spacing", vertex_spacing)
 	_map_root.set_meta("terrain_sample_width", _sample_width)
@@ -3519,6 +6463,7 @@ func _update_map_metadata_before_save() -> void:
 	_map_root.set_meta("surface_palette_entries", _surface_entries.duplicate(true))
 	_map_root.set_meta("surface_default_id", _get_default_surface_id())
 	_map_root.set_meta("manual_grass", _manual_grass)
+	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
 	_map_root.set_meta("integrated_systems", [
 		"explicit_ground_static_body",
 		"dynamic_height_terrain",
@@ -3526,13 +6471,35 @@ func _update_map_metadata_before_save() -> void:
 		"surface_mask",
 		"manual_grass_multimesh",
 		"continuous_curve_roads",
+		"water_bodies",
 		"day_night_gameplay_only",
+		"weather_system",
 		"cloud_system",
 		"size_aware_far_scenery",
 		"tree_resource_multimesh",
 		"giant_crop_spawns",
 		"wild_animal_spawns",
+		"independent_red_blue_team_spawns",
+		"building_content_browser",
+		"building_placement",
+		"object_transform_editor",
 	])
+
+
+func _get_playable_map_validation_error() -> String:
+	if _spawns_root == null:
+		return "Cannot save playable map: missing SpawnPoints root."
+	var has_red := false
+	var has_blue := false
+	for child in _spawns_root.get_children():
+		if not child is TeamSpawnPoint:
+			continue
+		var point := child as TeamSpawnPoint
+		has_red = has_red or point.team == "red"
+		has_blue = has_blue or point.team == "blue"
+	if not has_red or not has_blue:
+		return "Cannot save playable map: place at least one red and one blue Player Spawn Point."
+	return ""
 
 
 func _save_editor_sidecar_data(folder: String) -> void:
@@ -3562,6 +6529,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 
 	_save_editor_objects_sidecar(folder)
 	_save_roads_sidecar(folder)
+	_save_water_bodies_sidecar(folder)
 
 	var icon_saved = _save_map_icon(folder)
 	var template_name = (
@@ -3570,7 +6538,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 		else "creston_town"
 	)
 	var manifest = {
-		"format_version": 3,
+		"format_version": 5,
 		"map_id": _map_id,
 		"display_name": _display_name,
 		"icon": MAP_ICON_FILE_NAME if icon_saved else "",
@@ -3599,16 +6567,25 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"manual_grass": "manual_grass.dat",
 			"editor_objects": EDITOR_OBJECTS_FILE_NAME,
 			"roads": ROADS_FILE_NAME,
+			"water_bodies": WATER_BODIES_FILE_NAME,
 			"road_count": _roads_root.get_child_count(),
+			"water_count": _water_root.get_child_count(),
 			"tree_count": _trees_root.get_child_count(),
 			"ore_count": _ores_root.get_child_count(),
 			"spawn_count": _spawns_root.get_child_count(),
+			"building_count": _buildings_root.get_child_count(),
+			"ai_configuration": _ai_configurations.duplicate(true),
+			"ai_count": _ai_configurations.size(),
 		},
 		"features": {
-			"building_placement_enabled": false,
+			"building_placement_enabled": true,
+			"object_transform_enabled": true,
+			"xyz_gizmo_enabled": true,
+			"building_overlap_validation_enabled": true,
 			"farmland_editor_enabled": false,
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
 			"size_aware_far_scenery": true,
+			"water_bodies_enabled": true,
 		},
 	}
 
@@ -3687,20 +6664,6 @@ func _request_new_map() -> void:
 	_confirm_discard_or_run(Callable(self, "_create_map_from_ui"))
 
 
-func _editor_button_style(color: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.content_margin_left = 12.0
-	style.content_margin_right = 12.0
-	style.content_margin_top = 8.0
-	style.content_margin_bottom = 8.0
-	return style
-
-
 func _request_open_map() -> void:
 	_confirm_discard_or_run(Callable(self, "_show_open_map_dialog"))
 
@@ -3710,10 +6673,12 @@ func _request_return_to_main_menu() -> void:
 
 
 func _return_to_main_menu() -> void:
-	if is_instance_valid(CooperativeSession) and CooperativeSession.is_active():
-		CooperativeSession.stop_session()
-	if is_instance_valid(GameAuthority):
-		GameAuthority.stop_authority()
+	var cooperative_session := get_node_or_null("/root/CooperativeSession")
+	if cooperative_session != null and cooperative_session.has_method("is_active") and cooperative_session.call("is_active"):
+		cooperative_session.call("stop_session")
+	var authority := get_node_or_null("/root/GameAuthority")
+	if authority != null and authority.has_method("stop_authority"):
+		authority.call("stop_authority")
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().change_scene_to_file("res://ui/MainMenuRoot.tscn")
 
@@ -3784,6 +6749,10 @@ func open_map_package(manifest_path: String) -> void:
 		_set_status("Invalid map.json")
 		return
 	var manifest = parsed as Dictionary
+	var configured_ai_value: Variant = manifest.get(
+		"ai_configuration",
+		(manifest.get("content", {}) as Dictionary).get("ai_configuration", [])
+	)
 	var size_data = manifest.get("size", {}) as Dictionary
 	var map_size_value = Vector2i(
 		maxi(32, int(size_data.get("width", 256))),
@@ -3797,6 +6766,10 @@ func open_map_package(manifest_path: String) -> void:
 	vertex_spacing = maxf(0.25, float(terrain_data.get("vertex_spacing", vertex_spacing)))
 
 	create_new_map(display_name_value, map_size_value, template_value, map_id_value, version_value)
+	_ai_configurations = configured_ai_value.duplicate(true) if configured_ai_value is Array else []
+	_selected_ai_index = 0 if not _ai_configurations.is_empty() else -1
+	if _map_root != null:
+		_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
 	_current_map_folder = manifest_path.get_base_dir()
 	_load_surface_entries_from_manifest(manifest)
 	_load_heightmap_sidecar(_current_map_folder.path_join(str(terrain_data.get("heightmap", "heightmap.bin"))))
@@ -3805,6 +6778,7 @@ func open_map_package(manifest_path: String) -> void:
 	_load_editor_objects_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("editor_objects", EDITOR_OBJECTS_FILE_NAME))))
 	_recalculate_loaded_object_counters()
 	_load_roads_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("roads", ROADS_FILE_NAME))))
+	_load_water_bodies_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("water_bodies", WATER_BODIES_FILE_NAME))))
 	_load_map_icon_from_package(_current_map_folder, str(manifest.get("icon", "")))
 	_rebuild_loaded_map_visuals()
 	_update_map_ui_from_loaded_manifest()
@@ -3874,6 +6848,7 @@ func _load_manual_grass_sidecar(path: String) -> void:
 	file.close()
 	if loaded is Dictionary:
 		_manual_grass = loaded as Dictionary
+	_ensure_manual_grass_species()
 
 
 func _load_map_icon_from_package(folder: String, icon_name: String) -> void:
@@ -3912,7 +6887,7 @@ func _clear_map_icon() -> void:
 func _recalculate_loaded_object_counters() -> void:
 	_next_object_id = 1
 	_next_spawn_id = 1
-	for root in [_trees_root, _ores_root]:
+	for root in [_trees_root, _ores_root, _buildings_root]:
 		if root != null:
 			_next_object_id += root.get_child_count()
 	if _spawns_root != null:
@@ -3933,6 +6908,7 @@ func _update_map_ui_from_loaded_manifest() -> void:
 
 
 func _rebuild_loaded_map_visuals() -> void:
+	_rebuild_persistent_height_contours()
 	for coordinate_value in _terrain_chunks.keys():
 		_rebuild_terrain_chunk(coordinate_value as Vector2i, true)
 	_rebuild_terrain_skirt()
@@ -3948,8 +6924,11 @@ func _rebuild_loaded_map_visuals() -> void:
 		for key_value in chunks.keys():
 			_rebuild_manual_grass_chunk(species, str(key_value))
 	_rebuild_resource_multimeshes_deferred()
+	_rebuild_all_water_bodies()
 	_configure_integrated_systems()
 	_configure_camera_for_map_and_far_scenery()
+	_clear_selected_map_object()
+	_clear_building_preview()
 	_rebuild_road_edit_visuals()
 
 
@@ -3967,7 +6946,7 @@ func _apply_foundation_color() -> void:
 
 func _save_editor_objects_sidecar(folder: String) -> void:
 	var records: Array = []
-	for root in [_trees_root, _ores_root, _spawns_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -3982,7 +6961,7 @@ func _save_editor_objects_sidecar(folder: String) -> void:
 func _load_editor_objects_sidecar(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		return
-	for root in [_trees_root, _ores_root, _spawns_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
 		for child in root.get_children():
 			child.queue_free()
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -3992,6 +6971,35 @@ func _load_editor_objects_sidecar(path: String) -> void:
 	file.close()
 	if loaded is Array:
 		_restore_object_records(loaded as Array)
+
+
+func _save_water_bodies_sidecar(folder: String) -> void:
+	var records: Array = []
+	if _water_root != null:
+		for child in _water_root.get_children():
+			var water := child as WaterBody3D
+			if water != null:
+				records.append(_serialize_water(water))
+	var file := FileAccess.open(folder.path_join(WATER_BODIES_FILE_NAME), FileAccess.WRITE)
+	if file != null:
+		file.store_var(records, true)
+		file.close()
+
+
+func _load_water_bodies_sidecar(path: String) -> void:
+	if _water_root == null:
+		return
+	for child in _water_root.get_children():
+		child.queue_free()
+	if not FileAccess.file_exists(path):
+		return
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var loaded = file.get_var(true)
+	file.close()
+	if loaded is Array:
+		_restore_water_records(loaded as Array)
 
 
 # -----------------------------------------------------------------------------
@@ -4039,6 +7047,404 @@ func _set_road_edit_visuals_visible(value: bool) -> void:
 		_rebuild_road_edit_visuals()
 
 
+func _ensure_water_edit_visuals() -> void:
+	if is_instance_valid(_water_preview_root):
+		return
+	_water_preview_root = Node3D.new()
+	_water_preview_root.name = "WaterEditVisuals"
+	_water_preview_root.set_meta(EDITOR_MARKER_META, true)
+	add_child(_water_preview_root)
+	_water_marker_root = Node3D.new()
+	_water_marker_root.name = "ControlPoints"
+	_water_preview_root.add_child(_water_marker_root)
+	_water_preview_mesh = ImmediateMesh.new()
+	_water_preview_line = MeshInstance3D.new()
+	_water_preview_line.name = "PreviewLine"
+	_water_preview_line.mesh = _water_preview_mesh
+	_water_preview_line.material_override = _make_unshaded_material(Color(0.1, 0.85, 1.0, 1.0))
+	_water_preview_line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_water_preview_root.add_child(_water_preview_line)
+
+
+func _set_water_edit_visuals_visible(value: bool) -> void:
+	_ensure_water_edit_visuals()
+	_water_preview_root.visible = value
+	if value:
+		_rebuild_water_edit_visuals()
+
+
+func _rebuild_water_edit_visuals() -> void:
+	_ensure_water_edit_visuals()
+	for child in _water_marker_root.get_children():
+		_water_marker_root.remove_child(child)
+		child.queue_free()
+	_water_preview_mesh.clear_surfaces()
+	if not _water_preview_root.visible:
+		return
+	if _water_points.size() < 1:
+		return
+	for index in range(_water_points.size()):
+		var marker := MeshInstance3D.new()
+		marker.name = "WaterPoint_%02d" % index
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.45
+		sphere.height = 0.9
+		marker.mesh = sphere
+		marker.material_override = _make_unshaded_material(Color(0.1, 0.85, 1.0, 1.0))
+		_water_marker_root.add_child(marker)
+		var point := _water_points[index]
+		marker.position = Vector3(point.x, _water_level + 0.18, point.y)
+
+	# A line strip needs at least two vertices. During the first click there is
+	# only one control point, so leave the ImmediateMesh empty until the next.
+	if _water_points.size() >= 2:
+		_water_preview_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		for point in _water_points:
+			_water_preview_mesh.surface_add_vertex(Vector3(point.x, _water_level + 0.2, point.y))
+		if _water_body_type == WaterBody3D.BodyType.LAKE and _water_points.size() >= 3:
+			_water_preview_mesh.surface_add_vertex(Vector3(_water_points[0].x, _water_level + 0.2, _water_points[0].y))
+		_water_preview_mesh.surface_end()
+
+
+func _update_water_preview(cursor: Vector3) -> void:
+	_ensure_water_edit_visuals()
+	if not _water_preview_root.visible:
+		return
+	_rebuild_water_edit_visuals()
+	if not _water_drawing_active or _water_points.is_empty():
+		return
+	_water_preview_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	var last := _water_points[_water_points.size() - 1]
+	_water_preview_mesh.surface_add_vertex(Vector3(last.x, _water_level + 0.2, last.y))
+	_water_preview_mesh.surface_add_vertex(Vector3(cursor.x, _water_level + 0.2, cursor.z))
+	_water_preview_mesh.surface_end()
+
+
+func _update_water_preview_from_latest_hit() -> void:
+	if not _latest_hit.is_empty():
+		_update_water_preview(_latest_hit.get("position", Vector3.ZERO) as Vector3)
+
+
+func _begin_new_lake() -> void:
+	_begin_new_water(WaterBody3D.BodyType.LAKE)
+
+
+func _begin_new_river() -> void:
+	_begin_new_water(WaterBody3D.BodyType.RIVER)
+
+
+func _begin_new_water(type: int) -> void:
+	if _water_root == null:
+		return
+	_finish_active_water()
+	var packed := _load_resource_or_null(WATER_BODY_PATH) as PackedScene
+	if packed == null:
+		_set_status("Missing WaterBody3D scene: %s" % WATER_BODY_PATH)
+		return
+	var instance := packed.instantiate() as WaterBody3D
+	if instance == null:
+		_set_status("WaterBody3D root is invalid")
+		return
+	_water_body_type = type
+	instance.name = ("Lake" if type == WaterBody3D.BodyType.LAKE else "River") + "_%03d" % (_water_root.get_child_count() + 1)
+	instance.set_meta("map_editor_water_uuid", _new_editor_uuid("water"))
+	instance.set_meta("map_editor_water_body", true)
+	instance.position.y = 0.0
+	instance.body_type = type
+	instance.water_level = _water_level
+	instance.water_depth = _water_depth
+	instance.river_width = _water_width
+	instance.water_collision_layer = WATER_COLLISION_LAYER
+	instance.water_collision_mask = WATER_COLLISION_MASK
+	_water_root.add_child(instance)
+	_selected_water = instance
+	_water_points = PackedVector2Array()
+	_water_drawing_active = true
+	_set_water_edit_visuals_visible(true)
+	_refresh_water_list_option()
+	_update_water_control_states()
+	_set_status("Water drawing: click %s points, then press Enter" % ("3+ lake boundary" if type == WaterBody3D.BodyType.LAKE else "2+ river centerline"))
+
+
+func _handle_water_left_press() -> void:
+	if _latest_hit.is_empty():
+		return
+	var hit := _latest_hit.get("position", Vector3.ZERO) as Vector3
+	if not _water_drawing_active:
+		_begin_new_water(_water_body_type)
+	if not _water_drawing_active:
+		return
+	if _water_points.is_empty():
+		_water_level = hit.y
+		if _water_level_spin != null:
+			_water_level_spin.value = _water_level
+	_water_points.append(Vector2(hit.x, hit.z))
+	if _selected_water != null:
+		if _water_body_type == WaterBody3D.BodyType.LAKE:
+			_selected_water.polygon_points = _water_points
+		else:
+			_selected_water.centerline_points = _water_points
+		_selected_water.water_level = _water_level
+		_selected_water.rebuild_water_body()
+	_rebuild_water_edit_visuals()
+	_set_status("Water points: %d" % _water_points.size())
+
+
+func _finish_active_water() -> void:
+	if not _water_drawing_active:
+		return
+	var minimum_points := 3 if _water_body_type == WaterBody3D.BodyType.LAKE else 2
+	if _selected_water == null or _water_points.size() < minimum_points:
+		_cancel_active_water()
+		_set_status("Water cancelled: at least %d points are required" % minimum_points)
+		return
+	_selected_water.body_type = _water_body_type
+	if _water_body_type == WaterBody3D.BodyType.LAKE:
+		_selected_water.polygon_points = _water_points
+		_selected_water.centerline_points = PackedVector2Array()
+	else:
+		_selected_water.centerline_points = _water_points
+		_selected_water.polygon_points = PackedVector2Array()
+	_selected_water.water_level = _water_level
+	_selected_water.water_depth = _water_depth
+	_selected_water.river_width = _water_width
+	_selected_water.water_collision_layer = WATER_COLLISION_LAYER
+	_selected_water.water_collision_mask = WATER_COLLISION_MASK
+	_selected_water.rebuild_water_body()
+	_water_drawing_active = false
+	var record := _serialize_water(_selected_water)
+	_undo_redo.create_action("Create Water Body")
+	_undo_redo.add_do_method(_restore_water_records.bind([record]))
+	_undo_redo.add_undo_method(_remove_water_records.bind([record]))
+	_undo_redo.commit_action(false)
+	_water_points = PackedVector2Array()
+	_rebuild_water_edit_visuals()
+	_refresh_water_list_option()
+	_update_water_control_states()
+	_set_status("Water body completed")
+
+
+func _cancel_active_water() -> void:
+	if _selected_water != null and _water_drawing_active:
+		var temporary := _selected_water
+		_selected_water = null
+		_water_root.remove_child(temporary)
+		temporary.free()
+	_water_drawing_active = false
+	_water_points = PackedVector2Array()
+	_rebuild_water_edit_visuals()
+	_refresh_water_list_option()
+	_update_water_control_states()
+
+
+func _delete_selected_water() -> void:
+	if _selected_water == null and _water_list_option != null and _water_root != null:
+		var selected_index := _water_list_option.selected
+		if selected_index >= 0:
+			_on_water_list_selected(selected_index)
+	if _selected_water == null:
+		return
+	if _water_drawing_active:
+		# Do not delete an unfinished temporary outline.
+		return
+	var record := _serialize_water(_selected_water)
+	_undo_redo.create_action("Delete Water Body")
+	_undo_redo.add_do_method(_remove_water_records.bind([record]))
+	_undo_redo.add_undo_method(_restore_water_records.bind([record]))
+	_undo_redo.commit_action()
+	_refresh_water_list_option()
+	_update_water_control_states()
+
+
+func _on_water_list_selected(index: int) -> void:
+	if _water_list_option == null or _water_root == null:
+		return
+	var child_index := _water_list_option.get_item_id(index)
+	if child_index < 0 or child_index >= _water_root.get_child_count():
+		return
+	var water := _water_root.get_child(child_index) as WaterBody3D
+	if water == null:
+		return
+	_selected_water = water
+	_water_body_type = water.body_type
+	_water_level = water.water_level
+	_water_depth = water.water_depth
+	_water_width = water.river_width
+	_water_points = water.centerline_points if water.body_type == WaterBody3D.BodyType.RIVER else water.polygon_points
+	if _water_type_option != null:
+		_water_type_option.select(int(_water_body_type))
+	if _water_level_spin != null:
+		_water_level_spin.value = _water_level
+	if _water_depth_spin != null:
+		_water_depth_spin.value = _water_depth
+	if _water_width_spin != null:
+		_water_width_spin.value = _water_width
+	_rebuild_water_edit_visuals()
+	_update_water_control_states()
+
+
+func _refresh_water_list_option() -> void:
+	if _water_list_option == null:
+		return
+	_water_list_option.clear()
+	if _water_root == null:
+		return
+	for index in range(_water_root.get_child_count()):
+		var water := _water_root.get_child(index) as WaterBody3D
+		if water == null:
+			continue
+		_water_list_option.add_item(water.name, index)
+		if water == _selected_water:
+			_water_list_option.select(_water_list_option.item_count - 1)
+	if _selected_water == null and _water_list_option.item_count > 0:
+		# Keep the first saved water selectable after loading a package. Godot's
+		# OptionButton.select() does not emit item_selected, so update the editor
+		# state explicitly as well.
+		_water_list_option.select(0)
+		_on_water_list_selected(0)
+
+
+func _serialize_water(water: WaterBody3D) -> Dictionary:
+	var uuid := str(water.get_meta("map_editor_water_uuid", ""))
+	if uuid.is_empty():
+		uuid = _new_editor_uuid("water")
+		water.set_meta("map_editor_water_uuid", uuid)
+	var polygon: Array = []
+	for point in water.polygon_points:
+		polygon.append(point)
+	var centerline: Array = []
+	for point in water.centerline_points:
+		centerline.append(point)
+	return {
+		"uuid": uuid,
+		"name": water.name,
+		"transform": Transform3D(Basis.IDENTITY, Vector3.ZERO),
+		"body_type": int(water.body_type),
+		"polygon_points": polygon,
+		"centerline_points": centerline,
+		"water_level": water.water_level,
+		"water_depth": water.water_depth,
+		"river_width": water.river_width,
+		"water_collision_layer": WATER_COLLISION_LAYER,
+		"water_collision_mask": WATER_COLLISION_MASK,
+	}
+
+
+func _apply_serialized_water_to_node(water: WaterBody3D, record: Dictionary) -> void:
+	water.name = str(record.get("name", "WaterBody3D"))
+	water.position.y = 0.0
+	water.set_meta("map_editor_water_uuid", str(record.get("uuid", _new_editor_uuid("water"))))
+	water.body_type = int(record.get("body_type", WaterBody3D.BodyType.LAKE))
+	water.polygon_points = _packed_vector2_array_from_variant(record.get("polygon_points", []))
+	water.centerline_points = _packed_vector2_array_from_variant(record.get("centerline_points", []))
+	water.water_level = float(record.get("water_level", _water_level))
+	water.water_depth = float(record.get("water_depth", _water_depth))
+	water.river_width = float(record.get("river_width", _water_width))
+	water.water_collision_layer = WATER_COLLISION_LAYER
+	water.water_collision_mask = WATER_COLLISION_MASK
+	water.rebuild_water_body()
+
+
+func _packed_vector2_array_from_variant(value: Variant) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	if value is PackedVector2Array:
+		return value
+	if not value is Array:
+		return result
+	for item in value as Array:
+		if item is Vector2:
+			result.append(item as Vector2)
+	return result
+
+
+func _find_water_by_uuid(uuid: String) -> WaterBody3D:
+	if uuid.is_empty() or _water_root == null:
+		return null
+	for child in _water_root.get_children():
+		var water := child as WaterBody3D
+		if water != null and str(water.get_meta("map_editor_water_uuid", "")) == uuid:
+			return water
+	return null
+
+
+func _restore_water_records(records: Array) -> void:
+	for value in records:
+		var record := value as Dictionary
+		var uuid := str(record.get("uuid", ""))
+		if not uuid.is_empty() and _find_water_by_uuid(uuid) != null:
+			continue
+		var packed := _load_resource_or_null(WATER_BODY_PATH) as PackedScene
+		if packed == null:
+			continue
+		var water := packed.instantiate() as WaterBody3D
+		if water == null:
+			continue
+		_water_root.add_child(water)
+		_apply_serialized_water_to_node(water, record)
+	_refresh_water_list_option()
+
+
+func _remove_water_records(records: Array) -> void:
+	for value in records:
+		var record := value as Dictionary
+		var water := _find_water_by_uuid(str(record.get("uuid", "")))
+		if water == null:
+			continue
+		if water == _selected_water:
+			_selected_water = null
+		water.get_parent().remove_child(water)
+		water.free()
+	_refresh_water_list_option()
+	_rebuild_water_edit_visuals()
+
+
+func _commit_water_state_change(action_name: String, before: Dictionary, after: Dictionary) -> void:
+	if before.is_empty() or after.is_empty() or _water_history_guard:
+		return
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_water_record_state.bind(after))
+	_undo_redo.add_undo_method(_apply_water_record_state.bind(before))
+	_undo_redo.commit_action(false)
+
+
+func _apply_water_record_state(record: Dictionary) -> void:
+	var water := _find_water_by_uuid(str(record.get("uuid", "")))
+	if water == null:
+		_restore_water_records([record])
+		water = _find_water_by_uuid(str(record.get("uuid", "")))
+	if water == null:
+		return
+	_apply_serialized_water_to_node(water, record)
+	if _selected_water == water:
+		_water_body_type = water.body_type
+		_water_level = water.water_level
+		_water_depth = water.water_depth
+		_water_width = water.river_width
+		_water_points = water.centerline_points if water.body_type == WaterBody3D.BodyType.RIVER else water.polygon_points
+	_rebuild_water_edit_visuals()
+	_refresh_water_list_option()
+
+
+func _rebuild_all_water_bodies() -> void:
+	if _water_root == null:
+		return
+	for child in _water_root.get_children():
+		var water := child as WaterBody3D
+		if water != null:
+			water.rebuild_water_body()
+
+
+func _is_point_in_water(world_xz: Vector2, y_value: float = 0.0) -> bool:
+	if _water_root == null:
+		return false
+	var position := Vector3(world_xz.x, y_value, world_xz.y)
+	for child in _water_root.get_children():
+		var water := child as WaterBody3D
+		if water != null and water.contains_surface_point(position):
+			return true
+	return false
+
+
 func _reset_road_editor_state() -> void:
 	_selected_road = null
 	_road_drawing_active = false
@@ -4053,6 +7459,18 @@ func _reset_road_editor_state() -> void:
 	_road_centerline_mesh = null
 	_road_preview_line = null
 	_road_preview_mesh = null
+
+
+func _reset_water_editor_state() -> void:
+	_selected_water = null
+	_water_drawing_active = false
+	_water_points = PackedVector2Array()
+	if is_instance_valid(_water_preview_root):
+		_water_preview_root.queue_free()
+	_water_preview_root = null
+	_water_preview_line = null
+	_water_preview_mesh = null
+	_water_marker_root = null
 
 
 func _begin_new_road() -> void:
@@ -5015,13 +8433,17 @@ func _create_terrain_foundation() -> void:
 	var box_mesh = BoxMesh.new()
 	box_mesh.size = foundation_size
 	_ground_safety_mesh.mesh = box_mesh
-	_ground_safety_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# The underground safety slab must never cast onto the terrain surface.
+	_ground_safety_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# It exists solely as a physics safety floor; showing it creates a false
+	# deep-map layer whenever the dynamic terrain is temporarily unavailable.
+	_ground_safety_mesh.visible = false
 	_ground_body.add_child(_ground_safety_mesh)
 	_update_ground_safety_color()
 
 	_terrain_skirt_mesh = MeshInstance3D.new()
 	_terrain_skirt_mesh.name = "TerrainEdgeSkirt"
-	_terrain_skirt_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_terrain_skirt_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_terrain_foundation_root.add_child(_terrain_skirt_mesh)
 	_update_ground_safety_color()
 	_rebuild_terrain_skirt()

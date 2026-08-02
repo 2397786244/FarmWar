@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://1wrg1sh5ws5v" path="res://src/terrain/road_path_3d.gd" id="8_5eoyx"]
 [ext_resource type="PackedScene" uid="uid://dx05fdwc8bbfm" path="res://buildings/SpawnBlueBus.tscn" id="8_blue_bus"]
 [ext_resource type="PackedScene" path="res://buildings/SpawnRedBus.tscn" id="9_red_bus"]
+[ext_resource type="PackedScene" path="res://buildings/TeamSpawnPoint.tscn" id="9_team_spawn"]
 [ext_resource type="Resource" uid="uid://ctglogdhkfavo" path="res://worlds/creston_town/creston_town_grass_scatter.res" id="11_evfb7"]
 [ext_resource type="PackedScene" uid="uid://naa15h6nlj70" path="res://buildings/BlueKitchen.tscn" id="11_frgu0"]
 [ext_resource type="PackedScene" uid="uid://jutywdx0i3n2" path="res://buildings/RedKitchen.tscn" id="12_0jbk6"]
@@ -61,8 +62,8 @@
 [ext_resource type="PackedScene" uid="uid://8eixcic7o4kc" path="res://buildings/warehouse_blue.tscn" id="58_3cyp7"]
 [ext_resource type="PackedScene" path="res://worlds/shared/cloud_system.tscn" id="59_cloud_system"]
 [ext_resource type="PackedScene" path="res://worlds/shared/day_night_system.tscn" id="60_day_night"]
-[ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="62_weather"]
 [ext_resource type="Script" uid="uid://by56w567ih6jo" path="res://src/far_scenery_ring_3d.gd" id="61_far_scenery"]
+[ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="62_weather"]
 [ext_resource type="PackedScene" uid="uid://dba6lq15i61io" path="res://buildings/RoadsideDiner.tscn" id="63_4igfp"]
 [ext_resource type="PackedScene" uid="uid://kwvmjeo72p05" path="res://buildings/Gunstore.tscn" id="64_of110"]
 [ext_resource type="PackedScene" uid="uid://cmhxh57ujwdlv" path="res://buildings/Lottery.tscn" id="65_mwjp6"]
@@ -84,7 +85,10 @@
 [ext_resource type="PackedScene" uid="uid://biwhwtiukaxqp" path="res://buildings/GardenFlower.tscn" id="81_m84xa"]
 [ext_resource type="PackedScene" uid="uid://bsfoogub3a02u" path="res://buildings/GardenPlant.tscn" id="82_fme60"]
 [ext_resource type="PackedScene" uid="uid://2awybs5wtndb" path="res://buildings/WoodChair.tscn" id="83_458ja"]
+[ext_resource type="PackedScene" uid="uid://c5ojyioedqthr" path="res://assets/nature/Wildflower_BlackEyedSusan.glb" id="83_black_eyed_susan"]
+[ext_resource type="PackedScene" uid="uid://sn4povlunc2" path="res://assets/nature/Wildflower_Coneflower.glb" id="84_coneflower"]
 [ext_resource type="PackedScene" uid="uid://d2tbwv4xsw574" path="res://buildings/OilTanker.tscn" id="84_psq48"]
+[ext_resource type="PackedScene" uid="uid://da7y8jov6tor2" path="res://assets/nature/Fern_Clump.glb" id="85_fern"]
 [ext_resource type="PackedScene" uid="uid://kpylbt2bci34" path="res://buildings/FarmVane.tscn" id="85_joolc"]
 [ext_resource type="PackedScene" uid="uid://d3s6tkn0ymhc1" path="res://buildings/WhiteFenceCornerRight.tscn" id="86_qyur3"]
 [ext_resource type="PackedScene" uid="uid://cjwrxd6ptcgjy" path="res://buildings/WhiteFenceStraight.tscn" id="87_hsh88"]
@@ -172,6 +176,7 @@ _data = {
 point_count = 6
 
 [sub_resource type="Curve3D" id="Curve3D_5eoyx"]
+bake_interval = 0.5
 _data = {
 "points": PackedVector3Array(0, 0, 0, 0, 0, 0, -32.363976, 0, -22.859417, 0, 0, 0, 0, 0, 0, -30.111, 0, 0.890815, 0, 0, 0, 0, 0, 0, -36.535835, 0, 8.390085, 0, 0, 0, 0, 0, 0, -43.423443, 0, 18.657518, 0, 0, 0, 0, 0, 0, -28.952145, 0, 35.48362, 0, 0, 0, 0, 0, 0, -9.351425, 0, 31.843695, 0, 0, 0, 0, 0, 0, 16.362, 0, 17.391, 0, 0, 0, 0, 0, 0, 47.317, 0, 3.546, 0, 0, 0, 0, 0, 0, 44.368, 0, -21.028, 0, 0, 0, 0, 0, 0, 23.761, 0, -31.163, 0, 0, 0, 0, 0, 0, -0.722, 0, -24.666, 0, 0, 0, 0, 0, 0, -32.050156, 0, -13.305244),
 "tilts": PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -179,6 +184,7 @@ _data = {
 point_count = 12
 
 [sub_resource type="Curve3D" id="Curve3D_lejet"]
+bake_interval = 0.5
 _data = {
 "points": PackedVector3Array(0, 0, 0, 0, 0, 0, -35.124, 0, 26.491686, 0, 0, 0, 0, 0, 0, -44.210403, 0, 38.94794, 0, 0, 0, 0, 0, 0, -45.08924, 0, 50.600296),
 "tilts": PackedFloat32Array(0, 0, 0)
@@ -186,6 +192,7 @@ _data = {
 point_count = 3
 
 [sub_resource type="Curve3D" id="Curve3D_xvwxk"]
+bake_interval = 0.5
 _data = {
 "points": PackedVector3Array(0, 0, 0, 0, 0, 0, -45.430187, 0, 52.0429, 0, 0, 0, 0, 0, 0, -47.04, 0, 65.66237, 0, 0, 0, 0, 0, 0, -48.855534, 0, 73.188416),
 "tilts": PackedFloat32Array(0, 0, 0)
@@ -218,9 +225,9 @@ cloud_height_range = Vector2(60, 120)
 cloud_visibility_distance = 500.0
 
 [node name="DayNightSystem" parent="." unique_id=1259791586 instance=ExtResource("60_day_night")]
-initial_hour = 17.0
+initial_hour = 10.0
 
-[node name="WeatherSystem" parent="." instance=ExtResource("62_weather")]
+[node name="WeatherSystem" parent="." unique_id=358009557 instance=ExtResource("62_weather")]
 
 [node name="Ground" type="StaticBody3D" parent="." unique_id=421201706]
 collision_mask = 14334
@@ -313,6 +320,9 @@ mask_resolution = 1024
 script = ExtResource("53_grass_scatter")
 small_grass_scene = ExtResource("54_grass_small")
 tall_grass_scene = ExtResource("55_grass_tall")
+black_eyed_susan_scene = ExtResource("83_black_eyed_susan")
+coneflower_scene = ExtResource("84_coneflower")
+fern_scene = ExtResource("85_fern")
 surface_mask = ExtResource("3_iqwys")
 small_density = 0.2
 tall_density = 0.02
@@ -366,6 +376,17 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -119.78124, 0.52, -72)
 
 [node name="SpawnBlueBus" parent="." unique_id=1536219773 instance=ExtResource("8_blue_bus")]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 120.109665, 0.52, 72)
+
+[node name="SpawnPoints" type="Node3D" parent="." unique_id=753396106]
+
+[node name="RedTeamSpawn" parent="SpawnPoints" unique_id=1304081944 instance=ExtResource("9_team_spawn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0.52, -68)
+spawn_point_id = "red_spawn_01"
+
+[node name="BlueTeamSpawn" parent="SpawnPoints" unique_id=1526269337 instance=ExtResource("9_team_spawn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0.52, 68)
+team = "blue"
+spawn_point_id = "blue_spawn_01"
 
 [node name="BlueFarm" type="Node3D" parent="." unique_id=1749405135]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 120, 0.52, 115)

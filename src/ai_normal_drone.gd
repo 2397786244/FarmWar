@@ -237,18 +237,23 @@ func _update_evasion(delta: float) -> void:
 func _find_visible_enemy_player() -> CharacterBody3D:
 	var best: CharacterBody3D
 	var best_distance := INF
-	for node in get_tree().get_nodes_in_group("human_players"):
-		if not node is CharacterBody3D:
-			continue
-		var candidate := node as CharacterBody3D
-		if _get_combat_team(candidate) == team_id:
-			continue
-		var distance := global_position.distance_to(candidate.global_position)
-		if distance > target_scan_range or not _has_line_of_sight(candidate):
-			continue
-		if distance < best_distance:
-			best = candidate
-			best_distance = distance
+	for group_name in [&"human_players", &"combat_characters"]:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if not node is CharacterBody3D or node == ai_controller:
+				continue
+			var candidate := node as CharacterBody3D
+			if candidate.has_method("get_network_state"):
+				var network_state := candidate.call("get_network_state") as Dictionary
+				if bool(network_state.get("dead", false)):
+					continue
+			if _get_combat_team(candidate) == team_id:
+				continue
+			var distance := global_position.distance_to(candidate.global_position)
+			if distance > target_scan_range or not _has_line_of_sight(candidate):
+				continue
+			if distance < best_distance:
+				best = candidate
+				best_distance = distance
 	return best
 
 

@@ -1,13 +1,10 @@
-[gd_scene format=3 uid="uid://dx05fdwc8bbfm"]
+[gd_scene load_steps=3 format=3 uid="uid://dx05fdwc8bbfm"]
 
 [ext_resource type="PackedScene" uid="uid://b2j4k1bloutcg" path="res://assets/other_items/BlueBus.glb" id="1_b477i"]
 [ext_resource type="Script" uid="uid://cg438d83ltvvy" path="res://src/spawn_bus.gd" id="2_spawn_bus"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_b477i"]
 size = Vector3(3, 3.6, 10)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_spawn_region"]
-size = Vector3(6, 0.2, 10)
 
 [node name="SpawnBlueBus" type="StaticBody3D" unique_id=1173819165]
 collision_layer = 8192
@@ -20,15 +17,3 @@ script = ExtResource("2_spawn_bus")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9499588, 0)
 shape = SubResource("BoxShape3D_b477i")
 debug_color = Color(0.90691394, 0.270477, 0.35854208, 0.41960785)
-
-[node name="SpawnRegion" type="Area3D" parent="." unique_id=1186392667]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0.1, 0)
-collision_layer = 0
-collision_mask = 0
-monitoring = false
-monitorable = false
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="SpawnRegion" unique_id=1567027286]
-shape = SubResource("BoxShape3D_spawn_region")
-disabled = true
-debug_color = Color(0.15, 0.45, 1, 0.3)

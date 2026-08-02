@@ -894,6 +894,13 @@ func _apply_movement(direction: Vector3, delta: float) -> void:
 	var speed := base_speed
 	if slow_remaining > 0.0:
 		speed *= 0.5
+	var horizontal_step := direction * speed + rubber_knockback
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Keep this legacy AI consistent with the current navigation actors.
+		direction = Vector3.ZERO
+		rubber_knockback.x = 0.0
+		rubber_knockback.z = 0.0
 	var acceleration := 13.0 if difficulty == Difficulty.EASY else 20.0
 	var desired_velocity := direction * speed
 	desired_velocity += rubber_knockback

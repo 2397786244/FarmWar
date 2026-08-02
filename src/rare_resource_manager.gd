@@ -56,6 +56,8 @@ func _players_near(position: Vector3) -> bool:
 	return false
 
 func _spawn_at_point(point: Node3D) -> bool:
+	if _is_water_position(point.global_position):
+		return false
 	var resource := _resource_for_point(point)
 	if resource.is_empty():
 		return false
@@ -88,6 +90,13 @@ func _spawn_at_point(point: Node3D) -> bool:
 		point.call("assign_resource", active_resource)
 	GameAuthority.reliable_world_event_ready.emit({"type": "rare_resource_spawned", "resource": active_resource, "tick": GameAuthority.server_tick})
 	return true
+
+
+func _is_water_position(position: Vector3) -> bool:
+	for value in get_tree().get_nodes_in_group("water_bodies"):
+		if value != null and value.has_method("contains_world_point") and value.call("contains_world_point", position):
+			return true
+	return false
 
 
 func _resource_for_point(point: Node3D) -> Dictionary:

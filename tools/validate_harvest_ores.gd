@@ -5,6 +5,8 @@ const ORE_SCENES := [
 	"res://items/IronOre.tscn",
 	"res://items/CopperOre.tscn",
 	"res://items/LimestoneOre.tscn",
+	"res://items/MossRock.tscn",
+	"res://items/GraniteRock.tscn",
 ]
 
 
@@ -96,7 +98,7 @@ func _run_validation() -> void:
 		manager.queue_free()
 		await process_frame
 	shop_catalog.free()
-	print("HARVEST_ORE_VALIDATION_OK: 4 scenes")
+	print("HARVEST_ORE_VALIDATION_OK: %d scenes" % ORE_SCENES.size())
 	quit(0)
 
 

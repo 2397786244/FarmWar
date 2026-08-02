@@ -49,6 +49,11 @@ const PROFILES := {
 		"visual_speed": 90.0, "visual_lifetime": 1.12,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
+	"future_m4": {
+		"range": 100.0, "damage": 48.0, "knockback": 20.0,
+		"visual_speed": 90.0, "visual_lifetime": 1.12,
+		"bullet_count": 1, "spread_degrees": 0.0,
+	},
 	"ar15": {
 		"range": 110.0, "damage": 55.0, "knockback": 20.0,
 		"visual_speed": 100.0, "visual_lifetime": 1.1,

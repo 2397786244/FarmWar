@@ -6,10 +6,16 @@ const GrassScatterBakeDataScript = preload("res://src/terrain/grass_scatter_bake
 const VALUES_PER_INSTANCE := 4
 const SMALL_SPECIES_SALT := 1103515245
 const TALL_SPECIES_SALT := 214013
+const BLACK_EYED_SUSAN_SPECIES_SALT := 1357911
+const CONEFLOWER_SPECIES_SALT := 2468021
+const FERN_SPECIES_SALT := 9753186
 
 @export_group("Source Models")
 @export var small_grass_scene: PackedScene
 @export var tall_grass_scene: PackedScene
+@export var black_eyed_susan_scene: PackedScene
+@export var coneflower_scene: PackedScene
+@export var fern_scene: PackedScene
 
 @export_group("Terrain")
 @export var surface_mask: Texture2D
@@ -24,12 +30,20 @@ const TALL_SPECIES_SALT := 214013
 @export var random_seed := 72451
 @export_range(0.0, 2.0, 0.01, "or_greater") var small_density := 0.35
 @export_range(0.0, 1.0, 0.01, "or_greater") var tall_density := 0.05
+@export_range(0.0, 1.0, 0.001, "or_greater") var black_eyed_susan_density := 0.015
+@export_range(0.0, 1.0, 0.001, "or_greater") var coneflower_density := 0.012
+@export_range(0.0, 1.0, 0.001, "or_greater") var fern_density := 0.020
 @export var small_scale_range := Vector2(0.85, 1.15)
 @export var tall_scale_range := Vector2(0.85, 1.20)
+@export var black_eyed_susan_scale_range := Vector2(0.85, 1.15)
+@export var coneflower_scale_range := Vector2(0.85, 1.15)
+@export var fern_scale_range := Vector2(0.80, 1.20)
 
 @export_group("Rendering")
 @export_range(1.0, 500.0, 1.0) var small_visibility_distance := 60.0
 @export_range(1.0, 500.0, 1.0) var tall_visibility_distance := 80.0
+@export_range(1.0, 500.0, 1.0) var flower_visibility_distance := 70.0
+@export_range(1.0, 500.0, 1.0) var fern_visibility_distance := 80.0
 @export_file("*.res") var bake_output_path := "res://worlds/creston_town/creston_town_grass_scatter.res"
 @export var bake_data: GrassScatterBakeData
 
@@ -62,9 +76,12 @@ func bake_grass() -> void:
 			ResourceLoader.CACHE_MODE_REPLACE
 		) as GrassScatterBakeData
 	_build_multimeshes(bake_data)
-	print("GrassScatter3D: baked %d small and %d tall grass instances." % [
+	print("GrassScatter3D: baked %d small, %d tall, %d black-eyed susans, %d coneflowers and %d ferns." % [
 		_count_instances(bake_data.small_chunks),
 		_count_instances(bake_data.tall_chunks),
+		_count_instances(bake_data.black_eyed_susan_chunks),
+		_count_instances(bake_data.coneflower_chunks),
+		_count_instances(bake_data.fern_chunks),
 	])
 
 
@@ -119,11 +136,29 @@ func _generate_bake_data() -> GrassScatterBakeData:
 				coordinate, chunk_counts, tall_density, tall_scale_range,
 				TALL_SPECIES_SALT, mask_image
 			)
+			var black_eyed_susan_values := _scatter_chunk(
+				coordinate, chunk_counts, black_eyed_susan_density, black_eyed_susan_scale_range,
+				BLACK_EYED_SUSAN_SPECIES_SALT, mask_image
+			)
+			var coneflower_values := _scatter_chunk(
+				coordinate, chunk_counts, coneflower_density, coneflower_scale_range,
+				CONEFLOWER_SPECIES_SALT, mask_image
+			)
+			var fern_values := _scatter_chunk(
+				coordinate, chunk_counts, fern_density, fern_scale_range,
+				FERN_SPECIES_SALT, mask_image
+			)
 			var key := _chunk_key(coordinate)
 			if not small_values.is_empty():
 				data.small_chunks[key] = small_values
 			if not tall_values.is_empty():
 				data.tall_chunks[key] = tall_values
+			if not black_eyed_susan_values.is_empty():
+				data.black_eyed_susan_chunks[key] = black_eyed_susan_values
+			if not coneflower_values.is_empty():
+				data.coneflower_chunks[key] = coneflower_values
+			if not fern_values.is_empty():
+				data.fern_chunks[key] = fern_values
 	return data
 
 
@@ -186,6 +221,9 @@ func _build_multimeshes(data: GrassScatterBakeData) -> void:
 		return
 	_build_species("Small", small_grass_scene, data.small_chunks, small_visibility_distance)
 	_build_species("Tall", tall_grass_scene, data.tall_chunks, tall_visibility_distance)
+	_build_species("BlackEyedSusan", black_eyed_susan_scene, data.black_eyed_susan_chunks, flower_visibility_distance)
+	_build_species("Coneflower", coneflower_scene, data.coneflower_chunks, flower_visibility_distance)
+	_build_species("Fern", fern_scene, data.fern_chunks, fern_visibility_distance)
 
 
 func _build_species(
@@ -237,7 +275,9 @@ func _build_species(
 			instance.position = Vector3(chunk_center.x, 0.0, chunk_center.y)
 			instance.multimesh = multi
 			instance.material_override = source.material_override
-			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# Main-map grass is gameplay-near geometry.  It should use the same
+			# sunlight shadow contract as painted editor grass and resources.
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 			instance.visibility_range_end = visibility_distance
 			instance.extra_cull_margin = 2.0
 			_generated_root.add_child(instance)

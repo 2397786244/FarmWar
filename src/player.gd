@@ -6,6 +6,19 @@ class_name GamePlayer
 const SPEED := 5.0
 const JUMP_VELOCITY := 3.0
 const PRONE_SPEED_MULTIPLIER := 0.4
+const SWIM_HORIZONTAL_SPEED := 3.5
+const SWIM_RISE_SPEED := 3.0
+const SWIM_DIVE_SPEED := 2.8
+const SWIM_SINK_SPEED := 0.45
+const SWIM_VERTICAL_ACCELERATION := 8.0
+const SWIM_MAX_DEPTH := 3.0
+const SWIM_SURFACE_MARGIN := 0.20
+const SWIM_EXIT_PROBE_DISTANCE := 0.45
+const UNDERWATER_EFFECT_FULL_DEPTH := 2.0
+const SWIM_DIVE_INPUT_ACTION := "prone"
+# Keep the underwater tint above the 3D world but below the gameplay HUD so
+# the hotbar and interaction text remain readable.
+const WATER_OVERLAY_Z_INDEX := -10
 const PLAYER_MAX_HP := 200.0
 const NETWORK_SIMULATION_DELTA := 1.0 / 60.0
 const PLAYER_SOFT_CORRECTION_DISTANCE := 0.10
@@ -59,6 +72,7 @@ var pending_server_correction: Dictionary = {}
 var is_remote_proxy := false
 var remote_snapshot_buffer: Array[Dictionary] = []
 var remote_locomotion_state := "idle"
+var remote_swim_moving := false
 var remote_grounded := true
 var server_hp := PLAYER_MAX_HP
 var respawn_left := 0.0
@@ -148,10 +162,12 @@ var death_camera_origin := Vector3.ZERO
 var death_camera_target := Vector3.ZERO
 var match_end_page: Control
 var tranquilizer_overlay: ColorRect
+var underwater_overlay: ColorRect
 var damage_flash_root: Control
 var damage_flash_tween: Tween
 var gameplay_notice: Label
 var gameplay_notice_tween: Tween
+var message_area_notice: Label
 var action_reward_feed: VBoxContainer
 var action_reward_tweens: Dictionary = {}
 var team_money_delta_feeds: Dictionary = {}
@@ -167,6 +183,7 @@ var team_outline_visible := false
 
 var is_weapon_aiming := false
 var is_prone := false
+var swim_dive_input_held := false
 var standing_head_position := Vector3.ZERO
 var standing_body_collision_transform := Transform3D.IDENTITY
 var standing_hit_collision_transform := Transform3D.IDENTITY
@@ -1417,6 +1434,7 @@ func _ready() -> void:
 		_create_crosshair()
 		_create_interact_hint()
 		_create_gameplay_notice()
+		_create_message_area_notice()
 		_create_damage_feedback_ui()
 		_create_action_reward_feed()
 		_create_team_money_delta_feeds()
@@ -1549,6 +1567,10 @@ func _apply_remote_render_state(snapshot: Dictionary) -> void:
 	var previous_locomotion_state := remote_locomotion_state
 	remote_grounded = bool(snapshot.get("grounded", remote_grounded))
 	remote_locomotion_state = str(snapshot.get("locomotion_state", remote_locomotion_state))
+	var remote_velocity: Variant = snapshot.get("velocity", Vector3.ZERO)
+	remote_swim_moving = remote_locomotion_state == "swim" \
+		and remote_velocity is Vector3 \
+		and Vector2((remote_velocity as Vector3).x, (remote_velocity as Vector3).z).length_squared() > 0.001
 	_update_remote_locomotion_animation(previous_locomotion_state)
 
 
@@ -1605,6 +1627,10 @@ func _update_remote_locomotion_animation(previous_state: String) -> void:
 	match remote_locomotion_state:
 		"prone":
 			_play_body_animation(&"ProneCrawl", 0.10)
+		"swim":
+			# No dedicated swimming animation exists yet. Use the normal ground
+			# locomotion set: Walk while moving and Idle while stationary.
+			_play_body_animation(&"Walk" if remote_swim_moving else &"Idle", 0.12)
 		"walk":
 			_play_body_animation(&"Carry" if _selected_item_uses_carry_pose() else &"Walk", 0.08)
 		"idle_tool":
@@ -1710,6 +1736,11 @@ func _inventory_ui_blocks_gameplay_actions() -> bool:
 func _input(event: InputEvent) -> void:
 	if is_remote_proxy:
 		return
+	# Keep a local held-state for the mapped prone action as a fallback for
+	# platforms where a handled InputEvent no longer reports pressed state from
+	# Input.is_action_pressed during the same frame.
+	if event.is_action(SWIM_DIVE_INPUT_ACTION):
+		swim_dive_input_held = event.is_pressed()
 	if game_exit_dialog.is_open():
 		if event.is_action_pressed("esc", false):
 			_close_game_exit_dialog()
@@ -1876,7 +1907,13 @@ func _input(event: InputEvent) -> void:
 		if _cycle_sprout_blaster_seed():
 			get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("prone", false) and not player_backpack.is_open():
+	if event.is_action_pressed(SWIM_DIVE_INPUT_ACTION, false) and not player_backpack.is_open():
+		# The mapped prone action is the dive input while the player's body is in
+		# water. Do not
+		# toggle the ground prone state; the physics tick samples the held key.
+		if _is_in_swimming_water():
+			get_viewport().set_input_as_handled()
+			return
 		_set_prone_state(not is_prone)
 		get_viewport().set_input_as_handled()
 		return
@@ -1951,7 +1988,13 @@ func _tool_index_from_key(key: Key) -> int:
 	return -1
 
 
-func _submit_authority_input(input_direction: Vector2, jumped: bool, delta: float) -> void:
+func _submit_authority_input(
+	input_direction: Vector2,
+	jumped: bool,
+	delta: float,
+	swim_up := false,
+	diving := false
+) -> void:
 	input_sequence += 1
 	if jumped:
 		jump_sequence += 1
@@ -1964,6 +2007,8 @@ func _submit_authority_input(input_direction: Vector2, jumped: bool, delta: floa
 		"yaw": rotation.y,
 		"pitch": Head.rotation.x,
 		"prone": is_prone,
+		"swim_up": swim_up,
+		"dive": diving,
 	}
 	if GameAuthority.should_send_network_requests():
 		var prediction_frame := frame.duplicate(true)
@@ -2372,7 +2417,9 @@ func _replay_predicted_input(frame: Dictionary) -> void:
 		input_direction,
 		bool(frame.get("jumped", false)),
 		float(frame.get("yaw", rotation.y)),
-		bool(frame.get("prone", is_prone))
+		bool(frame.get("prone", is_prone)),
+		bool(frame.get("swim_up", false)),
+		bool(frame.get("dive", false))
 	)
 
 
@@ -2389,20 +2436,96 @@ func _simulate_predicted_movement(
 	input_direction: Vector2,
 	jumped: bool,
 	movement_yaw := rotation.y,
-	prone_state := is_prone
+	prone_state := is_prone,
+	swim_up := false,
+	diving := false
 ) -> void:
-	if not is_on_floor():
-		velocity += get_gravity() * delta
-	if jumped and not prone_state and is_on_floor():
-		velocity.y = JUMP_VELOCITY
+	var water_surface_y := _get_water_surface_y()
+	var swimming := _is_in_swimming_water(water_surface_y)
+	if swimming:
+		# Jump becomes a held upward swim input. Ctrl is sampled separately as a
+		# downward dive; with neither held the player only sinks gently.
+		var target_vertical := -SWIM_SINK_SPEED
+		if diving:
+			target_vertical = -SWIM_DIVE_SPEED
+		elif swim_up:
+			target_vertical = SWIM_RISE_SPEED
+		# Remove any terminal gravity velocity from the frame that entered water.
+		velocity.y = clampf(velocity.y, -SWIM_DIVE_SPEED, SWIM_RISE_SPEED)
+		velocity.y = move_toward(velocity.y, target_vertical, SWIM_VERTICAL_ACCELERATION * delta)
+		if global_position.y <= water_surface_y - SWIM_MAX_DEPTH and velocity.y < 0.0:
+			velocity.y = 0.0
+		if global_position.y >= water_surface_y + SWIM_SURFACE_MARGIN and velocity.y > 0.0:
+			velocity.y = 0.0
+	else:
+		if not is_on_floor():
+			velocity += get_gravity() * delta
+		if jumped and not prone_state and is_on_floor():
+			velocity.y = JUMP_VELOCITY
 	var basis := Basis(Vector3.UP, movement_yaw)
 	var direction := (basis * Vector3(input_direction.x, 0.0, input_direction.y)).normalized()
-	var move_speed := SPEED * _equipped_legwear_speed_multiplier()
-	move_speed *= PRONE_SPEED_MULTIPLIER if prone_state else 1.0
+	var move_speed := SWIM_HORIZONTAL_SPEED * _equipped_legwear_speed_multiplier() if swimming else SPEED * _equipped_legwear_speed_multiplier()
+	move_speed *= PRONE_SPEED_MULTIPLIER if prone_state and not swimming else 1.0
+	if swimming and direction.length_squared() > 0.001:
+		# A shallow bank can leave the capsule touching the shore while the swim
+		# controller is still applying a small downward sink. Give the player an
+		# upward impulse as soon as the movement probe reaches land.
+		var exit_probe := global_position + direction * SWIM_EXIT_PROBE_DISTANCE
+		if WaterBody3D.get_surface_level_at(exit_probe) >= INF:
+			velocity.y = maxf(velocity.y, SWIM_RISE_SPEED)
 	velocity.x = direction.x * move_speed + rubber_knockback.x
 	velocity.z = direction.z * move_speed + rubber_knockback.z
 	rubber_knockback = rubber_knockback.move_toward(Vector3.ZERO, 18.0 * delta)
 	move_and_slide()
+	if swimming:
+		if direction.length_squared() > 0.001 and is_on_wall():
+			velocity.y = maxf(velocity.y, SWIM_RISE_SPEED)
+		# Do not allow the swimming controller to climb above the surface.  The
+		# margin keeps the character's feet just below the water plane.
+		var current_surface_y := _get_water_surface_y()
+		if current_surface_y < INF:
+			if global_position.y > current_surface_y + SWIM_SURFACE_MARGIN:
+				global_position.y = current_surface_y + SWIM_SURFACE_MARGIN
+				velocity.y = minf(velocity.y, 0.0)
+			elif global_position.y < current_surface_y - SWIM_MAX_DEPTH:
+				global_position.y = current_surface_y - SWIM_MAX_DEPTH
+				velocity.y = maxf(velocity.y, 0.0)
+
+
+func _get_water_surface_y() -> float:
+	return WaterBody3D.get_surface_level_at(global_position)
+
+
+func _is_in_swimming_water(surface_y := INF) -> bool:
+	if surface_y >= INF:
+		surface_y = _get_water_surface_y()
+	return surface_y < INF and global_position.y <= surface_y + SWIM_SURFACE_MARGIN
+
+
+func _update_water_visual_effect() -> void:
+	if is_remote_proxy:
+		return
+	if not is_instance_valid(underwater_overlay):
+		_ensure_underwater_overlay()
+	if not is_instance_valid(underwater_overlay):
+		return
+	if is_respawning:
+		underwater_overlay.color.a = 0.0
+		return
+	# The screen effect follows the camera, not the player's feet/root. This
+	# prevents a standing character from getting an underwater tint while only
+	# the lower body is submerged.
+	var camera_position: Vector3 = camera.global_position if is_instance_valid(camera) else global_position
+	var surface_y: float = WaterBody3D.get_surface_level_at(camera_position)
+	if surface_y >= INF:
+		underwater_overlay.color.a = 0.0
+		return
+	var depth: float = surface_y - camera_position.y
+	if depth <= 0.0:
+		underwater_overlay.color.a = 0.0
+		return
+	var depth_factor := clampf(depth / UNDERWATER_EFFECT_FULL_DEPTH, 0.0, 1.0)
+	underwater_overlay.color = Color(0.025, 0.19, 0.34, lerpf(0.12, 0.50, depth_factor))
 
 
 func _select_tool(new_index: int, force := false) -> void:
@@ -2994,6 +3117,8 @@ func _process(delta: float) -> void:
 	_update_match_timer_ui()
 	_update_global_score_ui()
 	_update_team_money_ui()
+	_refresh_message_area_notice()
+	_update_water_visual_effect()
 	if game_exit_dialog.is_open():
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
@@ -3075,6 +3200,9 @@ func _process(delta: float) -> void:
 	_update_camera_shake(delta)
 	_update_interaction()
 	_refresh_interact_hint()
+	# Reflow the persistent tutorial line after the actionable yellow hint has
+	# been resolved for this frame, preventing both labels from overlapping.
+	_refresh_message_area_notice()
 
 
 func _update_continuous_tool_use() -> void:
@@ -3186,10 +3314,16 @@ func _physics_process(delta: float) -> void:
 		_update_vehicle_occupant_presentation()
 		return
 	var jump_pressed := Input.is_action_just_pressed("jump")
-	var stood_from_prone := is_prone and jump_pressed
+	var water_surface_y := _get_water_surface_y()
+	var swimming := _is_in_swimming_water(water_surface_y)
+	if swimming and is_prone:
+		_set_prone_state(false)
+	var swim_up := swimming and Input.is_action_pressed("jump")
+	var diving := swimming and (swim_dive_input_held or Input.is_action_pressed(SWIM_DIVE_INPUT_ACTION))
+	var stood_from_prone := not swimming and is_prone and jump_pressed
 	if stood_from_prone:
 		_set_prone_state(false)
-	var jumped = not stood_from_prone and not is_prone and not remote_is_active and jump_pressed and is_on_floor() and \
+	var jumped = not swimming and not stood_from_prone and not is_prone and not remote_is_active and jump_pressed and is_on_floor() and \
 		not $SubViewport/ShopPage.visible
 	if jumped:
 		appearance_player.play("JumpStart",0.05)
@@ -3199,8 +3333,8 @@ func _physics_process(delta: float) -> void:
 	if remote_is_active == false or (remote_is_active and rubber_knockback.length() > 0):
 		input_direction = Vector2.ZERO if $SubViewport/ShopPage.visible else \
 			Input.get_vector("left", "right", "forward", "backward")
-	_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, input_direction, jumped)
-	_submit_authority_input(input_direction, jumped, NETWORK_SIMULATION_DELTA)
+	_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, input_direction, jumped, rotation.y, is_prone, swim_up, diving)
+	_submit_authority_input(input_direction, jumped, NETWORK_SIMULATION_DELTA, swim_up, diving)
 	_update_player_action_animation(input_direction)
 
 
@@ -3289,6 +3423,12 @@ func _update_player_action_animation(direction_strength:Vector2):
 		return
 	if action_anim_locked:
 		return
+	if _is_in_swimming_water():
+		# There is no swim animation yet. Keep local presentation identical to the
+		# remote proxy: moving uses Walk, stationary uses Idle.
+		_play_body_animation(&"Walk" if direction_strength.length_squared() > 0.001 else &"Idle", 0.10)
+		was_on_floor = false
+		return
 	
 	var ground = is_on_floor()
 	if is_prone and ground:
@@ -3368,6 +3508,63 @@ func _create_gameplay_notice() -> void:
 	gameplay_notice.add_theme_font_size_override("font_size", 28)
 	gameplay_notice.visible = false
 	$SubViewport.add_child(gameplay_notice)
+
+
+func _create_message_area_notice() -> void:
+	if is_instance_valid(message_area_notice):
+		return
+	message_area_notice = Label.new()
+	message_area_notice.name = "MessageAreaNotice"
+	message_area_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	message_area_notice.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	message_area_notice.offset_left = -430.0
+	message_area_notice.offset_top = -252.0
+	message_area_notice.offset_right = 430.0
+	message_area_notice.offset_bottom = -204.0
+	message_area_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	message_area_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	message_area_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message_area_notice.add_theme_color_override("font_color", Color("#63FF82"))
+	message_area_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
+	message_area_notice.add_theme_constant_override("outline_size", 7)
+	message_area_notice.add_theme_font_size_override("font_size", 28)
+	message_area_notice.visible = false
+	$SubViewport.add_child(message_area_notice)
+
+
+func _refresh_message_area_notice() -> void:
+	if not is_instance_valid(message_area_notice):
+		return
+	if remote_is_active or vehicle_is_active or is_respawning:
+		message_area_notice.visible = false
+		return
+	var best_text := ""
+	var best_distance := INF
+	for area_value: Variant in get_tree().get_nodes_in_group("message_areas"):
+		var message_area := area_value as Node
+		if not is_instance_valid(message_area) or not message_area.has_method("is_player_inside"):
+			continue
+		if not bool(message_area.call("is_player_inside", self)):
+			continue
+		var text := str(message_area.call("get_prompt_text")).strip_edges()
+		if text.is_empty():
+			continue
+		var area_node := message_area as Node3D
+		var distance := global_position.distance_squared_to(area_node.global_position) if area_node != null else 0.0
+		if distance < best_distance:
+			best_distance = distance
+			best_text = text
+	message_area_notice.text = best_text
+	message_area_notice.visible = not best_text.is_empty()
+	var yellow_hint_visible := is_instance_valid(interact_hint) and interact_hint.visible
+	if yellow_hint_visible:
+		# Yellow [E] prompt stays closest to the hotbar; green tutorial text sits
+		# one full line above it.
+		message_area_notice.offset_top = -310.0
+		message_area_notice.offset_bottom = -258.0
+	else:
+		message_area_notice.offset_top = -252.0
+		message_area_notice.offset_bottom = -204.0
 
 
 func show_gameplay_notice(message: String, duration := 2.2) -> void:
@@ -3971,6 +4168,18 @@ func _ensure_tranquilizer_overlay() -> void:
 	tranquilizer_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tranquilizer_overlay.z_index = 90
 	$SubViewport.add_child(tranquilizer_overlay)
+
+
+func _ensure_underwater_overlay() -> void:
+	if is_remote_proxy or is_instance_valid(underwater_overlay):
+		return
+	underwater_overlay = ColorRect.new()
+	underwater_overlay.name = "UnderwaterOverlay"
+	underwater_overlay.color = Color(0.025, 0.19, 0.34, 0.0)
+	underwater_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	underwater_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	underwater_overlay.z_index = WATER_OVERLAY_Z_INDEX
+	$SubViewport.add_child(underwater_overlay)
 
 
 func apply_tranquilizer_effect() -> void:
@@ -5709,6 +5918,11 @@ func set_player_appearance(hero_name:String,team_name:String):
 	add_child(appearance_node)
 	appearance_node.rotation.y = deg_to_rad(180)
 	appearance_node.name = "AppearanceNode"
+	# Imported character GLBs can carry a disabled shadow flag.  Make the
+	# gameplay character a guaranteed caster regardless of the selected hero or
+	# map, while keeping markers/effects excluded by their own code.
+	for mesh_node in appearance_node.find_children("*", "MeshInstance3D", true, false):
+		(mesh_node as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	appearance_player = appearance_node.find_child("AnimationPlayer",true)
 	skeleton = appearance_node.find_child("Skeleton3D",true) as Skeleton3D
 	if appearance_player == null or skeleton == null:

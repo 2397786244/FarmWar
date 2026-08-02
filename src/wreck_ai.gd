@@ -1415,6 +1415,13 @@ func _apply_movement(direction: Vector3, delta: float) -> void:
 		if difficulty == Difficulty.EASY
 		else hard_move_acceleration
 	)
+	var horizontal_step := direction * move_speed + rubber_knockback
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Enemy vehicles also treat water as a navigation exclusion.
+		direction = Vector3.ZERO
+		rubber_knockback.x = 0.0
+		rubber_knockback.z = 0.0
 
 	var desired_velocity := direction * move_speed + rubber_knockback
 	rubber_knockback = rubber_knockback.move_toward(

@@ -3,6 +3,11 @@ class_name MultiplayerWorldReplicatorService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
 const PLAYER_SCENE := preload("res://character/player.tscn")
+const AI_SCENES := {
+	"farmer": "res://character/FarmerAI.tscn",
+	"futurewarrior": "res://character/FutureWarriorAI.tscn",
+	"assistant": "res://character/AssistantAI.tscn",
+}
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
 const BUG_STORM_SCENE := preload("res://character/weapons/BugStorm.tscn")
@@ -67,6 +72,7 @@ const TILE_TOOL_NAMES := {
 }
 
 var remote_players: Dictionary = {}
+var remote_ai_visuals: Dictionary = {}
 var projectile_visuals: Dictionary = {}
 var transient_projectile_visuals: Dictionary = {}
 var absorption_visuals: Dictionary = {}
@@ -177,6 +183,7 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 		return
 	_sync_vehicles(snapshot.get("vehicles", []))
 	_sync_players(snapshot.get("players", []), snapshot)
+	_sync_ai_players(snapshot.get("ai_players", []))
 	_sync_projectiles(snapshot.get("projectiles", []))
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []))
@@ -232,6 +239,46 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_loc
 			if is_instance_valid(node):
 				node.queue_free()
 			remote_players.erase(peer_id)
+
+
+func _sync_ai_players(ai_value: Variant) -> void:
+	if not ai_value is Array:
+		return
+	var seen: Dictionary = {}
+	for entry_value: Variant in ai_value:
+		if not entry_value is Dictionary:
+			continue
+		var data := entry_value as Dictionary
+		var ai_id := str(data.get("ai_id", ""))
+		var ai_type := str(data.get("ai_type", "")).to_lower()
+		var scene_path := str(AI_SCENES.get(ai_type, ""))
+		if ai_id.is_empty() or scene_path.is_empty():
+			continue
+		seen[ai_id] = true
+		var ai := remote_ai_visuals.get(ai_id, null) as Node
+		if not is_instance_valid(ai):
+			var packed := load(scene_path) as PackedScene
+			ai = packed.instantiate() as Node if packed != null else null
+			if ai == null or world_root == null:
+				continue
+			var team := str(data.get("team", "red"))
+			if _replicator_has_property(ai, "team_id"):
+				ai.set("team_id", team)
+			ai.name = "Remote_%s" % ai_id
+			ai.set_meta("network_ai_proxy", true)
+			world_root.add_child(ai)
+			_disable_visual_runtime(ai)
+			remote_ai_visuals[ai_id] = ai
+		if ai.has_method("apply_network_state"):
+			ai.call("apply_network_state", data)
+	for ai_id_value: Variant in remote_ai_visuals.keys():
+		var ai_id := str(ai_id_value)
+		if seen.has(ai_id):
+			continue
+		var stale: Node = remote_ai_visuals[ai_id]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		remote_ai_visuals.erase(ai_id)
 
 
 func _get_local_human_peer_id() -> int:
@@ -2374,7 +2421,7 @@ func _on_disconnected(_reason: String) -> void:
 
 func _clear_all() -> void:
 	_remove_rare_resource_visual()
-	for collection in [remote_players, projectile_visuals, transient_projectile_visuals, absorption_visuals, remote_device_visuals, placed_tool_visuals, dropped_item_visuals, wild_animal_visuals]:
+	for collection in [remote_players, remote_ai_visuals, projectile_visuals, transient_projectile_visuals, absorption_visuals, remote_device_visuals, placed_tool_visuals, dropped_item_visuals, wild_animal_visuals]:
 		for key in collection.keys():
 			var item = collection[key]
 			var node: Node = item.get("node", null) if item is Dictionary else item

@@ -1,0 +1,50 @@
+[gd_scene format=3 uid="uid://guq6dblckfux"]
+
+[ext_resource type="PackedScene" uid="uid://brdt7844pnqy0" path="res://assets/nature/GraniteRock.glb" id="1_qqrrd"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_harvest"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_42lpn"]
+size = Vector3(1.4, 1, 1.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_evnww"]
+size = Vector3(1.4, 1, 1.4)
+
+[node name="GraniteRock" type="StaticBody3D" unique_id=575780212]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_harvest")
+resource_type = "granite_rock"
+display_name = "花岗岩"
+max_hp = 350.0
+respawn_seconds = 105.0
+drops = Array[Dictionary]([{
+"count": 4,
+"item_id": "stone",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_stone.glb",
+"weight_kg": 1.0
+}])
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=811857716]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4874305, 0)
+shape = SubResource("BoxShape3D_42lpn")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1761435294]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=937456990]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4841985, 0)
+shape = SubResource("BoxShape3D_evnww")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1060663064]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "350"
+outline_size = 6
+
+[node name="Mesh" parent="." unique_id=1047340406 instance=ExtResource("1_qqrrd")]
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

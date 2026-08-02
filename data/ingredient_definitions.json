@@ -375,6 +375,51 @@
       "description": "常见的建筑与工业矿物，可加工成砌筑材料、石灰和其他生产原料。",
       "source": {"plantable": false},
       "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_limestone_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_limestone_ore.glb", "chopped_item": ""}
+    },
+    "stone": {
+      "display_name": "石头",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "从苔藓岩和花岗岩中采集的常用石材，可用于建造和制作工业设施。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_stone.glb", "whole_item": "res://assets/nature/drop_items/drop_stone.glb", "chopped_item": ""}
+    },
+    "normal_mushroom": {
+      "display_name": "普通蘑菇",
+      "kind": "food",
+      "category": "mushroom",
+      "pickup_unit_kg": 0.25,
+      "description": "林地中常见的可食用蘑菇，适合用于汤品、煎炒和基础料理。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_normal_mushroom.glb", "whole_item": "res://assets/nature/drop_items/drop_normal_mushroom.glb", "chopped_item": ""}
+    },
+    "bolete_mushroom": {
+      "display_name": "牛肝菌",
+      "kind": "food",
+      "category": "mushroom",
+      "pickup_unit_kg": 0.25,
+      "description": "肉质厚实、香味浓郁的优质野生菌，适合制作高价值料理。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_bolete_mushroom.glb", "whole_item": "res://assets/nature/drop_items/drop_bolete_mushroom.glb", "chopped_item": ""}
+    },
+    "redwhite_mushroom": {
+      "display_name": "红白蘑菇",
+      "kind": "food",
+      "category": "mushroom",
+      "pickup_unit_kg": 0.25,
+      "description": "外观醒目的红白野生菌，较为稀有；当前作为可交易食材使用。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_redwhite_mushroom.glb", "whole_item": "res://assets/nature/drop_items/drop_redwhite_mushroom.glb", "chopped_item": ""}
+    },
+    "truffle": {
+      "display_name": "松露",
+      "kind": "food",
+      "category": "mushroom",
+      "pickup_unit_kg": 0.25,
+      "description": "埋藏在林地土壤中的珍稀菌类，香气浓郁，适合用于高级料理。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_truffle.glb", "whole_item": "res://assets/nature/drop_items/drop_truffle.glb", "chopped_item": ""}
     }
   }
 }

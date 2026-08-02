@@ -460,7 +460,15 @@ func _target_is_valid(peer_id: int) -> bool:
 		return false
 	var player_state: Dictionary = GameAuthority.player_states[peer_id]
 	return float(player_state.get("hp", 0.0)) > 0.0 \
-		and float(player_state.get("respawn_left", 0.0)) <= 0.0
+		and float(player_state.get("respawn_left", 0.0)) <= 0.0 \
+		and not _player_is_holding_torch(player_state)
+
+
+func _player_is_holding_torch(player_state: Dictionary) -> bool:
+	# current_tool_id is authoritative and replicated whenever a player changes
+	# hotbar selection. Rejecting the target here covers acquisition, an ongoing
+	# chase, and even an attack windup before damage can be applied.
+	return str(player_state.get("current_tool_id", "")) == "torch"
 
 
 func _target_position() -> Variant:
@@ -522,6 +530,13 @@ func _choose_wander_target() -> void:
 
 func _move_horizontal(direction: Vector3, speed: float, delta: float) -> void:
 	var move_direction := direction
+	var horizontal_step := direction * speed + _knockback_velocity
+	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
+	if WaterBody3D.is_navigation_blocked(proposed):
+		# Bears may chase players near shore, but cannot cross into water.
+		move_direction = Vector3.ZERO
+		_knockback_velocity.x = 0.0
+		_knockback_velocity.z = 0.0
 	var suppress_close_avoidance := false
 	if state == State.CHASE:
 		var target_position_value: Variant = _target_position()

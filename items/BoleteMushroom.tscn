@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://c3jdxbmqrvccc"]
+
+[ext_resource type="PackedScene" uid="uid://bpohksg4257o4" path="res://assets/nature/Mushroom_Bolete.glb" id="1_prp0c"]
+[ext_resource type="Script" uid="uid://d0l8f6i48j57h" path="res://src/harvest_ore.gd" id="2_harvest"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_b68nh"]
+size = Vector3(0.6, 0.5, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kkbhd"]
+size = Vector3(0.6, 0.5, 0.6)
+
+[node name="BoleteMushroom" type="StaticBody3D" unique_id=1502085823]
+collision_layer = 16384
+collision_mask = 32
+script = ExtResource("2_harvest")
+resource_type = "bolete_mushroom"
+resource_kind = "mushroom"
+display_name = "牛肝菌"
+max_hp = 50.0
+respawn_seconds = 75.0
+show_hit_particles = false
+destroy_reward_description = "采集了牛肝菌"
+drops = Array[Dictionary]([{
+"count": 1,
+"item_id": "bolete_mushroom",
+"kind": "ingredient",
+"model_path": "res://assets/nature/drop_items/drop_bolete_mushroom.glb",
+"weight_kg": 0.25
+}])
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=494271975]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0684486, 0.26296592, 0)
+shape = SubResource("BoxShape3D_b68nh")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=902952637]
+collision_layer = 16384
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1480082149]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.064114034, 0.2767601, 0)
+shape = SubResource("BoxShape3D_kkbhd")
+debug_color = Color(0.94, 0.12, 0.55, 0.42)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=144720044]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0)
+billboard = 1
+no_depth_test = true
+text = "350"
+outline_size = 6
+
+[node name="Mesh" parent="." unique_id=1246435504 instance=ExtResource("1_prp0c")]
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]
