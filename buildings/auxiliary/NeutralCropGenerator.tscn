@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/neutral_crop_generator.gd" id="1_neutral_crop"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_neutral_crop"]
+size = Vector3(16, 4, 16)
+
+[node name="NeutralCropGenerator" type="Area3D"]
+script = ExtResource("1_neutral_crop")
+collision_layer = 0
+collision_mask = 64
+monitoring = true
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_neutral_crop")

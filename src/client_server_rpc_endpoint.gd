@@ -27,6 +27,12 @@ func submit_player_input(input_frame: Dictionary) -> void:
 	request_player_input.rpc_id(1, input_frame)
 
 
+func submit_player_jump(jump_request: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_player_jump.rpc_id(1, jump_request)
+
+
 func submit_select_tool(tool_index: int, tool_id := "") -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
@@ -106,8 +112,13 @@ func request_submit_player_setup(_setup_data: Dictionary) -> void:
 	pass
 
 
-@rpc("any_peer", "unreliable")
+@rpc("any_peer", "unreliable_ordered")
 func request_player_input(_input_frame: Dictionary) -> void:
+	pass
+
+
+@rpc("any_peer", "reliable")
+func request_player_jump(_jump_request: Dictionary) -> void:
 	pass
 
 

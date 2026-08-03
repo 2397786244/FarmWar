@@ -1,6 +1,6 @@
 {
   "server_name": "Farm Battle Server",
-  "map_id": "creston_town",
+  "map_package": "creston_town",
   "map_name": "Creston Town",
   "game_mode": "5v5_Battle",
   "port": 2088,

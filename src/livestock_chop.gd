@@ -186,6 +186,15 @@ func _spawn_slot_animal(slot_index: int) -> void:
 	animal.animal_id = str(item.get("livestock_instance_id", "chop:%d:%d" % [get_instance_id(), slot_index]))
 	animal.initial_hp = float(item.get("current_hp", animal.max_hp))
 	animal.initial_growth_progress = float(item.get("growth_progress", 0.0))
+	if species_id == "angus_cow":
+		if item.has("milk_charges_remaining"):
+			animal.initial_milk_charges = clampi(
+				int(item.get("milk_charges_remaining", 0)), 0, 3
+			)
+		if item.has("milk_countdown"):
+			animal.initial_milk_countdown = maxf(
+				0.0, float(item.get("milk_countdown", 60.0))
+			)
 	animal.housed_in_chop = true
 	GlobalVar.gameworld.add_child(animal)
 	animal.global_position = get_slot_global_position(slot_index)
@@ -212,6 +221,9 @@ func _update_slot_item_from_animal(slot_index: int) -> void:
 	item["current_hp"] = animal.current_hp
 	item["max_hp"] = animal.max_hp
 	item["growth_progress"] = animal.get_growth_progress()
+	if animal.species_id == "angus_cow":
+		item["milk_charges_remaining"] = animal.milk_charges_remaining
+		item["milk_countdown"] = animal.milk_countdown
 	slot_items[slot_index] = item
 
 

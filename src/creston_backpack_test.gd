@@ -19,6 +19,8 @@ var granted := false
 
 
 func _process(delta: float) -> void:
+	if CooperativeSession.is_active():
+		return
 	if not enabled or granted or not (GameAuthority.is_local_authority() or GameAuthority.is_server_authority()):
 		return
 	elapsed_seconds += delta

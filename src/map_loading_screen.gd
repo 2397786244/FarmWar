@@ -66,6 +66,14 @@ func finish_loading() -> void:
 	_active = false
 
 
+func cancel_loading() -> void:
+	if not _active:
+		return
+	_active = false
+	_root.visible = false
+	_root.modulate = Color.WHITE
+
+
 func is_loading() -> bool:
 	return _active
 

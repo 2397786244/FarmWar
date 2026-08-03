@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://dbj0bvg80j281"]
+
+[ext_resource type="PackedScene" uid="uid://dfkp2o6qi6els" path="res://assets/buildings/PowerPole.glb" id="1_4lblv"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_cmyde"]
+height = 8.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4lblv"]
+size = Vector3(3, 0.5, 1)
+
+[node name="PowerPole" type="StaticBody3D" unique_id=1063295051]
+collision_layer = 4096
+collision_mask = 45739
+
+[node name="Mesh" parent="." unique_id=2114016864 instance=ExtResource("1_4lblv")]
+
+[node name="WirePoint1" type="Node3D" parent="." unique_id=1058379155]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.1878738, 8.17589, 0)
+
+[node name="WirePoint2" type="Node3D" parent="." unique_id=1733460848]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2383285, 8.17589, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1263592169]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.0662932, 0)
+shape = SubResource("CylinderShape3D_cmyde")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=634382055]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.136041, 0)
+shape = SubResource("BoxShape3D_4lblv")

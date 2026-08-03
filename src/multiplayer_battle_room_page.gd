@@ -15,6 +15,8 @@ const COLOR_MUTED := Color("#AFC2D0")
 @export var map_name := "Creston Town"
 
 var selection: Dictionary = {}
+var map_definition: Dictionary = {}
+var map_loading_images_directory := "res://assets/loading/creston_town"
 var players: Array[Dictionary] = []
 var header_label: Label
 var map_label: Label
@@ -67,6 +69,18 @@ func setup_from_selection(new_selection: Dictionary, auto_load_map := false) -> 
 
 
 func apply_match_start_info(info: Dictionary) -> void:
+	var configured_map_id := str(info.get("map_id", ""))
+	if not configured_map_id.is_empty():
+		var local_map := GameMapRegistry.get_map_by_package_name(configured_map_id)
+		if not local_map.is_empty() and bool(local_map.get("is_compatible", false)):
+			map_definition = local_map.duplicate(true)
+			map_name = str(local_map.get("display_name", info.get("map_name", map_name)))
+			MAP = str(local_map.get("scene_path", MAP))
+			map_loading_images_directory = str(local_map.get("loading_images_directory", ""))
+		else:
+			map_name = str(info.get("map_name", configured_map_id))
+			MAP = str(info.get("map_scene_path", ""))
+			map_loading_images_directory = ""
 	var authoritative_players: Variant = info.get("authoritative_players", [])
 	if not authoritative_players is Array:
 		return
@@ -89,14 +103,17 @@ func set_players(new_players: Array) -> void:
 
 
 func load_multiplayer_map() -> void:
-	# TODO: 由你后续接入真实多人地图加载逻辑。
 	if is_loading_world:
+		return
+	if MAP.is_empty() or not ResourceLoader.exists(MAP):
+		info_label.text = "本地没有服务器地图“%s”，请安装相同的 maps 地图包。" % map_name
+		push_error("无法加载多人地图，本地地图不存在：" + MAP)
 		return
 	is_loading_world = true
 	info_label.text = "正在加载地图：%s ..." % map_name
 	MapLoading.begin_loading(
 		map_name,
-		"res://assets/loading/creston_town",
+		map_loading_images_directory,
 		"res://data/loading_tips.json"
 	)
 	var err := ResourceLoader.load_threaded_request(MAP)

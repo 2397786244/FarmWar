@@ -36,6 +36,7 @@ const PROJECTILE_SCENES := {
 }
 const PROJECTILE_VISUAL_RADIUS := 0.16
 const ABSORPTION_END_SCALE := 0.06
+const DROPPED_ITEM_SPAWNS_PER_FRAME := 2
 const REMOTE_SCENES := {
 	"action_drone": "res://character/weapons/ActionDrone.tscn",
 	"normal_drone": "res://character/weapons/NormalDrone.tscn",
@@ -81,6 +82,8 @@ var processed_absorption_ids: Dictionary = {}
 var remote_device_visuals: Dictionary = {}
 var placed_tool_visuals: Dictionary = {}
 var dropped_item_visuals: Dictionary = {}
+var pending_dropped_item_spawns: Dictionary = {}
+var pending_dropped_item_spawn_ids: Array[String] = []
 var wild_animal_visuals: Dictionary = {}
 var rare_resource_visual: Node3D = null
 var world_root: Node3D
@@ -103,6 +106,7 @@ func _process(delta: float) -> void:
 	_resolve_world_root()
 	_update_transient_projectile_visuals(delta)
 	_update_absorption_visuals(delta)
+	_flush_pending_dropped_item_spawns()
 
 
 func _connect_network_signals() -> void:
@@ -119,15 +123,19 @@ func _connect_network_signals() -> void:
 
 
 func _resolve_world_root() -> Node3D:
+	var candidate: Node3D = null
+	if is_instance_valid(GlobalVar.gameworld):
+		candidate = GlobalVar.gameworld
+	else:
+		var scene := get_tree().current_scene
+		if scene is Node3D:
+			candidate = scene as Node3D
+	if candidate != null and is_instance_valid(world_root) and world_root != candidate:
+		_clear_all()
 	if is_instance_valid(world_root):
 		return world_root
-	if is_instance_valid(GlobalVar.gameworld):
-		world_root = GlobalVar.gameworld
-		_invalidate_nature_resource_index()
-		return world_root
-	var scene := get_tree().current_scene
-	if scene is Node3D:
-		world_root = scene
+	if candidate != null:
+		world_root = candidate
 		_invalidate_nature_resource_index()
 	return world_root
 
@@ -188,7 +196,6 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []))
 	_sync_wild_animals(snapshot.get("wild_animals", []))
-	_sync_dropped_items(snapshot.get("dropped_items", []))
 
 
 func _apply_authoritative_environment(snapshot: Dictionary) -> void:
@@ -215,6 +222,7 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_loc
 		return
 	var seen := {}
 	var local_peer_id := _get_local_human_peer_id()
+	var local_peer_ids := _get_local_human_peer_ids()
 	for item: Variant in players_value:
 		if not item is Dictionary:
 			continue
@@ -223,7 +231,8 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_loc
 		if peer_id <= 0:
 			continue
 		seen[peer_id] = true
-		if peer_id == local_peer_id:
+		if peer_id == local_peer_id or local_peer_ids.has(peer_id):
+			_remove_remote_player(peer_id)
 			if apply_local_snapshot:
 				_apply_local_player_snapshot(data)
 			continue
@@ -233,12 +242,10 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_loc
 			timed_data["tick"] = int(world_snapshot.get("tick", -1))
 			timed_data["server_time_msec"] = int(world_snapshot.get("server_time_msec", 0))
 			player.call("apply_remote_snapshot", timed_data)
-	for peer_id in remote_players.keys():
-		if not seen.has(int(peer_id)):
-			var node: Node = remote_players[peer_id]
-			if is_instance_valid(node):
-				node.queue_free()
-			remote_players.erase(peer_id)
+	for peer_id_value: Variant in remote_players.keys():
+		var peer_id := int(peer_id_value)
+		if not seen.has(peer_id) or local_peer_ids.has(peer_id):
+			_remove_remote_player(peer_id)
 
 
 func _sync_ai_players(ai_value: Variant) -> void:
@@ -282,10 +289,43 @@ func _sync_ai_players(ai_value: Variant) -> void:
 
 
 func _get_local_human_peer_id() -> int:
+	var network_peer_id := NetworkSession.get_unique_peer_id()
+	if network_peer_id > 0 and (NetworkSession.is_client() or NetworkSession.is_listen_server()):
+		return network_peer_id
+	if CooperativeSession.is_active():
+		var cooperative_peer_id := int(CooperativeSession.local_selection.get("peer_id", 0))
+		if cooperative_peer_id > 0:
+			return cooperative_peer_id
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
 			return int((node as GamePlayer).authority_peer_id)
-	return MultiplayerNetwork.get_unique_peer_id()
+	return network_peer_id
+
+
+func _get_local_human_peer_ids() -> Dictionary:
+	var ids: Dictionary = {}
+	var network_peer_id := NetworkSession.get_unique_peer_id()
+	if network_peer_id > 0 and (NetworkSession.is_client() or NetworkSession.is_listen_server()):
+		ids[network_peer_id] = true
+	if CooperativeSession.is_active():
+		var cooperative_peer_id := int(CooperativeSession.local_selection.get("peer_id", 0))
+		if cooperative_peer_id > 0:
+			ids[cooperative_peer_id] = true
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
+			var peer_id := int((node as GamePlayer).authority_peer_id)
+			if peer_id > 0:
+				ids[peer_id] = true
+	return ids
+
+
+func _remove_remote_player(peer_id: int) -> void:
+	if not remote_players.has(peer_id):
+		return
+	var node: Node = remote_players.get(peer_id, null)
+	if is_instance_valid(node):
+		node.queue_free()
+	remote_players.erase(peer_id)
 
 
 func _sync_wild_animals(animals_value: Variant) -> void:
@@ -327,6 +367,9 @@ func _sync_wild_animals(animals_value: Variant) -> void:
 
 
 func _get_or_create_remote_player(peer_id: int, data: Dictionary) -> GamePlayer:
+	if _get_local_human_peer_ids().has(peer_id):
+		_remove_remote_player(peer_id)
+		return null
 	var existing: Node = remote_players.get(peer_id, null)
 	if is_instance_valid(existing):
 		return existing as GamePlayer
@@ -602,15 +645,27 @@ func _sync_placed_tool_health(tools_value: Variant) -> void:
 			var tile := _find_farm_tile("", data.get("position", Vector3.ZERO))
 			if tile is FarmTile:
 				node = (tile as FarmTile).tool_child
+		var visual_state: Variant = data.get("visual_state", {})
+		var state_drives_position := visual_state is Dictionary \
+				and (visual_state as Dictionary).has("position")
 		if node is Node3D:
 			var position: Variant = data.get("position", Vector3.ZERO)
-			if position is Vector3 and not node is FarmTile:
-				(node as Node3D).global_position = position
-			(node as Node3D).rotation.y = float(data.get("yaw", (node as Node3D).rotation.y))
+			var spawned_visual := bool(node.get_meta("cooperative_network_spawned", false))
+			var initialized := bool(node.get_meta("network_position_initialized", false))
+			if position is Vector3 and not node is FarmTile and not state_drives_position:
+				if spawned_visual and initialized:
+					(node as Node3D).global_position = (node as Node3D).global_position.lerp(position, 0.65)
+				else:
+					(node as Node3D).global_position = position
+				(node as Node3D).set_meta("network_position_initialized", true)
+			var target_yaw := float(data.get("yaw", (node as Node3D).rotation.y))
+			if spawned_visual and initialized:
+				(node as Node3D).rotation.y = lerp_angle((node as Node3D).rotation.y, target_yaw, 0.65)
+			else:
+				(node as Node3D).rotation.y = target_yaw
 		if node != null and node.has_method("apply_network_health"):
 			node.call("apply_network_health", float(data.get("hp", 0.0)))
 		if node != null and node.has_method("apply_network_visual_state"):
-			var visual_state: Variant = data.get("visual_state", {})
 			if visual_state is Dictionary:
 				node.call("apply_network_visual_state", visual_state)
 			if bool(data.get("anchor_landed", false)) and node.has_method("apply_network_activated"):
@@ -761,10 +816,14 @@ func _is_local_remote_device_active(device_id: String) -> bool:
 func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
 	var authority_player_event := NetworkSession.is_listen_server() \
-		and event_type in ["tool_selected", "tool_used", "visual_projectile_fired"]
+		and event_type in ["tool_selected", "tool_used", "visual_projectile_fired", "dropped_item_action_result"]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
-	if _resolve_world_root() == null:
+	var pickup_event := event_type in [
+		"dropped_item_spawned", "dropped_item_removed",
+		"dropped_items_spawned", "dropped_items_removed", "dropped_items_snapshot",
+	]
+	if _resolve_world_root() == null and not pickup_event:
 		return
 	match event_type:
 		"visual_projectile_fired":
@@ -850,9 +909,18 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 		"dropped_item_spawned":
 			var dropped_state: Variant = event.get("item_state", {})
 			if dropped_state is Dictionary:
-				_spawn_or_update_dropped_item(dropped_state as Dictionary)
+				_queue_dropped_item_spawn(dropped_state as Dictionary)
 		"dropped_item_removed":
 			_remove_dropped_item_visual(str(event.get("item_id", "")))
+		"dropped_items_spawned":
+			_queue_dropped_item_spawns(event.get("items", []))
+		"dropped_items_removed":
+			var removed_ids: Variant = event.get("item_ids", [])
+			if removed_ids is Array:
+				for item_id_value: Variant in removed_ids:
+					_remove_dropped_item_visual(str(item_id_value))
+		"dropped_items_snapshot":
+			_sync_dropped_items(event.get("items", []))
 		"ingredient_pickup_action_result":
 			_apply_ingredient_pickup_action_result(event.get("data", {}))
 		"ingredient_pickup_state":
@@ -919,13 +987,17 @@ func _apply_backpack_test_grant(event: Dictionary) -> void:
 	var peer_id := int(event.get("peer_id", 0))
 	if peer_id != MultiplayerNetwork.get_unique_peer_id():
 		return
+	var player_slots: Variant = event.get("player_slots", null)
 	var entries: Variant = event.get("entries", [])
-	if not entries is Array:
+	if not player_slots is Array and not entries is Array:
 		return
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
 				and int((node as GamePlayer).authority_peer_id) == peer_id:
-			(node as GamePlayer).apply_test_backpack_grant(entries as Array)
+			if player_slots is Array and not (player_slots as Array).is_empty():
+				(node as GamePlayer).apply_cargo_backpack_slots(player_slots as Array)
+			else:
+				(node as GamePlayer).apply_test_backpack_grant(entries as Array)
 			return
 
 
@@ -1056,15 +1128,23 @@ func _apply_dropped_item_action_result(data_value: Variant) -> void:
 		if str(data.get("action", "")) == "throw":
 			var state_value: Variant = data.get("item_state", {})
 			if state_value is Dictionary:
-				_spawn_or_update_dropped_item(state_value as Dictionary)
+				_queue_dropped_item_spawn(state_value as Dictionary)
 		elif str(data.get("action", "")) == "pickup":
 			_remove_dropped_item_visual(str(data.get("item_id", "")))
-	if int(data.get("peer_id", 0)) != MultiplayerNetwork.get_unique_peer_id():
+	var local_peer_id := MultiplayerNetwork.get_unique_peer_id()
+	var local_player: GamePlayer = null
+	var result_peer_id := int(data.get("peer_id", 0))
+	if result_peer_id <= 0 or local_peer_id <= 0 or result_peer_id != local_peer_id:
 		return
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
-			(node as GamePlayer).apply_authoritative_dropped_item_action_result(data)
-			return
+		if not node is GamePlayer or (node as GamePlayer).is_remote_proxy:
+			continue
+		var player := node as GamePlayer
+		if int(player.authority_peer_id) == result_peer_id:
+			local_player = player
+			break
+	if local_player != null:
+		local_player.apply_authoritative_dropped_item_action_result(data)
 
 
 func _apply_equipment_action_result(data_value: Variant) -> void:
@@ -1073,9 +1153,7 @@ func _apply_equipment_action_result(data_value: Variant) -> void:
 	var data := data_value as Dictionary
 	var dropped_states: Variant = data.get("dropped_item_states", [])
 	if dropped_states is Array:
-		for state_value: Variant in dropped_states:
-			if state_value is Dictionary:
-				_spawn_or_update_dropped_item(state_value as Dictionary)
+		_queue_dropped_item_spawns(dropped_states)
 	if int(data.get("peer_id", 0)) != MultiplayerNetwork.get_unique_peer_id():
 		return
 	for node in get_tree().get_nodes_in_group("human_players"):
@@ -1100,7 +1178,39 @@ func _spawn_or_update_dropped_item(state: Dictionary) -> void:
 		pickup.apply_authoritative_state(state)
 
 
+func _queue_dropped_item_spawns(states_value: Variant) -> void:
+	if not states_value is Array:
+		return
+	for state_value: Variant in states_value:
+		if state_value is Dictionary:
+			_queue_dropped_item_spawn(state_value as Dictionary)
+
+
+func _queue_dropped_item_spawn(state: Dictionary) -> void:
+	var item_id := str(state.get("item_id", ""))
+	if item_id.is_empty():
+		return
+	pending_dropped_item_spawns[item_id] = state.duplicate(true)
+	if not pending_dropped_item_spawn_ids.has(item_id):
+		pending_dropped_item_spawn_ids.append(item_id)
+
+
+func _flush_pending_dropped_item_spawns() -> void:
+	if pending_dropped_item_spawn_ids.is_empty() or _resolve_world_root() == null:
+		return
+	var processed := 0
+	while processed < DROPPED_ITEM_SPAWNS_PER_FRAME and not pending_dropped_item_spawn_ids.is_empty():
+		var item_id: String = str(pending_dropped_item_spawn_ids.pop_front())
+		var state_value: Variant = pending_dropped_item_spawns.get(item_id, {})
+		pending_dropped_item_spawns.erase(item_id)
+		if state_value is Dictionary:
+			_spawn_or_update_dropped_item(state_value as Dictionary)
+		processed += 1
+
+
 func _remove_dropped_item_visual(item_id: String) -> void:
+	pending_dropped_item_spawns.erase(item_id)
+	pending_dropped_item_spawn_ids.erase(item_id)
 	var pickup = dropped_item_visuals.get(item_id, null)
 	if is_instance_valid(pickup):
 		(pickup as Node).queue_free()
@@ -1119,7 +1229,11 @@ func _sync_dropped_items(states_value: Variant) -> void:
 		if item_id.is_empty():
 			continue
 		seen[item_id] = true
-		_spawn_or_update_dropped_item(state)
+		_queue_dropped_item_spawn(state)
+	for item_id_value in pending_dropped_item_spawn_ids.duplicate():
+		var pending_item_id := str(item_id_value)
+		if not seen.has(pending_item_id):
+			_remove_dropped_item_visual(pending_item_id)
 	for item_id_value in dropped_item_visuals.keys():
 		var item_id := str(item_id_value)
 		if not seen.has(item_id):
@@ -2428,6 +2542,8 @@ func _clear_all() -> void:
 			if is_instance_valid(node):
 				node.queue_free()
 		collection.clear()
+	pending_dropped_item_spawns.clear()
+	pending_dropped_item_spawn_ids.clear()
 	absorbed_projectile_ids.clear()
 	processed_absorption_ids.clear()
 	_invalidate_nature_resource_index()

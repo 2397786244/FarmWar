@@ -5,6 +5,7 @@ const CAPTURE_DIRECTORY := "user://captures"
 var _capture_pending := false
 var _notice_label: Label
 var _notice_timer: Timer
+var _chat_capture_count := 0
 
 
 func _ready() -> void:
@@ -13,6 +14,11 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _is_chat_input_active():
+		# Do not consume ordinary key events here: LineEdit receives them after
+		# the input phase. Gameplay action events are consumed by the owning
+		# player, while this gate prevents global shortcuts from leaking through.
+		return
 	if not event is InputEventKey:
 		return
 	var key_event := event as InputEventKey
@@ -20,6 +26,27 @@ func _input(event: InputEvent) -> void:
 			and (key_event.keycode == KEY_F12 or key_event.physical_keycode == KEY_F12):
 		capture_current_view()
 		get_viewport().set_input_as_handled()
+
+
+func set_chat_input_active(active: bool) -> void:
+	if active:
+		_chat_capture_count += 1
+	else:
+		_chat_capture_count = maxi(0, _chat_capture_count - 1)
+
+
+func is_chat_input_capturing() -> bool:
+	return _chat_capture_count > 0
+
+
+func _is_chat_input_active() -> bool:
+	if is_chat_input_capturing():
+		return true
+	for node: Node in get_tree().get_nodes_in_group("human_players"):
+		if is_instance_valid(node) and node.has_method("is_chat_input_active") \
+				and bool(node.call("is_chat_input_active")):
+			return true
+	return false
 
 
 func capture_current_view() -> void:

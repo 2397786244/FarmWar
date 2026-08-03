@@ -1,0 +1,80 @@
+{
+  "content": {
+    "ai_configuration": [],
+    "ai_count": 0,
+    "building_count": 4,
+    "editor_objects": "editor_objects.dat",
+    "farmland_count": 6,
+    "manual_grass": "manual_grass.dat",
+    "ore_count": 15,
+    "road_count": 1,
+    "roads": "roads.dat",
+    "spawn_count": 4,
+    "tree_count": 11,
+    "water_bodies": "water_bodies.dat",
+    "water_count": 1
+  },
+  "display_name": "multiplayer_test",
+  "features": {
+    "building_overlap_validation_enabled": true,
+    "building_placement_enabled": true,
+    "day_night_enabled_in_gameplay": true,
+    "farmland_editor_enabled": true,
+    "object_transform_enabled": true,
+    "size_aware_far_scenery": true,
+    "water_bodies_enabled": true,
+    "xyz_gizmo_enabled": true
+  },
+  "format_version": 5,
+  "icon": "map_icon.png",
+  "map_id": "multiplayer_test",
+  "scene": "multiplayer_test.tscn",
+  "size": {
+    "depth": 256,
+    "width": 256
+  },
+  "surface_colors": [
+    {
+      "color": "245f32",
+      "id": 0,
+      "name": "Grass",
+      "roughness": 0.95
+    },
+    {
+      "color": "8c582e",
+      "id": 1,
+      "name": "Soil",
+      "roughness": 0.98
+    },
+    {
+      "color": "1f2122",
+      "id": 2,
+      "name": "Town Asphalt",
+      "roughness": 0.96
+    },
+    {
+      "color": "5e4d30",
+      "id": 3,
+      "name": "Country Gravel",
+      "roughness": 0.98
+    }
+  ],
+  "template": "creston_town",
+  "terrain": {
+    "default_surface_id": 0,
+    "heightmap": "heightmap.bin",
+    "samples": [
+      257,
+      257
+    ],
+    "surface_mask": "surface_mask.png",
+    "surface_mask_resolution": [
+      1024,
+      1024
+    ],
+    "surface_palette": "surface_palette.png",
+    "surface_palette_resource": "surface_palette.tres",
+    "vertex_spacing": 1.0
+  },
+  "version": "1.0.0"
+}

@@ -41,6 +41,10 @@ const NETWORK_STATES := {
 @export var lays_eggs := false
 @export var egg_interval_seconds := 30.0
 @export_range(0.0, 1.0, 0.01) var golden_egg_chance := 0.10
+@export var produces_milk := false
+@export var milk_interval_seconds := 60.0
+@export_range(0, 3, 1) var initial_milk_charges := -1
+@export_range(-1.0, 60.0, 0.1) var initial_milk_countdown := -1.0
 @export var network_proxy := false
 @export var naturally_spawned := false
 @export var initial_hp := -1.0
@@ -72,6 +76,9 @@ var _state_elapsed := 0.0
 var _state_duration := 0.0
 var _eat_countdown := 0.0
 var _egg_countdown := 0.0
+var milk_charges_remaining := 0
+var milk_countdown := 60.0
+var _milk_cycle_initialized := false
 var _move_target := Vector3.ZERO
 var _knockback_velocity := Vector3.ZERO
 var _last_attacker_peer_id := 0
@@ -109,6 +116,10 @@ func _ready() -> void:
 			maturity_seconds = CombatBalance.get_float(
 				"farm_livestock", "angus_cow_maturity_seconds", maturity_seconds
 			)
+			produces_milk = true
+			milk_interval_seconds = CombatBalance.get_float(
+				"farm_livestock", "angus_cow_milk_interval_seconds", milk_interval_seconds
+			)
 		_:
 			max_hp = CombatBalance.get_float("farm_livestock", "chicken_hp", max_hp)
 			meat_drop_count = CombatBalance.get_int(
@@ -138,6 +149,11 @@ func _ready() -> void:
 	_create_team_marker()
 	_eat_countdown = _rng.randf_range(8.0, 16.0)
 	_egg_countdown = egg_interval_seconds
+	milk_countdown = maxf(1.0, initial_milk_countdown) if initial_milk_countdown >= 0.0 else milk_interval_seconds
+	milk_charges_remaining = clampi(initial_milk_charges, 0, 3) if initial_milk_charges >= 0 else 0
+	_milk_cycle_initialized = not produces_milk or is_mature()
+	if produces_milk and is_mature() and initial_milk_charges < 0:
+		milk_charges_remaining = 3
 	_set_state(State.IDLE, true)
 	_apply_housing_state()
 	if network_proxy or GameAuthority.is_client_proxy():
@@ -157,6 +173,7 @@ func _physics_process(delta: float) -> void:
 	_tick_effects(delta)
 	_tick_growth(delta)
 	_tick_egg_laying(delta)
+	_tick_milk_production(delta)
 	if destroyed:
 		return
 	if _is_immobilized():
@@ -242,6 +259,18 @@ func is_mature() -> bool:
 	return get_growth_progress() >= 99.999
 
 
+func can_be_milked() -> bool:
+	return produces_milk and not destroyed and current_hp > 0.0 and is_mature() \
+		and milk_charges_remaining > 0
+
+
+func consume_milk_charge() -> bool:
+	if not can_be_milked():
+		return false
+	milk_charges_remaining = maxi(0, milk_charges_remaining - 1)
+	return true
+
+
 func can_be_slaughtered() -> bool:
 	return not destroyed and current_hp > 0.0 and is_mature()
 
@@ -299,6 +328,8 @@ func get_network_state() -> Dictionary:
 		"tranquilizer_remaining": tranquilizer_remaining,
 		"trap_remaining": trap_remaining,
 		"labeled_remaining": labeled_remaining,
+		"milk_charges_remaining": milk_charges_remaining,
+		"milk_countdown": milk_countdown,
 	}
 
 
@@ -307,6 +338,8 @@ func get_low_frequency_growth_state() -> Dictionary:
 		"animal_id": animal_id,
 		"growth_progress": roundi(get_growth_progress()),
 		"mature": is_mature(),
+		"milk_charges_remaining": milk_charges_remaining,
+		"milk_countdown": milk_countdown,
 	}
 
 
@@ -323,6 +356,8 @@ func get_persistent_state() -> Dictionary:
 		"max_hp": max_hp,
 		"growth_progress": get_growth_progress(),
 		"maturity_seconds": maturity_seconds,
+		"milk_charges_remaining": milk_charges_remaining,
+		"milk_countdown": milk_countdown,
 		"naturally_spawned": naturally_spawned,
 	}
 
@@ -332,6 +367,9 @@ func apply_network_growth_state(data: Dictionary) -> void:
 		return
 	var progress := clampf(float(data.get("growth_progress", get_growth_progress())), 0.0, 100.0)
 	growth_elapsed_seconds = progress * maturity_seconds / 100.0
+	if produces_milk:
+		milk_charges_remaining = clampi(int(data.get("milk_charges_remaining", milk_charges_remaining)), 0, 3)
+		milk_countdown = maxf(0.0, float(data.get("milk_countdown", milk_countdown)))
 	_update_health_label()
 
 
@@ -353,6 +391,9 @@ func apply_network_state(data: Dictionary) -> void:
 	tranquilizer_remaining = maxf(0.0, float(data.get("tranquilizer_remaining", 0.0)))
 	trap_remaining = maxf(0.0, float(data.get("trap_remaining", 0.0)))
 	labeled_remaining = maxf(0.0, float(data.get("labeled_remaining", 0.0)))
+	if produces_milk:
+		milk_charges_remaining = clampi(int(data.get("milk_charges_remaining", milk_charges_remaining)), 0, 3)
+		milk_countdown = maxf(0.0, float(data.get("milk_countdown", milk_countdown)))
 	destroyed = current_hp <= 0.0
 	state = int(NETWORK_STATES.get(str(data.get("state", "idle")), State.IDLE)) as State
 	if animation_player != null:
@@ -423,6 +464,26 @@ func _tick_growth(delta: float) -> void:
 	if destroyed or maturity_seconds <= 0.0 or growth_elapsed_seconds >= maturity_seconds:
 		return
 	growth_elapsed_seconds = minf(maturity_seconds, growth_elapsed_seconds + delta)
+
+
+func _tick_milk_production(delta: float) -> void:
+	if not produces_milk or destroyed:
+		return
+	if not is_mature():
+		_milk_cycle_initialized = false
+		milk_charges_remaining = 0
+		milk_countdown = milk_interval_seconds
+		return
+	if not _milk_cycle_initialized:
+		_milk_cycle_initialized = true
+		milk_charges_remaining = 3
+		milk_countdown = milk_interval_seconds
+		return
+	milk_countdown = maxf(0.0, milk_countdown - delta)
+	if milk_countdown > 0.0:
+		return
+	milk_charges_remaining = 3
+	milk_countdown = milk_interval_seconds
 
 
 func _tick_egg_laying(delta: float) -> void:

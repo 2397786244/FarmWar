@@ -44,6 +44,18 @@ func create_cooperative_lobby(world: Dictionary) -> bool:
 	if world.is_empty():
 		cooperative_lobby_error.emit("合作世界数据无效。")
 		return false
+	var map_validation := GameMapRegistry.validate_world_map(world)
+	if not bool(map_validation.get("valid", false)):
+		cooperative_lobby_error.emit(str(map_validation.get("error", "房主选择的地图不可用。")))
+		return false
+	var local_map: Dictionary = map_validation.get("map", {}) as Dictionary
+	if not local_map.is_empty():
+		world["map_id"] = str(local_map.get("map_id", world.get("map_id", "")))
+		world["map_name"] = str(local_map.get("display_name", world.get("map_name", "")))
+		world["map_icon_path"] = str(local_map.get("icon_path", world.get("map_icon_path", "")))
+		world["map_scene_path"] = str(local_map.get("scene_path", world.get("map_scene_path", "")))
+		world["map_version"] = str(local_map.get("map_version", world.get("map_version", "")))
+		world["map_hash"] = str(local_map.get("map_hash", world.get("map_hash", "")))
 	_pending_world = world.duplicate(true)
 	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, clampi(int(world.get("max_players", 4)), 1, 4))
 	return true
@@ -92,6 +104,9 @@ func get_current_lobby_data() -> Dictionary:
 		"map_name": Steam.getLobbyData(cooperative_lobby_id, "map_name"),
 		"map_icon_path": Steam.getLobbyData(cooperative_lobby_id, "map_icon_path"),
 		"map_scene_path": Steam.getLobbyData(cooperative_lobby_id, "map_scene_path"),
+		"map_version": Steam.getLobbyData(cooperative_lobby_id, "map_version"),
+		"map_hash": Steam.getLobbyData(cooperative_lobby_id, "map_hash"),
+		"map_source": Steam.getLobbyData(cooperative_lobby_id, "map_source"),
 		"max_players": int(Steam.getLobbyData(cooperative_lobby_id, "max_players")),
 		"death_drop_mode": Steam.getLobbyData(cooperative_lobby_id, "death_drop_mode"),
 		"host_steam_id": int(Steam.getLobbyData(cooperative_lobby_id, "host_steam_id")),
@@ -211,6 +226,9 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	Steam.setLobbyData(lobby_id, "map_name", str(_pending_world.get("map_name", "")))
 	Steam.setLobbyData(lobby_id, "map_icon_path", str(_pending_world.get("map_icon_path", "")))
 	Steam.setLobbyData(lobby_id, "map_scene_path", str(_pending_world.get("map_scene_path", "")))
+	Steam.setLobbyData(lobby_id, "map_version", str(_pending_world.get("map_version", "")))
+	Steam.setLobbyData(lobby_id, "map_hash", str(_pending_world.get("map_hash", "")))
+	Steam.setLobbyData(lobby_id, "map_source", str(_pending_world.get("map_source", "")))
 	Steam.setLobbyData(lobby_id, "max_players", str(_pending_world.get("max_players", 4)))
 	Steam.setLobbyData(lobby_id, "death_drop_mode", str(_pending_world.get("death_drop_mode", "save")))
 	Steam.setLobbyData(lobby_id, "host_steam_id", str(steam_id))
@@ -231,6 +249,21 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: int, response: 
 	if Steam.getLobbyData(lobby_id, "game_mode") != COOPERATIVE_MODE_TAG:
 		cooperative_lobby_error.emit("该 Steam Lobby 不是 FarmWar 联机合作世界。")
 		Steam.leaveLobby(lobby_id)
+		return
+	var advertised_map := {
+		"map_id": Steam.getLobbyData(lobby_id, "map_id"),
+		"map_name": Steam.getLobbyData(lobby_id, "map_name"),
+		"map_version": Steam.getLobbyData(lobby_id, "map_version"),
+		"map_hash": Steam.getLobbyData(lobby_id, "map_hash"),
+	}
+	var map_validation := GameMapRegistry.validate_world_map(advertised_map)
+	if not bool(map_validation.get("valid", false)):
+		var rejection_message := str(map_validation.get("error", "本地没有房主选择的地图，无法加入合作世界。"))
+		Steam.leaveLobby(lobby_id)
+		cooperative_lobby_error.emit(rejection_message)
+		GlobalVar.open_cooperative_worlds_on_main_menu = true
+		GlobalVar.cooperative_return_notice = rejection_message
+		get_tree().call_deferred("change_scene_to_file", "res://ui/MainMenuRoot.tscn")
 		return
 	cooperative_lobby_id = lobby_id
 	cooperative_lobby_host_steam_id = int(Steam.getLobbyData(lobby_id, "host_steam_id"))

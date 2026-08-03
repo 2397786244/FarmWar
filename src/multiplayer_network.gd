@@ -112,6 +112,10 @@ func submit_player_input(input_frame: Dictionary) -> void:
 	NetworkSession.submit_action("player_input", input_frame)
 
 
+func submit_player_jump(jump_request: Dictionary) -> void:
+	NetworkSession.submit_action("player_jump", jump_request)
+
+
 func submit_select_tool(tool_index: int, tool_id := "") -> void:
 	NetworkSession.submit_action("select_tool", {"tool_index": tool_index, "tool_id": tool_id})
 
@@ -165,6 +169,7 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 		return
 	match action_type:
 		"player_input": rpc_endpoint.submit_player_input(payload)
+		"player_jump": rpc_endpoint.submit_player_jump(payload)
 		"select_tool": rpc_endpoint.submit_select_tool(int(payload.get("tool_index", 0)), str(payload.get("tool_id", "")))
 		"use_tool": rpc_endpoint.submit_use_tool(payload)
 		"reload_weapon": rpc_endpoint.submit_reload_weapon(str(payload.get("tool_id", "")))

@@ -14,6 +14,7 @@ const OWNER_TINT_SIZE := Vector2(1.96, 1.96)
 @export_range(1, 128, 1) var length_tiles := 16
 @export_range(1, 128, 1) var width_tiles := 4
 @export_range(0.1, 20.0, 0.1) var tile_spacing := 2.2
+@export var field_owner := ""
 @export var tile_scene: PackedScene = preload("res://items/farm_tile.tscn")
 @export var generate_on_ready := true
 @export_range(16, 512, 16) var generation_batch_size := 128
@@ -103,7 +104,7 @@ func _create_tile(field_identifier: String, column: int, row: int) -> void:
 	var instance_index := generated_tiles.size()
 	var tile_position := Vector3(float(column) * tile_spacing, 0.0, float(row) * tile_spacing)
 	tile.name = "%s_FarmTile_%d_%d" % [field_label, column, row]
-	tile.land_owner = ""
+	tile.land_owner = field_owner if field_owner in ["red", "blue"] else ""
 	tile.grid_coordinate = Vector2i(column, row)
 	tile.field_id = field_identifier
 	tile.tile_spacing = tile_spacing

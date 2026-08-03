@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3 uid="uid://cipkjrc4e7clb"]
+
+[ext_resource type="PackedScene" uid="uid://cpo828tulvog" path="res://assets/tools/MetalBucket_Empty.glb" id="1_gyucw"]
+[ext_resource type="Script" path="res://src/bucket.gd" id="2_bucket"]
+
+[node name="Bucket" type="Node3D" unique_id=739754129]
+script = ExtResource("2_bucket")
+
+[node name="Mesh" parent="." unique_id=169980721 instance=ExtResource("1_gyucw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.29605573, 0)

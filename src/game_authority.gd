@@ -30,6 +30,7 @@ const PLAYER_CORRECTION_TICK_INTERVAL := 1
 const PLAYER_JUMP_GRACE_TICKS := 3
 const PLAYER_MAX_HP := 200.0
 const PLAYER_RESPAWN_SECONDS := 10.0
+const PLAYER_VOID_DEATH_Y := -50.0
 const LOCAL_MATCH_DURATION_SECONDS := 48.0 * 60.0
 const PLAYER_KNOCKBACK_DECELERATION := 18.0
 const PLAYER_PRONE_SPEED_MULTIPLIER := 0.4
@@ -40,7 +41,7 @@ const PLAYER_SWIM_RISE_SPEED := 3.0
 const PLAYER_SWIM_DIVE_SPEED := 2.8
 const PLAYER_SWIM_SINK_SPEED := 0.45
 const PLAYER_SWIM_VERTICAL_ACCELERATION := 8.0
-const PLAYER_SWIM_MAX_DEPTH := 3.0
+const PLAYER_SWIM_MAX_DEPTH := 8.0
 const PLAYER_SWIM_SURFACE_MARGIN := 0.20
 const PLAYER_SWIM_EXIT_PROBE_DISTANCE := 0.45
 const PLAYER_CROP_INTERACTION_RANGE := 4.0
@@ -478,6 +479,28 @@ func _run_authority_tick(delta: float) -> void:
 		tick_samples_ms.pop_front()
 
 
+func _check_player_void_fall(peer_id: int, state: Dictionary, position: Vector3) -> bool:
+	if position.y >= PLAYER_VOID_DEATH_Y \
+			or float(state.get("respawn_left", 0.0)) > 0.0:
+		return false
+	state["position"] = position
+	state["hp"] = 0.0
+	state["velocity"] = Vector3.ZERO
+	state["knockback_velocity"] = Vector3.ZERO
+	player_states[peer_id] = state
+	_begin_player_respawn(peer_id)
+	return true
+
+
+func check_local_player_void_fall(peer_id: int, observed_position: Vector3) -> bool:
+	if mode != MODE_LOCAL or not player_states.has(peer_id):
+		return false
+	if observed_position.y >= PLAYER_VOID_DEATH_Y:
+		return false
+	var state: Dictionary = player_states[peer_id]
+	return _check_player_void_fall(peer_id, state, observed_position)
+
+
 func _simulate_players(delta: float) -> void:
 	for raw_peer_id in player_states.keys():
 		var peer_id := int(raw_peer_id)
@@ -495,6 +518,9 @@ func _simulate_players(delta: float) -> void:
 			player_states[peer_id] = state
 			if respawn_left <= 0.0:
 				_respawn_player(peer_id)
+			continue
+		var recorded_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		if _check_player_void_fall(peer_id, state, recorded_position):
 			continue
 		var capture_remaining := float(state.get("big_mouth_capture_remaining", 0.0))
 		if capture_remaining > 0.0:
@@ -526,6 +552,12 @@ func _simulate_players(delta: float) -> void:
 			var seat_index := int(state.get("vehicle_seat_index", -1))
 			if vehicle != null and vehicle.get_seat_index_for_peer(peer_id) == seat_index:
 				_sync_occupied_player_state(peer_id, state, vehicle)
+				if _check_player_void_fall(
+						peer_id,
+						state,
+						_vector3_from_value(state.get("position", Vector3.ZERO))
+				):
+					continue
 				continue
 			state["vehicle_id"] = ""
 			state["vehicle_seat_index"] = -1
@@ -592,6 +624,24 @@ func _simulate_players(delta: float) -> void:
 			var jump_sequence := int(input.get("jump_seq", state.get("last_jump_seq", 0)))
 			var last_jump_sequence := int(state.get("last_jump_seq", 0))
 			var jump_requested := jump_sequence > last_jump_sequence
+			# At the shoreline the capsule can still overlap the water polygon while
+			# standing on the real ground. Treat Space as a normal jump in that case;
+			# a floating player remains in swim mode and uses Space to rise.
+			if swimming and jump_requested and (proxy.is_on_floor() or was_grounded):
+				swimming = false
+				state["swimming"] = false
+				speed = float(state.get("speed", 5.0)) * EquipmentCatalog.get_movement_speed_multiplier(
+					str(state.get("equipped_legwear_id", ""))
+				)
+			if swimming and direction.length_squared() > 0.001 \
+					and WaterBody3D.get_surface_level_at(
+						position + direction * PLAYER_SWIM_EXIT_PROBE_DISTANCE
+					) >= INF and (proxy.is_on_floor() or proxy.is_on_wall()):
+				swimming = false
+				state["swimming"] = false
+				speed = float(state.get("speed", 5.0)) * EquipmentCatalog.get_movement_speed_multiplier(
+					str(state.get("equipped_legwear_id", ""))
+				)
 			var jump_accepted := false
 			if not swimming:
 				if not proxy.is_on_floor():
@@ -697,6 +747,8 @@ func _simulate_players(delta: float) -> void:
 		for tool_id in cooldowns.keys():
 			cooldowns[tool_id] = maxf(0.0, float(cooldowns[tool_id]) - delta)
 		state["tool_cooldowns"] = cooldowns
+		if _check_player_void_fall(peer_id, state, position):
+			continue
 		player_states[peer_id] = state
 		if server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
 			player_correction_ready.emit(peer_id, _make_player_correction(peer_id))
@@ -738,6 +790,18 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["hero_id"] = selection.get("hero_id", selection.get("character_id", existing.get("hero_id", "")))
 	existing["primary_weapon_ids"] = selection.get("primary_weapon_ids", existing.get("primary_weapon_ids", []))
 	existing["special_tool_ids"] = selection.get("special_tool_ids", existing.get("special_tool_ids", []))
+	for field_name: String in [
+		"personal_ingredients", "personal_dishes", "personal_dish_weights", "personal_cargo_crates",
+		"weapon_ammo_states",
+	]:
+		if selection.has(field_name):
+			var field_value: Variant = selection.get(field_name)
+			if field_value is Array or field_value is Dictionary:
+				existing[field_name] = field_value.duplicate(true)
+	if selection.has("current_tool_index"):
+		existing["current_tool_index"] = int(selection.get("current_tool_index", 0))
+	if selection.has("current_tool_id"):
+		existing["current_tool_id"] = str(selection.get("current_tool_id", ""))
 	existing["position"] = selection.get("position", existing.get("position", Vector3.ZERO))
 	existing["velocity"] = existing.get("velocity", Vector3.ZERO)
 	existing["knockback_velocity"] = existing.get("knockback_velocity", Vector3.ZERO)
@@ -760,6 +824,25 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["equipped_backpack_id"] = str(existing.get("equipped_backpack_id", ""))
 	existing["equipped_chest_armor_id"] = str(existing.get("equipped_chest_armor_id", ""))
 	existing["equipped_legwear_id"] = str(existing.get("equipped_legwear_id", ""))
+	if selection.has("backpack_slot_items") and selection.get("backpack_slot_items") is Array:
+		existing["backpack_slot_items"] = (selection.get("backpack_slot_items") as Array).duplicate(true)
+	if selection.has("owned_equipment_ids") and selection.get("owned_equipment_ids") is Array:
+		existing["owned_equipment_ids"] = (selection.get("owned_equipment_ids") as Array).duplicate(true)
+	if selection.has("equipment_hp") and selection.get("equipment_hp") is Dictionary:
+		existing["equipment_hp"] = (selection.get("equipment_hp") as Dictionary).duplicate(true)
+	existing["equipment_hp"] = _initialize_equipment_hp(
+		existing.get("equipment_hp", {}),
+		existing.get("owned_equipment_ids", [])
+	)
+	for field_name: String in ["equipped_backpack_id", "equipped_chest_armor_id", "equipped_legwear_id"]:
+		if selection.has(field_name):
+			existing[field_name] = str(selection.get(field_name, ""))
+	if selection.has("current_hp"):
+		existing["hp"] = clampf(float(selection.get("current_hp", PLAYER_MAX_HP)), 0.0, PLAYER_MAX_HP)
+	if selection.has("max_hp"):
+		existing["max_hp"] = maxf(1.0, float(selection.get("max_hp", PLAYER_MAX_HP)))
+	if selection.has("respawn_left"):
+		existing["respawn_left"] = maxf(0.0, float(selection.get("respawn_left", 0.0)))
 	if not existing.has("backpack_slot_items"):
 		existing["backpack_slot_items"] = _build_initial_backpack_layout(existing)
 	existing["backpack_layout_valid"] = bool(existing.get("backpack_layout_valid", true))
@@ -829,6 +912,7 @@ func grant_test_backpack_entries_to_all(entries: Array) -> bool:
 				"type": "backpack_test_grant",
 				"peer_id": peer_id,
 				"entries": granted_entries,
+				"player_slots": (state.get("backpack_slot_items", []) as Array).duplicate(true),
 				"tick": server_tick,
 			})
 	return true
@@ -1038,6 +1122,11 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 			entry["max_hp"] = entry["current_hp"]
 			entry["growth_progress"] = 0.0
 			entry["maturity_seconds"] = float(definition.get("maturity_seconds", 0.0))
+			if requested_id == "animal_angus_cow":
+				entry["milk_charges_remaining"] = 0
+				entry["milk_countdown"] = CombatBalance.get_float(
+					"farm_livestock", "angus_cow_milk_interval_seconds", 60.0
+				)
 			entry["livestock_instance_id"] = "stored:%d" % next_livestock_id
 			next_livestock_id += 1
 		if _uses_finite_ammo(requested_id):
@@ -1065,12 +1154,15 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 func _emit_debug_backpack_grant(peer_id: int, entries: Array[Dictionary]) -> void:
 	if entries.is_empty():
 		return
+	var state: Dictionary = player_states.get(peer_id, {})
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	var player_slots: Array = (slots_value as Array).duplicate(true) if slots_value is Array else []
 	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
-		_apply_test_backpack_grant_to_local_player(peer_id, entries)
+		_apply_test_backpack_grant_to_local_player(peer_id, entries, player_slots)
 	if mode != MODE_LOCAL:
 		reliable_world_event_ready.emit({
 			"type": "backpack_test_grant", "peer_id": peer_id,
-			"entries": entries, "tick": server_tick,
+			"entries": entries, "player_slots": player_slots, "tick": server_tick,
 		})
 
 
@@ -1311,11 +1403,16 @@ func _grant_test_backpack_entry(state: Dictionary, entry: Dictionary) -> Diction
 	return {}
 
 
-func _apply_test_backpack_grant_to_local_player(peer_id: int, entries: Array) -> void:
+func _apply_test_backpack_grant_to_local_player(
+	peer_id: int, entries: Array, player_slots: Array = []
+) -> void:
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
 				and int((node as GamePlayer).authority_peer_id) == peer_id:
-			(node as GamePlayer).apply_test_backpack_grant(entries)
+			if not player_slots.is_empty():
+				(node as GamePlayer).apply_cargo_backpack_slots(player_slots)
+			else:
+				(node as GamePlayer).apply_test_backpack_grant(entries)
 			return
 
 
@@ -1358,6 +1455,10 @@ func local_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 	server_receive_player_input(peer_id, input_frame)
 
 
+func local_receive_player_jump(peer_id: int, jump_request: Dictionary) -> void:
+	server_receive_player_jump(peer_id, jump_request)
+
+
 func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 	if not player_states.has(peer_id):
 		register_or_update_player(peer_id, {"display_name": "Player_%d" % peer_id})
@@ -1383,7 +1484,13 @@ func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 		"input_seq": input_seq,
 		"client_time_msec": int(input_frame.get("client_time_msec", 0)),
 		"move": move,
-		"jump_seq": maxi(0, int(input_frame.get("jump_seq", 0))),
+		# Network jump requests are transported separately and merged below. Keep
+		# this legacy field for older clients, but never clear a reliable request
+		# that arrived before the next movement packet.
+		"jump_seq": maxi(
+			maxi(0, int(input_frame.get("jump_seq", 0))),
+			int(latest_inputs.get(peer_id, {}).get("jump_seq", 0))
+		),
 		"yaw": wrapf(float(input_frame.get("yaw", state.get("yaw", 0.0))), -PI, PI),
 		"pitch": clampf(float(input_frame.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit)),
 		"prone": requested_prone,
@@ -1394,6 +1501,46 @@ func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 	player_states[peer_id] = state
 	latest_inputs[peer_id] = sanitized_input
 	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
+
+
+func server_receive_player_jump(peer_id: int, jump_request: Dictionary) -> void:
+	if not player_states.has(peer_id):
+		register_or_update_player(peer_id, {"display_name": "Player_%d" % peer_id})
+	if not player_states.has(peer_id):
+		return
+	var state: Dictionary = player_states[peer_id]
+	if float(state.get("respawn_left", 0.0)) > 0.0:
+		return
+	var jump_seq := maxi(0, int(jump_request.get("jump_seq", 0)))
+	if jump_seq <= int(state.get("last_jump_seq", 0)):
+		# Reliable transport may deliver a duplicate request after the action was
+		# already consumed. The sequence number makes consumption idempotent.
+		return
+	var current_input: Dictionary = latest_inputs.get(peer_id, {}).duplicate(true)
+	var event_input_seq := maxi(0, int(jump_request.get("input_seq", 0)))
+	var current_input_seq := int(current_input.get("input_seq", 0))
+	if current_input.is_empty() or event_input_seq >= current_input_seq:
+		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		var water_surface_y := WaterBody3D.get_surface_level_at(position)
+		var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+		var requested_prone := bool(jump_request.get("prone", state.get("prone", false))) and not swimming
+		var pitch_limit := PLAYER_PRONE_MAX_PITCH_DEGREES if requested_prone else 50.0
+		current_input["input_seq"] = event_input_seq
+		current_input["client_time_msec"] = int(jump_request.get("client_time_msec", 0))
+		current_input["move"] = _vector2_from_value(jump_request.get("move", current_input.get("move", Vector2.ZERO)))
+		current_input["yaw"] = wrapf(float(jump_request.get("yaw", state.get("yaw", 0.0))), -PI, PI)
+		current_input["pitch"] = clampf(float(jump_request.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit))
+		current_input["prone"] = requested_prone
+		current_input["swim_up"] = swimming and bool(jump_request.get("swim_up", false))
+		current_input["dive"] = swimming and bool(jump_request.get("dive", false))
+		if current_input["move"].length() > 1.0:
+			current_input["move"] = current_input["move"].normalized()
+		if event_input_seq > int(state.get("last_received_input_seq", 0)):
+			state["last_received_input_seq"] = event_input_seq
+	current_input["jump_seq"] = maxi(jump_seq, int(current_input.get("jump_seq", 0)))
+	latest_inputs[peer_id] = current_input
+	player_states[peer_id] = state
+	bytes_received_this_second += len(JSON.stringify(jump_request).to_utf8_buffer())
 
 
 func local_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, seat_index := -1) -> Dictionary:
@@ -2149,6 +2296,10 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_spawn_livestock(peer_id, tool_request, "res://items/Pig.tscn", "pig"), true)
 		"animal_angus_cow":
 			result.merge(_server_spawn_livestock(peer_id, tool_request, "res://items/AngusCow.tscn", "angus_cow"), true)
+		"empty_bucket":
+			result.merge(_server_use_empty_bucket(peer_id, tool_request), true)
+		"water_bucket", "milk_bucket":
+			result = _bucket_failure(peer_id, result, "bucket_cannot_pour", "这个桶目前不能倒出液体")
 		"sprout_blaster":
 			result.merge(_server_plant_selected_crop(peer_id, tool_request), true)
 		"fertilizer":
@@ -2203,6 +2354,155 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 	return result
 
 
+func _server_use_empty_bucket(peer_id: int, tool_request: Dictionary) -> Dictionary:
+	var result := {"ok": false, "bucket_action": "fill"}
+	if not player_states.has(peer_id):
+		return _bucket_failure(peer_id, result, "unknown_player", "无法使用桶：玩家状态不可用")
+	var state: Dictionary = player_states[peer_id]
+	var requested_slot := int(tool_request.get("tool_index", state.get("current_tool_index", -1)))
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array or requested_slot < 0 or requested_slot >= (slots_value as Array).size():
+		return _bucket_failure(peer_id, result, "empty_bucket_not_in_slot", "当前没有选中空桶")
+	var slot_item: Variant = (slots_value as Array)[requested_slot]
+	if not slot_item is Dictionary or str((slot_item as Dictionary).get("tool_id", "")) != "empty_bucket":
+		return _bucket_failure(peer_id, result, "empty_bucket_not_in_slot", "当前没有选中空桶")
+
+	var player_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var origin := _vector3_from_value(tool_request.get("origin", player_position + Vector3.UP * 1.2))
+	var direction := _vector3_from_value(tool_request.get("direction", Vector3.FORWARD)).normalized()
+	if direction.length_squared() <= 0.001:
+		direction = Vector3.FORWARD
+	var max_distance := 8.0
+	var end := origin + direction * max_distance
+	var target_hit := _raycast_world(
+		origin,
+		end,
+		COLLISION_LAYER_WALL | COLLISION_LAYER_BUILDING | COLLISION_LAYER_WILD_ANIMAL,
+		_player_raycast_exclusion(peer_id)
+	)
+	var target_animal := _wild_animal_for_collider(target_hit.get("collider", null))
+	if target_animal is FarmLivestock and (target_animal as FarmLivestock).species_id == "angus_cow":
+		var cow := target_animal as FarmLivestock
+		if not _can_server_interact_with_position(state, cow.global_position, max_distance):
+			return _bucket_failure(peer_id, result, "cow_out_of_range", "安格斯牛距离太远或被遮挡")
+		if not cow.can_be_milked():
+			return _bucket_failure(peer_id, result, "cow_milk_not_ready", "这头安格斯牛暂时还不能挤奶")
+		if not _replace_bucket_in_state(state, requested_slot, "empty_bucket", "milk_bucket"):
+			return _bucket_failure(peer_id, result, "bucket_inventory_changed", "空桶已被其他操作改变，请重新选择")
+		if not cow.consume_milk_charge():
+			_replace_bucket_in_state(state, requested_slot, "milk_bucket", "empty_bucket")
+			return _bucket_failure(peer_id, result, "cow_milk_not_ready", "这头安格斯牛暂时还不能挤奶")
+		player_states[peer_id] = state
+		result["ok"] = true
+		result["bucket_from"] = "empty_bucket"
+		result["bucket_to"] = "milk_bucket"
+		result["milk_charges_remaining"] = cow.milk_charges_remaining
+		result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+		return result
+
+	var water_hit := _find_water_surface_hit(origin, direction, max_distance)
+	if water_hit.is_empty():
+		return _bucket_failure(peer_id, result, "water_not_targeted", "请把空桶对准水体表面")
+	var water_position := _vector3_from_value(water_hit.get("position", Vector3.ZERO))
+	if not _can_server_interact_with_position(state, water_position, max_distance):
+		return _bucket_failure(peer_id, result, "water_out_of_range", "水体距离太远或不在前方")
+	# Water surfaces are visual meshes rather than raycast colliders.  Check the
+	# normal combat blockers separately so a bucket cannot fill through a wall,
+	# tree or building.
+	var blocker := _raycast_world(
+		origin,
+		water_position,
+		DEFAULT_COMBAT_RAYCAST_MASK,
+		_player_raycast_exclusion(peer_id)
+	)
+	if not blocker.is_empty():
+		return _bucket_failure(peer_id, result, "water_blocked", "水体被障碍物遮挡")
+	if not _replace_bucket_in_state(state, requested_slot, "empty_bucket", "water_bucket"):
+		return _bucket_failure(peer_id, result, "bucket_inventory_changed", "空桶已被其他操作改变，请重新选择")
+	player_states[peer_id] = state
+	result["ok"] = true
+	result["bucket_from"] = "empty_bucket"
+	result["bucket_to"] = "water_bucket"
+	result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+	return result
+
+
+func _bucket_failure(peer_id: int, result: Dictionary, reason: String, message: String) -> Dictionary:
+	result["reason"] = reason
+	_emit_gameplay_notice(peer_id, message)
+	return result
+
+
+func _find_water_surface_hit(origin: Vector3, direction: Vector3, max_distance: float) -> Dictionary:
+	var nearest_distance := INF
+	var nearest_position := Vector3.ZERO
+	for value in get_tree().get_nodes_in_group("water_bodies"):
+		var water := value as WaterBody3D
+		if water == null or not is_instance_valid(water):
+			continue
+		if absf(direction.y) > 0.0001:
+			var distance := (water.water_level - origin.y) / direction.y
+			if distance >= 0.0 and distance <= max_distance and distance < nearest_distance:
+				var position := origin + direction * distance
+				if water.contains_horizontal_point(position):
+					nearest_distance = distance
+					nearest_position = position
+		# From the bank, a nearly level camera ray can pass over a visual-only
+		# water surface without intersecting its Y plane. Sample the short ray in
+		# that case and use the first point inside the water polygon.
+		if absf(direction.y) <= 0.12:
+			var surface_tolerance := maxf(1.75, water.detection_height + 1.0)
+			if absf(origin.y - water.water_level) <= surface_tolerance:
+				for sample_index in range(1, 33):
+					var sample_distance := max_distance * float(sample_index) / 32.0
+					if sample_distance >= nearest_distance:
+						break
+					var sample_position := origin + direction * sample_distance
+					if water.contains_horizontal_point(sample_position):
+						nearest_distance = sample_distance
+						nearest_position = Vector3(
+							sample_position.x, water.water_level, sample_position.z
+						)
+						break
+	if nearest_distance == INF:
+		return {}
+	return {"position": nearest_position, "distance": nearest_distance}
+
+
+func _replace_bucket_in_state(state: Dictionary, slot_index: int, from_id: String, to_id: String) -> bool:
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array or slot_index < 0 or slot_index >= (slots_value as Array).size():
+		return false
+	var slots: Array = (slots_value as Array).duplicate(true)
+	var slot_value: Variant = slots[slot_index]
+	if not slot_value is Dictionary or str((slot_value as Dictionary).get("tool_id", "")) != from_id:
+		return false
+	var replacement_bucket := ""
+	var replacement_index := -1
+	for bucket_name in ["primary_weapon_ids", "special_tool_ids"]:
+		var ids_value: Variant = state.get(bucket_name, [])
+		if not ids_value is Array:
+			continue
+		var id_index := (ids_value as Array).find(from_id)
+		if id_index >= 0:
+			replacement_bucket = bucket_name
+			replacement_index = id_index
+			break
+	if replacement_bucket.is_empty():
+		return false
+	var replacement := (slot_value as Dictionary).duplicate(true)
+	replacement["tool_id"] = to_id
+	slots[slot_index] = replacement
+	state["backpack_slot_items"] = slots
+	var ids: Array = (state.get(replacement_bucket, []) as Array).duplicate(true)
+	ids[replacement_index] = to_id
+	state[replacement_bucket] = ids
+	if str(state.get("current_tool_id", "")) == from_id and int(state.get("current_tool_index", -1)) == slot_index:
+		state["current_tool_id"] = to_id
+	state["backpack_layout_valid"] = true
+	return true
+
+
 func _server_spawn_livestock(
 	peer_id: int,
 	tool_request: Dictionary,
@@ -2255,6 +2555,15 @@ func _server_spawn_livestock(
 		animal.initial_growth_progress = clampf(
 			float(inventory_item.get("growth_progress", 0.0)), 0.0, 100.0
 		)
+		if species_id == "angus_cow":
+			if inventory_item.has("milk_charges_remaining"):
+				animal.initial_milk_charges = clampi(
+					int(inventory_item.get("milk_charges_remaining", 0)), 0, 3
+				)
+			if inventory_item.has("milk_countdown"):
+				animal.initial_milk_countdown = maxf(
+					0.0, float(inventory_item.get("milk_countdown", 60.0))
+				)
 	world.add_child(animal)
 	animal.global_position = spawn_position
 	animal.rotation.y = placement_yaw
@@ -2312,6 +2621,9 @@ func server_livestock_pickup_action(peer_id: int, action: Dictionary) -> Diction
 		"maturity_seconds": animal.maturity_seconds,
 		"weight_kg": weight_kg,
 	}
+	if animal.species_id == "angus_cow":
+		entry["milk_charges_remaining"] = animal.milk_charges_remaining
+		entry["milk_countdown"] = animal.milk_countdown
 	var tool_ids: Array = state.get("special_tool_ids", [])
 	tool_ids.append(tool_id)
 	state["special_tool_ids"] = tool_ids
@@ -2622,12 +2934,15 @@ func _personal_ingredient_has_available_slot(
 func _emit_personal_inventory_grant(peer_id: int, entries: Array[Dictionary]) -> void:
 	if entries.is_empty():
 		return
+	var state: Dictionary = player_states.get(peer_id, {})
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	var player_slots: Array = (slots_value as Array).duplicate(true) if slots_value is Array else []
 	if mode == MODE_LOCAL:
-		_apply_test_backpack_grant_to_local_player(peer_id, entries)
+		_apply_test_backpack_grant_to_local_player(peer_id, entries, player_slots)
 	if mode != MODE_LOCAL:
 		reliable_world_event_ready.emit({
 			"type": "personal_inventory_grant", "peer_id": peer_id,
-			"entries": entries, "tick": server_tick,
+			"entries": entries, "player_slots": player_slots, "tick": server_tick,
 		})
 
 
@@ -2697,6 +3012,11 @@ func _make_purchased_livestock_entry(tool_id: String) -> Dictionary:
 		"maturity_seconds": float(definition.get("maturity_seconds", 0.0)),
 		"weight_kg": float(definition.get("weight_kg", 0.0)),
 	}
+	if tool_id == "animal_angus_cow":
+		entry["milk_charges_remaining"] = 0
+		entry["milk_countdown"] = CombatBalance.get_float(
+			"farm_livestock", "angus_cow_milk_interval_seconds", 60.0
+		)
 	next_livestock_id += 1
 	return entry
 
@@ -3916,6 +4236,7 @@ func server_dropped_item_action(peer_id: int, action: Dictionary) -> Dictionary:
 				result["ok"] = true
 				result["item_id"] = item_id
 				result["item"] = item
+				result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
 		_:
 			result["reason"] = "unsupported_action"
 	reliable_world_event_ready.emit({"type": "dropped_item_action_result", "data": result, "tick": server_tick})

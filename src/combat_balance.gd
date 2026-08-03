@@ -166,7 +166,7 @@ const PROFILES := {
 		"chicken_meat_drop_count": 3, "pig_meat_drop_count": 5,
 		"angus_cow_meat_drop_count": 6, "egg_interval_seconds": 30.0,
 		"chicken_maturity_seconds": 180.0, "pig_maturity_seconds": 360.0,
-		"angus_cow_maturity_seconds": 480.0,
+		"angus_cow_maturity_seconds": 480.0, "angus_cow_milk_interval_seconds": 60.0,
 		"golden_egg_chance": 0.10, "death_visible_seconds": 4.0,
 		"trap_duration": 2.0,
 	},

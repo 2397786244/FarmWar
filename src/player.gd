@@ -11,7 +11,7 @@ const SWIM_RISE_SPEED := 3.0
 const SWIM_DIVE_SPEED := 2.8
 const SWIM_SINK_SPEED := 0.45
 const SWIM_VERTICAL_ACCELERATION := 8.0
-const SWIM_MAX_DEPTH := 3.0
+const SWIM_MAX_DEPTH := 8.0
 const SWIM_SURFACE_MARGIN := 0.20
 const SWIM_EXIT_PROBE_DISTANCE := 0.45
 const UNDERWATER_EFFECT_FULL_DEPTH := 2.0
@@ -67,6 +67,7 @@ var remote_jump_sequence := 0
 var vehicle_input_sequence := 0
 var jump_sequence := 0
 var last_server_correction_seq := 0
+var last_server_jump_correction_seq := 0
 var pending_input_frames: Array[Dictionary] = []
 var pending_server_correction: Dictionary = {}
 var is_remote_proxy := false
@@ -74,6 +75,7 @@ var remote_snapshot_buffer: Array[Dictionary] = []
 var remote_locomotion_state := "idle"
 var remote_swim_moving := false
 var remote_grounded := true
+var authoritative_grounded := true
 var server_hp := PLAYER_MAX_HP
 var respawn_left := 0.0
 var is_respawning := false
@@ -341,7 +343,11 @@ func apply_loadout_selection(selection: Dictionary) -> void:
 	if not is_node_ready():
 		pending_loadout_selection = selection.duplicate(true)
 		return
-	authority_peer_id = int(selection.get("peer_id", authority_peer_id))
+	var network_peer_id := NetworkSession.get_unique_peer_id()
+	if not is_remote_proxy and NetworkSession.is_client() and network_peer_id > 0:
+		authority_peer_id = network_peer_id
+	else:
+		authority_peer_id = int(selection.get("peer_id", authority_peer_id))
 	_apply_loadout_selection_now(selection, true)
 	if not is_remote_proxy:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1033,6 +1039,8 @@ func apply_authoritative_mixer_action_result(result: Dictionary) -> void:
 
 
 func apply_authoritative_dropped_item_action_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", 0)) != authority_peer_id:
+		return
 	if not bool(result.get("ok", false)):
 		match str(result.get("reason", "")):
 			"personal_bag_full":
@@ -1054,6 +1062,10 @@ func apply_authoritative_dropped_item_action_result(result: Dictionary) -> void:
 				backpack_items[slot_index] = {}
 				_sync_equipped_tools_from_backpack()
 		"pickup":
+			var slots_value: Variant = result.get("player_slots", null)
+			if slots_value is Array:
+				apply_cargo_backpack_slots(slots_value as Array)
+				return
 			if str(item.get("kind", "")) == "tool" or str(item.get("kind", "")) == "weapon":
 				add_backpack_tool(str(item.get("tool_id", "")), item)
 			elif str(item.get("kind", "")) == "equipment":
@@ -1385,6 +1397,9 @@ func _json_to_vector3(value:Variant, fallback:Vector3) -> Vector3:
 
 func _ready() -> void:
 	add_to_group("human_players")
+	var network_peer_id := NetworkSession.get_unique_peer_id()
+	if not is_remote_proxy and network_peer_id > 0 and NetworkSession.is_client():
+		authority_peer_id = network_peer_id
 	if not is_remote_proxy and not GameAuthority.player_correction_ready.is_connected(_on_authority_player_correction):
 		GameAuthority.player_correction_ready.connect(_on_authority_player_correction)
 	if not is_remote_proxy and not GameAuthority.reliable_world_event_ready.is_connected(_on_authority_world_event):
@@ -1416,6 +1431,8 @@ func _ready() -> void:
 			camera.make_current()
 	else:
 		authority_peer_id = int(pending_loadout_selection.get("peer_id", authority_peer_id))
+		if not is_remote_proxy and NetworkSession.is_client() and network_peer_id > 0:
+			authority_peer_id = network_peer_id
 		_apply_loadout_selection_now(pending_loadout_selection, false)
 		pending_loadout_selection.clear()
 	_ensure_team_marker_visual()
@@ -1458,7 +1475,11 @@ func _ready() -> void:
 		_ensure_tranquilizer_overlay()
 		team_chat_panel.bind_player(self)
 		game_exit_dialog.resume_requested.connect(_close_game_exit_dialog)
+		if game_exit_dialog.has_signal("save_game_requested"):
+			game_exit_dialog.save_game_requested.connect(_save_cooperative_game)
 		game_exit_dialog.exit_requested.connect(_exit_game)
+		if game_exit_dialog.has_method("set_save_game_visible"):
+			game_exit_dialog.set_save_game_visible(CooperativeSession.is_active() and CooperativeSession.is_host())
 		remote_device_panel.visible = false
 		$SubViewport/ShopPage.closed.connect(_on_shop_page_closed)
 		if _has_any_equipped_tool():
@@ -1672,6 +1693,10 @@ func _disable_remote_proxy_runtime() -> void:
 
 
 func _close_active_ui_for_escape() -> bool:
+	if is_instance_valid(team_chat_panel) and _chat_input_captures_gameplay():
+		team_chat_panel.close_chat()
+		_update_crosshair_visibility()
+		return true
 	if is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open():
 		livestock_chop_page.close()
 		_update_crosshair_visibility()
@@ -1725,7 +1750,8 @@ func _close_active_ui_for_escape() -> bool:
 
 
 func _inventory_ui_blocks_gameplay_actions() -> bool:
-	return (is_instance_valid(player_backpack) and player_backpack.is_open()) \
+	return _chat_input_captures_gameplay() \
+		or (is_instance_valid(player_backpack) and player_backpack.is_open()) \
 		or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()) \
 		or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
 		or (is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open()) \
@@ -1733,8 +1759,53 @@ func _inventory_ui_blocks_gameplay_actions() -> bool:
 		or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open())
 
 
+func _chat_input_captures_gameplay() -> bool:
+	var capture_manager := get_node_or_null("/root/GlobalCaptureManager")
+	if is_instance_valid(capture_manager) and capture_manager.has_method("is_chat_input_capturing") \
+			and bool(capture_manager.call("is_chat_input_capturing")):
+		return true
+	if is_instance_valid(team_chat_panel):
+		var local_captures := bool(team_chat_panel.call("is_input_capturing")) \
+			if team_chat_panel.has_method("is_input_capturing") \
+			else bool(team_chat_panel.call("is_chat_open"))
+		if local_captures:
+			return true
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node == self or not node is GamePlayer or (node as GamePlayer).is_remote_proxy:
+			continue
+		var other_panel := (node as GamePlayer).team_chat_panel
+		if not is_instance_valid(other_panel):
+			continue
+		var other_captures := bool(other_panel.call("is_input_capturing")) \
+			if other_panel.has_method("is_input_capturing") \
+			else bool(other_panel.call("is_chat_open"))
+		if other_captures:
+			return true
+	return false
+
+
+func is_chat_input_active() -> bool:
+	return not is_remote_proxy and _chat_input_captures_gameplay()
+
+
 func _input(event: InputEvent) -> void:
 	if is_remote_proxy:
+		return
+	var text_input_focused := bool(team_chat_panel.call("is_text_input_focused"))
+	var modified_talk := bool(team_chat_panel.call("is_modified_talk_event", event))
+	if modified_talk:
+		team_chat_panel.toggle_chat()
+		_update_crosshair_visibility()
+		get_viewport().set_input_as_handled()
+		return
+	if _chat_input_captures_gameplay():
+		if event.is_action_pressed("esc", false):
+			team_chat_panel.close_chat()
+			_update_crosshair_visibility()
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("enter", false):
+			team_chat_panel.submit_current_text()
+			get_viewport().set_input_as_handled()
 		return
 	# Keep a local held-state for the mapped prone action as a fallback for
 	# platforms where a handled InputEvent no longer reports pressed state from
@@ -1765,17 +1836,10 @@ func _input(event: InputEvent) -> void:
 			government_notice_page.close()
 			get_viewport().set_input_as_handled()
 		return
-	var text_input_focused := bool(team_chat_panel.call("is_text_input_focused"))
-	var modified_talk := bool(team_chat_panel.call("is_modified_talk_event", event))
-	if modified_talk or (event.is_action_pressed("talk", false) and not text_input_focused):
+	if event.is_action_pressed("talk", false) and not text_input_focused:
 		team_chat_panel.toggle_chat()
 		_update_crosshair_visibility()
 		get_viewport().set_input_as_handled()
-		return
-	if team_chat_panel.is_chat_open():
-		if event.is_action_pressed("enter", false):
-			team_chat_panel.submit_current_text()
-			get_viewport().set_input_as_handled()
 		return
 	if is_respawning:
 		return
@@ -1792,7 +1856,9 @@ func _input(event: InputEvent) -> void:
 		_update_crosshair_visibility()
 		get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("team_storage", false) and not vehicle_is_active and not remote_is_active:
+	if not _chat_input_captures_gameplay() \
+			and event.is_action_pressed("team_storage", false) \
+			and not vehicle_is_active and not remote_is_active:
 		player_backpack.toggle_team_storage()
 		_update_crosshair_visibility()
 		get_viewport().set_input_as_handled()
@@ -2000,6 +2066,7 @@ func _submit_authority_input(
 		jump_sequence += 1
 	var submitted_move := Vector2.ZERO if remote_is_active else input_direction
 	var frame := {
+		"peer_id": authority_peer_id,
 		"input_seq": input_sequence,
 		"client_time_msec": Time.get_ticks_msec(),
 		"move": submitted_move,
@@ -2010,6 +2077,11 @@ func _submit_authority_input(
 		"swim_up": swim_up,
 		"dive": diving,
 	}
+	# Jump is a one-shot action. Keep its sequence in the local prediction frame,
+	# but send ordinary movement without it; the reliable jump request below is
+	# the only network path that can consume the action on the authority.
+	var transport_frame := frame.duplicate(true)
+	transport_frame["jump_seq"] = 0
 	if GameAuthority.should_send_network_requests():
 		var prediction_frame := frame.duplicate(true)
 		prediction_frame["jumped"] = jumped
@@ -2017,9 +2089,27 @@ func _submit_authority_input(
 		pending_input_frames.append(prediction_frame)
 		if pending_input_frames.size() > 120:
 			pending_input_frames.pop_front()
-		MultiplayerNetwork.submit_player_input(frame)
+		MultiplayerNetwork.submit_player_input(transport_frame)
+		if jumped:
+			MultiplayerNetwork.submit_player_jump(_make_player_jump_request(frame))
 	elif _is_authority_local_player():
-		GameAuthority.local_receive_player_input(authority_peer_id, frame)
+		GameAuthority.local_receive_player_input(authority_peer_id, transport_frame)
+		if jumped:
+			GameAuthority.local_receive_player_jump(authority_peer_id, _make_player_jump_request(frame))
+
+
+func _make_player_jump_request(input_frame: Dictionary) -> Dictionary:
+	return {
+		"input_seq": int(input_frame.get("input_seq", 0)),
+		"client_time_msec": int(input_frame.get("client_time_msec", 0)),
+		"jump_seq": int(input_frame.get("jump_seq", 0)),
+		"move": input_frame.get("move", Vector2.ZERO),
+		"yaw": float(input_frame.get("yaw", rotation.y)),
+		"pitch": float(input_frame.get("pitch", Head.rotation.x)),
+		"prone": bool(input_frame.get("prone", is_prone)),
+		"swim_up": bool(input_frame.get("swim_up", false)),
+		"dive": bool(input_frame.get("dive", false)),
+	}
 
 
 func _is_authority_local_player() -> bool:
@@ -2354,6 +2444,11 @@ func _on_authority_player_correction(peer_id: int, correction: Dictionary) -> vo
 		return
 	if not GameAuthority.should_send_network_requests():
 		return
+	authoritative_grounded = bool(correction.get("grounded", authoritative_grounded))
+	last_server_jump_correction_seq = maxi(
+		last_server_jump_correction_seq,
+		int(correction.get("last_jump_seq", last_server_jump_correction_seq))
+	)
 	pending_server_correction = correction.duplicate(true)
 
 
@@ -2375,8 +2470,18 @@ func _apply_server_correction() -> void:
 		velocity = Vector3.ZERO
 		return
 	var acknowledged_seq := int(correction.get("input_seq", 0))
-	while not pending_input_frames.is_empty() and int(pending_input_frames.front().get("input_seq", 0)) <= acknowledged_seq:
-		pending_input_frames.pop_front()
+	var acknowledged_jump_seq := maxi(
+		last_server_jump_correction_seq,
+		int(correction.get("last_jump_seq", last_server_jump_correction_seq))
+	)
+	var unacknowledged_frames: Array[Dictionary] = []
+	for frame in pending_input_frames:
+		var input_acknowledged := int(frame.get("input_seq", 0)) <= acknowledged_seq
+		var jump_acknowledged := bool(frame.get("jumped", false)) \
+			and int(frame.get("jump_seq", 0)) <= acknowledged_jump_seq
+		if not input_acknowledged and not jump_acknowledged:
+			unacknowledged_frames.append(frame)
+	pending_input_frames = unacknowledged_frames
 	var rendered_position := global_position
 	var rendered_velocity := velocity
 	var rendered_grounded := is_on_floor()
@@ -2442,6 +2547,21 @@ func _simulate_predicted_movement(
 ) -> void:
 	var water_surface_y := _get_water_surface_y()
 	var swimming := _is_in_swimming_water(water_surface_y)
+	# A player whose feet are still supported by the shore/floor may jump out of
+	# shallow water.  A floating player keeps the swim controller and uses Space
+	# as the upward-swim input instead.
+	if swimming and jumped and is_on_floor():
+		swimming = false
+	var water_exit_direction := (
+		Basis(Vector3.UP, movement_yaw) * Vector3(input_direction.x, 0.0, input_direction.y)
+	).normalized()
+	if swimming and water_exit_direction.length_squared() > 0.001 \
+			and WaterBody3D.get_surface_level_at(
+				global_position + water_exit_direction * SWIM_EXIT_PROBE_DISTANCE
+			) >= INF and (is_on_floor() or is_on_wall()):
+		# Stop applying the floating controller once the capsule is pushing
+		# against the bank and the next probe is already on dry land.
+		swimming = false
 	if swimming:
 		# Jump becomes a held upward swim input. Ctrl is sampled separately as a
 		# downward dive; with neither held the player only sinks gently.
@@ -2460,7 +2580,7 @@ func _simulate_predicted_movement(
 	else:
 		if not is_on_floor():
 			velocity += get_gravity() * delta
-		if jumped and not prone_state and is_on_floor():
+		if jumped and not prone_state and (is_on_floor() or authoritative_grounded):
 			velocity.y = JUMP_VELOCITY
 	var basis := Basis(Vector3.UP, movement_yaw)
 	var direction := (basis * Vector3(input_direction.x, 0.0, input_direction.y)).normalized()
@@ -2562,6 +2682,8 @@ func _select_tool(new_index: int, force := false) -> void:
 		var seed_id := _get_selected_sprout_seed_id()
 		backpack_items[current_tool_index]["selected_seed_id"] = seed_id
 		tool_node.set("selected_seed_id", seed_id)
+	if tool_node.has_method("set_bucket_state"):
+		tool_node.call("set_bucket_state", str(definition.get("id", "empty_bucket")))
 	tool_node.visible = not is_prone and not vehicle_is_active and not is_respawning
 	
 	var is_shooting_tool := _definition_uses_weapon_orientation(definition)
@@ -2847,6 +2969,10 @@ func _use_current_tool() -> void:
 		# 单人模式也走 GameAuthority 的本地权威入口。
 		# 不能先调用旧 emit() 再调用 local_try_use_tool()，否则 FarmRunner/放置类工具会执行两次。
 		ret = GameAuthority.local_try_use_tool(authority_peer_id, _make_tool_request())
+		if ret is Dictionary:
+			var local_slots_value: Variant = (ret as Dictionary).get("player_slots", null)
+			if local_slots_value is Array:
+				apply_cargo_backpack_slots(local_slots_value as Array)
 		if not (ret is Dictionary) or bool((ret as Dictionary).get("ok", false)):
 			_play_local_tool_visual(ret)
 	else:
@@ -2994,6 +3120,8 @@ func play_remote_tool_visual(tool_id: String, tool_index: int) -> void:
 		tool_node.call("play_muzzle_visual")
 
 func _process_user_key():
+	if _chat_input_captures_gameplay():
+		return
 	if Input.is_action_just_pressed("esc"):
 		if _suppress_esc_mouse_release:
 			_suppress_esc_mouse_release = false
@@ -3027,6 +3155,8 @@ func _open_game_exit_dialog() -> void:
 	if team_chat_panel.is_chat_open():
 		team_chat_panel.close_chat()
 	_set_weapon_aiming(false)
+	if game_exit_dialog.has_method("set_save_game_visible"):
+		game_exit_dialog.set_save_game_visible(CooperativeSession.is_active() and CooperativeSession.is_host())
 	game_exit_dialog.open_dialog()
 	_update_crosshair_visibility()
 
@@ -3038,7 +3168,22 @@ func _close_game_exit_dialog() -> void:
 	_update_crosshair_visibility()
 
 
+func _save_cooperative_game() -> void:
+	if not CooperativeSession.is_active() or not CooperativeSession.is_host():
+		return
+	var saved := CooperativeSession.save_game()
+	if is_instance_valid(game_exit_dialog) and game_exit_dialog.has_method("show_save_feedback"):
+		game_exit_dialog.call("show_save_feedback", saved)
+
+
 func _exit_game() -> void:
+	if CooperativeSession.is_active():
+		if CooperativeSession.is_host():
+			CooperativeSession.save_game()
+		CooperativeSession.stop_session()
+		SteamService.leave_cooperative_lobby()
+		get_tree().quit()
+		return
 	if MultiplayerNetwork.is_connected_to_game_server() \
 			or MultiplayerNetwork.is_connecting_to_game_server():
 		MultiplayerNetwork.disconnect_from_game_server(false)
@@ -3124,7 +3269,7 @@ func _process(delta: float) -> void:
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
-	if team_chat_panel.is_chat_open():
+	if _chat_input_captures_gameplay():
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
@@ -3206,6 +3351,8 @@ func _process(delta: float) -> void:
 
 
 func _update_continuous_tool_use() -> void:
+	if _chat_input_captures_gameplay():
+		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED \
 			or not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		return
@@ -3268,6 +3415,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if GameAuthority.should_send_network_requests():
 		_apply_server_correction()
+	if GameAuthority.is_local_authority() and global_position.y < GameAuthority.PLAYER_VOID_DEATH_Y:
+		GameAuthority.check_local_player_void_fall(authority_peer_id, global_position)
 	if is_respawning:
 		velocity = Vector3.ZERO
 		return
@@ -3276,7 +3425,7 @@ func _physics_process(delta: float) -> void:
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
 		_update_player_action_animation(Vector2.ZERO)
 		return
-	if team_chat_panel.is_chat_open():
+	if _chat_input_captures_gameplay():
 		_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, Vector2.ZERO, false)
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
 		_update_player_action_animation(Vector2.ZERO)
@@ -3323,7 +3472,8 @@ func _physics_process(delta: float) -> void:
 	var stood_from_prone := not swimming and is_prone and jump_pressed
 	if stood_from_prone:
 		_set_prone_state(false)
-	var jumped = not swimming and not stood_from_prone and not is_prone and not remote_is_active and jump_pressed and is_on_floor() and \
+	var jumped = not stood_from_prone and not is_prone and not remote_is_active and jump_pressed and \
+		(is_on_floor() or authoritative_grounded) and \
 		not $SubViewport/ShopPage.visible
 	if jumped:
 		appearance_player.play("JumpStart",0.05)
@@ -3334,6 +3484,8 @@ func _physics_process(delta: float) -> void:
 		input_direction = Vector2.ZERO if $SubViewport/ShopPage.visible else \
 			Input.get_vector("left", "right", "forward", "backward")
 	_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, input_direction, jumped, rotation.y, is_prone, swim_up, diving)
+	if jumped:
+		authoritative_grounded = false
 	_submit_authority_input(input_direction, jumped, NETWORK_SIMULATION_DELTA, swim_up, diving)
 	_update_player_action_animation(input_direction)
 
@@ -3751,9 +3903,13 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		return
 	if event_type == "personal_inventory_grant":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
-			var entries: Variant = event.get("entries", [])
-			if entries is Array:
-				apply_test_backpack_grant(entries as Array)
+			var slots_value: Variant = event.get("player_slots", null)
+			if slots_value is Array and not (slots_value as Array).is_empty():
+				apply_cargo_backpack_slots(slots_value as Array)
+			else:
+				var entries: Variant = event.get("entries", [])
+				if entries is Array:
+					apply_test_backpack_grant(entries as Array)
 		return
 	if event_type == "gameplay_notice":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
@@ -3809,6 +3965,9 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		if data_value is Dictionary:
 			var data := data_value as Dictionary
 			if int(data.get("peer_id", 0)) == authority_peer_id:
+				var slots_value: Variant = data.get("player_slots", null)
+				if slots_value is Array:
+					apply_cargo_backpack_slots(slots_value as Array)
 				var consumed_tool_id := str(data.get("consumed_tool_id", ""))
 				if not consumed_tool_id.is_empty():
 					_apply_consumed_tool(consumed_tool_id, int(data.get("consumed_tool_index", -1)))
@@ -4745,7 +4904,7 @@ func _update_crosshair_visibility() -> void:
 		and livestock_chop_page.is_open()
 	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
 		bool(definition.get("show_crosshair", false))) and \
-		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not team_chat_panel.is_chat_open() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open
+		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open
 	if not crosshair.visible:
 		_hide_hit_marker()
 
@@ -4797,7 +4956,7 @@ func _disable_legacy_tool_ui() -> void:
 
 
 func _update_interaction() -> void:
-	if remote_is_active or vehicle_is_active:
+	if _chat_input_captures_gameplay() or remote_is_active or vehicle_is_active:
 		return
 	if _cargo_crate_hold_target != null and not is_instance_valid(_cargo_crate_hold_target):
 		_cargo_crate_hold_target = null
@@ -5012,6 +5171,8 @@ func apply_cargo_backpack_slots(slots_value: Array) -> void:
 
 
 func apply_cargo_car_action_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", 0)) != authority_peer_id:
+		return
 	if is_instance_valid(cargo_car_storage_page):
 		cargo_car_storage_page.apply_authoritative_result(result)
 
@@ -5070,6 +5231,8 @@ func show_cargo_delivery_preview(preview: Dictionary) -> void:
 
 
 func apply_cargo_delivery_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", 0)) != authority_peer_id:
+		return
 	var slots_value: Variant = result.get("player_slots", null)
 	if slots_value is Array:
 		apply_cargo_backpack_slots(slots_value as Array)
@@ -5610,16 +5773,93 @@ func _update_tool_camera_alignment() -> void:
 
 
 func _update_remote_held_model_alignment() -> void:
-	# Remote proxies do not own a Camera3D, so they cannot use the local
-	# first-person pivot path. Their BoneAttachment3D changes as interpolated
-	# locomotion and aim animations update; enforce global +Y afterwards so both
-	# PVP ENet and PVE Steam clients render the same held orientation.
+	# Remote proxies do not own a Camera3D. Use the replicated Head transform as
+	# the camera frame, then run the same ToolPivot compensation as the local
+	# first-person presentation. This keeps the muzzle/ray aligned with the
+	# remote player's actual yaw and pitch in both PVP and cooperative sessions.
 	if not is_remote_proxy:
 		return
 	if is_instance_valid(tool_node) and tool_node.visible:
-		_upright_held_model(tool_node)
+		if _tool_has_remote_aim_frame(tool_node):
+			_align_remote_tool_to_head()
+		else:
+			_align_remote_prop_to_head(tool_node)
+		return
 	if is_instance_valid(held_item_node) and held_item_node.visible:
-		_upright_held_model(held_item_node)
+		_align_remote_prop_to_head(held_item_node)
+		return
+	tool_pivot.transform = Transform3D.IDENTITY
+
+
+func _tool_has_remote_aim_frame(node: Node3D) -> bool:
+	if not is_instance_valid(node):
+		return false
+	if _current_tool_is_shooting():
+		return true
+	if node.get_node_or_null("Muzzle") as Node3D != null:
+		return true
+	var aim_ray := node.find_child("RayCast3D", true, false) as RayCast3D
+	return aim_ray != null and not aim_ray.target_position.is_zero_approx()
+
+
+func _align_remote_prop_to_head(node: Node3D) -> void:
+	if not is_remote_proxy or not is_instance_valid(node) \
+			or not is_instance_valid(tool_pivot) or not is_instance_valid(Head):
+		return
+	var forward: Vector3 = -Head.global_transform.basis.z
+	var horizontal_forward := Vector3(forward.x, 0.0, forward.z)
+	if horizontal_forward.length_squared() < 0.001:
+		horizontal_forward = -global_transform.basis.z
+	if horizontal_forward.length_squared() < 0.001:
+		return
+	var target_basis: Basis = Basis.looking_at(
+		horizontal_forward.normalized(),
+		Vector3.UP
+	).orthonormalized()
+	var pivot_basis: Basis = tool_pivot.global_transform.basis.orthonormalized()
+	var visual := _find_first_mesh_instance(node)
+	var visual_basis: Basis = visual.global_transform.basis.orthonormalized() \
+			if visual != null else node.global_transform.basis.orthonormalized()
+	var visual_from_pivot: Basis = (
+		pivot_basis.inverse() * visual_basis
+	).orthonormalized()
+	var desired_pivot_basis: Basis = (
+		target_basis * visual_from_pivot.inverse()
+	).orthonormalized()
+	tool_pivot.global_transform = Transform3D(
+		desired_pivot_basis,
+		tool_pivot.global_position
+	)
+
+
+func _align_remote_tool_to_head() -> void:
+	if not is_remote_proxy or not is_instance_valid(tool_node) \
+			or not is_instance_valid(tool_pivot) or not is_instance_valid(Head):
+		return
+	var target_basis: Basis = Head.global_transform.basis.orthonormalized()
+	var muzzle := tool_node.get_node_or_null("Muzzle") as Node3D
+	var aim_basis: Basis
+	if muzzle != null:
+		aim_basis = muzzle.global_transform.basis.orthonormalized()
+	else:
+		var aim_ray := tool_node.find_child("RayCast3D", true, false) as RayCast3D
+		if aim_ray == null or aim_ray.target_position.is_zero_approx():
+			_align_remote_prop_to_head(tool_node)
+			return
+		var ray_direction := (
+			aim_ray.to_global(aim_ray.target_position) - aim_ray.global_position
+		).normalized()
+		var preferred_up := tool_node.global_transform.basis.y.normalized()
+		if absf(ray_direction.dot(preferred_up)) > 0.98:
+			preferred_up = Head.global_transform.basis.x.normalized()
+		aim_basis = Basis.looking_at(ray_direction, preferred_up).orthonormalized()
+	if aim_basis.determinant() == 0.0:
+		tool_pivot.transform = Transform3D.IDENTITY
+		return
+	var pivot_basis: Basis = tool_pivot.global_transform.basis.orthonormalized()
+	var aim_from_pivot: Basis = (pivot_basis.inverse() * aim_basis).orthonormalized()
+	var desired_pivot_basis: Basis = (target_basis * aim_from_pivot.inverse()).orthonormalized()
+	tool_pivot.global_transform = Transform3D(desired_pivot_basis, tool_pivot.global_position)
 
 
 func _current_tool_is_shooting() -> bool:

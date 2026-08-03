@@ -464,9 +464,23 @@ func plant(seed_name: String, tool_owner: String) -> bool:
 			"team": tool_owner,
 		})
 		return false
-	if tool_owner.is_empty() or not seed_record.is_empty():
+	return _plant_crop_internal(seed_name, tool_owner, false)
+
+
+func plant_neutral(seed_name: String) -> bool:
+	if GameAuthority.is_client_proxy() or GameAuthority.should_send_network_requests():
 		return false
-	if is_instance_valid(tool_child) or not IngredientCatalog.is_plantable(seed_name):
+	return _plant_crop_internal(seed_name, "", true)
+
+
+func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: bool) -> bool:
+	if not allow_neutral and tool_owner.is_empty():
+		return false
+	if allow_neutral and not land_owner.is_empty():
+		return false
+	if not seed_record.is_empty() or is_instance_valid(tool_child):
+		return false
+	if not IngredientCatalog.is_plantable(seed_name):
 		return false
 
 	var crop_config := get_crop_layout(seed_name)
@@ -501,7 +515,12 @@ func plant(seed_name: String, tool_owner: String) -> bool:
 	if plant_children.is_empty():
 		_clear_crop()
 		return false
-	claim_land(tool_owner)
+	if not allow_neutral:
+		claim_land(tool_owner)
+	else:
+		land_owner = ""
+		_update_owner_visual(true)
+		_publish_farm_tile_delta("neutral_plant")
 	_notify_manager_state_changed()
 	return true
 
@@ -513,7 +532,7 @@ func apply_authoritative_plant(
 	ready := false,
 	authoritative_positions: Array = []
 ) -> bool:
-	if seed_name.is_empty() or tool_owner.is_empty() or not IngredientCatalog.is_plantable(seed_name):
+	if seed_name.is_empty() or not IngredientCatalog.is_plantable(seed_name):
 		return false
 	if is_instance_valid(tool_child):
 		tool_child.queue_free()

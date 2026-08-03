@@ -91,6 +91,10 @@ var max_clients := DEFAULT_MAX_CLIENTS
 var server_name := DEFAULT_SERVER_NAME
 var current_map_id := DEFAULT_MAP_ID
 var current_map_name := DEFAULT_MAP_NAME
+var current_map_scene_path := SERVER_WORLD_SCENE_PATH
+var current_map_source := "builtin"
+var current_map_version := "1.0.0"
+var current_map_hash := "builtin:creston_town:1.0.0"
 var game_mode := DEFAULT_GAME_MODE
 var metrics_log_enabled := true
 var metrics_log_interval_seconds := DEFAULT_METRICS_LOG_INTERVAL_SECONDS
@@ -118,6 +122,9 @@ func _ready() -> void:
 	team_rng.randomize()
 	# 1. 先读取 JSON 配置。
 	_load_server_config()
+	if not _resolve_configured_map():
+		server_failed.emit("服务器地图不可用：%s" % current_map_id)
+		return
 	#
 	## 2. 命令行参数优先级高于 JSON 配置。
 	#port = _get_arg_int("--port", port)
@@ -154,7 +161,7 @@ func _process(delta: float) -> void:
 #
 # 支持读取：
 # - server_name
-# - map_id
+# - map_package（地图包文件夹名；兼容旧字段 map_id）
 # - map_name
 # - game_mode
 # - port
@@ -232,7 +239,7 @@ func _get_server_config_path() -> String:
 # 把 JSON Dictionary 应用到服务器变量上。
 func _apply_config_dictionary(data: Dictionary) -> void:
 	server_name = str(data.get("server_name", server_name))
-	current_map_id = str(data.get("map_id", current_map_id))
+	current_map_id = str(data.get("map_package", data.get("map_id", current_map_id)))
 	current_map_name = str(data.get("map_name", current_map_name))
 	game_mode = str(data.get("game_mode", game_mode))
 
@@ -249,6 +256,29 @@ func _apply_config_dictionary(data: Dictionary) -> void:
 	else:
 		push_warning("无效的 death_drop_mode：%s，改用 %s。" % [configured_death_drop_mode, DEFAULT_DEATH_DROP_MODE])
 		death_drop_mode = DEFAULT_DEATH_DROP_MODE
+
+
+func _resolve_configured_map() -> bool:
+	var definition := GameMapRegistry.get_server_map_by_package_name(current_map_id)
+	if definition.is_empty():
+		push_error("服务器找不到地图包：%s。请将地图文件夹放入可执行文件同目录的 maps/ 下。" % current_map_id)
+		return false
+	if not bool(definition.get("is_compatible", false)):
+		push_error("服务器地图基础系统不完整：%s\n%s" % [
+			current_map_id,
+			"、".join(definition.get("validation_errors", [])),
+		])
+		return false
+	current_map_id = str(definition.get("package_name", definition.get("map_id", current_map_id)))
+	# server_config.json may provide a friendly display override; when omitted,
+	# use the package manifest's display_name.
+	if current_map_name.is_empty() or current_map_name == DEFAULT_MAP_NAME and current_map_id != DEFAULT_MAP_ID:
+		current_map_name = str(definition.get("display_name", current_map_id))
+	current_map_scene_path = str(definition.get("scene_path", ""))
+	current_map_source = str(definition.get("source", "builtin"))
+	current_map_version = str(definition.get("map_version", "1.0.0"))
+	current_map_hash = str(definition.get("map_hash", ""))
+	return not current_map_scene_path.is_empty() and ResourceLoader.exists(current_map_scene_path)
 
 
 func get_death_drop_mode() -> String:
@@ -741,6 +771,10 @@ func get_server_public_info() -> Dictionary:
 		"state": get_public_state_text(),
 		"map_id": current_map_id,
 		"map_name": current_map_name,
+		"map_scene_path": current_map_scene_path,
+		"map_source": current_map_source,
+		"map_version": current_map_version,
+		"map_hash": current_map_hash,
 		"game_mode": game_mode,
 		"current_players": players.size(),
 		"max_players": max_clients,
@@ -1119,6 +1153,14 @@ func request_player_input(input_frame: Dictionary) -> void:
 
 
 @rpc("any_peer", "reliable")
+func request_player_jump(jump_request: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	GameAuthority.server_receive_player_jump(sender_id, jump_request)
+
+
+@rpc("any_peer", "reliable")
 func request_select_tool(tool_index: int, tool_id := "") -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
@@ -1430,17 +1472,17 @@ func _get_spawn_position_for_selection(selection: Dictionary, spawn_indices: Dic
 func _load_server_world() -> void:
 	if is_instance_valid(server_world):
 		return
-	var packed := load(SERVER_WORLD_SCENE_PATH) as PackedScene
+	var packed := load(current_map_scene_path) as PackedScene
 	if packed == null:
-		push_error("服务端无法加载地图：" + SERVER_WORLD_SCENE_PATH)
+		push_error("服务端无法加载地图：" + current_map_scene_path)
 		return
 	server_world = packed.instantiate() as Node3D
 	if server_world == null:
-		push_error("服务端地图根节点不是 Node3D：" + SERVER_WORLD_SCENE_PATH)
+		push_error("服务端地图根节点不是 Node3D：" + current_map_scene_path)
 		return
 	add_child(server_world)
 	GlobalVar.gameworld = server_world
-	print("服务端权威地图已加载：", SERVER_WORLD_SCENE_PATH)
+	print("服务端权威地图已加载：", current_map_scene_path)
 
 
 # 作用：
@@ -1454,9 +1496,8 @@ func _load_server_world() -> void:
 # 5. 等待服务器生成玩家
 # 客户端已由 ClientServerRpcEndpoint.receive_match_started 接收，
 # 再通过 MultiplayerNetwork.match_started_received 转发给 MainMenuRoot。
-# 当前 MainMenuRoot 收到后会调用 MultiplayerBattleRoomPage.load_multiplayer_map()。
-# 也就是说：客户端当前会加载与服务器一致的 Creston Town 场景；
-# 后续正式多人版再把地图内玩家/农田/武器改成服务器权威同步。
+# MainMenuRoot 收到后会调用 MultiplayerBattleRoomPage.load_multiplayer_map()，
+# 由客户端的同名内置地图或可执行文件旁 maps 包解析实际场景路径。
 @rpc("authority", "reliable")
 func receive_match_started(info: Dictionary) -> void:
 	# 服务端这里不需要处理。

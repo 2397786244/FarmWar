@@ -1,18 +1,16 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://djl6j8d6uabmj"]
 
-[ext_resource type="Script" path="res://src/message_area.gd" id="1_message"]
+[ext_resource type="Script" uid="uid://c33vtjt4gxn51" path="res://src/message_area.gd" id="1_message"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_message"]
 size = Vector3(4, 2, 4)
 
-[node name="MessageArea" type="Node3D"]
+[node name="MessageArea" type="Node3D" unique_id=1957813853]
 script = ExtResource("1_message")
 
-[node name="MessageArea" type="Area3D" parent="."]
+[node name="MessageArea" type="Area3D" parent="." unique_id=582197676]
 collision_layer = 1024
 collision_mask = 8
-monitoring = true
-monitorable = true
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MessageArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MessageArea" unique_id=199018291]
 shape = SubResource("BoxShape3D_message")

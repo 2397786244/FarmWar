@@ -17,6 +17,9 @@ var death_mode_option: OptionButton
 var create_button: Button
 var saved_worlds_box: VBoxContainer
 var selected_world_id := ""
+var map_list: ItemList
+var map_details_label: Label
+var maps: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -24,6 +27,7 @@ func _ready() -> void:
 	SteamService.initialization_completed.connect(_on_steam_initialization_completed)
 	SteamService.cooperative_lobby_error.connect(_on_lobby_error)
 	SteamService.cooperative_lobby_created.connect(_on_lobby_created)
+	_refresh_maps()
 	_refresh_worlds()
 	_refresh_steam_status()
 	if not GlobalVar.cooperative_return_notice.is_empty():
@@ -85,18 +89,26 @@ func _build_interface() -> void:
 	world_name_edit.custom_minimum_size = Vector2(0, 54)
 	world_name_edit.add_theme_font_size_override("font_size", 24)
 	new_box.add_child(world_name_edit)
-	var map_label := Label.new()
-	map_label.text = "地图：Redpine County（1024 × 1024 加拿大 PvE）"
-	map_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	map_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	map_label.add_theme_font_size_override("font_size", 19)
-	map_label.add_theme_color_override("font_color", COLOR_MUTED)
-	var map_row := HBoxContainer.new()
-	map_row.add_theme_constant_override("separation", 12)
-	var map_icon := _make_map_icon("res://worlds/redpine_county/map_icon.svg")
-	map_row.add_child(map_icon)
-	map_row.add_child(map_label)
-	new_box.add_child(map_row)
+	var map_heading := Label.new()
+	map_heading.text = "选择地图"
+	map_heading.add_theme_font_size_override("font_size", 21)
+	map_heading.add_theme_color_override("font_color", COLOR_TEXT)
+	new_box.add_child(map_heading)
+	map_list = ItemList.new()
+	map_list.custom_minimum_size = Vector2(0, 210)
+	map_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	map_list.allow_reselect = true
+	map_list.fixed_icon_size = Vector2i(72, 72)
+	map_list.icon_mode = ItemList.ICON_MODE_LEFT
+	map_list.same_column_width = false
+	map_list.item_selected.connect(_on_map_selected)
+	new_box.add_child(map_list)
+	map_details_label = Label.new()
+	map_details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	map_details_label.custom_minimum_size = Vector2(0, 74)
+	map_details_label.add_theme_font_size_override("font_size", 17)
+	map_details_label.add_theme_color_override("font_color", COLOR_MUTED)
+	new_box.add_child(map_details_label)
 	max_players_option = OptionButton.new()
 	max_players_option.add_item("最大人数：1")
 	max_players_option.add_item("最大人数：2")
@@ -170,7 +182,7 @@ func _refresh_worlds() -> void:
 			_death_mode_text(str(world.get("death_drop_mode", "save"))),
 		])
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.icon = load(str(world.get("map_icon_path", ""))) as Texture2D
+		button.icon = _load_icon(str(world.get("map_icon_path", "")))
 		button.expand_icon = false
 		button.custom_minimum_size.y = 94
 		button.pressed.connect(_on_continue_world_pressed.bind(str(world.get("world_id", ""))))
@@ -178,12 +190,22 @@ func _refresh_worlds() -> void:
 
 
 func _on_create_pressed() -> void:
+	var map_definition := _selected_map_definition()
+	if map_definition.is_empty():
+		status_label.text = "请选择一个可用的地图。"
+		return
+	if not bool(map_definition.get("is_compatible", false)):
+		status_label.text = "当前地图缺少基础系统，不能创建合作世界。"
+		return
 	var world := CooperativeWorldStorage.create_world({
 		"display_name": world_name_edit.text.strip_edges(),
-		"map_id": "redpine_county",
-		"map_name": "Redpine County",
-		"map_icon_path": "res://worlds/redpine_county/map_icon.svg",
-		"map_scene_path": "res://worlds/redpine_county/redpine_county.tscn",
+		"map_id": str(map_definition.get("map_id", "")),
+		"map_name": str(map_definition.get("display_name", "未命名地图")),
+		"map_icon_path": str(map_definition.get("icon_path", "")),
+		"map_scene_path": str(map_definition.get("scene_path", "")),
+		"map_version": str(map_definition.get("map_version", GameMapRegistry.DEFAULT_MAP_VERSION)),
+		"map_hash": str(map_definition.get("map_hash", "")),
+		"map_source": str(map_definition.get("source", "builtin")),
 		"max_players": max_players_option.selected + 1,
 		"death_drop_mode": _selected_death_mode(),
 		"host_steam_id": SteamService.steam_id,
@@ -203,6 +225,17 @@ func _on_continue_world_pressed(world_id: String) -> void:
 	if world.is_empty():
 		status_label.text = "读取该世界失败。"
 		return
+	var map_validation := GameMapRegistry.validate_world_map(world)
+	if not bool(map_validation.get("valid", false)):
+		status_label.text = str(map_validation.get("error", "本地没有该世界所需的地图，无法开服。"))
+		return
+	var local_map: Dictionary = map_validation.get("map", {}) as Dictionary
+	if not local_map.is_empty():
+		world["map_name"] = str(local_map.get("display_name", world.get("map_name", "未知地图")))
+		world["map_icon_path"] = str(local_map.get("icon_path", world.get("map_icon_path", "")))
+		world["map_scene_path"] = str(local_map.get("scene_path", world.get("map_scene_path", "")))
+		world["map_version"] = str(local_map.get("map_version", world.get("map_version", "")))
+		world["map_hash"] = str(local_map.get("map_hash", world.get("map_hash", "")))
 	selected_world_id = world_id
 	status_label.text = "正在为“%s”创建 Steam 好友 Lobby..." % str(world.get("display_name", "合作世界"))
 	if not SteamService.create_cooperative_lobby(world):
@@ -259,9 +292,86 @@ func _format_money(amount: float) -> String:
 	return "%.0f" % maxf(0.0, amount)
 
 
+func _refresh_maps() -> void:
+	if not is_instance_valid(map_list):
+		return
+	maps = GameMapRegistry.list_singleplayer_maps()
+	map_list.clear()
+	var first_compatible := -1
+	for index in range(maps.size()):
+		var definition: Dictionary = maps[index]
+		var size_value: Variant = definition.get("size", Vector2i.ZERO)
+		var size := size_value as Vector2i if size_value is Vector2i else Vector2i.ZERO
+		var label := "%s\n%d × %d" % [str(definition.get("display_name", "未命名地图")), size.x, size.y]
+		if str(definition.get("source", "")) == "portable":
+			label += " · 手动安装"
+		if not bool(definition.get("is_compatible", false)):
+			label += " · 基础系统不完整"
+		else:
+			if first_compatible < 0:
+				first_compatible = index
+		var item_index := map_list.add_item(label, _load_icon(str(definition.get("icon_path", ""))))
+		map_list.set_item_disabled(item_index, not bool(definition.get("is_compatible", false)))
+	if first_compatible >= 0:
+		map_list.select(first_compatible)
+		_on_map_selected(first_compatible)
+	else:
+		map_details_label.text = "没有可用于合作模式的地图。请先在地图编辑器中保存地图，并确保基础系统完整。"
+
+
+func _selected_map_definition() -> Dictionary:
+	if not is_instance_valid(map_list):
+		return {}
+	var selected := map_list.get_selected_items()
+	if selected.is_empty():
+		return {}
+	var index := int(selected[0])
+	return maps[index].duplicate(true) if index >= 0 and index < maps.size() else {}
+
+
+func _on_map_selected(index: int) -> void:
+	if not is_instance_valid(map_details_label) or index < 0 or index >= maps.size():
+		return
+	var definition: Dictionary = maps[index]
+	var size_value: Variant = definition.get("size", Vector2i.ZERO)
+	var size := size_value as Vector2i if size_value is Vector2i else Vector2i.ZERO
+	var source_text := _map_source_text(str(definition.get("source", "")))
+	map_details_label.text = "%s · %s\n地图 ID：%s · 版本：%s" % [
+		"可用" if bool(definition.get("is_compatible", false)) else "不可用",
+		source_text,
+		str(definition.get("map_id", "")),
+		str(definition.get("map_version", GameMapRegistry.DEFAULT_MAP_VERSION)),
+	]
+	map_details_label.text += "\n尺寸：%d × %d" % [size.x, size.y]
+	var errors: Array = definition.get("validation_errors", []) as Array
+	if not errors.is_empty():
+		map_details_label.text += "\n" + "；".join(errors)
+
+
+func _map_source_text(source: String) -> String:
+	match source:
+		"builtin":
+			return "内置地图"
+		"portable":
+			return "手动安装地图（可执行文件旁 maps）"
+		"runtime_editor":
+			return "本地编辑器存档（需导出）"
+		_:
+			return source if not source.is_empty() else "未知来源"
+
+
+func _load_icon(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	if not path.begins_with("res://"):
+		var image := Image.load_from_file(path)
+		return ImageTexture.create_from_image(image) if image != null and not image.is_empty() else null
+	return load(path) as Texture2D
+
+
 func _make_map_icon(path: String) -> TextureRect:
 	var icon := TextureRect.new()
-	icon.texture = load(path) as Texture2D
+	icon.texture = _load_icon(path)
 	icon.custom_minimum_size = Vector2(56, 56)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

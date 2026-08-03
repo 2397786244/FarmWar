@@ -119,10 +119,22 @@ func _on_map_selected(index: int) -> void:
 	description_label.text = "%s\n地图 ID：%s\n尺寸：%d × %d\n来源：%s" % [
 		str(definition.get("display_name", "未命名地图")),
 		str(definition.get("map_id", "")), size.x, size.y,
-		"内置地图" if str(definition.get("source", "")) == "builtin" else "地图编辑器地图",
+		_map_source_text(str(definition.get("source", ""))),
 	]
 	if not errors.is_empty():
 		description_label.text += "\n\n暂不可进入：\n- " + "\n- ".join(errors)
+
+
+func _map_source_text(source: String) -> String:
+	match source:
+		"builtin":
+			return "内置地图"
+		"portable":
+			return "手动安装地图（可执行文件旁 maps）"
+		"runtime_editor":
+			return "本地编辑器存档（需导出）"
+		_:
+			return source if not source.is_empty() else "未知来源"
 
 
 func _on_map_activated(index: int) -> void:
@@ -137,7 +149,7 @@ func _on_map_activated(index: int) -> void:
 func _load_icon(path: String) -> Texture2D:
 	if path.is_empty():
 		return null
-	if path.begins_with("user://"):
+	if not path.begins_with("res://"):
 		var image := Image.load_from_file(path)
 		return ImageTexture.create_from_image(image) if image != null and not image.is_empty() else null
 	return load(path) as Texture2D

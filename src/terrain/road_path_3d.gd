@@ -20,6 +20,7 @@ enum RoadType {
 	ASPHALT_WIDE,
 	COUNTRY_GRAVEL_NARROW,
 	COUNTRY_GRAVEL_WIDE,
+	RAIL_TRACK,
 }
 
 const ROAD_SCENES = {
@@ -27,6 +28,7 @@ const ROAD_SCENES = {
 	RoadType.ASPHALT_WIDE: preload("res://assets/environment/FTF_Road_Asphalt_Straight_6x6m.glb"),
 	RoadType.COUNTRY_GRAVEL_NARROW: preload("res://assets/environment/FTF_Road_CountryGravel_Straight_3x6m.glb"),
 	RoadType.COUNTRY_GRAVEL_WIDE: preload("res://assets/environment/FTF_Road_CountryGravel_Straight_5x6m.glb"),
+	RoadType.RAIL_TRACK: preload("res://assets/environment/RailTrack.glb"),
 }
 
 const ROAD_WIDTHS = {
@@ -34,7 +36,24 @@ const ROAD_WIDTHS = {
 	RoadType.ASPHALT_WIDE: 6.0,
 	RoadType.COUNTRY_GRAVEL_NARROW: 3.0,
 	RoadType.COUNTRY_GRAVEL_WIDE: 5.0,
+	RoadType.RAIL_TRACK: 2.6,
 }
+
+## RailTrack.glb is a 12m straight piece.  Pieces overlap while following a
+## curve so the outside rail cannot open a visible gap at a bend.
+const RAIL_TRACK_LENGTH = 12.0
+const RAIL_TRACK_SAMPLE_SPACING = 0.5
+## Wooden sleepers are intentionally spaced farther apart for the game's
+## low-poly look instead of matching the dense source-model spacing.
+const RAIL_TRACK_SLEEPER_SPACING = 1.2
+const RAIL_TRACK_GAUGE = 1.8
+const RAIL_TRACK_RAIL_WIDTH = 0.14
+const RAIL_TRACK_RAIL_HEIGHT = 0.18
+const RAIL_TRACK_RAIL_CENTER_HEIGHT = 0.22
+const RAIL_TRACK_SLEEPER_LENGTH = 0.58
+const RAIL_TRACK_SLEEPER_WIDTH = 2.7
+const RAIL_TRACK_SLEEPER_HEIGHT = 0.12
+const RAIL_TRACK_SLEEPER_CENTER_HEIGHT = 0.07
 
 @export var road_type: RoadType = RoadType.ASPHALT_WIDE:
 	set(value):
@@ -150,6 +169,10 @@ const ROAD_WIDTHS = {
 var _mesh_instance: MeshInstance3D
 var _body: StaticBody3D
 var _collision_shape: CollisionShape3D
+var _rail_visual_root: Node3D
+var _rail_material: Material
+var _sleeper_material: Material
+var _rail_materials_loaded := false
 var _rebuild_queued = false
 var _is_rebuilding = false
 var _rebuild_suspended = false
@@ -192,12 +215,18 @@ func rebuild_road() -> void:
 
 
 func _rebuild_road_internal() -> void:
+	# @tool roads can receive a Curve3D.changed signal while the editor is
+	# instantiating a scene.  Do not call to_global()/global_transform until the
+	# Path3D is inside SceneTree; the deferred rebuild will run again from _ready.
+	if not is_inside_tree():
+		return
 	_ensure_nodes()
 	_remove_legacy_piece_root()
 
 	if not generate_road or curve == null or curve.point_count < 2:
 		_mesh_instance.mesh = null
 		_collision_shape.shape = null
+		_clear_rail_visuals()
 		return
 
 	var desired_bake_interval = maxf(0.1, mesh_sample_spacing * 0.5)
@@ -207,7 +236,16 @@ func _rebuild_road_internal() -> void:
 	if total_length <= 0.05:
 		_mesh_instance.mesh = null
 		_collision_shape.shape = null
+		_clear_rail_visuals()
 		return
+
+	if road_type == RoadType.RAIL_TRACK:
+		_mesh_instance.mesh = null
+		_collision_shape.shape = null
+		_rebuild_rail_track(total_length)
+		return
+
+	_clear_rail_visuals()
 
 	var width = get_road_width()
 	var half_width = width * 0.5
@@ -433,6 +471,270 @@ func _ensure_nodes() -> void:
 		_collision_shape = CollisionShape3D.new()
 		_collision_shape.name = "CollisionShape3D"
 		_body.add_child(_collision_shape, false, Node.INTERNAL_MODE_BACK)
+
+	if _rail_visual_root == null or not is_instance_valid(_rail_visual_root):
+		_rail_visual_root = Node3D.new()
+		_rail_visual_root.name = "RailTrackVisuals"
+		add_child(_rail_visual_root, false, Node.INTERNAL_MODE_BACK)
+
+
+func _clear_rail_visuals() -> void:
+	if _rail_visual_root == null or not is_instance_valid(_rail_visual_root):
+		return
+	for child in _rail_visual_root.get_children():
+		# These are generated visual-only nodes; free immediately so a rebuild
+		# cannot briefly draw the previous rail pass underneath the new one.
+		child.free()
+
+
+func _rebuild_rail_track(total_length: float) -> void:
+	_clear_rail_visuals()
+	if _rail_visual_root == null or not is_instance_valid(_rail_visual_root):
+		return
+
+	# The GLB is used as the material/style source.  Its straight geometry is
+	# not instanced here: instancing it at curve samples leaves each 12m piece
+	# visibly straight.  Instead, create continuous rail strips and curved
+	# sleeper boxes from the same curve frames.
+	_ensure_rail_materials()
+	var sample_spacing := clampf(RAIL_TRACK_SAMPLE_SPACING, 0.2, 1.0)
+	var sample_count := maxi(2, int(ceil(total_length / sample_spacing)) + 1)
+	var samples: Array[Dictionary] = []
+	samples.resize(sample_count)
+	for index in range(sample_count):
+		var distance := minf(
+			float(index) * total_length / float(sample_count - 1),
+			total_length
+		)
+		samples[index] = _sample_rail_frame(distance, total_length)
+
+	var rail_tool := SurfaceTool.new()
+	rail_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	rail_tool.set_material(_rail_material)
+	for index in range(sample_count - 1):
+		_add_rail_prism_between_frames(
+			rail_tool,
+			samples[index],
+			samples[index + 1],
+			-RAIL_TRACK_GAUGE * 0.5
+		)
+		_add_rail_prism_between_frames(
+			rail_tool,
+			samples[index],
+			samples[index + 1],
+			RAIL_TRACK_GAUGE * 0.5
+		)
+	rail_tool.generate_normals()
+	var rail_mesh := rail_tool.commit()
+	if rail_mesh != null:
+		var rails := MeshInstance3D.new()
+		rails.name = "RailTrackContinuousRails"
+		rails.mesh = rail_mesh
+		rails.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		_rail_visual_root.add_child(rails)
+
+	var sleeper_tool := SurfaceTool.new()
+	sleeper_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	sleeper_tool.set_material(_sleeper_material)
+	var sleeper_distance := 0.0
+	var sleeper_index := 0
+	while sleeper_distance <= total_length + 0.001:
+		var sleeper_sample := _sample_rail_frame(sleeper_distance, total_length)
+		_add_rail_box(
+			sleeper_tool,
+			sleeper_sample,
+			Vector3(
+				RAIL_TRACK_SLEEPER_LENGTH,
+				RAIL_TRACK_SLEEPER_HEIGHT,
+				RAIL_TRACK_SLEEPER_WIDTH
+			),
+			RAIL_TRACK_SLEEPER_CENTER_HEIGHT
+		)
+		sleeper_distance += RAIL_TRACK_SLEEPER_SPACING
+		sleeper_index += 1
+	sleeper_tool.generate_normals()
+	var sleeper_mesh := sleeper_tool.commit()
+	if sleeper_mesh != null:
+		var sleepers := MeshInstance3D.new()
+		sleepers.name = "RailTrackSleepers"
+		sleepers.mesh = sleeper_mesh
+		sleepers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		_rail_visual_root.add_child(sleepers)
+
+	# Keep the source length in metadata for editor/debug tooling.  The visible
+	# mesh is now curve-deformed, so this is informational rather than a piece
+	# placement interval.
+	_rail_visual_root.set_meta("source_segment_length", RAIL_TRACK_LENGTH)
+	_rail_visual_root.set_meta("sleeper_count", sleeper_index)
+
+
+func _ensure_rail_materials() -> void:
+	if _rail_materials_loaded:
+		return
+	_rail_materials_loaded = true
+	var source_scene := ROAD_SCENES.get(RoadType.RAIL_TRACK) as PackedScene
+	var source_instance := source_scene.instantiate() as Node3D if source_scene != null else null
+	if source_instance != null:
+		_collect_rail_materials(source_instance)
+		source_instance.free()
+	if _rail_material == null:
+		var fallback_rail := StandardMaterial3D.new()
+		fallback_rail.albedo_color = Color(0.12, 0.14, 0.16, 1.0)
+		fallback_rail.metallic = 0.7
+		fallback_rail.roughness = 0.38
+		_rail_material = fallback_rail
+	# The imported RailTrack asset uses a nearly black sleeper material.  Use a
+	# dedicated warm-brown wood material so the generated sleepers read clearly
+	# as timber in the game's low-poly environment.
+	var wood_sleeper := StandardMaterial3D.new()
+	wood_sleeper.albedo_color = Color(0.34, 0.17, 0.075, 1.0)
+	wood_sleeper.roughness = 0.92
+	wood_sleeper.metallic = 0.0
+	_sleeper_material = wood_sleeper
+
+
+func _collect_rail_materials(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mesh_instance := node as MeshInstance3D
+		var node_name := mesh_instance.name.to_lower()
+		if mesh_instance.mesh != null:
+			for surface_index in range(mesh_instance.mesh.get_surface_count()):
+				var material := mesh_instance.get_active_material(surface_index)
+				if material == null:
+					continue
+				if _rail_material == null and (node_name.contains("rail") or node_name.contains("foot")):
+					_rail_material = material
+				elif _sleeper_material == null and (node_name.contains("sleeper") or node_name.contains("sleep") or node_name.contains("wood")):
+					_sleeper_material = material
+				elif _rail_material == null:
+					_rail_material = material
+				elif _sleeper_material == null:
+					_sleeper_material = material
+	for child in node.get_children():
+		_collect_rail_materials(child)
+
+
+func _rail_frame_basis(sample: Dictionary) -> Basis:
+	var tangent := (sample.get("tangent", Vector3.FORWARD) as Vector3).normalized()
+	var normal := (sample.get("normal", Vector3.UP) as Vector3).normalized()
+	var side := tangent.cross(normal)
+	if side.length_squared() <= 0.000001:
+		side = Vector3.RIGHT
+	side = side.normalized()
+	normal = side.cross(tangent).normalized()
+	return Basis(tangent, normal, side).orthonormalized()
+
+
+func _rail_world_point(sample: Dictionary, local_offset: Vector3, extra_height: float = 0.0) -> Vector3:
+	var position := sample.get("position", Vector3.ZERO) as Vector3
+	var basis := _rail_frame_basis(sample)
+	return position + basis * local_offset + basis.y * (vertical_offset + extra_height)
+
+
+func _add_rail_prism_between_frames(
+	tool: SurfaceTool,
+	first_sample: Dictionary,
+	second_sample: Dictionary,
+	lateral_offset: float
+) -> void:
+	var first_basis := _rail_frame_basis(first_sample)
+	var second_basis := _rail_frame_basis(second_sample)
+	var first_center := _rail_world_point(
+		first_sample,
+		Vector3(0.0, RAIL_TRACK_RAIL_CENTER_HEIGHT, lateral_offset)
+	)
+	var second_center := _rail_world_point(
+		second_sample,
+		Vector3(0.0, RAIL_TRACK_RAIL_CENTER_HEIGHT, lateral_offset)
+	)
+	var half_side := RAIL_TRACK_RAIL_WIDTH * 0.5
+	var half_height := RAIL_TRACK_RAIL_HEIGHT * 0.5
+	var first_corners := [
+		first_center + first_basis * Vector3(0.0, -half_height, -half_side),
+		first_center + first_basis * Vector3(0.0, -half_height, half_side),
+		first_center + first_basis * Vector3(0.0, half_height, half_side),
+		first_center + first_basis * Vector3(0.0, half_height, -half_side),
+	]
+	var second_corners := [
+		second_center + second_basis * Vector3(0.0, -half_height, -half_side),
+		second_center + second_basis * Vector3(0.0, -half_height, half_side),
+		second_center + second_basis * Vector3(0.0, half_height, half_side),
+		second_center + second_basis * Vector3(0.0, half_height, -half_side),
+	]
+	_add_box_between_corners(tool, first_corners, second_corners)
+
+
+func _add_box_between_corners(tool: SurfaceTool, first_corners: Array, second_corners: Array) -> void:
+	var corners: Array = []
+	for corner in first_corners:
+		corners.append(to_local(corner as Vector3))
+	for corner in second_corners:
+		corners.append(to_local(corner as Vector3))
+	_add_box_faces(tool, corners)
+
+
+func _add_box_faces(tool: SurfaceTool, corners: Array) -> void:
+	var faces = [
+		[0, 1, 2], [0, 2, 3],
+		[4, 6, 5], [4, 7, 6],
+		[0, 4, 5], [0, 5, 1],
+		[3, 2, 6], [3, 6, 7],
+		[1, 5, 6], [1, 6, 2],
+		[0, 3, 7], [0, 7, 4],
+	]
+	for face in faces:
+		for index in face:
+			tool.add_vertex(corners[index] as Vector3)
+
+
+func _add_rail_box(tool: SurfaceTool, sample: Dictionary, size: Vector3, height_offset: float) -> void:
+	var basis := _rail_frame_basis(sample)
+	var center := _rail_world_point(
+		sample,
+		Vector3.ZERO,
+		height_offset
+	)
+	var half_size := size * 0.5
+	var corners := [
+		center + basis * Vector3(-half_size.x, -half_size.y, -half_size.z),
+		center + basis * Vector3(half_size.x, -half_size.y, -half_size.z),
+		center + basis * Vector3(half_size.x, half_size.y, -half_size.z),
+		center + basis * Vector3(-half_size.x, half_size.y, -half_size.z),
+		center + basis * Vector3(-half_size.x, -half_size.y, half_size.z),
+		center + basis * Vector3(half_size.x, -half_size.y, half_size.z),
+		center + basis * Vector3(half_size.x, half_size.y, half_size.z),
+		center + basis * Vector3(-half_size.x, half_size.y, half_size.z),
+	]
+	var local_corners: Array = []
+	for corner in corners:
+		local_corners.append(to_local(corner as Vector3))
+	_add_box_faces(tool, local_corners)
+
+
+func _sample_rail_frame(distance: float, total_length: float) -> Dictionary:
+	var clamped_distance := clampf(distance, 0.0, total_length)
+	var local_point := curve.sample_baked(clamped_distance, true)
+	var world_point := to_global(local_point)
+	var projection := _project_world_point_to_terrain(world_point)
+	var position := projection.get("position", world_point) as Vector3
+	var normal := (projection.get("normal", Vector3.UP) as Vector3).normalized()
+	var tangent_distance := minf(0.5, maxf(0.05, total_length * 0.25))
+	var before_distance := maxf(0.0, clamped_distance - tangent_distance)
+	var after_distance := minf(total_length, clamped_distance + tangent_distance)
+	var before_local := curve.sample_baked(before_distance, true)
+	var after_local := curve.sample_baked(after_distance, true)
+	var before_projection := _project_world_point_to_terrain(to_global(before_local))
+	var after_projection := _project_world_point_to_terrain(to_global(after_local))
+	var before := before_projection.get("position", to_global(before_local)) as Vector3
+	var after := after_projection.get("position", to_global(after_local)) as Vector3
+	var tangent := after - before
+	if tangent.length_squared() <= 0.000001:
+		tangent = global_transform.basis * Vector3.RIGHT
+	return {
+		"position": position,
+		"normal": normal,
+		"tangent": tangent.normalized(),
+	}
 
 
 func _remove_legacy_piece_root() -> void:

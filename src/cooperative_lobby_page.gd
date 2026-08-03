@@ -27,6 +27,12 @@ var member_refresh_accumulator := 0.0
 
 func _ready() -> void:
 	world_data = SteamService.get_current_lobby_data()
+	var local_map_validation := GameMapRegistry.validate_world_map(world_data)
+	if bool(local_map_validation.get("valid", false)):
+		var local_map: Dictionary = local_map_validation.get("map", {}) as Dictionary
+		world_data["map_name"] = str(local_map.get("display_name", world_data.get("map_name", "未知地图")))
+		world_data["map_icon_path"] = str(local_map.get("icon_path", world_data.get("map_icon_path", "")))
+		world_data["map_scene_path"] = str(local_map.get("scene_path", world_data.get("map_scene_path", "")))
 	world_id = str(world_data.get("world_id", ""))
 	if not CooperativeSession.session_failed.is_connected(_on_session_failed):
 		CooperativeSession.session_failed.connect(_on_session_failed)
@@ -106,7 +112,7 @@ func _build_interface() -> void:
 	world_info.add_theme_color_override("font_color", COLOR_TEXT)
 	world_box.add_child(world_info)
 	var map_icon := TextureRect.new()
-	map_icon.texture = load(str(world_data.get("map_icon_path", ""))) as Texture2D
+	map_icon.texture = _load_icon(str(world_data.get("map_icon_path", "")))
 	map_icon.custom_minimum_size = Vector2(72, 72)
 	map_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	map_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -329,6 +335,15 @@ func _death_mode_text(mode: String) -> String:
 			return "随机掉落（装备必掉）"
 		_:
 			return "不掉落"
+
+
+func _load_icon(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	if not path.begins_with("res://"):
+		var image := Image.load_from_file(path)
+		return ImageTexture.create_from_image(image) if image != null and not image.is_empty() else null
+	return load(path) as Texture2D
 
 
 func _list_text(value: Variant) -> String:

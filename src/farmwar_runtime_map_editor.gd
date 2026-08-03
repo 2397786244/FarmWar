@@ -37,13 +37,10 @@
 ##   - Ctrl+Z / Cmd+Z undo and Ctrl+Y / Shift+Cmd+Z redo for terrain,
 ##     surface paint, grass chunks, placed resources/spawns and palette edits.
 ##   - New/Open/Save/Save As map-package workflow.
+##   - Place configurable FarmFieldGenerator regions with editor-only previews.
 ##   - Visual continuous-road curve editor with draggable control points.
 ##   - Save generated map scene and authoritative editor data under user://maps/.
 ##
-## Deliberately not implemented in this version:
-##   - Farmland editing (the left toolbar entry is disabled).
-
-
 extends Node3D
 class_name FarmWarRuntimeMapEditor
 
@@ -95,6 +92,7 @@ const TERRAIN_BAKER_PATH = "res://src/terrain/terrain_surface_baker.gd"
 const SURFACE_PALETTE_SCRIPT_PATH = "res://src/terrain/terrain_surface_palette.gd"
 const SURFACE_DEFINITION_SCRIPT_PATH = "res://src/terrain/terrain_surface_definition.gd"
 const ROAD_SCRIPT_PATH = "res://src/terrain/road_path_3d.gd"
+const ROAD_TYPE_RAIL = 4
 const TREE_FOREST_MANAGER_PATH = "res://src/tree_forest_manager.gd"
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 # The shared scenery implementation was moved out of src/environment.  Keep
@@ -107,6 +105,12 @@ const WEATHER_SYSTEM_PATH = "res://worlds/shared/weather_system.tscn"
 const WATER_BODY_PATH = "res://worlds/shared/WaterBody3D.tscn"
 const TEAM_SPAWN_POINT_PATH = "res://buildings/TeamSpawnPoint.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
+const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
+const FARM_FIELD_GENERATOR_SCRIPT_PATH = "res://src/farm_field_generator.gd"
+const FARM_FIELD_TILE_SPACING := 2.2
+const POWER_POLE_PATH = "res://buildings/auxiliary/PowerPole.tscn"
+const POWER_WIRE_SCRIPT_PATH = "res://src/power_wire_3d.gd"
+const POWER_WIRE_ROOT_NAME = "PowerWires"
 const MAP_ICON_FILE_NAME = "map_icon.png"
 const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
 const ROADS_FILE_NAME = "roads.dat"
@@ -271,6 +275,8 @@ var _trees_root: Node3D
 var _ores_root: Node3D
 var _spawns_root: Node3D
 var _buildings_root: Node3D
+var _farmlands_root: Node3D
+var _power_wires_root: Node3D
 var _tree_forest_manager: Node3D
 var _far_scenery_ring: Node3D
 var _terrain_baker: Node3D
@@ -309,6 +315,15 @@ var _selected_asset: Dictionary = TREE_ASSETS[0]
 var _selected_spawn_kind = "giant_crop"
 var _selected_team_spawn_team := "red"
 var _selected_auxiliary_kind := "message_area"
+var _selected_neutral_crop_id := "wheat"
+var _neutral_crop_area_size := Vector2(16.0, 16.0)
+var _neutral_crop_respawn_interval := 120.0
+var _neutral_crop_initial_delay := 0.0
+var _neutral_crop_show_boundary := true
+var _neutral_crop_boundary_color := Color(0.95, 0.85, 0.25, 1.0)
+var _farmland_length_tiles := 16
+var _farmland_width_tiles := 16
+var _selected_farmland_owner := ""
 var _ai_configurations: Array = []
 var _selected_ai_index := -1
 var _brush_radius = 8.0
@@ -462,6 +477,7 @@ var _camera_look_active = false
 var _brush_preview: MeshInstance3D
 var _brush_preview_mesh: ImmediateMesh
 var _brush_preview_material: StandardMaterial3D
+var _farmland_cursor_preview: Node3D
 var _height_boundary_preview: MeshInstance3D
 var _height_boundary_mesh: ImmediateMesh
 var _height_boundary_material: StandardMaterial3D
@@ -498,6 +514,7 @@ var _icon_status_label: Label
 var _icon_file_dialog: FileDialog
 var _open_map_file_dialog: FileDialog
 var _save_as_directory_dialog: FileDialog
+var _export_directory_dialog: FileDialog
 var _discard_changes_dialog: ConfirmationDialog
 var _pending_destructive_action: Callable
 var _boundary_warning_label: Label
@@ -506,6 +523,7 @@ var _map_icon_image: Image
 var _map_icon_texture: ImageTexture
 var _map_icon_source_path = ""
 var _tool_buttons: Dictionary = {}
+var _last_save_succeeded := false
 
 
 func _ready() -> void:
@@ -513,6 +531,7 @@ func _ready() -> void:
 	_undo_redo.max_steps = 100
 	_build_editor_camera()
 	_build_brush_preview()
+	_build_farmland_cursor_preview()
 	_build_selection_visual()
 	_build_transform_gizmo()
 	_build_building_footprint_preview()
@@ -719,6 +738,12 @@ func _build_top_bar() -> void:
 	save_as_button.pressed.connect(_open_save_as_dialog)
 	package_row.add_child(save_as_button)
 
+	var export_button = Button.new()
+	export_button.text = "导出地图"
+	export_button.tooltip_text = "将完整地图包复制到指定目录，例如游戏可执行文件旁的 maps 文件夹。"
+	export_button.pressed.connect(_request_export_map)
+	package_row.add_child(export_button)
+
 	_status_label = Label.new()
 	_status_label.text = "Ready"
 	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -760,16 +785,10 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
 	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
 	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
+	_add_tool_button(column, group, ToolMode.FARMLAND, "Farmland", "Place configurable FarmFieldGenerator regions")
 	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
 	_add_tool_button(column, group, ToolMode.AI, "AI Players", "Configure map AI players, teams, spawn points and respawn times")
 	_add_tool_button(column, group, ToolMode.OBJECT_EDIT, "Transform Objects", "XYZ move, three-axis rotation and scale")
-
-	var farmland_button = Button.new()
-	farmland_button.text = "Farmland (later)"
-	farmland_button.disabled = true
-	farmland_button.tooltip_text = "Farmland editing is reserved but intentionally not implemented yet."
-	column.add_child(farmland_button)
-	_tool_buttons[ToolMode.FARMLAND] = farmland_button
 
 	(_tool_buttons[ToolMode.TERRAIN] as Button).button_pressed = true
 
@@ -948,6 +967,9 @@ func _refresh_bottom_dock() -> void:
 			_add_building_placement_controls()
 			_bottom_content = _building_browser_content
 			_add_building_browser()
+		ToolMode.FARMLAND:
+			_tool_title_label.text = "Farmland Placement"
+			_add_farmland_controls()
 		ToolMode.AUXILIARY:
 			_tool_title_label.text = "Auxiliary Areas"
 			_add_auxiliary_buttons()
@@ -1163,16 +1185,178 @@ func _add_auxiliary_buttons() -> void:
 	var title := Label.new()
 	title.text = "Tutorial Auxiliary"
 	_bottom_content.add_child(title)
-	var message_button := Button.new()
-	message_button.text = "Message Area"
-	message_button.toggle_mode = true
-	message_button.button_pressed = _selected_auxiliary_kind == "message_area"
-	message_button.pressed.connect(func() -> void:
-		_selected_auxiliary_kind = "message_area"
-	)
-	_bottom_content.add_child(message_button)
+	var group := ButtonGroup.new()
+	for entry in [
+		{"label": "Message Area", "kind": "message_area"},
+		{"label": "Power Pole", "kind": "power_pole"},
+		{"label": "Neutral Crop Generator", "kind": "neutral_crop_generator"},
+	]:
+		var button := Button.new()
+		button.text = str(entry["label"])
+		button.toggle_mode = true
+		button.button_group = group
+		button.button_pressed = _selected_auxiliary_kind == str(entry["kind"])
+		button.pressed.connect(func() -> void:
+			_selected_auxiliary_kind = str(entry["kind"])
+			_refresh_bottom_dock()
+		)
+		_bottom_content.add_child(button)
+	if _selected_auxiliary_kind == "neutral_crop_generator":
+		_add_neutral_crop_generator_controls()
 	var hint := Label.new()
-	hint.text = "Left-click the terrain to place a message area. Select it with Transform Objects to edit its text, boundary color, and visibility in the Inspector."
+	hint.text = "左键放置辅助物体。Message Area 可在 Inspector 设置提示；Power Pole 会按放置顺序与相邻电线杆生成两条下垂黑色电线；Neutral Crop Generator 会在无归属空 FarmTile 上按单一周期生成作物。Shift+左键删除。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_neutral_crop_generator_controls() -> void:
+	var heading := Label.new()
+	heading.text = "Neutral Crop Generator Settings"
+	_bottom_content.add_child(heading)
+
+	var crop_row := HBoxContainer.new()
+	crop_row.add_child(_make_label("Crop"))
+	var crop_option := OptionButton.new()
+	var plantable_ids := IngredientCatalog.get_plantable_ids()
+	for crop_id_value: String in plantable_ids:
+		crop_option.add_item(crop_id_value)
+		crop_option.set_item_metadata(crop_option.item_count - 1, crop_id_value)
+	var selected_crop_index := plantable_ids.find(_selected_neutral_crop_id)
+	if selected_crop_index < 0 and not plantable_ids.is_empty():
+		selected_crop_index = 0
+		_selected_neutral_crop_id = plantable_ids[0]
+	if selected_crop_index >= 0:
+		crop_option.select(selected_crop_index)
+	crop_option.item_selected.connect(func(index: int) -> void:
+		_selected_neutral_crop_id = str(crop_option.get_item_metadata(index))
+	)
+	crop_row.add_child(crop_option)
+	_bottom_content.add_child(crop_row)
+
+	var size_row := HBoxContainer.new()
+	size_row.add_child(_make_label("Area W / D"))
+	var width_spin := SpinBox.new()
+	width_spin.min_value = 1.0
+	width_spin.max_value = 512.0
+	width_spin.step = 1.0
+	width_spin.value = _neutral_crop_area_size.x
+	width_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	width_spin.value_changed.connect(func(value: float) -> void:
+		_neutral_crop_area_size.x = maxf(1.0, value)
+	)
+	size_row.add_child(width_spin)
+	var depth_spin := SpinBox.new()
+	depth_spin.min_value = 1.0
+	depth_spin.max_value = 512.0
+	depth_spin.step = 1.0
+	depth_spin.value = _neutral_crop_area_size.y
+	depth_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	depth_spin.value_changed.connect(func(value: float) -> void:
+		_neutral_crop_area_size.y = maxf(1.0, value)
+	)
+	size_row.add_child(depth_spin)
+	_bottom_content.add_child(size_row)
+
+	var interval_row := HBoxContainer.new()
+	interval_row.add_child(_make_label("周期 (秒)"))
+	var interval_spin := SpinBox.new()
+	interval_spin.min_value = 1.0
+	interval_spin.max_value = 3600.0
+	interval_spin.step = 1.0
+	interval_spin.value = _neutral_crop_respawn_interval
+	interval_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	interval_spin.value_changed.connect(func(value: float) -> void:
+		_neutral_crop_respawn_interval = maxf(1.0, value)
+	)
+	interval_row.add_child(interval_spin)
+	_bottom_content.add_child(interval_row)
+
+	var delay_row := HBoxContainer.new()
+	delay_row.add_child(_make_label("初次延迟 (秒)"))
+	var delay_spin := SpinBox.new()
+	delay_spin.min_value = 0.0
+	delay_spin.max_value = 3600.0
+	delay_spin.step = 1.0
+	delay_spin.value = _neutral_crop_initial_delay
+	delay_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	delay_spin.value_changed.connect(func(value: float) -> void:
+		_neutral_crop_initial_delay = maxf(0.0, value)
+	)
+	delay_row.add_child(delay_spin)
+	_bottom_content.add_child(delay_row)
+
+	var boundary_row := HBoxContainer.new()
+	boundary_row.add_child(_make_label("边界颜色"))
+	var color_picker := ColorPickerButton.new()
+	color_picker.color = _neutral_crop_boundary_color
+	color_picker.edit_alpha = false
+	color_picker.custom_minimum_size = Vector2(72.0, 30.0)
+	color_picker.color_changed.connect(func(value: Color) -> void:
+		_neutral_crop_boundary_color = Color(value.r, value.g, value.b, 1.0)
+	)
+	boundary_row.add_child(color_picker)
+	_bottom_content.add_child(boundary_row)
+
+	var boundary_check := CheckBox.new()
+	boundary_check.text = "显示编辑器边界"
+	boundary_check.button_pressed = _neutral_crop_show_boundary
+	boundary_check.toggled.connect(func(value: bool) -> void:
+		_neutral_crop_show_boundary = value
+	)
+	_bottom_content.add_child(boundary_check)
+
+
+func _add_farmland_controls() -> void:
+	var heading := Label.new()
+	heading.text = "FarmFieldGenerator Settings"
+	_bottom_content.add_child(heading)
+
+	var length_row := HBoxContainer.new()
+	length_row.add_child(_make_label("Length (tiles)"))
+	var length_spin := SpinBox.new()
+	length_spin.min_value = 1
+	length_spin.max_value = 128
+	length_spin.step = 1
+	length_spin.value = _farmland_length_tiles
+	length_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	length_spin.value_changed.connect(func(value: float) -> void:
+		_farmland_length_tiles = clampi(roundi(value), 1, 128)
+		_update_farmland_cursor_preview_from_latest_hit()
+	)
+	length_row.add_child(length_spin)
+	_bottom_content.add_child(length_row)
+
+	var width_row := HBoxContainer.new()
+	width_row.add_child(_make_label("Width (tiles)"))
+	var width_spin := SpinBox.new()
+	width_spin.min_value = 1
+	width_spin.max_value = 128
+	width_spin.step = 1
+	width_spin.value = _farmland_width_tiles
+	width_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	width_spin.value_changed.connect(func(value: float) -> void:
+		_farmland_width_tiles = clampi(roundi(value), 1, 128)
+		_update_farmland_cursor_preview_from_latest_hit()
+	)
+	width_row.add_child(width_spin)
+	_bottom_content.add_child(width_row)
+
+	var owner_row := HBoxContainer.new()
+	owner_row.add_child(_make_label("Ownership"))
+	var owner_option := OptionButton.new()
+	owner_option.add_item("No Owner")
+	owner_option.add_item("Red Team")
+	owner_option.add_item("Blue Team")
+	owner_option.select(0 if _selected_farmland_owner.is_empty() else (1 if _selected_farmland_owner == "red" else 2))
+	owner_option.item_selected.connect(func(index: int) -> void:
+		_selected_farmland_owner = "" if index == 0 else ("red" if index == 1 else "blue")
+		_update_farmland_cursor_preview_from_latest_hit()
+	)
+	owner_row.add_child(owner_option)
+	_bottom_content.add_child(owner_row)
+
+	var hint := Label.new()
+	hint.text = "左键放置农田区域。编辑器只显示半透明覆盖范围；进入游戏加载地图时才生成 FarmTile。Shift+左键删除。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
@@ -1545,8 +1729,13 @@ func _add_object_edit_controls() -> void:
 		spawn_team_row.add_child(spawn_team_option)
 		_bottom_content.add_child(spawn_team_row)
 
-	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary":
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_message_area(_selected_map_object):
 		_add_message_area_inspector_controls()
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_neutral_crop_generator(_selected_map_object):
+		_add_neutral_crop_generator_inspector_controls()
+
+	if is_instance_valid(_selected_map_object) and _is_farmland(_selected_map_object):
+		_add_farmland_inspector_controls()
 
 	var action_row = HBoxContainer.new()
 	_bottom_content.add_child(action_row)
@@ -1626,6 +1815,185 @@ func _set_message_area_property(property_name: String, value: Variant) -> void:
 	_apply_object_property_by_uuid(uuid, property_name, value)
 
 
+func _add_neutral_crop_generator_inspector_controls() -> void:
+	var generator := _selected_map_object
+	var heading := Label.new()
+	heading.text = "Neutral Crop Generator Inspector"
+	_bottom_content.add_child(heading)
+
+	var crop_row := HBoxContainer.new()
+	crop_row.add_child(_make_label("Crop"))
+	var crop_option := OptionButton.new()
+	var crop_ids := IngredientCatalog.get_plantable_ids()
+	var current_crop := str(_get_property_or(generator, "crop_id", "wheat"))
+	for crop_id_value: String in crop_ids:
+		crop_option.add_item(crop_id_value)
+		crop_option.set_item_metadata(crop_option.item_count - 1, crop_id_value)
+		if crop_id_value == current_crop:
+			crop_option.select(crop_option.item_count - 1)
+	crop_option.item_selected.connect(func(index: int) -> void:
+		_set_neutral_crop_generator_property("crop_id", str(crop_option.get_item_metadata(index)))
+	)
+	crop_row.add_child(crop_option)
+	_bottom_content.add_child(crop_row)
+
+	var area_size := _get_property_or(generator, "area_size", Vector2(16.0, 16.0)) as Vector2
+	var size_row := HBoxContainer.new()
+	size_row.add_child(_make_label("Area W / D"))
+	var width_spin := SpinBox.new()
+	width_spin.min_value = 1.0
+	width_spin.max_value = 512.0
+	width_spin.step = 1.0
+	width_spin.value = area_size.x
+	width_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	width_spin.value_changed.connect(func(value: float) -> void:
+		var current := _get_property_or(generator, "area_size", Vector2(16.0, 16.0)) as Vector2
+		_set_neutral_crop_generator_property("area_size", Vector2(maxf(1.0, value), current.y))
+	)
+	size_row.add_child(width_spin)
+	var depth_spin := SpinBox.new()
+	depth_spin.min_value = 1.0
+	depth_spin.max_value = 512.0
+	depth_spin.step = 1.0
+	depth_spin.value = area_size.y
+	depth_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	depth_spin.value_changed.connect(func(value: float) -> void:
+		var current := _get_property_or(generator, "area_size", Vector2(16.0, 16.0)) as Vector2
+		_set_neutral_crop_generator_property("area_size", Vector2(current.x, maxf(1.0, value)))
+	)
+	size_row.add_child(depth_spin)
+	_bottom_content.add_child(size_row)
+
+	_add_neutral_crop_generator_spin("周期 (秒)", "respawn_interval_seconds", 1.0, 3600.0)
+	_add_neutral_crop_generator_spin("初次延迟 (秒)", "initial_spawn_delay", 0.0, 3600.0)
+
+	var color_row := HBoxContainer.new()
+	color_row.add_child(_make_label("边界颜色"))
+	var color_picker := ColorPickerButton.new()
+	color_picker.color = _get_property_or(generator, "boundary_color", Color(0.95, 0.85, 0.25, 1.0)) as Color
+	color_picker.edit_alpha = false
+	color_picker.custom_minimum_size = Vector2(72.0, 30.0)
+	color_picker.color_changed.connect(func(value: Color) -> void:
+		_set_neutral_crop_generator_property("boundary_color", Color(value.r, value.g, value.b, 1.0))
+	)
+	color_row.add_child(color_picker)
+	_bottom_content.add_child(color_row)
+
+	var boundary_check := CheckBox.new()
+	boundary_check.text = "显示编辑器边界"
+	boundary_check.button_pressed = bool(_get_property_or(generator, "show_boundary", true))
+	boundary_check.toggled.connect(func(value: bool) -> void:
+		_set_neutral_crop_generator_property("show_boundary", value)
+	)
+	_bottom_content.add_child(boundary_check)
+
+
+func _add_neutral_crop_generator_spin(label_text: String, property_name: String, minimum: float, maximum: float) -> void:
+	var row := HBoxContainer.new()
+	row.add_child(_make_label(label_text))
+	var spin := SpinBox.new()
+	spin.min_value = minimum
+	spin.max_value = maximum
+	spin.step = 1.0
+	spin.value = float(_get_property_or(_selected_map_object, property_name, minimum))
+	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spin.value_changed.connect(func(value: float) -> void:
+		_set_neutral_crop_generator_property(property_name, maxf(minimum, value))
+	)
+	row.add_child(spin)
+	_bottom_content.add_child(row)
+
+
+func _set_neutral_crop_generator_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_neutral_crop_generator(_selected_map_object):
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit Neutral Crop Generator")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _add_farmland_inspector_controls() -> void:
+	var field := _selected_map_object
+	var heading := Label.new()
+	heading.text = "Farmland Inspector"
+	_bottom_content.add_child(heading)
+
+	var length_row := HBoxContainer.new()
+	length_row.add_child(_make_label("Length (tiles)"))
+	var length_spin := SpinBox.new()
+	length_spin.min_value = 1
+	length_spin.max_value = 128
+	length_spin.step = 1
+	length_spin.value = int(_get_property_or(field, "length_tiles", 1))
+	length_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	length_spin.value_changed.connect(func(value: float) -> void:
+		_set_farmland_property("length_tiles", clampi(roundi(value), 1, 128))
+	)
+	length_row.add_child(length_spin)
+	_bottom_content.add_child(length_row)
+
+	var width_row := HBoxContainer.new()
+	width_row.add_child(_make_label("Width (tiles)"))
+	var width_spin := SpinBox.new()
+	width_spin.min_value = 1
+	width_spin.max_value = 128
+	width_spin.step = 1
+	width_spin.value = int(_get_property_or(field, "width_tiles", 1))
+	width_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	width_spin.value_changed.connect(func(value: float) -> void:
+		_set_farmland_property("width_tiles", clampi(roundi(value), 1, 128))
+	)
+	width_row.add_child(width_spin)
+	_bottom_content.add_child(width_row)
+
+	var owner_row := HBoxContainer.new()
+	owner_row.add_child(_make_label("Ownership"))
+	var owner_option := OptionButton.new()
+	owner_option.add_item("No Owner")
+	owner_option.add_item("Red Team")
+	owner_option.add_item("Blue Team")
+	var owner := str(_get_property_or(field, "field_owner", ""))
+	owner_option.select(0 if owner.is_empty() else (1 if owner == "red" else 2))
+	owner_option.item_selected.connect(func(index: int) -> void:
+		_set_farmland_property("field_owner", "" if index == 0 else ("red" if index == 1 else "blue"))
+	)
+	owner_row.add_child(owner_option)
+	_bottom_content.add_child(owner_row)
+
+	var hint := Label.new()
+	hint.text = "修改会实时更新半透明预览；游戏加载地图时才生成 FarmTile。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _set_farmland_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_farmland(_selected_map_object):
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit Farmland")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
 func _apply_object_property_by_uuid(uuid: String, property_name: String, value: Variant) -> void:
 	var node := _find_editor_object_by_uuid(uuid)
 	if node == null or not _has_property(node, property_name):
@@ -1633,6 +2001,8 @@ func _apply_object_property_by_uuid(uuid: String, property_name: String, value: 
 	node.set(property_name, value)
 	if node.has_method("refresh_visuals"):
 		node.call("refresh_visuals")
+	if _is_farmland(node):
+		_refresh_farmland_preview(node)
 
 
 func _add_transform_spin_group(title: String, suffix_text: String) -> void:
@@ -2004,6 +2374,12 @@ func _add_road_buttons() -> void:
 	new_road_button.pressed.connect(_begin_new_road)
 	_bottom_content.add_child(new_road_button)
 
+	var new_rail_button = Button.new()
+	new_rail_button.text = "New Rail"
+	new_rail_button.tooltip_text = "Draw a 12m RailTrack path with overlapping pieces at bends."
+	new_rail_button.pressed.connect(_begin_new_rail)
+	_bottom_content.add_child(new_rail_button)
+
 	_road_finish_button = Button.new()
 	_road_finish_button.text = "Finish Road"
 	_road_finish_button.pressed.connect(_finish_active_road)
@@ -2038,9 +2414,10 @@ func _add_road_buttons() -> void:
 		{"label": "Asphalt Wide", "id": 1},
 		{"label": "Country Gravel Narrow", "id": 2},
 		{"label": "Country Gravel Wide", "id": 3},
+		{"label": "Rail Track", "id": ROAD_TYPE_RAIL},
 	]:
 		_road_type_option.add_item(str(entry["label"]), int(entry["id"]))
-	_road_type_option.select(clampi(_road_type, 0, 3))
+	_road_type_option.select(clampi(_road_type, 0, ROAD_TYPE_RAIL))
 	_road_type_option.item_selected.connect(_on_road_type_selected)
 	_bottom_content.add_child(_road_type_option)
 
@@ -2064,7 +2441,7 @@ func _add_road_buttons() -> void:
 	_bottom_content.add_child(_road_offset_spin)
 
 	var hint = Label.new()
-	hint.text = "New Road, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. The road is one continuous procedural strip, not separate GLB blocks."
+	hint.text = "New Road or New Rail, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. RailTrack uses the 12m model with overlapping pieces to keep bends closed."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size.x = 0.0
 	_bottom_content.add_child(hint)
@@ -2251,6 +2628,7 @@ func _select_tool(mode: ToolMode) -> void:
 			_brush_preview_material.albedo_color = Color(1.0, 0.8, 0.1, 0.95)
 	elif not _selected_building_asset.is_empty():
 		_rebuild_building_preview()
+	_set_farmland_cursor_preview_visible(mode == ToolMode.FARMLAND)
 	_set_selection_visual_visible(mode == ToolMode.OBJECT_EDIT)
 	_refresh_bottom_dock()
 	_set_status("Tool: %s" % _tool_name(mode))
@@ -2510,6 +2888,7 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.ORE: return "Ores"
 		ToolMode.SPAWN: return "Spawn Points"
 		ToolMode.BUILDING: return "Buildings"
+		ToolMode.FARMLAND: return "Farmland"
 		ToolMode.AUXILIARY: return "Auxiliary Areas"
 		ToolMode.AI: return "Map AI Players"
 		ToolMode.OBJECT_EDIT: return "Object Edit"
@@ -2603,6 +2982,147 @@ func _build_brush_preview() -> void:
 	_persistent_height_contour_preview.visible = false
 	_persistent_height_contour_preview.set_meta(EDITOR_MARKER_META, true)
 	add_child(_persistent_height_contour_preview)
+
+
+func _build_farmland_cursor_preview() -> void:
+	_farmland_cursor_preview = Node3D.new()
+	_farmland_cursor_preview.name = "FarmlandPlacementPreview"
+	_farmland_cursor_preview.set_meta(EDITOR_MARKER_META, true)
+	add_child(_farmland_cursor_preview)
+	_create_farmland_preview_visuals(_farmland_cursor_preview)
+	_farmland_cursor_preview.visible = false
+
+
+func _create_farmland_preview_visuals(preview_root: Node3D) -> void:
+	var fill := MeshInstance3D.new()
+	fill.name = "Fill"
+	fill.set_meta(EDITOR_MARKER_META, true)
+	fill.mesh = BoxMesh.new()
+	fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	preview_root.add_child(fill)
+	var fill_material := StandardMaterial3D.new()
+	fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	fill_material.no_depth_test = true
+	fill.material_override = fill_material
+
+	var outline := MeshInstance3D.new()
+	outline.name = "Outline"
+	outline.set_meta(EDITOR_MARKER_META, true)
+	outline.mesh = ImmediateMesh.new()
+	outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	preview_root.add_child(outline)
+	var outline_material := StandardMaterial3D.new()
+	outline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	outline_material.no_depth_test = true
+	outline.material_override = outline_material
+
+
+func _farmland_preview_color(owner: String, outline := false) -> Color:
+	var color := Color(0.96, 0.96, 0.96, 0.22)
+	if owner == "red":
+		color = Color(0.95, 0.16, 0.16, 0.25)
+	elif owner == "blue":
+		color = Color(0.16, 0.36, 1.0, 0.25)
+	if outline:
+		color.a = 0.9
+	return color
+
+
+func _configure_farmland_preview(preview_root: Node3D, length_tiles: int, width_tiles: int, owner: String) -> void:
+	if preview_root == null:
+		return
+	var length := maxi(1, length_tiles)
+	var width := maxi(1, width_tiles)
+	var size_x := float(length) * FARM_FIELD_TILE_SPACING
+	var size_z := float(width) * FARM_FIELD_TILE_SPACING
+	var center := Vector3(
+		float(length - 1) * FARM_FIELD_TILE_SPACING * 0.5,
+		0.05,
+		float(width - 1) * FARM_FIELD_TILE_SPACING * 0.5
+	)
+	var fill := preview_root.get_node_or_null("Fill") as MeshInstance3D
+	if fill != null:
+		var box := fill.mesh as BoxMesh
+		if box == null:
+			box = BoxMesh.new()
+			fill.mesh = box
+		box.size = Vector3(size_x, 0.04, size_z)
+		fill.position = center
+		var fill_material := fill.material_override as StandardMaterial3D
+		if fill_material != null:
+			fill_material.albedo_color = _farmland_preview_color(owner)
+	var outline := preview_root.get_node_or_null("Outline") as MeshInstance3D
+	if outline != null:
+		var line_mesh := outline.mesh as ImmediateMesh
+		if line_mesh == null:
+			line_mesh = ImmediateMesh.new()
+			outline.mesh = line_mesh
+		line_mesh.clear_surfaces()
+		var outline_material := outline.material_override as StandardMaterial3D
+		if outline_material != null:
+			outline_material.albedo_color = _farmland_preview_color(owner, true)
+		outline.position = center
+		line_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, outline_material)
+		var half_x := size_x * 0.5
+		var half_z := size_z * 0.5
+		for point in [
+			Vector3(-half_x, 0.085, -half_z),
+			Vector3(half_x, 0.085, -half_z),
+			Vector3(half_x, 0.085, half_z),
+			Vector3(-half_x, 0.085, half_z),
+			Vector3(-half_x, 0.085, -half_z),
+		]:
+			line_mesh.surface_add_vertex(point)
+		line_mesh.surface_end()
+
+
+func _refresh_farmland_preview(field: Node3D) -> void:
+	if field == null or not _is_farmland(field):
+		return
+	var preview := field.get_node_or_null("_EditorFarmlandPreview") as Node3D
+	if preview == null:
+		preview = Node3D.new()
+		preview.name = "_EditorFarmlandPreview"
+		preview.set_meta(EDITOR_MARKER_META, true)
+		field.add_child(preview)
+		_create_farmland_preview_visuals(preview)
+	_configure_farmland_preview(
+		preview,
+		int(_get_property_or(field, "length_tiles", _farmland_length_tiles)),
+		int(_get_property_or(field, "width_tiles", _farmland_width_tiles)),
+		str(_get_property_or(field, "field_owner", ""))
+	)
+
+
+func _refresh_all_farmland_previews() -> void:
+	if _farmlands_root == null:
+		return
+	for child in _farmlands_root.get_children():
+		if child is Node3D:
+			_refresh_farmland_preview(child as Node3D)
+
+
+func _update_farmland_cursor_preview(center: Vector3) -> void:
+	if _farmland_cursor_preview == null:
+		return
+	_farmland_cursor_preview.global_position = center
+	_configure_farmland_preview(_farmland_cursor_preview, _farmland_length_tiles, _farmland_width_tiles, _selected_farmland_owner)
+	_farmland_cursor_preview.visible = true
+
+
+func _update_farmland_cursor_preview_from_latest_hit() -> void:
+	if _tool_mode != ToolMode.FARMLAND or _latest_hit.is_empty():
+		if _farmland_cursor_preview != null:
+			_farmland_cursor_preview.visible = false
+		return
+	_update_farmland_cursor_preview(_latest_hit.get("position", Vector3.ZERO) as Vector3)
+
+
+func _set_farmland_cursor_preview_visible(value: bool) -> void:
+	if _farmland_cursor_preview != null:
+		_farmland_cursor_preview.visible = value and _tool_mode == ToolMode.FARMLAND
 
 
 
@@ -2863,6 +3383,7 @@ func _physics_process(delta: float) -> void:
 	_latest_hit = _raycast_terrain()
 	if _tool_mode == ToolMode.OBJECT_EDIT:
 		_brush_preview.visible = false
+		_set_farmland_cursor_preview_visible(false)
 		_set_height_boundary_visible(false)
 		_set_building_preview_visible(false)
 		_refresh_selection_visual()
@@ -2871,6 +3392,7 @@ func _physics_process(delta: float) -> void:
 
 	if _latest_hit.is_empty():
 		_brush_preview.visible = false
+		_set_farmland_cursor_preview_visible(false)
 		_set_height_boundary_visible(false)
 		if _tool_mode == ToolMode.BUILDING:
 			_set_building_preview_visible(false)
@@ -2889,12 +3411,19 @@ func _physics_process(delta: float) -> void:
 		_set_height_boundary_visible(false)
 		_update_water_preview(hit_position)
 		return
+	if _tool_mode == ToolMode.FARMLAND:
+		_brush_preview.visible = false
+		_set_height_boundary_visible(false)
+		_update_farmland_cursor_preview(hit_position)
+	else:
+		_set_farmland_cursor_preview_visible(false)
 	if _tool_mode == ToolMode.BUILDING:
 		_set_height_boundary_visible(false)
 		_update_building_preview(hit_position)
 	else:
 		_set_building_preview_visible(false)
-	_update_contact_brush(hit_position)
+	if _tool_mode != ToolMode.FARMLAND:
+		_update_contact_brush(hit_position)
 	if _tool_mode == ToolMode.TERRAIN:
 		_update_height_boundary()
 	else:
@@ -2918,6 +3447,8 @@ func _physics_process(delta: float) -> void:
 			_apply_spawn_brush(hit_position)
 		ToolMode.AUXILIARY:
 			_apply_auxiliary_brush(hit_position)
+		ToolMode.FARMLAND:
+			_apply_farmland_brush(hit_position)
 		ToolMode.BUILDING:
 			_apply_building_placement(hit_position)
 
@@ -3008,7 +3539,7 @@ func _end_stroke() -> void:
 			_commit_surface_stroke()
 		ToolMode.GRASS:
 			_commit_grass_stroke()
-		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.BUILDING, ToolMode.AUXILIARY:
+		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.BUILDING, ToolMode.AUXILIARY, ToolMode.FARMLAND:
 			_commit_object_stroke()
 
 	_stroke_height_before.clear()
@@ -3595,6 +4126,8 @@ func _create_map_content_roots() -> void:
 	_ores_root = _new_child_node3d(_map_root, "Ores")
 	_spawns_root = _new_child_node3d(_map_root, "SpawnPoints")
 	_buildings_root = _new_child_node3d(_map_root, "Buildings")
+	_farmlands_root = _new_child_node3d(_map_root, "FarmFields")
+	_power_wires_root = _new_child_node3d(_map_root, POWER_WIRE_ROOT_NAME)
 
 	var tree_script = _load_resource_or_null(TREE_FOREST_MANAGER_PATH) as Script
 	_tree_forest_manager = Node3D.new()
@@ -4891,6 +5424,8 @@ func _erase_nodes_in_radius(category_root: Node3D, center: Vector3, radius: floa
 			erased += 1
 	if erased > 0:
 		_rebuild_resource_multimeshes_deferred()
+		if category_root == _buildings_root:
+			_rebuild_power_wires()
 		_set_status("Removed %d resource nodes" % erased)
 
 
@@ -5027,37 +5562,204 @@ func _place_wild_animal_spawn(center: Vector3) -> void:
 	_set_status("Placed wild animal spawn")
 
 
+func _apply_farmland_brush(center: Vector3) -> void:
+	if Input.is_key_pressed(KEY_SHIFT):
+		_erase_nodes_in_radius(_farmlands_root, center, _brush_radius, "farmland")
+		return
+	if _stroke_placed_once or _farmlands_root == null:
+		return
+	var corners := [
+		Vector2(center.x, center.z),
+		Vector2(center.x + float(_farmland_length_tiles) * FARM_FIELD_TILE_SPACING, center.z),
+		Vector2(center.x, center.z + float(_farmland_width_tiles) * FARM_FIELD_TILE_SPACING),
+		Vector2(
+			center.x + float(_farmland_length_tiles) * FARM_FIELD_TILE_SPACING,
+			center.z + float(_farmland_width_tiles) * FARM_FIELD_TILE_SPACING
+		),
+	]
+	for corner in corners:
+		if not _point_inside_map(corner, 0.5):
+			_set_status("Farmland placement blocked: area crosses the map boundary")
+			return
+		if _is_point_in_water(corner, get_terrain_height_world(corner)):
+			_set_status("Farmland placement blocked: area overlaps water")
+			return
+
+	var field_script := _load_resource_or_null(FARM_FIELD_GENERATOR_SCRIPT_PATH) as Script
+	if field_script == null:
+		_set_status("Missing FarmFieldGenerator script")
+		return
+	var field := Node3D.new()
+	field.name = "FarmField_%04d" % _next_object_id
+	field.set_script(field_script)
+	_set_property_if_present(field, "generate_on_ready", false)
+	_set_property_if_present(field, "length_tiles", _farmland_length_tiles)
+	_set_property_if_present(field, "width_tiles", _farmland_width_tiles)
+	_set_property_if_present(field, "tile_spacing", FARM_FIELD_TILE_SPACING)
+	_set_property_if_present(field, "field_owner", _selected_farmland_owner)
+	_set_property_if_present(field, "field_label", "editor_field_%04d" % _next_object_id)
+	field.set_meta("map_editor_category", "farmland")
+	field.set_meta("map_editor_asset_path", FARM_FIELD_GENERATOR_SCRIPT_PATH)
+	field.set_meta("map_editor_uuid", _new_editor_uuid("farmland"))
+	field.set_meta("map_editor_align_mode", "upright")
+	field.set_meta("map_editor_ground_offset", 0.02)
+	_farmlands_root.add_child(field)
+	_place_map_object_at_terrain(field, Vector2(center.x, center.z), 0.0, false, 0.02)
+	_refresh_farmland_preview(field)
+	_stroke_added_objects.append(_serialize_editor_object(field))
+	_next_object_id += 1
+	_stroke_placed_once = true
+	_set_status("Placed farmland preview; runtime will generate %d x %d FarmTiles" % [_farmland_length_tiles, _farmland_width_tiles])
+
+
 func _apply_auxiliary_brush(center: Vector3) -> void:
 	if Input.is_key_pressed(KEY_SHIFT):
 		_erase_nodes_in_radius(_buildings_root, center, _brush_radius, "auxiliary")
 		return
-	if _stroke_placed_once or _selected_auxiliary_kind != "message_area":
+	if _stroke_placed_once:
 		return
 	if not _point_inside_map(Vector2(center.x, center.z), 0.5):
 		return
 	if _is_point_in_water(Vector2(center.x, center.z), center.y):
 		_set_status("Auxiliary placement blocked: point is inside water")
 		return
-	var packed := _load_resource_or_null(MESSAGE_AREA_PATH) as PackedScene
+	var asset_path := MESSAGE_AREA_PATH
+	if _selected_auxiliary_kind == "power_pole":
+		asset_path = POWER_POLE_PATH
+	elif _selected_auxiliary_kind == "neutral_crop_generator":
+		asset_path = NEUTRAL_CROP_GENERATOR_PATH
+	var packed := _load_resource_or_null(asset_path) as PackedScene
 	if packed == null:
-		_set_status("Missing MessageArea scene")
+		_set_status("Missing auxiliary scene: %s" % asset_path)
 		return
 	var instance := packed.instantiate() as Node3D
 	if instance == null:
-		_set_status("MessageArea root is not Node3D")
+		_set_status("Auxiliary root is not Node3D: %s" % asset_path)
 		return
-	instance.name = "MessageArea_%04d" % _next_object_id
+	var is_power_pole := _selected_auxiliary_kind == "power_pole"
+	var is_neutral_crop_generator := _selected_auxiliary_kind == "neutral_crop_generator"
+	instance.name = ("PowerPole" if is_power_pole else "MessageArea") + "_%04d" % _next_object_id
+	if is_neutral_crop_generator:
+		instance.name = "NeutralCropGenerator_%04d" % _next_object_id
 	instance.set_meta("map_editor_category", "auxiliary")
-	instance.set_meta("map_editor_asset_path", MESSAGE_AREA_PATH)
+	instance.set_meta("map_editor_asset_path", asset_path)
 	instance.set_meta("map_editor_uuid", _new_editor_uuid("auxiliary"))
 	instance.set_meta("map_editor_align_mode", "upright")
-	instance.set_meta("map_editor_ground_offset", 0.02)
+	instance.set_meta("map_editor_ground_offset", 0.0 if is_power_pole else 0.02)
+	if is_neutral_crop_generator:
+		_set_property_if_present(instance, "generator_id", "neutral_crop_%03d" % _next_object_id)
+		_set_property_if_present(instance, "crop_id", _selected_neutral_crop_id)
+		_set_property_if_present(instance, "area_size", _neutral_crop_area_size)
+		_set_property_if_present(instance, "respawn_interval_seconds", _neutral_crop_respawn_interval)
+		_set_property_if_present(instance, "initial_spawn_delay", _neutral_crop_initial_delay)
+		_set_property_if_present(instance, "show_boundary", _neutral_crop_show_boundary)
+		_set_property_if_present(instance, "boundary_color", _neutral_crop_boundary_color)
 	_buildings_root.add_child(instance)
-	_place_node_on_terrain(instance, Vector2(center.x, center.z), 0.0, 1.0, 0.02)
+	var placement_yaw := _rng.randf_range(-PI, PI) if is_power_pole else 0.0
+	if is_power_pole:
+		_place_map_object_at_terrain(instance, Vector2(center.x, center.z), placement_yaw, false, 0.0)
+	else:
+		_place_node_on_terrain(instance, Vector2(center.x, center.z), placement_yaw, 1.0, 0.02)
+	if is_neutral_crop_generator and instance.has_method("refresh_visuals"):
+		instance.call("refresh_visuals")
 	_stroke_added_objects.append(_serialize_editor_object(instance))
 	_next_object_id += 1
 	_stroke_placed_once = true
-	_set_status("Placed MessageArea; use Transform Objects to edit its Inspector")
+	_rebuild_power_wires()
+	if is_power_pole:
+		_set_status("Placed Power Pole; adjacent poles now show two live wires")
+	elif is_neutral_crop_generator:
+		_set_status("Placed Neutral Crop Generator; crops will be generated when the map loads")
+	else:
+		_set_status("Placed MessageArea; use Transform Objects to edit its Inspector")
+
+
+func _is_message_area(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	return asset_path == MESSAGE_AREA_PATH or node.scene_file_path == MESSAGE_AREA_PATH
+
+
+func _is_neutral_crop_generator(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	return asset_path == NEUTRAL_CROP_GENERATOR_PATH or node.scene_file_path == NEUTRAL_CROP_GENERATOR_PATH
+
+
+func _is_farmland(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	return asset_path == FARM_FIELD_GENERATOR_SCRIPT_PATH or node.get_meta("map_editor_category", "") == "farmland"
+
+
+func _is_power_pole(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	if asset_path == POWER_POLE_PATH or node.scene_file_path == POWER_POLE_PATH:
+		return node.get_node_or_null("WirePoint1") != null and node.get_node_or_null("WirePoint2") != null
+	return false
+
+
+func _clear_power_wires() -> void:
+	if _power_wires_root == null:
+		return
+	for child in _power_wires_root.get_children():
+		_power_wires_root.remove_child(child)
+		child.free()
+
+
+func _get_power_poles() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if _buildings_root == null:
+		return result
+	for child in _buildings_root.get_children():
+		if child is Node3D and _is_power_pole(child as Node3D):
+			result.append(child as Node3D)
+	result.sort_custom(func(first: Node3D, second: Node3D) -> bool:
+		var first_uuid := str(first.get_meta("map_editor_uuid", first.name))
+		var second_uuid := str(second.get_meta("map_editor_uuid", second.name))
+		return first_uuid.naturalnocasecmp_to(second_uuid) < 0
+	)
+	return result
+
+
+func _rebuild_power_wires() -> void:
+	if _power_wires_root == null:
+		return
+	_clear_power_wires()
+	var poles := _get_power_poles()
+	if poles.size() < 2:
+		return
+	var wire_script := _load_resource_or_null(POWER_WIRE_SCRIPT_PATH) as Script
+	if wire_script == null:
+		push_warning("FarmWar map editor: missing power wire script: %s" % POWER_WIRE_SCRIPT_PATH)
+		return
+	var wire_count := 0
+	for pole_index in range(poles.size() - 1):
+		var first := poles[pole_index]
+		var second := poles[pole_index + 1]
+		for wire_index in range(2):
+			var first_point := first.get_node_or_null("WirePoint%d" % (wire_index + 1)) as Node3D
+			var second_point := second.get_node_or_null("WirePoint%d" % (wire_index + 1)) as Node3D
+			if first_point == null or second_point == null:
+				continue
+			var wire := Node3D.new()
+			wire.name = "PowerWire_%03d" % wire_count
+			wire.set_script(wire_script)
+			wire.set_meta("power_wire_generated", true)
+			wire.set_meta("power_wire_start_uuid", str(first.get_meta("map_editor_uuid", "")))
+			wire.set_meta("power_wire_end_uuid", str(second.get_meta("map_editor_uuid", "")))
+			wire.set_meta("power_wire_index", wire_index)
+			_power_wires_root.add_child(wire)
+			var local_start := wire.to_local(first_point.global_position)
+			var local_end := wire.to_local(second_point.global_position)
+			wire.call("rebuild_from_endpoints", local_start, local_end)
+			wire_count += 1
+	_power_wires_root.set_meta("power_wire_count", wire_count)
 
 
 func _new_editor_uuid(category: String) -> String:
@@ -5092,11 +5794,20 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"team",
 		"spawn_point_id",
 		"generator_id",
-		"allowed_resource_ids",
-		"prompt_text",
+		"crop_id",
+		"respawn_interval_seconds",
+		"initial_spawn_delay",
 		"boundary_color",
 		"show_boundary",
+		"allowed_resource_ids",
+		"prompt_text",
 		"area_size",
+		"field_label",
+		"length_tiles",
+		"width_tiles",
+		"tile_spacing",
+		"field_owner",
+		"generate_on_ready",
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
@@ -5131,6 +5842,7 @@ func _apply_object_change(
 	_remove_object_records(records_to_remove)
 	_restore_object_records(records_to_restore)
 	_rebuild_resource_multimeshes_deferred()
+	_rebuild_power_wires()
 
 
 func _remove_object_records(records: Array) -> void:
@@ -5157,7 +5869,17 @@ func _restore_object_records(records: Array) -> void:
 		var asset_path = str(record.get("asset_path", ""))
 		var node: Node3D
 
-		if category == "spawn" and spawn_kind == "wild_animal":
+		if category == "farmland":
+			var field_script := _load_resource_or_null(FARM_FIELD_GENERATOR_SCRIPT_PATH) as Script
+			if field_script == null:
+				continue
+			var field := Node3D.new()
+			field.set_script(field_script)
+			# FarmWorldInitializer explicitly generates fields after the map has
+			# finished loading. Never generate editor preview tiles on add/load.
+			_set_property_if_present(field, "generate_on_ready", false)
+			node = field
+		elif category == "spawn" and spawn_kind == "wild_animal":
 			var script = _load_resource_or_null(WILD_ANIMAL_GENERATOR_PATH) as Script
 			if script == null:
 				continue
@@ -5206,6 +5928,10 @@ func _restore_object_records(records: Array) -> void:
 				_add_spawn_editor_marker(node, Color(0.2, 0.45, 1.0, 1.0))
 			else:
 				_add_spawn_editor_marker(node, Color(1.0, 0.45, 0.1, 1.0))
+		elif category == "farmland":
+			_set_property_if_present(node, "generate_on_ready", false)
+			_refresh_farmland_preview(node)
+	_rebuild_power_wires()
 
 
 func _category_root_for_record(category: String) -> Node3D:
@@ -5218,6 +5944,8 @@ func _category_root_for_record(category: String) -> Node3D:
 			return _buildings_root
 		"auxiliary":
 			return _buildings_root
+		"farmland":
+			return _farmlands_root
 		_:
 			return _spawns_root
 
@@ -5225,7 +5953,7 @@ func _category_root_for_record(category: String) -> Node3D:
 func _find_editor_object_by_uuid(uuid: String) -> Node3D:
 	if uuid.is_empty():
 		return null
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -5757,6 +6485,8 @@ func _update_object_gizmo_drag(mouse_position: Vector2) -> void:
 	_refresh_selection_visual()
 	_refresh_transform_gizmo()
 	_sync_object_numeric_controls()
+	if _is_power_pole(_selected_map_object):
+		_rebuild_power_wires()
 
 
 func _update_move_gizmo_drag(mouse_position: Vector2) -> void:
@@ -5901,12 +6631,12 @@ func _find_editable_object_root(node: Node) -> Node3D:
 func _is_direct_editable_object(node: Node3D) -> bool:
 	if node == null:
 		return false
-	return node.get_parent() in [_trees_root, _ores_root, _spawns_root, _buildings_root]
+	return node.get_parent() in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]
 
 
 func _get_all_editable_objects() -> Array[Node3D]:
 	var result: Array[Node3D] = []
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -6042,6 +6772,8 @@ func _end_object_transform_drag() -> void:
 	var category = str(_selected_map_object.get_meta("map_editor_category", ""))
 	if category in ["tree", "ore"]:
 		_rebuild_resource_multimeshes_deferred()
+	if _is_power_pole(_selected_map_object):
+		_rebuild_power_wires()
 	_refresh_transform_gizmo()
 
 func _apply_object_transform_by_uuid(uuid: String, transform_value: Transform3D) -> void:
@@ -6056,6 +6788,8 @@ func _apply_object_transform_by_uuid(uuid: String, transform_value: Transform3D)
 	var category = str(node.get_meta("map_editor_category", ""))
 	if category in ["tree", "ore"]:
 		_rebuild_resource_multimeshes_deferred()
+	if _is_power_pole(node):
+		_rebuild_power_wires()
 
 func _delete_selected_object() -> void:
 	if not is_instance_valid(_selected_map_object):
@@ -6069,6 +6803,7 @@ func _delete_selected_object() -> void:
 	_undo_redo.add_undo_method(_restore_object_records.bind(records))
 	_undo_redo.commit_action(false)
 	_rebuild_resource_multimeshes_deferred()
+	_rebuild_power_wires()
 
 
 func _duplicate_selected_object() -> void:
@@ -6099,6 +6834,7 @@ func _duplicate_selected_object() -> void:
 	_undo_redo.commit_action(false)
 	_select_map_object(duplicated)
 	_rebuild_resource_multimeshes_deferred()
+	_rebuild_power_wires()
 
 func _align_selected_object_to_ground() -> void:
 	if not is_instance_valid(_selected_map_object):
@@ -6119,6 +6855,8 @@ func _align_selected_object_to_ground() -> void:
 	_undo_redo.add_undo_method(_apply_object_transform_by_uuid.bind(uuid, before))
 	_undo_redo.commit_action(false)
 	_refresh_selection_visual()
+	if _is_power_pole(_selected_map_object):
+		_rebuild_power_wires()
 
 
 func _extract_world_yaw(basis: Basis) -> float:
@@ -6210,6 +6948,8 @@ func _apply_numeric_object_transform() -> void:
 	var category = str(_selected_map_object.get_meta("map_editor_category", ""))
 	if category in ["tree", "ore"]:
 		_rebuild_resource_multimeshes_deferred()
+	if _is_power_pole(_selected_map_object):
+		_rebuild_power_wires()
 
 func _apply_uniform_scale_from_inspector() -> void:
 	if not is_instance_valid(_selected_map_object) or _object_uniform_scale_spin == null:
@@ -6295,6 +7035,7 @@ func create_road_from_points(points: PackedVector3Array, road_type: int = 1) -> 
 # -----------------------------------------------------------------------------
 
 func save_current_map() -> void:
+	_last_save_succeeded = false
 	if _map_root == null:
 		_set_status("No map to save")
 		return
@@ -6309,6 +7050,7 @@ func save_current_map() -> void:
 		return
 
 	_update_map_metadata_before_save()
+	_rebuild_power_wires()
 	var map_validation_error := _get_playable_map_validation_error()
 	if not map_validation_error.is_empty():
 		_set_status(map_validation_error)
@@ -6368,6 +7110,7 @@ func save_current_map() -> void:
 		return
 	_current_map_folder = folder
 	_saved_undo_version = _undo_redo.get_version()
+	_last_save_succeeded = true
 	_set_status("Saved: %s" % scene_path)
 
 
@@ -6399,9 +7142,9 @@ func _capture_generated_map_icon() -> void:
 
 	var preview_camera := Camera3D.new()
 	preview_camera.name = "GeneratedMapIconCamera"
-	preview_camera.position = Vector3(0.0, 0.0, 2.0)
+	preview_camera.position = Vector3(0.0, 0.0, 10.0)
 	preview_camera.rotation = Vector3(
-		deg_to_rad(-18.0),
+		deg_to_rad(-45.0),
 		_rng.randf_range(-PI, PI),
 		0.0
 	)
@@ -6483,6 +7226,8 @@ func _update_map_metadata_before_save() -> void:
 		"building_content_browser",
 		"building_placement",
 		"object_transform_editor",
+		"farmland_field_generator",
+		"neutral_crop_generator",
 	])
 
 
@@ -6574,6 +7319,8 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"ore_count": _ores_root.get_child_count(),
 			"spawn_count": _spawns_root.get_child_count(),
 			"building_count": _buildings_root.get_child_count(),
+			"farmland_count": _farmlands_root.get_child_count(),
+			"neutral_crop_generator_count": _count_neutral_crop_generators(),
 			"ai_configuration": _ai_configurations.duplicate(true),
 			"ai_count": _ai_configurations.size(),
 		},
@@ -6582,7 +7329,8 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"object_transform_enabled": true,
 			"xyz_gizmo_enabled": true,
 			"building_overlap_validation_enabled": true,
-			"farmland_editor_enabled": false,
+			"farmland_editor_enabled": true,
+			"neutral_crop_generators_enabled": true,
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
 			"size_aware_far_scenery": true,
 			"water_bodies_enabled": true,
@@ -6635,7 +7383,7 @@ func _build_map_file_dialogs() -> void:
 	_open_map_file_dialog = FileDialog.new()
 	_open_map_file_dialog.name = "OpenMapPackageDialog"
 	_open_map_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	_open_map_file_dialog.access = FileDialog.ACCESS_USERDATA
+	_open_map_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_open_map_file_dialog.use_native_dialog = true
 	_open_map_file_dialog.title = "Open FarmWar Map Package"
 	_open_map_file_dialog.filters = PackedStringArray(["map.json ; FarmWar Map Manifest"])
@@ -6650,6 +7398,15 @@ func _build_map_file_dialogs() -> void:
 	_save_as_directory_dialog.title = "Choose Parent Folder for Map Package"
 	_save_as_directory_dialog.dir_selected.connect(_on_save_as_parent_selected)
 	_ui_layer.add_child(_save_as_directory_dialog)
+
+	_export_directory_dialog = FileDialog.new()
+	_export_directory_dialog.name = "ExportMapDialog"
+	_export_directory_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_export_directory_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_export_directory_dialog.use_native_dialog = true
+	_export_directory_dialog.title = "Choose Export Parent Folder"
+	_export_directory_dialog.dir_selected.connect(_on_export_parent_selected)
+	_ui_layer.add_child(_export_directory_dialog)
 
 	_discard_changes_dialog = ConfirmationDialog.new()
 	_discard_changes_dialog.name = "DiscardChangesDialog"
@@ -6666,6 +7423,23 @@ func _request_new_map() -> void:
 
 func _request_open_map() -> void:
 	_confirm_discard_or_run(Callable(self, "_show_open_map_dialog"))
+
+
+func _request_export_map() -> void:
+	if _map_root == null:
+		_set_status("No map to export")
+		return
+	if _export_directory_dialog == null:
+		return
+	var portable_root := GameMapRegistry.get_portable_maps_root()
+	if not portable_root.is_empty():
+		var portable_absolute := _globalize_map_path(portable_root)
+		if not DirAccess.dir_exists_absolute(portable_absolute):
+			DirAccess.make_dir_recursive_absolute(portable_absolute)
+		if not DirAccess.dir_exists_absolute(portable_absolute):
+			portable_root = portable_root.get_base_dir()
+	_export_directory_dialog.current_dir = portable_root if not portable_root.is_empty() else _globalize_map_path(map_save_root)
+	_export_directory_dialog.popup_centered_ratio(0.8)
 
 
 func _request_return_to_main_menu() -> void:
@@ -6701,7 +7475,7 @@ func _on_discard_changes_confirmed() -> void:
 func _show_open_map_dialog() -> void:
 	if _open_map_file_dialog == null:
 		return
-	_open_map_file_dialog.current_dir = map_save_root
+	_open_map_file_dialog.current_dir = _globalize_map_path(map_save_root)
 	_open_map_file_dialog.popup_centered_ratio(0.8)
 
 
@@ -6720,6 +7494,63 @@ func _on_save_as_parent_selected(parent_folder: String) -> void:
 	var normalized_parent = _normalize_user_path(parent_folder)
 	_current_map_folder = normalized_parent.trim_suffix("/").path_join(_map_id)
 	save_current_map()
+
+
+func _on_export_parent_selected(parent_folder: String) -> void:
+	if _map_root == null:
+		_set_status("No map to export")
+		return
+	_sync_package_fields_from_ui()
+	await save_current_map()
+	if not _last_save_succeeded:
+		_set_status("Export cancelled: save the map successfully first")
+		return
+	var source_folder := _resolve_current_save_folder().trim_suffix("/")
+	var target_folder := parent_folder.trim_suffix("/").path_join(_map_id)
+	var source_absolute := _globalize_map_path(source_folder)
+	var target_absolute := _globalize_map_path(target_folder)
+	if source_absolute == target_absolute:
+		_set_status("Export skipped: destination is the current map package")
+		return
+	if not _copy_map_package(source_absolute, target_absolute):
+		_set_status("Map export failed")
+		return
+	_set_status("Exported map package: %s" % target_folder)
+
+
+func _globalize_map_path(path: String) -> String:
+	if path.begins_with("file://"):
+		return path.trim_prefix("file://")
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return ProjectSettings.globalize_path(path)
+	return path
+
+
+func _copy_map_package(source_folder: String, target_folder: String) -> bool:
+	if not DirAccess.dir_exists_absolute(source_folder):
+		return false
+	if DirAccess.make_dir_recursive_absolute(target_folder) != OK:
+		return false
+	var source_directory := DirAccess.open(source_folder)
+	if source_directory == null:
+		return false
+	source_directory.list_dir_begin()
+	var entry := source_directory.get_next()
+	while not entry.is_empty():
+		if not entry.begins_with("."):
+			var source_path := source_folder.path_join(entry)
+			var target_path := target_folder.path_join(entry)
+			if source_directory.current_is_dir():
+				if not _copy_map_package(source_path, target_path):
+					source_directory.list_dir_end()
+					return false
+			else:
+				if DirAccess.copy_absolute(source_path, target_path) != OK:
+					source_directory.list_dir_end()
+					return false
+		entry = source_directory.get_next()
+	source_directory.list_dir_end()
+	return true
 
 
 func _on_open_map_manifest_selected(manifest_path: String) -> void:
@@ -6887,7 +7718,7 @@ func _clear_map_icon() -> void:
 func _recalculate_loaded_object_counters() -> void:
 	_next_object_id = 1
 	_next_spawn_id = 1
-	for root in [_trees_root, _ores_root, _buildings_root]:
+	for root in [_trees_root, _ores_root, _buildings_root, _farmlands_root]:
 		if root != null:
 			_next_object_id += root.get_child_count()
 	if _spawns_root != null:
@@ -6924,7 +7755,9 @@ func _rebuild_loaded_map_visuals() -> void:
 		for key_value in chunks.keys():
 			_rebuild_manual_grass_chunk(species, str(key_value))
 	_rebuild_resource_multimeshes_deferred()
+	_refresh_all_farmland_previews()
 	_rebuild_all_water_bodies()
+	_rebuild_power_wires()
 	_configure_integrated_systems()
 	_configure_camera_for_map_and_far_scenery()
 	_clear_selected_map_object()
@@ -6946,7 +7779,7 @@ func _apply_foundation_color() -> void:
 
 func _save_editor_objects_sidecar(folder: String) -> void:
 	var records: Array = []
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -6961,7 +7794,7 @@ func _save_editor_objects_sidecar(folder: String) -> void:
 func _load_editor_objects_sidecar(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		return
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root]:
+	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
 		for child in root.get_children():
 			child.queue_free()
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -7327,7 +8160,17 @@ func _serialize_water(water: WaterBody3D) -> Dictionary:
 		"river_width": water.river_width,
 		"water_collision_layer": WATER_COLLISION_LAYER,
 		"water_collision_mask": WATER_COLLISION_MASK,
-	}
+}
+
+
+func _count_neutral_crop_generators() -> int:
+	if _buildings_root == null:
+		return 0
+	var count := 0
+	for child in _buildings_root.get_children():
+		if child is Node3D and _is_neutral_crop_generator(child as Node3D):
+			count += 1
+	return count
 
 
 func _apply_serialized_water_to_node(water: WaterBody3D, record: Dictionary) -> void:
@@ -7488,6 +8331,16 @@ func _begin_new_road() -> void:
 	_rebuild_road_edit_visuals()
 	_update_road_control_states()
 	_set_status("Road drawing: click terrain points, then press Enter or Finish Road")
+
+
+func _begin_new_rail() -> void:
+	_road_type = ROAD_TYPE_RAIL
+	if _road_type_option != null:
+		for index in range(_road_type_option.item_count):
+			if _road_type_option.get_item_id(index) == ROAD_TYPE_RAIL:
+				_road_type_option.select(index)
+				break
+	_begin_new_road()
 
 
 func _create_road_node() -> Path3D:

@@ -9,6 +9,7 @@ signal map_initialization_completed
 @export_file("*.json") var loading_tips_path := "res://data/loading_tips.json"
 
 var is_map_initialized := false
+var _configured_ai_nodes: Array[Node] = []
 
 const FUTURE_WARRIOR_AI_SCENE := preload("res://character/FutureWarriorAI.tscn")
 const FARMER_AI_SCENE := preload("res://character/FarmerAI.tscn")
@@ -51,9 +52,6 @@ func _ready() -> void:
 	await _initialize_farm_fields()
 	_set_loading_progress(0.96, "正在完成地图初始化")
 	await get_tree().process_frame
-	is_map_initialized = true
-	map_initialization_completed.emit()
-
 	var player := _create_pending_player()
 	var configured_ai: Array[Node] = []
 	if player != null:
@@ -66,10 +64,22 @@ func _ready() -> void:
 	var is_cooperative_host := CooperativeSession.is_active() and CooperativeSession.is_host()
 	if GameAuthority.is_local_authority() or (GameAuthority.is_server_authority() and is_cooperative_host):
 		configured_ai = _spawn_configured_ai()
-	await MapLoading.finish_loading()
-	if is_instance_valid(player):
+	_configured_ai_nodes = configured_ai
+	var cooperative_loading := CooperativeSession.is_active()
+	if not cooperative_loading:
+		await MapLoading.finish_loading()
+	if is_instance_valid(player) and not cooperative_loading:
 		player.process_mode = Node.PROCESS_MODE_INHERIT
-	for ai_value in configured_ai:
+	if not cooperative_loading:
+		for ai_value in configured_ai:
+			if is_instance_valid(ai_value):
+				ai_value.process_mode = Node.PROCESS_MODE_INHERIT
+	is_map_initialized = true
+	map_initialization_completed.emit()
+
+
+func activate_runtime_entities() -> void:
+	for ai_value in _configured_ai_nodes:
 		if is_instance_valid(ai_value):
 			ai_value.process_mode = Node.PROCESS_MODE_INHERIT
 
@@ -223,6 +233,9 @@ func _field_display_name(field: FarmFieldGenerator) -> String:
 
 func _create_pending_player() -> GamePlayer:
 	if GlobalVar.pending_player_selection.is_empty():
+		return null
+	if CooperativeSession.is_active():
+		GlobalVar.pending_player_selection = {}
 		return null
 	var selection := GlobalVar.pending_player_selection.duplicate(true)
 	var player := load("res://character/player.tscn").instantiate() as GamePlayer

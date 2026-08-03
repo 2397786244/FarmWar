@@ -41,6 +41,9 @@ func create_world(config: Dictionary) -> Dictionary:
 		"map_name": str(config.get("map_name", "Redpine County")),
 		"map_icon_path": str(config.get("map_icon_path", REDPINE_MAP_ICON)),
 		"map_scene_path": str(config.get("map_scene_path", REDPINE_MAP_SCENE)),
+		"map_version": str(config.get("map_version", "1.0.0")),
+		"map_hash": str(config.get("map_hash", "")),
+		"map_source": str(config.get("map_source", "builtin")),
 		"max_players": clampi(int(config.get("max_players", 4)), 1, 4),
 		"death_drop_mode": _normalize_death_drop_mode(str(config.get("death_drop_mode", "save"))),
 		"team_money": 0.0,
@@ -72,10 +75,7 @@ func load_world(world_id: String) -> Dictionary:
 	if world.is_empty() or str(world.get("world_id", "")) != world_id:
 		return {}
 	world["death_drop_mode"] = _normalize_death_drop_mode(str(world.get("death_drop_mode", "save")))
-	if str(world.get("map_icon_path", "")).is_empty():
-		world["map_icon_path"] = _map_icon_for_id(str(world.get("map_id", "")))
-	if str(world.get("map_scene_path", "")).is_empty():
-		world["map_scene_path"] = _map_scene_for_id(str(world.get("map_id", "")))
+	_apply_map_defaults(world)
 	return world
 
 
@@ -234,6 +234,9 @@ func _normalize_death_drop_mode(mode: String) -> String:
 
 
 func _map_icon_for_id(map_id: String) -> String:
+	var definition := GameMapRegistry.get_map_by_id(map_id)
+	if not definition.is_empty():
+		return str(definition.get("icon_path", ""))
 	match map_id:
 		"creston_town":
 			return "res://worlds/creston_town/map_icon.svg"
@@ -242,11 +245,39 @@ func _map_icon_for_id(map_id: String) -> String:
 
 
 func _map_scene_for_id(map_id: String) -> String:
+	var definition := GameMapRegistry.get_map_by_id(map_id)
+	if not definition.is_empty():
+		return str(definition.get("scene_path", ""))
 	match map_id:
 		"creston_town":
 			return "res://worlds/creston_town/creston_town.tscn"
 		_:
 			return REDPINE_MAP_SCENE
+
+
+func _apply_map_defaults(world: Dictionary) -> void:
+	var map_id := str(world.get("map_id", ""))
+	var definition := GameMapRegistry.get_map_by_id(map_id)
+	if definition.is_empty():
+		definition = GameMapRegistry.get_map_by_package_name(map_id)
+	if definition.is_empty():
+		if str(world.get("map_icon_path", "")).is_empty():
+			world["map_icon_path"] = _map_icon_for_id(map_id)
+		if str(world.get("map_scene_path", "")).is_empty():
+			world["map_scene_path"] = _map_scene_for_id(map_id)
+		return
+	if str(world.get("map_name", "")).is_empty():
+		world["map_name"] = str(definition.get("display_name", map_id))
+	if str(world.get("map_icon_path", "")).is_empty():
+		world["map_icon_path"] = str(definition.get("icon_path", ""))
+	if str(world.get("map_scene_path", "")).is_empty():
+		world["map_scene_path"] = str(definition.get("scene_path", ""))
+	if str(world.get("map_version", "")).is_empty():
+		world["map_version"] = str(definition.get("map_version", "1.0.0"))
+	if str(world.get("map_hash", "")).is_empty():
+		world["map_hash"] = str(definition.get("map_hash", ""))
+	if str(world.get("map_source", "")).is_empty():
+		world["map_source"] = str(definition.get("source", "builtin"))
 
 
 func _read_json(path: String) -> Dictionary:

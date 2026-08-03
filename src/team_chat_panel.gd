@@ -10,6 +10,7 @@ const MODE_ALL := "all"
 var player: GamePlayer = null
 var messages: Array[String] = []
 var chat_mode := MODE_CLOSED
+var input_blocker: Control
 
 @onready var history: RichTextLabel = $Margin/VBox/History
 @onready var input: LineEdit = $Margin/VBox/Input
@@ -18,12 +19,22 @@ var chat_mode := MODE_CLOSED
 func _ready() -> void:
 	visible = true
 	input.visible = false
+	z_index = 0
+	input_blocker = get_node_or_null("../ChatInputBlocker") as Control
+	if is_instance_valid(input_blocker):
+		input_blocker.visible = false
 	_set_chat_mouse_enabled(false)
 	input.max_length = MAX_MESSAGE_CHARACTERS
+	input.focus_mode = Control.FOCUS_ALL
 	if not MultiplayerNetwork.team_chat_message_received.is_connected(_on_team_chat_message_received):
 		MultiplayerNetwork.team_chat_message_received.connect(_on_team_chat_message_received)
 	if not GameAuthority.team_chat_message_ready.is_connected(_on_team_chat_message_received):
 		GameAuthority.team_chat_message_ready.connect(_on_team_chat_message_received)
+
+
+func _exit_tree() -> void:
+	if chat_mode != MODE_CLOSED:
+		_set_global_chat_capture(false)
 
 
 func bind_player(value: GamePlayer) -> void:
@@ -32,6 +43,10 @@ func bind_player(value: GamePlayer) -> void:
 
 func is_chat_open() -> bool:
 	return chat_mode != MODE_CLOSED
+
+
+func is_input_capturing() -> bool:
+	return chat_mode != MODE_CLOSED and is_instance_valid(input) and input.visible
 
 
 func is_text_input_focused() -> bool:
@@ -66,23 +81,39 @@ func toggle_chat() -> void:
 
 
 func open_chat(mode := MODE_TEAM) -> void:
+	if chat_mode == MODE_CLOSED:
+		_set_global_chat_capture(true)
 	chat_mode = MODE_ALL if mode == MODE_ALL else MODE_TEAM
 	input.visible = true
+	z_index = 100
+	if is_instance_valid(input_blocker):
+		input_blocker.visible = true
 	_set_chat_mouse_enabled(true)
 	input.placeholder_text = "[All] 输入消息；Ctrl/Cmd+Y 切换" if chat_mode == MODE_ALL else \
 		"[Team] 输入消息；Ctrl/Cmd+Y 切换"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	input.grab_focus()
 	call_deferred("_focus_input")
 
 
 func close_chat() -> void:
 	if chat_mode == MODE_CLOSED:
 		return
+	_set_global_chat_capture(false)
 	chat_mode = MODE_CLOSED
 	input.visible = false
+	z_index = 0
+	if is_instance_valid(input_blocker):
+		input_blocker.visible = false
 	_set_chat_mouse_enabled(false)
 	input.release_focus()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _set_global_chat_capture(active: bool) -> void:
+	var capture_manager := get_node_or_null("/root/GlobalCaptureManager")
+	if is_instance_valid(capture_manager) and capture_manager.has_method("set_chat_input_active"):
+		capture_manager.call("set_chat_input_active", active)
 
 
 func _set_chat_mouse_enabled(enabled: bool) -> void:
