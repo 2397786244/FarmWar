@@ -48,18 +48,33 @@ func _process(delta: float) -> void:
 	if _scan_requested:
 		_scan_requested = false
 		_scan_and_plant()
+	if _initial_spawn_pending:
+		_spawn_timer += delta
+		if _spawn_timer < maxf(0.0, initial_spawn_delay) or not _farm_tiles_ready():
+			return
+		_spawn_timer = 0.0
+		_initial_spawn_pending = false
+		_scan_and_plant()
+		return
 	_spawn_timer += delta
-	var threshold := initial_spawn_delay if _initial_spawn_pending else respawn_interval_seconds
-	if _spawn_timer < maxf(0.0, threshold):
+	if _spawn_timer < maxf(0.0, respawn_interval_seconds):
 		return
 	_spawn_timer = 0.0
-	_initial_spawn_pending = false
 	_scan_and_plant()
 
 
 func refresh_visuals() -> void:
 	_configure_area()
 	_refresh_boundary()
+
+
+func refresh_after_world_restore() -> void:
+	if _is_runtime_editor_preview() or not (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
+		return
+	_started = true
+	_initial_spawn_pending = false
+	_spawn_timer = 0.0
+	_scan_requested = true
 
 
 func get_spawn_area_size() -> Vector2:
@@ -76,10 +91,21 @@ func _start_after_map_initialization() -> void:
 	_started = true
 	_initial_spawn_pending = true
 	_spawn_timer = 0.0
-	if not _is_runtime_editor_preview() and initial_spawn_delay <= 0.0 \
-		and (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
-		_initial_spawn_pending = false
-		_scan_and_plant()
+	_scan_requested = false
+
+
+func _farm_tiles_ready() -> bool:
+	var manager := get_node_or_null("/root/Farmlandmanager")
+	if manager == null or not manager.has_method("get_all_plots"):
+		return false
+	var plots: Array = manager.call("get_all_plots")
+	if plots.is_empty():
+		return false
+	if _initialization_source != null:
+		for field_value in _initialization_source.find_children("*", "FarmFieldGenerator", true, false):
+			if field_value is FarmFieldGenerator and (field_value as FarmFieldGenerator).is_generating:
+				return false
+	return true
 
 
 func _find_world_initializer() -> Node:
@@ -131,6 +157,9 @@ func _scan_and_plant() -> void:
 		var tile := tile_value as FarmTile
 		if not is_instance_valid(tile) or not _contains_tile(tile):
 			continue
+		if GameAuthority.is_server_authority() or GameAuthority.is_local_authority():
+			tile.visible = true
+			tile.ensure_crop_visuals_visible()
 		if not tile.land_owner.is_empty() or not tile.is_empty():
 			continue
 		tile.plant_neutral(crop_id)

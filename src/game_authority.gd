@@ -2,6 +2,7 @@ extends Node
 class_name GameAuthorityService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
+const PlacementQueryScript = preload("res://src/placement_query.gd")
 
 # GameAuthority 是“多人服务端权威”和“单人本地权威”的统一战局层。
 # 多人模式：客户端只提交输入/请求，Dedicated Server 在这里执行移动、伤害、放置、农田、商店等真实逻辑。
@@ -115,6 +116,7 @@ const FREE_PLACEMENT_BLOCKING_MASK := (
 	| COLLISION_LAYER_TOOL
 	| COLLISION_LAYER_BUILDING
 	| COLLISION_LAYER_VEHICLES
+	| COLLISION_LAYER_NATURE_RESOURCE
 	| COLLISION_LAYER_WILD_ANIMAL
 )
 const FREE_PLACEMENT_MAX_SLOPE_DEGREES := 5.0
@@ -4220,7 +4222,7 @@ func server_dropped_item_action(peer_id: int, action: Dictionary) -> Dictionary:
 			var pickup := dropped_item_nodes.get(item_id, null) as PickupItem
 			if not is_instance_valid(pickup) or not pickup.landed:
 				result["reason"] = "item_unavailable"
-			elif not _can_server_interact_with_position(state, pickup.global_position, PLAYER_VEHICLE_INTERACTION_RANGE):
+			elif not _can_server_pickup_dropped_item(state, pickup.global_position, action):
 				result["reason"] = "item_out_of_range"
 			elif str(pickup.item_data.get("kind", "")) in ["tool", "weapon"] \
 					and _player_has_tool(state, str(pickup.item_data.get("tool_id", ""))) \
@@ -4241,6 +4243,22 @@ func server_dropped_item_action(peer_id: int, action: Dictionary) -> Dictionary:
 			result["reason"] = "unsupported_action"
 	reliable_world_event_ready.emit({"type": "dropped_item_action_result", "data": result, "tick": server_tick})
 	return result
+
+
+func _can_server_pickup_dropped_item(state: Dictionary, target_position: Vector3, action: Dictionary) -> bool:
+	if _can_server_interact_with_position(state, target_position, PLAYER_VEHICLE_INTERACTION_RANGE):
+		return true
+	var reported_value: Variant = action.get("player_position", null)
+	if not reported_value is Vector3:
+		return false
+	var authoritative_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var reported_position := reported_value as Vector3
+	if not reported_position.is_finite() or reported_position.distance_to(authoritative_position) > 6.0:
+		return false
+	var reported_state := state.duplicate(true)
+	reported_state["position"] = reported_position
+	reported_state["yaw"] = float(action.get("player_yaw", state.get("yaw", 0.0)))
+	return _can_server_interact_with_position(reported_state, target_position, PLAYER_VEHICLE_INTERACTION_RANGE + 1.0)
 
 
 func server_cargo_car_action(peer_id: int, action: Dictionary) -> Dictionary:
@@ -5908,6 +5926,9 @@ func _tool_allows_multiple(tool_id: String) -> bool:
 
 
 func _server_tool_cooldown(tool_id: String) -> float:
+	var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {})
+	if definition.has("placement_cooldown"):
+		return maxf(0.0, float(definition.get("placement_cooldown", 0.0)))
 	if tool_id == "rift_book":
 		return CombatBalance.get_float("rift_book", "cooldown", 10.0)
 	if tool_id == "spicy_blaster":
@@ -6411,6 +6432,20 @@ func _server_place_tool(peer_id: int, tool_request: Dictionary, tool_scene_name:
 	var placement_yaw := _placement_yaw_for_peer(peer_id, tool_request)
 	var collider: Variant = _raycast_requested_collider(state, tool_request)
 	if collider is FarmTile:
+		var scene_path := "res://character/weapons/%s.tscn" % tool_scene_name
+		var placement_validation := _validate_farm_tile_tool_placement(
+			peer_id,
+			tool_request,
+			collider as FarmTile,
+			scene_path,
+			placement_yaw
+		)
+		if not bool(placement_validation.get("ok", false)):
+			return {
+				"ok": false,
+				"reason": str(placement_validation.get("reason", "invalid_placement")),
+				"placed": tool_scene_name,
+			}
 		var ok := (collider as FarmTile).setting_tool(tool_scene_name, team, null, placement_yaw)
 		var tile_path := str((collider as Node).get_path())
 		var tile_position := (collider as FarmTile).global_position
@@ -6418,6 +6453,62 @@ func _server_place_tool(peer_id: int, tool_request: Dictionary, tool_scene_name:
 			_register_placed_tool(peer_id, tool_scene_name, team, tile_path, tile_position, placement_yaw)
 		return {"ok": ok, "placed": tool_scene_name, "tile_path": tile_path, "tile_position": tile_position, "yaw": placement_yaw}
 	return {"ok": false, "reason": "no_farm_tile", "placed": tool_scene_name}
+
+
+func _validate_farm_tile_tool_placement(
+	peer_id: int,
+	tool_request: Dictionary,
+	tile: FarmTile,
+	scene_path: String,
+	placement_yaw: float
+) -> Dictionary:
+	if tile == null or not is_instance_valid(tile):
+		return {"ok": false, "reason": "no_farm_tile"}
+	var state: Dictionary = player_states.get(peer_id, {})
+	var team := str(state.get("team", ""))
+	if team.is_empty():
+		return {"ok": false, "reason": "missing_team"}
+	if not str(tile.seed_record).is_empty() or is_instance_valid(tile.tool_child):
+		return {"ok": false, "reason": "farm_tile_occupied"}
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		return {"ok": false, "reason": "placement_missing_scene"}
+	var source := packed.instantiate() as Node3D
+	if source == null:
+		return {"ok": false, "reason": "placement_bad_scene"}
+	var collision_shape := source.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		collision_shape = source.get_node_or_null("VehicleShape") as CollisionShape3D
+	if collision_shape == null or collision_shape.shape == null:
+		source.free()
+		return {"ok": false, "reason": "placement_missing_collision_shape"}
+	var world_node := GlobalVar.gameworld as Node3D
+	if world_node == null:
+		world_node = get_tree().current_scene as Node3D
+	var world_3d := world_node.get_world_3d() if world_node != null else null
+	if world_3d == null:
+		source.free()
+		return {"ok": false, "reason": "placement_missing_world"}
+	var player_position := _vector3_from_value(state.get("position", tile.global_position))
+	if is_local_authority():
+		player_position = _vector3_from_value(tool_request.get("player_position", player_position))
+	var placement := PlacementQueryScript.resolve_free_placement(
+		world_3d,
+		tile.global_position,
+		player_position,
+		placement_yaw,
+		collision_shape.shape,
+		collision_shape.transform,
+		FREE_PLACEMENT_BLOCKING_MASK,
+		_placement_exception_rids(peer_id),
+		COLLISION_LAYER_GROUND,
+		FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+		FREE_PLACEMENT_CLEARANCE,
+		FREE_PLACEMENT_GROUND_RAY_ABOVE,
+		FREE_PLACEMENT_GROUND_RAY_BELOW
+	)
+	source.free()
+	return placement
 
 
 func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path: String, device_type: String) -> Dictionary:
@@ -6848,39 +6939,6 @@ func _validate_free_placement(peer_id: int, scene_path: String, requested_positi
 	_free_placement_debug("request peer=%d scene=%s requested=%s" % [peer_id, scene_path, requested_position])
 	var player_state: Dictionary = player_states.get(peer_id, {})
 	var player_position := _vector3_from_value(player_state.get("position", requested_position))
-	var ray_center_y := maxf(requested_position.y, player_position.y)
-	var ray_start := Vector3(requested_position.x, ray_center_y + FREE_PLACEMENT_GROUND_RAY_ABOVE, requested_position.z)
-	var ray_end := Vector3(requested_position.x, ray_center_y - FREE_PLACEMENT_GROUND_RAY_BELOW, requested_position.z)
-	var ground_hit := _raycast_world(
-		ray_start,
-		ray_end,
-		COLLISION_LAYER_GROUND
-	)
-	if not ground_hit.has("position"):
-		_free_placement_debug(
-			"rejected reason=placement_no_ground mask=%d ray_start=%s ray_end=%s"
-			% [COLLISION_LAYER_GROUND, ray_start, ray_end]
-		)
-		return {"ok": false, "reason": "placement_no_ground"}
-	var ground_normal := _vector3_from_value(ground_hit.get("normal", Vector3.UP)).normalized()
-	var slope_degrees := rad_to_deg(acos(clampf(ground_normal.dot(Vector3.UP), -1.0, 1.0)))
-	_free_placement_debug(
-		"ground collider=%s position=%s normal=%s slope=%.2f max=%.2f"
-		% [
-			_free_placement_collider_label(ground_hit.get("collider", null)),
-			ground_hit.get("position", Vector3.ZERO),
-			ground_normal,
-			slope_degrees,
-			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-		]
-	)
-	if slope_degrees > FREE_PLACEMENT_MAX_SLOPE_DEGREES:
-		_free_placement_debug("rejected reason=placement_too_steep")
-		return {"ok": false, "reason": "placement_too_steep"}
-	var ground_position := _vector3_from_value(ground_hit.get("position", requested_position))
-	if WaterBody3D.is_surface_blocked(ground_position):
-		_free_placement_debug("rejected reason=placement_in_water")
-		return {"ok": false, "reason": "placement_in_water"}
 	var packed := load(scene_path) as PackedScene
 	if packed == null:
 		_free_placement_debug("rejected reason=placement_missing_scene")
@@ -6896,121 +6954,78 @@ func _validate_free_placement(peer_id: int, scene_path: String, requested_positi
 		placement_preview.free()
 		_free_placement_debug("rejected reason=placement_missing_collision_shape")
 		return {"ok": false, "reason": "placement_missing_collision_shape"}
-	var support_offset := _free_placement_support_offset(collision_shape)
-	var placement_position := ground_position + Vector3.UP * support_offset
-	var clearance_shape := _make_free_placement_clearance_shape(collision_shape.shape)
-	if clearance_shape == null:
-		placement_preview.free()
-		_free_placement_debug(
-			"rejected reason=placement_unsupported_collision_shape shape=%s"
-			% collision_shape.shape.get_class()
-		)
-		return {"ok": false, "reason": "placement_unsupported_collision_shape"}
-	var placement_cast := ShapeCast3D.new()
-	placement_cast.shape = clearance_shape
-	placement_cast.target_position = Vector3.ZERO
-	placement_cast.collision_mask = FREE_PLACEMENT_BLOCKING_MASK
-	placement_cast.collide_with_bodies = true
-	placement_cast.collide_with_areas = false
-	placement_cast.enabled = true
-	var world := GlobalVar.gameworld
-	if world == null:
-		world = get_tree().current_scene as Node3D
-	if world == null:
+	var world_node := GlobalVar.gameworld as Node3D
+	if world_node == null:
+		world_node = get_tree().current_scene as Node3D
+	var world_3d := world_node.get_world_3d() if world_node != null else null
+	if world_3d == null:
 		placement_preview.free()
 		_free_placement_debug("rejected reason=placement_missing_world")
 		return {"ok": false, "reason": "placement_missing_world"}
-	world.add_child(placement_cast)
-	placement_cast.global_transform = Transform3D(Basis(Vector3.UP, placement_yaw), placement_position) * collision_shape.transform
-	_add_free_placement_exception(placement_cast, player_physics_nodes.get(peer_id, null))
-	for player in get_tree().get_nodes_in_group("human_players"):
-		if player is GamePlayer and int(player.authority_peer_id) == peer_id:
-			_add_free_placement_exception(placement_cast, player)
-	placement_cast.force_shapecast_update()
-	var blocked := placement_cast.is_colliding()
+	var exceptions := _placement_exception_rids(peer_id)
+	var placement := PlacementQueryScript.resolve_free_placement(
+		world_3d,
+		requested_position,
+		player_position,
+		placement_yaw,
+		collision_shape.shape,
+		collision_shape.transform,
+		FREE_PLACEMENT_BLOCKING_MASK,
+		exceptions,
+		COLLISION_LAYER_GROUND,
+		FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+		FREE_PLACEMENT_CLEARANCE,
+		FREE_PLACEMENT_GROUND_RAY_ABOVE,
+		FREE_PLACEMENT_GROUND_RAY_BELOW
+	)
 	var blocking_colliders: Array[String] = []
-	for index in range(placement_cast.get_collision_count()):
-		blocking_colliders.append(_free_placement_collider_label(placement_cast.get_collider(index)))
+	for collision_value: Variant in placement.get("collisions", []):
+		if collision_value is Dictionary:
+			blocking_colliders.append(_free_placement_collider_label((collision_value as Dictionary).get("collider", null)))
 	_free_placement_debug(
-		"shape=%s clearance=%s position=%s mask=%d collisions=%s"
+		"shape=%s position=%s mask=%d collisions=%s"
 		% [
 			collision_shape.shape.get_class(),
-			clearance_shape.get_class(),
-			placement_position,
+			placement.get("position", requested_position),
 			FREE_PLACEMENT_BLOCKING_MASK,
 			blocking_colliders,
 		]
 	)
-	placement_cast.queue_free()
 	placement_preview.free()
-	if blocked:
-		_free_placement_debug("rejected reason=placement_blocked")
-		return {"ok": false, "reason": "placement_blocked"}
+	if not bool(placement.get("ok", false)):
+		_free_placement_debug("rejected reason=%s" % str(placement.get("reason", "invalid_placement")))
+		return placement
 	_free_placement_debug(
-		"accepted position=%s support_offset=%.3f" % [placement_position, support_offset]
+		"accepted position=%s support_offset=%.3f" % [
+			placement.get("position", requested_position),
+			float(placement.get("support_offset", 0.0)),
+		]
 	)
-	return {"ok": true, "position": placement_position}
+	return placement
+
+
+func _placement_exception_rids(peer_id: int) -> Array:
+	var exceptions: Array = []
+	var physics_node: Variant = player_physics_nodes.get(peer_id, null)
+	if physics_node is CollisionObject3D:
+		exceptions.append((physics_node as CollisionObject3D).get_rid())
+	for player in get_tree().get_nodes_in_group("human_players"):
+		if player is GamePlayer and int(player.authority_peer_id) == peer_id:
+			exceptions.append((player as CollisionObject3D).get_rid())
+	return exceptions
 
 
 func _free_placement_support_offset(collision_shape: CollisionShape3D) -> float:
-	# Root placement is chosen so the lowest point of the collision shape rests on
-	# the sampled ground, irrespective of the scene's mesh/model origin.
-	var transform := collision_shape.transform
-	var shape := collision_shape.shape
-	var y_extent := 0.0
-	if shape is BoxShape3D:
-		var half_size := (shape as BoxShape3D).size * 0.5
-		y_extent = (
-			absf(transform.basis.x.y) * half_size.x
-			+ absf(transform.basis.y.y) * half_size.y
-			+ absf(transform.basis.z.y) * half_size.z
-		)
-	elif shape is SphereShape3D:
-		var radius := (shape as SphereShape3D).radius
-		y_extent = radius * Vector3(
-			transform.basis.x.y,
-			transform.basis.y.y,
-			transform.basis.z.y
-		).length()
-	elif shape is CapsuleShape3D:
-		var capsule := shape as CapsuleShape3D
-		var radius := capsule.radius
-		var segment_half_height := maxf(0.0, capsule.height * 0.5 - radius)
-		var sphere_y_extent := radius * Vector3(
-			transform.basis.x.y,
-			transform.basis.y.y,
-			transform.basis.z.y
-		).length()
-		y_extent = absf(transform.basis.y.y) * segment_half_height + sphere_y_extent
-	elif shape is CylinderShape3D:
-		var cylinder := shape as CylinderShape3D
-		var radial_y_extent := cylinder.radius * sqrt(
-			pow(transform.basis.x.y, 2.0) + pow(transform.basis.z.y, 2.0)
-		)
-		y_extent = absf(transform.basis.y.y) * cylinder.height * 0.5 + radial_y_extent
-	else:
-		# Unsupported shapes were already rejected by the clearance validator.
-		return -transform.origin.y
-	return -(transform.origin.y - y_extent)
+	if collision_shape == null or collision_shape.shape == null:
+		return 0.0
+	return PlacementQueryScript.support_offset_for_shape(
+		collision_shape.shape,
+		collision_shape.transform
+	)
 
 
 func _make_free_placement_clearance_shape(source_shape: Shape3D) -> Shape3D:
-	var expanded := source_shape.duplicate(true) as Shape3D
-	if expanded is BoxShape3D:
-		(expanded as BoxShape3D).size += Vector3.ONE * FREE_PLACEMENT_CLEARANCE * 2.0
-	elif expanded is SphereShape3D:
-		(expanded as SphereShape3D).radius += FREE_PLACEMENT_CLEARANCE
-	elif expanded is CapsuleShape3D:
-		var capsule := expanded as CapsuleShape3D
-		capsule.radius += FREE_PLACEMENT_CLEARANCE
-		capsule.height += FREE_PLACEMENT_CLEARANCE * 2.0
-	elif expanded is CylinderShape3D:
-		var cylinder := expanded as CylinderShape3D
-		cylinder.radius += FREE_PLACEMENT_CLEARANCE
-		cylinder.height += FREE_PLACEMENT_CLEARANCE * 2.0
-	else:
-		return null
-	return expanded
+	return PlacementQueryScript.make_clearance_shape(source_shape, FREE_PLACEMENT_CLEARANCE)
 
 
 func _add_free_placement_exception(shape_cast: ShapeCast3D, node: Variant) -> void:
@@ -7141,8 +7156,26 @@ func _spawn_local_projectile_visual(projectile_id: int, scene: PackedScene, proj
 	if visual == null:
 		return
 	world.add_child(visual)
+	_disable_local_projectile_visual_runtime(visual)
+	visual.set_meta("network_visual_only", true)
 	visual.global_position = _vector3_from_value(projectile.get("position", Vector3.ZERO))
 	local_projectile_visual_nodes[projectile_id] = visual
+
+
+func _disable_local_projectile_visual_runtime(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root is BulletTracerSegment:
+		return
+	root.set_process(false)
+	root.set_physics_process(false)
+	root.set_process_input(false)
+	if root is CollisionObject3D:
+		(root as CollisionObject3D).collision_layer = 0
+		(root as CollisionObject3D).collision_mask = 0
+	for child in root.get_children():
+		if child is Node:
+			_disable_local_projectile_visual_runtime(child)
 
 
 func _should_render_authoritative_projectiles_locally() -> bool:
@@ -10124,6 +10157,12 @@ func _build_world_snapshot() -> Dictionary:
 	for raw_tool_id in placed_tool_states.keys():
 		var tool_id := str(raw_tool_id)
 		var tool: Dictionary = placed_tool_states[tool_id]
+		var tool_path := NodePath(str(tool.get("path", tool_id)))
+		var node: Node = get_node_or_null(tool_path)
+		if node == null:
+			node = get_tree().root.get_node_or_null(tool_path)
+		if node is FarmTile:
+			node = (node as FarmTile).tool_child
 		var public_tool := {
 			"tool_id": tool_id,
 			"device_id": tool.get("device_id", tool_id),
@@ -10137,9 +10176,20 @@ func _build_world_snapshot() -> Dictionary:
 			"yaw": float(tool.get("yaw", 0.0)),
 			"hp": float(tool.get("hp", 0.0)),
 		}
-		var node = get_node_or_null(NodePath(str(tool.get("path", tool_id))))
-		if node is FarmTile:
-			node = (node as FarmTile).tool_child
+		if str(tool.get("tool_name", "")).to_lower() == "rift_anchor":
+			var flight_state: Dictionary = {}
+			if node != null and node.has_method("get_network_flight_state"):
+				var flight_value: Variant = node.call("get_network_flight_state")
+				if flight_value is Dictionary:
+					flight_state = flight_value as Dictionary
+			if flight_state.is_empty():
+				flight_state = {
+					"active": not bool(tool.get("anchor_landed", false)),
+					"position": tool.get("position", Vector3.ZERO),
+					"velocity": Vector3.ZERO,
+					"lifetime": 0.0,
+				}
+			public_tool["anchor_flight"] = flight_state
 		if node != null and node.has_method("get_network_visual_state"):
 			public_tool["visual_state"] = node.call("get_network_visual_state")
 		public_placed_tools.append(public_tool)

@@ -14,6 +14,7 @@ const HIT_FRAGMENT_COLOR := Color("75452b")
 @export var tree_id := ""
 @export var resource_id := ""
 @export var display_name := ""
+@export var max_hp := MAX_HP
 @export var log_drop_count := LOG_DROP_COUNT
 @export var drops: Array[Dictionary] = [{"item_id": "log", "count": LOG_DROP_COUNT, "weight_kg": 2.0, "model_path": "res://assets/other_items/Material/Log_Drop.glb"}]
 var fall_direction := Vector3.ZERO
@@ -33,6 +34,8 @@ func _ready() -> void:
 	add_to_group("regrowing_resources")
 	if tree_id.is_empty():
 		tree_id = "tree"
+	max_hp = maxf(1.0, max_hp)
+	current_hp = max_hp
 	if display_name.is_empty():
 		display_name = _localized_tree_name(tree_id)
 	if resource_id.is_empty():
@@ -134,7 +137,7 @@ func apply_network_destroyed(direction: Vector3 = Vector3.ZERO) -> void:
 
 
 func apply_network_health(hp: float) -> void:
-	current_hp = clampf(hp, 0.0, MAX_HP)
+	current_hp = clampf(hp, 0.0, max_hp)
 	_update_health_label()
 
 
@@ -142,7 +145,7 @@ func apply_network_respawned() -> void:
 	if destroyed:
 		respawn_from_forest()
 	else:
-		current_hp = MAX_HP
+		current_hp = max_hp
 		_update_health_label()
 
 
@@ -194,7 +197,7 @@ func _play_fall(spawn_logs: bool) -> void:
 
 func respawn_from_forest() -> void:
 	destroyed = false
-	current_hp = MAX_HP
+	current_hp = max_hp
 	fall_direction = Vector3.ZERO
 	collision_layer = 128
 	collision_mask = 32

@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://bxxqw8v0kwd00"]
+
+[ext_resource type="PackedScene" uid="uid://co5k3awe1thk1" path="res://assets/buildings/CanadaHouse_PrairieBungalow_Enterable.glb" id="1_vl515"]
+
+[node name="CanadaHouse_PrairieBungalow_Enterable" unique_id=1199306114 instance=ExtResource("1_vl515")]

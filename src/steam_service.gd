@@ -20,6 +20,8 @@ var cooperative_lobby_id := 0
 var cooperative_lobby_host_steam_id := 0
 var _pending_world: Dictionary = {}
 var _avatar_texture_cache: Dictionary = {}
+var _callbacks_suspended := false
+var _callbacks_resume_frames := 0
 
 
 func _ready() -> void:
@@ -33,8 +35,19 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if initialized:
-		Steam.run_callbacks()
+	if not initialized:
+		return
+	if _callbacks_suspended:
+		if _callbacks_resume_frames > 0:
+			_callbacks_resume_frames -= 1
+			return
+		_callbacks_suspended = false
+	Steam.run_callbacks()
+
+
+func suspend_callbacks(frame_count := 2) -> void:
+	_callbacks_suspended = true
+	_callbacks_resume_frames = maxi(_callbacks_resume_frames, frame_count)
 
 
 func create_cooperative_lobby(world: Dictionary) -> bool:
@@ -117,6 +130,13 @@ func get_current_lobby_data() -> Dictionary:
 func is_cooperative_world_running() -> bool:
 	return cooperative_lobby_id > 0 \
 		and Steam.getLobbyData(cooperative_lobby_id, "session_state") == "running"
+
+
+func set_cooperative_world_starting() -> void:
+	if not is_current_lobby_host():
+		return
+	Steam.setLobbyData(cooperative_lobby_id, "session_state", "starting")
+	cooperative_lobby_members_changed.emit()
 
 
 func set_cooperative_world_running() -> void:

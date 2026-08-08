@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://b2nvcg0falkr1"]
+
+[ext_resource type="PackedScene" uid="uid://cup5l55smxuvg" path="res://assets/buildings/Canada_Alberta_VerandaFarmhouse_Enterable.glb" id="1_3gth4"]
+
+[node name="CanadaHouseAlberta" type="StaticBody3D" unique_id=1725529573]
+
+[node name="Mesh" parent="." unique_id=1460876727 instance=ExtResource("1_3gth4")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1196065843]

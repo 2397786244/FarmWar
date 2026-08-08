@@ -19,6 +19,7 @@ var _model: Node3D
 
 @onready var visual_root: Node3D = $VisualRoot
 @onready var model_pivot: Node3D = $VisualRoot/ModelPivot
+@onready var fallback_visual: MeshInstance3D = get_node_or_null("VisualRoot/ModelPivot/FallbackVisual") as MeshInstance3D
 @onready var glow_ring: MeshInstance3D = $VisualRoot/GlowRing
 @onready var pickup_label: Label3D = $VisualRoot/PickupLabel
 
@@ -26,6 +27,8 @@ var _model: Node3D
 func _ready() -> void:
 	add_to_group("dropped_pickup_items")
 	body_entered.connect(_on_body_entered)
+	if fallback_visual != null:
+		fallback_visual.visible = true
 	glow_ring.visible = false
 	pickup_label.visible = false
 
@@ -132,6 +135,8 @@ func _spawn_model() -> void:
 	_model = packed_scene.instantiate() as Node3D
 	if _model == null:
 		return
+	if fallback_visual != null:
+		fallback_visual.visible = false
 	_prepare_model_runtime(_model)
 	model_pivot.add_child(_model)
 	model_pivot.scale = Vector3.ONE * MODEL_SCALE

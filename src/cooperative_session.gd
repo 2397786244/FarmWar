@@ -35,11 +35,17 @@ var world_loading := false
 var authority_ready := false
 var world_state_restored := false
 var pending_join_requests: Dictionary = {}
+var pending_join_sessions: Dictionary = {}
 var pending_dropped_item_spawns: Dictionary = {}
 var pending_dropped_item_removals: Dictionary = {}
 var dropped_item_batch_flush_scheduled := false
 var world_bootstrap_generation := 0
 var threaded_scene_path := ""
+var pending_join_token := ""
+var client_scene_ready_sent := false
+var client_world_state_received := false
+var client_world_ready_sent := false
+var client_bootstrap_completing := false
 
 
 func is_active() -> bool:
@@ -87,6 +93,9 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	if not SteamService.initialized or not SteamService.is_current_lobby_host():
 		session_failed.emit("只有已建立 Steam Lobby 的房主可以启动合作世界。")
 		return false
+	if is_active() or peer != null:
+		session_failed.emit("合作世界正在启动或已经运行，请勿重复启动。")
+		return false
 	if world.is_empty() or selection.is_empty():
 		session_failed.emit("合作世界或房主角色档案无效。")
 		return false
@@ -103,7 +112,11 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 		world["map_hash"] = str(host_map.get("map_hash", world.get("map_hash", "")))
 	stop_session()
 	var steam_peer := SteamMultiplayerPeer.new()
-	var error := steam_peer.host_with_lobby(SteamService.cooperative_lobby_id)
+	# The lobby is only the discovery/invite layer. Using host_with_lobby()
+	# makes the extension call add_peer() for every LobbyChatUpdate member,
+	# including stale or already-closed Steam connections. A plain host accepts
+	# incoming SteamNet connections without that race.
+	var error := steam_peer.create_host(0)
 	if error != OK:
 		session_failed.emit("创建 Steam P2P 房主失败，错误码：%d。" % error)
 		return false
@@ -121,8 +134,7 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 		)
 	if host_lock.is_empty():
 		session_failed.emit("无法锁定房主的合作角色与初始道具。")
-		steam_peer.close()
-		multiplayer.multiplayer_peer = null
+		_discard_peer(steam_peer)
 		peer = null
 		mode = MODE_NONE
 		return false
@@ -146,13 +158,21 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	world_state_restored = false
 	authority_ready = false
 	pending_join_requests.clear()
+	pending_join_sessions.clear()
+	pending_join_token = ""
+	client_scene_ready_sent = false
+	client_world_state_received = false
+	client_world_ready_sent = false
+	client_bootstrap_completing = false
 	joined_players[int(local_selection["peer_id"])] = local_selection.duplicate(true)
 	GameAuthority.start_server_mode(self)
 	GameAuthority.set_physics_process(false)
 	_connect_multiplayer_signals()
 	_connect_authority_signals()
 	_save_host_runtime_state()
-	SteamService.set_cooperative_world_running()
+	# Keep the lobby in a non-running state while the host prepares the map.
+	# Clients must not create a SteamMultiplayerPeer until the host is ready.
+	SteamService.set_cooperative_world_starting()
 	_load_active_world(local_selection)
 	session_started.emit(true)
 	return true
@@ -164,6 +184,12 @@ func join_hosted_world() -> bool:
 		return false
 	if SteamService.is_current_lobby_host():
 		session_failed.emit("房主应使用“启动世界”，而不是加入客户端会话。")
+		return false
+	if not SteamService.is_cooperative_world_running():
+		session_failed.emit("房主还在准备合作世界，请稍候再加入。")
+		return false
+	if is_active() or peer != null:
+		session_failed.emit("合作世界连接正在建立，请勿重复加入。")
 		return false
 	var world := SteamService.get_current_lobby_data()
 	var map_validation := GameMapRegistry.validate_world_map(world)
@@ -180,8 +206,16 @@ func join_hosted_world() -> bool:
 		session_failed.emit("请先完成这个合作世界的首次角色选择。")
 		return false
 	stop_session()
+	var host_steam_id := SteamService.cooperative_lobby_host_steam_id
+	if host_steam_id <= 0:
+		host_steam_id = Steam.getLobbyOwner(SteamService.cooperative_lobby_id)
+	if host_steam_id <= 0:
+		session_failed.emit("无法读取 Steam 合作房主身份。")
+		return false
 	var steam_peer := SteamMultiplayerPeer.new()
-	var error := steam_peer.connect_to_lobby(SteamService.cooperative_lobby_id)
+	# Connect directly to the Lobby owner. Lobby membership has already been
+	# validated above; the transport itself should not auto-add Lobby members.
+	var error := steam_peer.create_client(host_steam_id, 0)
 	if error != OK:
 		session_failed.emit("连接 Steam P2P 房主失败，错误码：%d。" % error)
 		return false
@@ -193,6 +227,12 @@ func join_hosted_world() -> bool:
 	world_state_restored = false
 	authority_ready = false
 	pending_join_requests.clear()
+	pending_join_sessions.clear()
+	pending_join_token = _make_join_token()
+	client_scene_ready_sent = false
+	client_world_state_received = false
+	client_world_ready_sent = false
+	client_bootstrap_completing = false
 	local_selection = _normalize_selection(profile, 0)
 	_connect_multiplayer_signals()
 	GameAuthority.start_client_mode()
@@ -202,16 +242,26 @@ func join_hosted_world() -> bool:
 
 
 func stop_session() -> void:
-	if is_host() and not active_world.is_empty():
+	var was_host := is_host()
+	if was_host and not active_world.is_empty():
 		_save_authoritative_world_state()
-	if multiplayer.multiplayer_peer == peer and peer != null:
-		peer.close()
-		multiplayer.multiplayer_peer = null
+	var old_peer := peer
+	var old_multiplayer_peer := multiplayer.multiplayer_peer
+	# Detach the peer and clear the mode before closing the native connection.
+	# Steam may dispatch a connection callback during close(); it must not be
+	# routed through the old session or race with a newly created peer.
 	peer = null
+	mode = MODE_NONE
+	if old_multiplayer_peer == old_peer:
+		multiplayer.multiplayer_peer = null
+	if old_peer != null:
+		_discard_peer(old_peer)
 	joined_players.clear()
 	active_world.clear()
 	local_selection.clear()
 	pending_join_requests.clear()
+	pending_join_sessions.clear()
+	pending_join_token = ""
 	mode = MODE_NONE
 	world_loading = false
 	dropped_item_reconcile_accumulator = 0.0
@@ -222,11 +272,25 @@ func stop_session() -> void:
 	world_bootstrap_generation += 1
 	threaded_scene_path = ""
 	world_state_restored = false
+	client_scene_ready_sent = false
+	client_world_state_received = false
+	client_world_ready_sent = false
+	client_bootstrap_completing = false
 	if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
 		MapLoading.cancel_loading()
 	_set_pve_event_system_enabled(true)
 	if GameAuthority.is_server_authority() or GameAuthority.is_client_proxy():
 		GameAuthority.stop_authority()
+
+
+func _discard_peer(peer_to_close: MultiplayerPeer, suspend_steam_callbacks := true) -> void:
+	if peer_to_close == null:
+		return
+	if suspend_steam_callbacks:
+		SteamService.suspend_callbacks(2)
+	if multiplayer.multiplayer_peer == peer_to_close:
+		multiplayer.multiplayer_peer = null
+	peer_to_close.close()
 
 
 func _set_pve_event_system_enabled(enabled: bool) -> void:
@@ -271,7 +335,7 @@ func _on_connected_to_host() -> void:
 		var local_peer_id := multiplayer.get_unique_id()
 		if local_peer_id > 0:
 			local_selection["peer_id"] = local_peer_id
-		request_join_world.rpc_id(1, local_selection)
+		request_join_world.rpc_id(1, _make_join_request())
 
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -286,6 +350,8 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	if not leaving_selection.is_empty():
 		_store_player_runtime_state(peer_id, leaving_selection)
 	joined_players.erase(peer_id)
+	pending_join_sessions.erase(peer_id)
+	pending_join_requests.erase(peer_id)
 	peer_chunk_subscriptions.erase(peer_id)
 	GameAuthority.unregister_player(peer_id)
 	peer_left.emit(peer_id)
@@ -304,6 +370,68 @@ func _on_server_disconnected() -> void:
 		stop_session()
 
 
+func _make_join_token() -> String:
+	return "%d-%d-%d" % [Time.get_ticks_usec(), randi(), maxi(1, multiplayer.get_unique_id())]
+
+
+func _make_join_request() -> Dictionary:
+	return {
+		"world_id": str(active_world.get("world_id", "")),
+		"map_id": str(active_world.get("map_id", "")),
+		"map_version": str(active_world.get("map_version", "")),
+		"map_hash": str(active_world.get("map_hash", "")),
+		"death_drop_mode": get_death_drop_mode(),
+		"host_role_identity": active_world.get("host_role_identity", {}).duplicate(true) \
+			if active_world.get("host_role_identity", {}) is Dictionary else {},
+		"join_token": pending_join_token,
+		"profile": local_selection.duplicate(true),
+	}
+
+
+func _make_host_role_identity() -> Dictionary:
+	return {
+		"steam_id": SteamService.steam_id,
+		"display_name": str(local_selection.get("display_name", SteamService.persona_name)),
+		"hero_id": str(local_selection.get("hero_id", "farmer")),
+		"primary_weapon_ids": local_selection.get("primary_weapon_ids", []).duplicate() \
+			if local_selection.get("primary_weapon_ids", []) is Array else [],
+		"special_tool_ids": local_selection.get("special_tool_ids", []).duplicate() \
+			if local_selection.get("special_tool_ids", []) is Array else [],
+	}
+
+
+func _make_world_manifest(join_token: String) -> Dictionary:
+	return {
+		"world_id": str(active_world.get("world_id", "")),
+		"map_id": str(active_world.get("map_id", "")),
+		"map_version": str(active_world.get("map_version", "")),
+		"map_hash": str(active_world.get("map_hash", "")),
+		"death_drop_mode": get_death_drop_mode(),
+		"host_role_identity": _make_host_role_identity(),
+		"join_token": join_token,
+	}
+
+
+func _validate_join_request_metadata(request: Dictionary) -> String:
+	var expected_world_id := str(active_world.get("world_id", ""))
+	if str(request.get("world_id", "")) != expected_world_id:
+		return "合作世界存档不匹配，无法加入。"
+	for key: String in ["map_id", "map_version", "map_hash"]:
+		var expected := str(active_world.get(key, ""))
+		var received := str(request.get(key, ""))
+		if not expected.is_empty() and received != expected:
+			return "加入请求的地图信息与房主不一致。"
+	if str(request.get("death_drop_mode", "save")).to_lower() != get_death_drop_mode():
+		return "加入请求的死亡掉落规则与房主不一致。"
+	return ""
+
+
+func _reject_join_request(peer_id: int, reason: String, join_token: String) -> void:
+	if peer_id <= 0 or not _is_connected_remote_peer(peer_id):
+		return
+	receive_join_rejected.rpc_id(peer_id, reason, join_token)
+
+
 func _on_cooperative_lobby_closed(reason: String) -> void:
 	if is_host() and not active_world.is_empty():
 		save_game()
@@ -315,23 +443,45 @@ func _on_cooperative_lobby_closed(reason: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable", 1)
-func request_join_world(profile: Dictionary) -> void:
+func request_join_world(request: Dictionary) -> void:
 	if not is_host():
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if sender_id <= 0:
 		return
 	if world_loading or not authority_ready:
-		pending_join_requests[sender_id] = profile.duplicate(true)
+		pending_join_requests[sender_id] = request.duplicate(true)
 		return
-	_accept_join_request(sender_id, profile)
+	_begin_join_request(sender_id, request)
 
 
-func _accept_join_request(sender_id: int, profile: Dictionary) -> void:
+func _begin_join_request(sender_id: int, request: Dictionary) -> void:
 	if not is_host() or sender_id <= 0 or not authority_ready:
 		return
+	if not request is Dictionary:
+		_reject_join_request(sender_id, "加入请求格式无效。", "")
+		return
+	var join_request := request.duplicate(true)
+	var join_token := str(join_request.get("join_token", "")).strip_edges()
+	if join_token.is_empty():
+		_reject_join_request(sender_id, "加入请求缺少本次会话令牌。", "")
+		return
+	var metadata_error := _validate_join_request_metadata(join_request)
+	if not metadata_error.is_empty():
+		_reject_join_request(sender_id, metadata_error, join_token)
+		return
+	var previous_session: Variant = pending_join_sessions.get(sender_id, null)
+	if previous_session is Dictionary and str((previous_session as Dictionary).get("join_token", "")) == join_token:
+		var previous_manifest: Variant = (previous_session as Dictionary).get("manifest", {})
+		var previous_selection: Variant = (previous_session as Dictionary).get("selection", {})
+		if previous_manifest is Dictionary and previous_selection is Dictionary:
+			receive_world_manifest.rpc_id(sender_id, previous_manifest as Dictionary, previous_selection as Dictionary)
+		return
+	var profile_value: Variant = join_request.get("profile", {})
+	var profile := profile_value as Dictionary if profile_value is Dictionary else {}
 	var steam_id := int(profile.get("steam_id", 0))
 	if steam_id <= 0:
+		_reject_join_request(sender_id, "无法确认加入玩家的 Steam 身份。", join_token)
 		return
 	var lock := CooperativeWorldStorage.get_host_loadout_lock(
 		str(active_world.get("world_id", "")), steam_id
@@ -351,13 +501,34 @@ func _accept_join_request(sender_id: int, profile: Dictionary) -> void:
 	selection["team"] = "red"
 	if not selection.has("position"):
 		selection["position"] = _next_spawn_position(sender_id)
-	joined_players[sender_id] = selection.duplicate(true)
-	GameAuthority.register_or_update_player(sender_id, selection)
-	_save_joined_player_profile(sender_id, selection)
-	receive_world_bootstrap.rpc_id(sender_id, active_world, selection)
-	_send_dropped_item_snapshot(sender_id)
-	peer_joined.emit(sender_id, selection)
-	_save_host_runtime_state()
+	var manifest := _make_world_manifest(join_token)
+	pending_join_sessions[sender_id] = {
+		"join_token": join_token,
+		"profile": profile.duplicate(true),
+		"selection": selection.duplicate(true),
+		"manifest": manifest.duplicate(true),
+		"scene_ready": false,
+		"world_state_sent": false,
+		"created_msec": Time.get_ticks_msec(),
+	}
+	# Only the metadata manifest is sent at this point. The authoritative player
+	# registration is deferred until the client has restored the world and sends
+	# world_ready.
+	receive_world_manifest.rpc_id(sender_id, manifest, selection)
+
+
+func _accept_join_request(sender_id: int, profile: Dictionary) -> void:
+	# Compatibility wrapper for older callers; the new protocol always starts
+	# with a metadata request and waits for scene_ready/world_ready.
+	_begin_join_request(sender_id, {
+		"world_id": active_world.get("world_id", ""),
+		"map_id": active_world.get("map_id", ""),
+		"map_version": active_world.get("map_version", ""),
+		"map_hash": active_world.get("map_hash", ""),
+		"death_drop_mode": active_world.get("death_drop_mode", "save"),
+		"join_token": _make_join_token(),
+		"profile": profile,
+	})
 
 
 func _process_pending_join_requests() -> void:
@@ -371,7 +542,106 @@ func _process_pending_join_requests() -> void:
 			continue
 		var profile: Variant = requests[peer_id_value]
 		if profile is Dictionary:
-			_accept_join_request(peer_id, profile as Dictionary)
+			_begin_join_request(peer_id, profile as Dictionary)
+
+
+@rpc("any_peer", "call_remote", "reliable", 1)
+func scene_ready(join_token: String, world_id: String, map_id: String, map_version: String, map_hash: String) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	var session_value: Variant = pending_join_sessions.get(sender_id, null)
+	if not session_value is Dictionary:
+		_reject_join_request(sender_id, "房主没有找到对应的加入会话。", join_token)
+		return
+	var session := session_value as Dictionary
+	if str(session.get("join_token", "")) != join_token:
+		_reject_join_request(sender_id, "加入会话令牌无效。", join_token)
+		return
+	if str(active_world.get("world_id", "")) != world_id \
+			or str(active_world.get("map_id", "")) != map_id \
+			or str(active_world.get("map_version", "")) != map_version \
+			or str(active_world.get("map_hash", "")) != map_hash:
+		_reject_join_request(sender_id, "客户端加载的地图版本与房主不一致。", join_token)
+		return
+	if bool(session.get("world_state_sent", false)):
+		return
+	session["scene_ready"] = true
+	pending_join_sessions[sender_id] = session
+	_send_world_state_to_peer(sender_id, join_token)
+
+
+@rpc("any_peer", "call_remote", "reliable", 1)
+func world_ready(join_token: String) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	var session_value: Variant = pending_join_sessions.get(sender_id, null)
+	if not session_value is Dictionary:
+		return
+	var session := session_value as Dictionary
+	if str(session.get("join_token", "")) != join_token \
+			or not bool(session.get("scene_ready", false)) \
+			or not bool(session.get("world_state_sent", false)):
+		return
+	_finalize_join_request(sender_id, session)
+
+
+func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
+	if not is_host() or not _is_connected_remote_peer(peer_id):
+		return
+	var session_value: Variant = pending_join_sessions.get(peer_id, null)
+	if not session_value is Dictionary:
+		return
+	var session := session_value as Dictionary
+	var world_state: Dictionary = {}
+	var stored_state: Variant = active_world.get("world_state", {})
+	if stored_state is Dictionary:
+		world_state = (stored_state as Dictionary).duplicate(true)
+	# Capture a current authoritative state for a joining client. This keeps a
+	# newly opened world correct even before the periodic save has run once.
+	if world_state_restored and is_instance_valid(GlobalVar.gameworld):
+		world_state = _capture_persistent_world_state()
+		active_world["world_state"] = world_state.duplicate(true)
+	var current_team_money := float(GlobalVar.check_team_item_amount("red", "money"))
+	active_world["team_money"] = current_team_money
+	var payload := {
+		"world_id": str(active_world.get("world_id", "")),
+		"map_id": str(active_world.get("map_id", "")),
+		"map_version": str(active_world.get("map_version", "")),
+		"map_hash": str(active_world.get("map_hash", "")),
+		"death_drop_mode": get_death_drop_mode(),
+		"team_money": current_team_money,
+		"game_day": int(active_world.get("game_day", 1)),
+		"world_elapsed_seconds": float(active_world.get("world_elapsed_seconds", 0.0)),
+		"world_state": world_state,
+		"state_revision": int(Time.get_ticks_msec()),
+		"join_token": join_token,
+	}
+	receive_world_state.rpc_id(peer_id, payload)
+	session["world_state_sent"] = true
+	session["state_revision"] = int(payload["state_revision"])
+	pending_join_sessions[peer_id] = session
+
+
+func _finalize_join_request(sender_id: int, session: Dictionary) -> void:
+	if not is_host() or sender_id <= 0 or not _is_connected_remote_peer(sender_id):
+		return
+	var selection_value: Variant = session.get("selection", {})
+	if not selection_value is Dictionary:
+		return
+	var selection := (selection_value as Dictionary).duplicate(true)
+	selection["peer_id"] = sender_id
+	selection["team"] = "red"
+	if not selection.has("position"):
+		selection["position"] = _next_spawn_position(sender_id)
+	joined_players[sender_id] = selection.duplicate(true)
+	GameAuthority.register_or_update_player(sender_id, selection)
+	_save_joined_player_profile(sender_id, selection)
+	_send_dropped_item_snapshot(sender_id)
+	pending_join_sessions.erase(sender_id)
+	peer_joined.emit(sender_id, selection)
+	_save_host_runtime_state()
 
 
 func submit_action(action_type: String, payload: Dictionary = {}) -> void:
@@ -437,14 +707,68 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 			GameAuthority.server_team_chat(sender_id, str(payload.get("message", "")), str(payload.get("scope", "team")))
 
 
-@rpc("authority", "call_remote", "reliable", 0)
-func receive_world_bootstrap(world: Dictionary, selection: Dictionary) -> void:
+@rpc("authority", "call_remote", "reliable", 1)
+func receive_world_manifest(manifest: Dictionary, selection: Dictionary) -> void:
 	if not is_client():
 		return
-	active_world = world.duplicate(true)
+	var join_token := str(manifest.get("join_token", "")).strip_edges()
+	if join_token.is_empty() or join_token != pending_join_token:
+		return
+	var map_validation := GameMapRegistry.validate_world_map(manifest)
+	if not bool(map_validation.get("valid", false)):
+		session_failed.emit(str(map_validation.get("error", "本地地图校验失败，无法加入合作世界。")))
+		stop_session()
+		return
+	var local_map: Dictionary = map_validation.get("map", {}) as Dictionary
+	var merged_world := active_world.duplicate(true)
+	for key: String in ["world_id", "map_id", "map_version", "map_hash", "death_drop_mode"]:
+		merged_world[key] = manifest.get(key, merged_world.get(key, ""))
+	merged_world["host_role_identity"] = manifest.get("host_role_identity", {})
+	if not local_map.is_empty():
+		merged_world["map_scene_path"] = str(local_map.get("scene_path", ""))
+		merged_world["map_icon_path"] = str(local_map.get("icon_path", ""))
+		merged_world["map_name"] = str(local_map.get("display_name", merged_world.get("map_name", "")))
+		merged_world["map_source"] = str(local_map.get("source", merged_world.get("map_source", "")))
+	active_world = merged_world
 	local_selection = _normalize_selection(selection, multiplayer.get_unique_id())
 	world_bootstrap_received.emit(active_world, local_selection)
 	_load_active_world(local_selection)
+
+
+@rpc("authority", "call_remote", "reliable", 1)
+func receive_join_rejected(reason: String, join_token: String) -> void:
+	if not is_client() or (not join_token.is_empty() and join_token != pending_join_token):
+		return
+	session_failed.emit(reason)
+	stop_session()
+
+
+@rpc("authority", "call_remote", "reliable", 3)
+func receive_world_state(payload: Dictionary) -> void:
+	if not is_client() or client_world_state_received:
+		return
+	var join_token := str(payload.get("join_token", "")).strip_edges()
+	if join_token.is_empty() or join_token != pending_join_token or not client_scene_ready_sent:
+		return
+	if str(payload.get("world_id", "")) != str(active_world.get("world_id", "")):
+		return
+	active_world["world_state"] = payload.get("world_state", {})
+	active_world["team_money"] = float(payload.get("team_money", active_world.get("team_money", 0.0)))
+	active_world["game_day"] = int(payload.get("game_day", active_world.get("game_day", 1)))
+	active_world["world_elapsed_seconds"] = float(
+		payload.get("world_elapsed_seconds", active_world.get("world_elapsed_seconds", 0.0))
+	)
+	active_world["state_revision"] = int(payload.get("state_revision", 0))
+	client_world_state_received = true
+	call_deferred("_complete_client_world_bootstrap", get_tree().current_scene, world_bootstrap_generation)
+
+
+@rpc("authority", "call_remote", "reliable", 3)
+func receive_hit_confirmation(event: Dictionary) -> void:
+	if not is_client():
+		return
+	GameAuthority.apply_reliable_world_event(event)
+	MultiplayerNetwork.reliable_world_event_received.emit(event)
 
 
 @rpc("authority", "call_remote", "unreliable", 0)
@@ -533,7 +857,7 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 		_broadcast_dropped_item_batch(event)
 		return
 	if event_type == "hit_confirmed":
-		_send_reliable_event_to_peer(int(event.get("attacker_peer_id", 0)), event)
+		_send_hit_confirmation_to_peer(int(event.get("attacker_peer_id", 0)), event)
 		return
 	if event_type == "weapon_ammo_state" or event_type == "action_reward":
 		_send_reliable_event_to_peer(int(event.get("peer_id", 0)), event)
@@ -578,6 +902,12 @@ func _send_reliable_event_to_peer(peer_id: int, event: Dictionary) -> void:
 	if not _is_connected_remote_peer(peer_id):
 		return
 	receive_reliable_event.rpc_id(peer_id, event)
+
+
+func _send_hit_confirmation_to_peer(peer_id: int, event: Dictionary) -> void:
+	if not _is_connected_remote_peer(peer_id):
+		return
+	receive_hit_confirmation.rpc_id(peer_id, event)
 
 
 func _broadcast_visual_event(event: Dictionary) -> void:
@@ -815,6 +1145,17 @@ func _bootstrap_loaded_world(scene: Node3D, generation: int) -> void:
 	if not is_active() or generation != world_bootstrap_generation \
 			or scene != get_tree().current_scene:
 		return
+	if is_client():
+		# The scene, terrain, collision and map initializer are ready, but the
+		# client must not fabricate a world state. Tell the host that it is ready
+		# to receive the authoritative state over channel 3.
+		_send_scene_ready(scene)
+		if not client_world_state_received:
+			if is_instance_valid(MapLoading):
+				MapLoading.update_progress(0.82, "地图已加载，正在等待房主发送世界状态")
+			return
+		call_deferred("_complete_client_world_bootstrap", scene, generation)
+		return
 	if is_instance_valid(MapLoading):
 		MapLoading.update_progress(0.78, "正在恢复农田与世界状态")
 	await _restore_persistent_world_state(scene)
@@ -850,7 +1191,83 @@ func _bootstrap_loaded_world(scene: Node3D, generation: int) -> void:
 	authority_ready = true
 	world_loading = false
 	GameAuthority.set_physics_process(true)
+	if is_host():
+		# Advertise a running world only after scene, terrain/collision, spawn and
+		# authority initialization have all completed. This closes the startup
+		# window in which a joining client could trigger add_peer() too early.
+		SteamService.set_cooperative_world_running()
 	_process_pending_join_requests()
+
+
+func _send_scene_ready(scene: Node3D) -> void:
+	if not is_client() or client_scene_ready_sent or pending_join_token.is_empty():
+		return
+	if not is_instance_valid(scene) or scene != get_tree().current_scene:
+		return
+	client_scene_ready_sent = true
+	scene_ready.rpc_id(
+		1,
+		pending_join_token,
+		str(active_world.get("world_id", "")),
+		str(active_world.get("map_id", "")),
+		str(active_world.get("map_version", "")),
+		str(active_world.get("map_hash", "")),
+	)
+
+
+func _complete_client_world_bootstrap(scene_value: Variant, generation: int) -> void:
+	if client_bootstrap_completing or not is_client() or not client_scene_ready_sent \
+			or not client_world_state_received or not is_instance_valid(scene_value) \
+			or not scene_value is Node3D:
+		return
+	var scene := scene_value as Node3D
+	if not is_active() or generation != world_bootstrap_generation \
+			or scene != get_tree().current_scene:
+		return
+	client_bootstrap_completing = true
+	if is_instance_valid(MapLoading):
+		MapLoading.update_progress(0.84, "正在恢复房主世界状态")
+	await _restore_persistent_world_state(scene)
+	if not is_active() or generation != world_bootstrap_generation \
+			or scene != get_tree().current_scene:
+		client_bootstrap_completing = false
+		return
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	var spawned := await _spawn_local_player(scene)
+	if not spawned:
+		client_bootstrap_completing = false
+		world_loading = false
+		if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
+			MapLoading.cancel_loading()
+		session_failed.emit("合作世界初始化失败：无法完成合作玩家出生定位。")
+		return
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	if not _local_player_is_ready(scene):
+		client_bootstrap_completing = false
+		world_loading = false
+		if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
+			MapLoading.cancel_loading()
+		session_failed.emit("合作世界初始化失败：合作玩家出生点或碰撞系统尚未准备完成。")
+		return
+	if is_instance_valid(MapLoading):
+		MapLoading.update_progress(0.98, "世界状态已恢复，正在进入合作世界")
+		await MapLoading.finish_loading()
+	if not is_active() or generation != world_bootstrap_generation \
+			or scene != get_tree().current_scene:
+		client_bootstrap_completing = false
+		return
+	if scene is FarmWorldInitializer and (scene as FarmWorldInitializer).has_method("activate_runtime_entities"):
+		(scene as FarmWorldInitializer).activate_runtime_entities()
+	_activate_local_player(scene)
+	authority_ready = true
+	world_loading = false
+	GameAuthority.set_physics_process(true)
+	client_bootstrap_completing = false
+	if not client_world_ready_sent:
+		client_world_ready_sent = true
+		world_ready.rpc_id(1, pending_join_token)
 
 
 func _local_player_is_ready(scene: Node3D) -> bool:
@@ -1387,6 +1804,9 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 		_restore_persistent_tools(world_state.get("placed_tools", []))
 		_restore_persistent_livestock(world_state.get("livestock", []))
 	_restore_persistent_stations(world_state.get("stations", []))
+	for generator_value: Variant in scene.get_tree().get_nodes_in_group("neutral_crop_generators"):
+		if is_instance_valid(generator_value) and generator_value.has_method("refresh_after_world_restore"):
+			generator_value.call("refresh_after_world_restore")
 	world_state_restored = true
 
 

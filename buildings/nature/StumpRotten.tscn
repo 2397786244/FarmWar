@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://by7ipj25bcn8v"]
+
+[ext_resource type="PackedScene" uid="uid://cm4s0ydb12h66" path="res://assets/nature/Stump_Rotten.glb" id="1_p7k6m"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_jjyaj"]
+height = 0.8
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_8wl30"]
+height = 0.8
+
+[node name="StumpRotten" type="StaticBody3D" unique_id=493976876]
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "stump_rotten"
+display_name = "腐朽树桩"
+max_hp = 200.0
+log_drop_count = 4
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=120330402]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.39461625, 0)
+shape = SubResource("CylinderShape3D_jjyaj")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1822742963]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=976729169]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3597331, 0)
+shape = SubResource("CylinderShape3D_8wl30")
+debug_color = Color(0.9741358, 0.067225225, 0.37773094, 0.41960785)
+
+[node name="Mesh" parent="." unique_id=1048153085 instance=ExtResource("1_p7k6m")]
+
+[node name="Label3D" type="Label3D" parent="." unique_id=493976877]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
+billboard = 1
+no_depth_test = true
+text = "200"
+outline_size = 6
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

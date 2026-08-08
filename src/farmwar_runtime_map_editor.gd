@@ -154,6 +154,9 @@ const TREE_ASSETS = [
 	{"label": "Oak", "path": "res://buildings/nature/Oak.tscn", "id": "oak"},
 	{"label": "Redcedar", "path": "res://buildings/nature/Redcedar.tscn", "id": "redcedar"},
 	{"label": "RedMaple", "path": "res://buildings/nature/RedMaple.tscn", "id": "redmaple"},
+	{"label": "Stump Fresh", "path": "res://buildings/nature/StumpFresh.tscn", "id": "stump_fresh"},
+	{"label": "Stump Mossy", "path": "res://buildings/nature/StumpMossy.tscn", "id": "stump_mossy"},
+	{"label": "Stump Rotten", "path": "res://buildings/nature/StumpRotten.tscn", "id": "stump_rotten"},
 ]
 
 const ORE_ASSETS = [

@@ -35,8 +35,12 @@ const PROJECTILE_SCENES := {
 	"vehicle_shield_laser": "res://character/weapons/ShieldLaser.tscn",
 }
 const PROJECTILE_VISUAL_RADIUS := 0.16
+const PROJECTILE_CORRECTION_RATE := 18.0
+const PROJECTILE_MAX_CORRECTION_DISTANCE := 6.0
 const ABSORPTION_END_SCALE := 0.06
 const DROPPED_ITEM_SPAWNS_PER_FRAME := 2
+const DROPPED_ITEM_INTEREST_RADIUS_METERS := 1024.0
+const DROPPED_ITEM_MISSING_SNAPSHOT_LIMIT := 6
 const REMOTE_SCENES := {
 	"action_drone": "res://character/weapons/ActionDrone.tscn",
 	"normal_drone": "res://character/weapons/NormalDrone.tscn",
@@ -75,15 +79,19 @@ const TILE_TOOL_NAMES := {
 var remote_players: Dictionary = {}
 var remote_ai_visuals: Dictionary = {}
 var projectile_visuals: Dictionary = {}
+var projectile_visual_states: Dictionary = {}
+var last_projectile_snapshot_tick := -1
 var transient_projectile_visuals: Dictionary = {}
 var absorption_visuals: Dictionary = {}
 var absorbed_projectile_ids: Dictionary = {}
 var processed_absorption_ids: Dictionary = {}
 var remote_device_visuals: Dictionary = {}
 var placed_tool_visuals: Dictionary = {}
+var destroyed_tool_visual_ids: Dictionary = {}
 var dropped_item_visuals: Dictionary = {}
 var pending_dropped_item_spawns: Dictionary = {}
 var pending_dropped_item_spawn_ids: Array[String] = []
+var dropped_item_missing_snapshot_counts: Dictionary = {}
 var wild_animal_visuals: Dictionary = {}
 var rare_resource_visual: Node3D = null
 var world_root: Node3D
@@ -104,6 +112,7 @@ func _process(delta: float) -> void:
 	if not NetworkSession.is_authority_visual_client():
 		return
 	_resolve_world_root()
+	_update_projectile_visuals(delta)
 	_update_transient_projectile_visuals(delta)
 	_update_absorption_visuals(delta)
 	_flush_pending_dropped_item_spawns()
@@ -192,9 +201,9 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_vehicles(snapshot.get("vehicles", []))
 	_sync_players(snapshot.get("players", []), snapshot)
 	_sync_ai_players(snapshot.get("ai_players", []))
-	_sync_projectiles(snapshot.get("projectiles", []))
+	_sync_projectiles(snapshot.get("projectiles", []), int(snapshot.get("tick", -1)))
 	_sync_remote_devices(snapshot.get("remote_devices", []))
-	_sync_placed_tool_health(snapshot.get("placed_tools", []))
+	_sync_placed_tool_health(snapshot.get("placed_tools", []), int(snapshot.get("tick", -1)))
 	_sync_wild_animals(snapshot.get("wild_animals", []))
 
 
@@ -464,9 +473,14 @@ func _get_or_create_vehicle_visual(vehicle_id: String, scene_path: String, owner
 	return vehicle
 
 
-func _sync_projectiles(projectiles_value: Variant) -> void:
+func _sync_projectiles(projectiles_value: Variant, snapshot_tick := -1) -> void:
 	if not projectiles_value is Array:
 		return
+	if snapshot_tick >= 0 and last_projectile_snapshot_tick >= 0 \
+			and snapshot_tick < last_projectile_snapshot_tick:
+		return
+	if snapshot_tick >= 0:
+		last_projectile_snapshot_tick = snapshot_tick
 	var seen := {}
 	for item: Variant in projectiles_value:
 		if not item is Dictionary:
@@ -479,18 +493,62 @@ func _sync_projectiles(projectiles_value: Variant) -> void:
 			continue
 		seen[projectile_id] = true
 		var visual := _get_or_create_projectile_visual(projectile_id, data)
-		var pos: Variant = data.get("position", Vector3.ZERO)
-		if visual != null and pos is Vector3:
-			visual.global_position = visual.global_position.lerp(pos, 0.65)
-			_orient_projectile_visual(visual, data.get("velocity", Vector3.ZERO))
+		if visual == null:
+			continue
+		var position_value: Variant = data.get("position", Vector3.ZERO)
+		var velocity_value: Variant = data.get("velocity", Vector3.ZERO)
+		if not position_value is Vector3 or not velocity_value is Vector3:
+			continue
+		var state: Dictionary = projectile_visual_states.get(projectile_id, {})
+		var previous_tick := int(state.get("last_snapshot_tick", -1))
+		if snapshot_tick >= 0 and previous_tick >= 0 and snapshot_tick <= previous_tick:
+			continue
+		var position := position_value as Vector3
+		var velocity := velocity_value as Vector3
+		if state.is_empty() or not bool(state.get("initialized", false)):
+			visual.global_position = position
+			state = {
+				"node": visual,
+				"target_position": position,
+				"target_velocity": velocity,
+				"last_snapshot_tick": snapshot_tick,
+				"initialized": true,
+			}
+		else:
+			state["node"] = visual
+			state["target_position"] = position
+			state["target_velocity"] = velocity
+			state["last_snapshot_tick"] = snapshot_tick
+		projectile_visual_states[projectile_id] = state
 	for projectile_id in projectile_visuals.keys():
 		if not seen.has(int(projectile_id)):
 			if absorbed_projectile_ids.has(int(projectile_id)):
 				continue
-			var node: Node = projectile_visuals[projectile_id]
-			if is_instance_valid(node):
-				node.queue_free()
-			projectile_visuals.erase(projectile_id)
+			_remove_projectile_visual(int(projectile_id))
+
+
+func _update_projectile_visuals(delta: float) -> void:
+	for projectile_id_value in projectile_visual_states.keys():
+		var projectile_id := int(projectile_id_value)
+		var state: Dictionary = projectile_visual_states.get(projectile_id, {})
+		var visual: Node3D = state.get("node", null)
+		if not is_instance_valid(visual) or not projectile_visuals.has(projectile_id):
+			projectile_visual_states.erase(projectile_id)
+			continue
+		var target_position: Variant = state.get("target_position", visual.global_position)
+		var target_velocity: Variant = state.get("target_velocity", Vector3.ZERO)
+		if not target_position is Vector3 or not target_velocity is Vector3:
+			continue
+		var velocity := target_velocity as Vector3
+		visual.global_position += velocity * delta
+		var correction := (target_position as Vector3) - visual.global_position
+		if correction.length() > PROJECTILE_MAX_CORRECTION_DISTANCE:
+			visual.global_position = target_position as Vector3
+		else:
+			var correction_weight := 1.0 - exp(-PROJECTILE_CORRECTION_RATE * delta)
+			visual.global_position += correction * correction_weight
+		_orient_projectile_visual(visual, velocity)
+		projectile_visual_states[projectile_id] = state
 
 
 func _get_or_create_projectile_visual(projectile_id: int, data: Dictionary) -> Node3D:
@@ -506,6 +564,14 @@ func _get_or_create_projectile_visual(projectile_id: int, data: Dictionary) -> N
 		visual.global_position = pos
 	projectile_visuals[projectile_id] = visual
 	return visual
+
+
+func _remove_projectile_visual(projectile_id: int) -> void:
+	var visual: Node = projectile_visuals.get(projectile_id, null)
+	if is_instance_valid(visual) and not visual.is_queued_for_deletion():
+		visual.queue_free()
+	projectile_visuals.erase(projectile_id)
+	projectile_visual_states.erase(projectile_id)
 
 
 func _instantiate_projectile_visual(data: Dictionary) -> Node3D:
@@ -624,7 +690,7 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 			remote_device_visuals.erase(device_id)
 
 
-func _sync_placed_tool_health(tools_value: Variant) -> void:
+func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void:
 	if not tools_value is Array:
 		return
 	var seen := {}
@@ -633,6 +699,8 @@ func _sync_placed_tool_health(tools_value: Variant) -> void:
 			continue
 		var data := item as Dictionary
 		var tool_id := str(data.get("tool_id", ""))
+		if tool_id.is_empty() or destroyed_tool_visual_ids.has(tool_id):
+			continue
 		seen[tool_id] = true
 		var node := get_node_or_null(NodePath(str(data.get("path", data.get("tool_id", "")))))
 		if node == null:
@@ -646,30 +714,43 @@ func _sync_placed_tool_health(tools_value: Variant) -> void:
 			if tile is FarmTile:
 				node = (tile as FarmTile).tool_child
 		var visual_state: Variant = data.get("visual_state", {})
-		var state_drives_position := visual_state is Dictionary \
-				and (visual_state as Dictionary).has("position")
-		if node is Node3D:
-			var position: Variant = data.get("position", Vector3.ZERO)
-			var spawned_visual := bool(node.get_meta("cooperative_network_spawned", false))
-			var initialized := bool(node.get_meta("network_position_initialized", false))
-			if position is Vector3 and not node is FarmTile and not state_drives_position:
+		var anchor_node := node as RiftAnchor if node is RiftAnchor else null
+		var stale_anchor_flight := anchor_node != null \
+				and anchor_node.landed and not bool(data.get("anchor_landed", false))
+		var is_anchor_flying := anchor_node != null \
+				and not stale_anchor_flight and not bool(data.get("anchor_landed", false))
+		if is_anchor_flying:
+			var anchor_flight_value: Variant = data.get("anchor_flight", {})
+			if anchor_flight_value is Dictionary and node.has_method("apply_network_flight_state"):
+				var flight_state := (anchor_flight_value as Dictionary).duplicate(true)
+				flight_state["snapshot_tick"] = snapshot_tick
+				node.call("apply_network_flight_state", flight_state)
+		elif not stale_anchor_flight:
+			var state_drives_position := visual_state is Dictionary \
+					and (visual_state as Dictionary).has("position")
+			if node is Node3D:
+				var position: Variant = data.get("position", Vector3.ZERO)
+				var spawned_visual := bool(node.get_meta("cooperative_network_spawned", false))
+				var initialized := bool(node.get_meta("network_position_initialized", false))
+				if position is Vector3 and not node is FarmTile and not state_drives_position:
+					if spawned_visual and initialized:
+						(node as Node3D).global_position = (node as Node3D).global_position.lerp(position, 0.65)
+					else:
+						(node as Node3D).global_position = position
+					(node as Node3D).set_meta("network_position_initialized", true)
+				var target_yaw := float(data.get("yaw", (node as Node3D).rotation.y))
 				if spawned_visual and initialized:
-					(node as Node3D).global_position = (node as Node3D).global_position.lerp(position, 0.65)
+					(node as Node3D).rotation.y = lerp_angle((node as Node3D).rotation.y, target_yaw, 0.65)
 				else:
-					(node as Node3D).global_position = position
-				(node as Node3D).set_meta("network_position_initialized", true)
-			var target_yaw := float(data.get("yaw", (node as Node3D).rotation.y))
-			if spawned_visual and initialized:
-				(node as Node3D).rotation.y = lerp_angle((node as Node3D).rotation.y, target_yaw, 0.65)
-			else:
-				(node as Node3D).rotation.y = target_yaw
+					(node as Node3D).rotation.y = target_yaw
 		if node != null and node.has_method("apply_network_health"):
 			node.call("apply_network_health", float(data.get("hp", 0.0)))
 		if node != null and node.has_method("apply_network_visual_state"):
 			if visual_state is Dictionary:
 				node.call("apply_network_visual_state", visual_state)
-			if bool(data.get("anchor_landed", false)) and node.has_method("apply_network_activated"):
-				node.call("apply_network_activated")
+		if bool(data.get("anchor_landed", false)) and node != null \
+				and node.has_method("apply_network_activated"):
+			node.call("apply_network_activated", data.get("position", Vector3.ZERO))
 	for tool_id_value in placed_tool_visuals.keys():
 		var stale_tool_id := str(tool_id_value)
 		if seen.has(stale_tool_id):
@@ -681,6 +762,13 @@ func _sync_placed_tool_health(tools_value: Variant) -> void:
 
 
 func _get_or_create_remote_device_visual(device_id: String, data: Dictionary, keep_runtime := false) -> Node3D:
+	var authoritative_device := _find_listen_server_authoritative_remote_device(device_id)
+	if authoritative_device != null:
+		var duplicate: Node = remote_device_visuals.get(device_id, null)
+		if is_instance_valid(duplicate) and duplicate != authoritative_device:
+			duplicate.queue_free()
+		remote_device_visuals.erase(device_id)
+		return authoritative_device
 	var existing: Node = remote_device_visuals.get(device_id, null)
 	if is_instance_valid(existing):
 		if keep_runtime and not bool(existing.get_meta("runtime_enabled", false)):
@@ -725,6 +813,32 @@ func _get_or_create_remote_device_visual(device_id: String, data: Dictionary, ke
 	return visual
 
 
+func _find_listen_server_authoritative_remote_device(device_id: String) -> Node3D:
+	if device_id.is_empty() or not NetworkSession.is_listen_server() \
+			or not GameAuthority.is_server_authority():
+		return null
+	var state_value: Variant = GameAuthority.remote_device_states.get(device_id, {})
+	if not state_value is Dictionary:
+		return null
+	var state := state_value as Dictionary
+	var device_path := str(state.get("device_path", device_id))
+	var candidate: Node = null
+	if not device_path.is_empty():
+		candidate = get_tree().root.get_node_or_null(NodePath(device_path))
+		if candidate == null:
+			candidate = get_node_or_null(NodePath(device_path))
+	if candidate == null and GameAuthority.has_method("_node_for_tool_ref"):
+		var resolved: Variant = GameAuthority.call("_node_for_tool_ref", {
+			"kind": "remote",
+			"id": device_id,
+		})
+		if resolved is Node:
+			candidate = resolved as Node
+	if candidate is Node3D and is_instance_valid(candidate):
+		return candidate as Node3D
+	return null
+
+
 func _find_map_placed_tool(tool_id: String) -> Node3D:
 	for node in get_tree().get_nodes_in_group("network_map_devices"):
 		if node is Node3D and is_instance_valid(node) \
@@ -733,7 +847,43 @@ func _find_map_placed_tool(tool_id: String) -> Node3D:
 	return null
 
 
+func _find_listen_server_authoritative_placed_tool(tool_id: String) -> Node3D:
+	if tool_id.is_empty() or not NetworkSession.is_listen_server() \
+			or not GameAuthority.is_server_authority():
+		return null
+	var state_value: Variant = GameAuthority.placed_tool_states.get(tool_id, {})
+	if not state_value is Dictionary:
+		return null
+	var state := state_value as Dictionary
+	if not bool(state.get("free_placement", false)):
+		return null
+	var tool_path := str(state.get("path", state.get("tool_id", state.get("device_id", tool_id))))
+	var candidate: Node = null
+	if not tool_path.is_empty():
+		candidate = get_tree().root.get_node_or_null(NodePath(tool_path))
+	if candidate == null and GameAuthority.has_method("_node_for_tool_ref"):
+		var resolved: Variant = GameAuthority.call("_node_for_tool_ref", {
+			"kind": "placed",
+			"id": tool_id,
+		})
+		if resolved is Node:
+			candidate = resolved as Node
+	if candidate is Node3D and is_instance_valid(candidate) and not candidate.is_queued_for_deletion():
+		return candidate as Node3D
+	return null
+
+
 func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Node3D:
+	if tool_id.is_empty() or destroyed_tool_visual_ids.has(tool_id):
+		return null
+	var authoritative := _find_listen_server_authoritative_placed_tool(tool_id)
+	if authoritative != null:
+		var duplicate: Node = placed_tool_visuals.get(tool_id, null)
+		if is_instance_valid(duplicate) and duplicate != authoritative \
+				and bool(duplicate.get_meta("cooperative_network_spawned", false)):
+			duplicate.queue_free()
+		placed_tool_visuals.erase(tool_id)
+		return authoritative
 	var existing: Node = placed_tool_visuals.get(tool_id, null)
 	if not is_instance_valid(existing):
 		existing = _find_map_placed_tool(tool_id)
@@ -759,6 +909,9 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 	# Placed tools are normally presentation-only on clients. RiftAnchor is
 	# different: clients need its short flight animation before it lands.
 	if visual is RiftAnchor:
+		visual.set_meta("network_flight_proxy", true)
+		if visual.has_method("set_network_flight_proxy"):
+			visual.call("set_network_flight_proxy", true)
 		(visual as CollisionObject3D).collision_layer = 0
 		(visual as CollisionObject3D).collision_mask = 0
 	elif visual is CargoCrateGround:
@@ -776,6 +929,8 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 
 
 func _apply_interest_chunk_visibility(snapshot: Dictionary) -> void:
+	if not GameAuthority.is_client_proxy():
+		return
 	var chunks_value: Variant = snapshot.get("subscribed_chunks", [])
 	if not chunks_value is Array:
 		return
@@ -783,6 +938,8 @@ func _apply_interest_chunk_visibility(snapshot: Dictionary) -> void:
 	for chunk_value in chunks_value:
 		if chunk_value is Vector2i:
 			active_chunks[chunk_value] = true
+	if active_chunks.is_empty():
+		return
 	for node in get_tree().get_nodes_in_group("farm_tiles"):
 		if node is FarmTile:
 			var tile := node as FarmTile
@@ -816,7 +973,10 @@ func _is_local_remote_device_active(device_id: String) -> bool:
 func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
 	var authority_player_event := NetworkSession.is_listen_server() \
-		and event_type in ["tool_selected", "tool_used", "visual_projectile_fired", "dropped_item_action_result"]
+		and event_type in [
+			"tool_selected", "tool_used", "tool_destroyed",
+			"visual_projectile_fired", "dropped_item_action_result"
+		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
 	var pickup_event := event_type in [
@@ -1031,6 +1191,7 @@ func _apply_placed_tool_spawned(state_value: Variant) -> void:
 	var tool_id := str(state.get("tool_id", ""))
 	if tool_id.is_empty():
 		return
+	destroyed_tool_visual_ids.erase(tool_id)
 	var visual := _get_or_create_placed_tool_visual(tool_id, state)
 	if visual == null:
 		return
@@ -1167,7 +1328,8 @@ func _spawn_or_update_dropped_item(state: Dictionary) -> void:
 	if item_id.is_empty() or _resolve_world_root() == null:
 		return
 	var pickup := dropped_item_visuals.get(item_id, null) as PickupItem
-	if not is_instance_valid(pickup):
+	if not is_instance_valid(pickup) or pickup.is_queued_for_deletion():
+		dropped_item_visuals.erase(item_id)
 		pickup = PICKUP_ITEM_SCENE.instantiate() as PickupItem
 		if pickup == null:
 			return
@@ -1176,6 +1338,7 @@ func _spawn_or_update_dropped_item(state: Dictionary) -> void:
 		dropped_item_visuals[item_id] = pickup
 	else:
 		pickup.apply_authoritative_state(state)
+	dropped_item_missing_snapshot_counts[item_id] = 0
 
 
 func _queue_dropped_item_spawns(states_value: Variant) -> void:
@@ -1191,6 +1354,7 @@ func _queue_dropped_item_spawn(state: Dictionary) -> void:
 	if item_id.is_empty():
 		return
 	pending_dropped_item_spawns[item_id] = state.duplicate(true)
+	dropped_item_missing_snapshot_counts[item_id] = 0
 	if not pending_dropped_item_spawn_ids.has(item_id):
 		pending_dropped_item_spawn_ids.append(item_id)
 
@@ -1211,6 +1375,7 @@ func _flush_pending_dropped_item_spawns() -> void:
 func _remove_dropped_item_visual(item_id: String) -> void:
 	pending_dropped_item_spawns.erase(item_id)
 	pending_dropped_item_spawn_ids.erase(item_id)
+	dropped_item_missing_snapshot_counts.erase(item_id)
 	var pickup = dropped_item_visuals.get(item_id, null)
 	if is_instance_valid(pickup):
 		(pickup as Node).queue_free()
@@ -1230,14 +1395,39 @@ func _sync_dropped_items(states_value: Variant) -> void:
 			continue
 		seen[item_id] = true
 		_queue_dropped_item_spawn(state)
-	for item_id_value in pending_dropped_item_spawn_ids.duplicate():
-		var pending_item_id := str(item_id_value)
-		if not seen.has(pending_item_id):
-			_remove_dropped_item_visual(pending_item_id)
+	var tracked_ids: Dictionary = {}
+	for item_id_value in pending_dropped_item_spawn_ids:
+		tracked_ids[str(item_id_value)] = true
 	for item_id_value in dropped_item_visuals.keys():
+		tracked_ids[str(item_id_value)] = true
+	for item_id_value in tracked_ids.keys():
 		var item_id := str(item_id_value)
-		if not seen.has(item_id):
+		if seen.has(item_id):
+			dropped_item_missing_snapshot_counts[item_id] = 0
+			continue
+		if pending_dropped_item_spawns.has(item_id):
+			continue
+		var pickup := dropped_item_visuals.get(item_id, null) as PickupItem
+		if not is_instance_valid(pickup):
+			continue
+		var local_position: Variant = _get_local_player_position()
+		if local_position is Vector3 and pickup.global_position.distance_to(local_position as Vector3) <= DROPPED_ITEM_INTEREST_RADIUS_METERS:
+			dropped_item_missing_snapshot_counts[item_id] = 0
+			continue
+		var missing_count := int(dropped_item_missing_snapshot_counts.get(item_id, 0)) + 1
+		dropped_item_missing_snapshot_counts[item_id] = missing_count
+		if missing_count >= DROPPED_ITEM_MISSING_SNAPSHOT_LIMIT:
 			_remove_dropped_item_visual(item_id)
+
+
+func _get_local_player_position() -> Variant:
+	var local_peer_id := MultiplayerNetwork.get_unique_peer_id()
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is GamePlayer or (node as GamePlayer).is_remote_proxy:
+			continue
+		if local_peer_id <= 0 or int((node as GamePlayer).authority_peer_id) == local_peer_id:
+			return (node as GamePlayer).global_position
+	return null
 
 
 func _apply_tool_selected_event(event: Dictionary) -> void:
@@ -1624,6 +1814,7 @@ func _apply_tool_used_event(data_value: Variant) -> void:
 			return
 		if data.has("device_id"):
 			var device_id := str(data.get("device_id", ""))
+			destroyed_tool_visual_ids.erase(device_id)
 			var is_owner := int(data.get("peer_id", 0)) == MultiplayerNetwork.get_unique_peer_id()
 			var is_remote_controlled := str(data.get("category", "utility")) == "remote"
 			var visual_data := {
@@ -1644,7 +1835,9 @@ func _apply_tool_used_event(data_value: Variant) -> void:
 			else:
 				visual_data["tool_name"] = placed
 				device = _get_or_create_placed_tool_visual(device_id, visual_data)
-			if placed == "rift_anchor" and bool(data.get("ok", false)) \
+			var is_authoritative_device := device != null \
+					and device == _find_listen_server_authoritative_placed_tool(device_id)
+			if placed == "rift_anchor" and not is_authoritative_device and bool(data.get("ok", false)) \
 					and str(data.get("rift_action", "")) == "launch" \
 					and device is RiftAnchor:
 				var launch_position: Variant = data.get("origin", data.get("position", Vector3.ZERO))
@@ -1869,7 +2062,7 @@ func _apply_rift_anchor_activated_event(event: Dictionary) -> void:
 	if not is_instance_valid(visual):
 		visual = _find_map_placed_tool(anchor_id)
 	if is_instance_valid(visual) and visual.has_method("apply_network_activated"):
-		visual.call("apply_network_activated")
+		visual.call("apply_network_activated", event.get("position", Vector3.ZERO))
 
 
 func _apply_harvest_tree_destroyed_event(event: Dictionary) -> void:
@@ -2020,10 +2213,7 @@ func _find_farm_tile_by_grid(field_id: String, grid_coordinate: Vector2i) -> Far
 func _apply_projectile_explosion(event: Dictionary) -> void:
 	var projectile_id := int(event.get("projectile_id", 0))
 	if projectile_visuals.has(projectile_id):
-		var visual: Node = projectile_visuals[projectile_id]
-		if is_instance_valid(visual):
-			visual.queue_free()
-		projectile_visuals.erase(projectile_id)
+		_remove_projectile_visual(projectile_id)
 	var pos: Variant = event.get("position", Vector3.ZERO)
 	if pos is Vector3:
 		var projectile_type := str(event.get("projectile_type", ""))
@@ -2344,22 +2534,17 @@ func _apply_player_respawn_state_event(event: Dictionary) -> void:
 
 func _apply_tool_destroyed_event(event: Dictionary) -> void:
 	var tile_path := str(event.get("tile_path", ""))
-	var tile_position: Variant = event.get("position", Vector3.ZERO)
-	if not tile_path.is_empty() or tile_position is Vector3:
-		var tile := _find_farm_tile(tile_path, tile_position)
+	if not tile_path.is_empty():
+		var tile := _find_farm_tile(tile_path, event.get("position", Vector3.ZERO))
 		if tile is FarmTile:
 			tile.apply_authoritative_tool_destroyed()
-	var device_id := str(event.get("device_id", ""))
-	if not device_id.is_empty() and remote_device_visuals.has(device_id):
-		var visual: Node = remote_device_visuals[device_id]
-		if is_instance_valid(visual):
-			visual.queue_free()
-		remote_device_visuals.erase(device_id)
-	if not device_id.is_empty() and placed_tool_visuals.has(device_id):
-		var placed_visual: Node = placed_tool_visuals[device_id]
-		if is_instance_valid(placed_visual):
-			placed_visual.queue_free()
-		placed_tool_visuals.erase(device_id)
+	var device_id := str(event.get("device_id", event.get("id", "")))
+	if device_id.is_empty():
+		return
+	if tile_path.is_empty():
+		destroyed_tool_visual_ids[device_id] = int(event.get("tick", 0))
+	_remove_remote_device_visual(device_id)
+	_remove_placed_tool_visual(device_id)
 
 
 func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
@@ -2537,14 +2722,20 @@ func _clear_all() -> void:
 	_remove_rare_resource_visual()
 	for collection in [remote_players, remote_ai_visuals, projectile_visuals, transient_projectile_visuals, absorption_visuals, remote_device_visuals, placed_tool_visuals, dropped_item_visuals, wild_animal_visuals]:
 		for key in collection.keys():
-			var item = collection[key]
-			var node: Node = item.get("node", null) if item is Dictionary else item
-			if is_instance_valid(node):
-				node.queue_free()
+			var item_value: Variant = collection[key]
+			var node_value: Variant = item_value.get("node", null) if item_value is Dictionary else item_value
+			if not is_instance_valid(node_value) or not node_value is Node:
+				continue
+			if not node_value.is_queued_for_deletion():
+				node_value.queue_free()
 		collection.clear()
+	projectile_visual_states.clear()
+	last_projectile_snapshot_tick = -1
 	pending_dropped_item_spawns.clear()
 	pending_dropped_item_spawn_ids.clear()
+	dropped_item_missing_snapshot_counts.clear()
 	absorbed_projectile_ids.clear()
 	processed_absorption_ids.clear()
+	destroyed_tool_visual_ids.clear()
 	_invalidate_nature_resource_index()
 	world_root = null

@@ -20,19 +20,19 @@ config/icon="res://icon.svg"
 Farmlandmanager="*uid://duy6udo7wo5eg"
 GlobalVar="*uid://ci8g6blyjtj7c"
 MultiplayerNetwork="*res://src/multiplayer_network.gd"
-NetworkSession="*res://src/world_network_session.gd"
 GameAuthority="*res://src/game_authority.gd"
 MultiplayerWorldReplicator="*res://src/multiplayer_world_replicator.gd"
 EventBoard="*res://src/event_board.gd"
 FoodOrderEmitter="*res://src/food_order_emitter.gd"
 MapLoading="*res://src/map_loading_screen.gd"
-GameMapRegistry="*res://src/game_map_registry.gd"
 MapBuildingRegistry="*res://src/map_building_registry.gd"
 RareResourceManager="*res://src/rare_resource_manager.gd"
 GlobalCaptureManager="*res://src/global_capture_manager.gd"
 CooperativeWorldStorage="*res://src/cooperative_world_storage.gd"
 SteamService="*res://src/steam_service.gd"
 CooperativeSession="*res://src/cooperative_session.gd"
+NetworkSession="*res://src/world_network_session.gd"
+GameMapRegistry="*res://src/game_map_registry.gd"
 
 [display]
 
@@ -198,13 +198,13 @@ second_action={
 3d_physics/layer_8="Tool"
 3d_physics/layer_9="PickupItem"
 3d_physics/layer_10="InteractObj"
-3d_physics/layer_17="Water"
 3d_physics/layer_11="LookLayer"
 3d_physics/layer_12="ToolHit"
 3d_physics/layer_13="Building"
 3d_physics/layer_14="Vehicles"
 3d_physics/layer_15="NatureResource"
 3d_physics/layer_16="WildAnimal"
+3d_physics/layer_17="Water"
 
 [physics]
 
@@ -213,6 +213,8 @@ second_action={
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+anti_aliasing/quality/msaa_2d=2
+anti_aliasing/quality/msaa_3d=2
 
 [steam]
 

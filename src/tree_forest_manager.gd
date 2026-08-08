@@ -2,7 +2,15 @@ extends Node3D
 class_name TreeForestManager
 
 const MIN_RESPAWN_SECONDS := 60.0
-const RESPAWN_BY_TYPE := {"oak": 90.0, "redcedar": 75.0, "redmaple": 105.0, "cottonwood": 120.0}
+const RESPAWN_BY_TYPE := {
+	"oak": 90.0,
+	"redcedar": 75.0,
+	"redmaple": 105.0,
+	"cottonwood": 120.0,
+	"stump_fresh": 60.0,
+	"stump_mossy": 60.0,
+	"stump_rotten": 60.0,
+}
 
 var resources: Array[Node] = []
 var trees: Array[HarvestTree] = []

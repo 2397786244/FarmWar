@@ -509,6 +509,7 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 			continue
 		add_child(crop)
 		crop.position = crop_position
+		crop.visible = true
 		plant_children.append(crop)
 		crop_positions.append(crop_position)
 
@@ -567,6 +568,7 @@ func apply_authoritative_plant(
 			continue
 		add_child(crop)
 		crop.position = crop_position
+		crop.visible = true
 		plant_children.append(crop)
 		crop_positions.append(crop_position)
 	var planted := not plant_children.is_empty()
@@ -792,6 +794,13 @@ func _disable_network_visual_runtime(root: Node) -> void:
 
 func is_empty() -> bool:
 	return seed_record.is_empty() and not is_instance_valid(tool_child)
+
+
+func ensure_crop_visuals_visible() -> void:
+	visible = true
+	for crop_value: Variant in plant_children:
+		if crop_value is Node3D and is_instance_valid(crop_value):
+			(crop_value as Node3D).visible = true
 
 
 func needs_simulation_tick() -> bool:

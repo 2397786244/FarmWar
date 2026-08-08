@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://bymc1kifsqdv6"]
+
+[ext_resource type="PackedScene" uid="uid://y5sl3eyba77r" path="res://assets/tools/WireMeshGate.glb" id="1_o0x5n"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_q3ssh"]
+size = Vector3(4, 10, 0.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_o0x5n"]
+size = Vector3(1.5, 2, 2)
+
+[node name="WireMeshGate" type="StaticBody3D" unique_id=760704632]
+
+[node name="Mesh" parent="." unique_id=989321833 instance=ExtResource("1_o0x5n")]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1495413094]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 1.9641933, 0)
+shape = SubResource("BoxShape3D_q3ssh")
+
+[node name="DoorArea" type="Area3D" parent="." unique_id=792482332]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DoorArea" unique_id=1498839642]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0366452, 0)
+shape = SubResource("BoxShape3D_o0x5n")
+debug_color = Color(0.9478715, 0.16995737, 0.39832526, 0.41960785)

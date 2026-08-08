@@ -125,6 +125,7 @@
 	  "color": "#73DDAA",
 	  "hint": "放置在己方土地",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -140,6 +141,7 @@
 	  "color": "#63A9FF",
 	  "hint": "放置在己方土地",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -553,6 +555,7 @@
 	  "color": "#000000",
 	  "hint": "自动播种和收获",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -602,6 +605,7 @@
 	  "color": "#000000",
 	  "hint": "自动跟踪炮塔",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -649,6 +653,7 @@
 	  "color": "#000000",
 	  "hint": "保护土地作物免受负面效果",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -665,6 +670,7 @@
 	  "hint": "放置一个牢固的砖墙",
 	  "description": "在目标位置部署砖墙，为队伍提供临时掩体和路线阻挡。",
 	  "category": "utility",
+	  "placement_preview": {"enabled": true, "mode": "farm_tile"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -798,6 +804,7 @@
 	  "hint": "左键放置测绘骑手",
 	  "category": "utility",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": true, "mode": "vehicle", "scene_path": "res://character/weapons/SurveyRider.tscn"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -814,6 +821,7 @@
 	  "hint": "左键部署野战厨房",
 	  "category": "utility",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": true, "mode": "vehicle", "scene_path": "res://character/weapons/KitchenCar.tscn"},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -830,6 +838,7 @@
 	  "hint": "左键部署自动做菜机",
 	  "category": "utility",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": false},
 	  "aimable": false,
 	  "show_crosshair": true
 	},
@@ -856,6 +865,7 @@
 	  "path": "res://character/weapons/ChickenSpawner.tscn",
 	  "grip_scale": [0.25, 0.25, 0.25],
 	  "cooldown": 0.2,
+	  "placement_cooldown": 0.0,
 	  "color": "#F2E7C4",
 	  "hint": "左键在地面放置一只鸡",
 	  "description": "可携带的活鸡，放置后继续养殖生长，成熟后才会产蛋。",
@@ -865,6 +875,7 @@
 	  "maturity_seconds": 180.0,
 	  "category": "utility",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": true, "mode": "livestock", "scene_path": "res://items/Chicken.tscn"},
 	  "consumed_on_use": true,
 	  "aimable": false,
 	  "show_crosshair": true
@@ -877,6 +888,7 @@
 	  "path": "res://character/weapons/PigSpawner.tscn",
 	  "grip_scale": [0.18, 0.18, 0.18],
 	  "cooldown": 0.2,
+	  "placement_cooldown": 0.0,
 	  "color": "#E8A6A9",
 	  "hint": "左键在地面放置一只猪",
 	  "description": "可携带的活猪，放置后继续养殖生长，成熟后可送往屠宰加工。",
@@ -886,6 +898,7 @@
 	  "maturity_seconds": 360.0,
 	  "category": "utility",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": true, "mode": "livestock", "scene_path": "res://items/Pig.tscn"},
 	  "consumed_on_use": true,
 	  "aimable": false,
 	  "show_crosshair": true
@@ -898,6 +911,7 @@
 	  "path": "res://character/weapons/AngusCowSpawner.tscn",
 	  "grip_scale": [0.12, 0.12, 0.12],
 	  "cooldown": 0.2,
+	  "placement_cooldown": 0.0,
 	  "color": "#45484C",
 	  "hint": "左键在地面放置一头安格斯牛",
 	  "description": "可携带的活安格斯牛，放置后继续养殖生长，成熟后可送往屠宰加工。",
@@ -907,6 +921,7 @@
 	  "maturity_seconds": 480.0,
 	  "category": "throwable",
 	  "free_placement": true,
+	  "placement_preview": {"enabled": true, "mode": "livestock", "scene_path": "res://items/AngusCow.tscn"},
 	  "consumed_on_use": true,
 	  "aimable": false,
 	  "show_crosshair": true

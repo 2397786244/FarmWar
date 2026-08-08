@@ -45,6 +45,7 @@ const INTERACTION_OCCLUSION_MASK := 2
 
 const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const CooldownRingScene := preload("res://src/cooldown_ring.gd")
+const PlacementPreviewControllerScript := preload("res://src/placement_preview_controller.gd")
 const HANDHELD_WEAPON_TOOL_IDS := {
 	"sprout_blaster": true,
 	"wreck": true,
@@ -115,6 +116,7 @@ var tranquilizer_elapsed := 0.0
 var current_tool_index := 0
 var tool_node: Node3D
 var held_item_node: Node3D
+var placement_preview_controller: PlacementPreviewController
 var tool_cooldowns: Array[float] = []
 var backpack_items: Array[Dictionary] = []
 var suppress_backpack_layout_sync := false
@@ -1143,7 +1145,13 @@ func request_pickup_item(pickup: PickupItem) -> bool:
 	if not rejection_notice.is_empty():
 		show_gameplay_notice(rejection_notice)
 		return false
-	var action := {"station_kind": "dropped_item", "action": "pickup", "item_id": pickup.item_id}
+	var action := {
+		"station_kind": "dropped_item",
+		"action": "pickup",
+		"item_id": pickup.item_id,
+		"player_position": global_position,
+		"player_yaw": rotation.y,
+	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 		return true
@@ -1422,6 +1430,8 @@ func _ready() -> void:
 		set_process(false)
 		set_physics_process(false)
 		return
+	if not is_remote_proxy:
+		_ensure_placement_preview_controller()
 
 	if pending_loadout_selection.is_empty():
 		_initialize_backpack(tool_definitions.slice(0, HOTBAR_SLOT_COUNT))
@@ -1484,6 +1494,20 @@ func _ready() -> void:
 		$SubViewport/ShopPage.closed.connect(_on_shop_page_closed)
 		if _has_any_equipped_tool():
 			_select_tool(0, true)
+
+
+func _ensure_placement_preview_controller() -> void:
+	if is_remote_proxy or is_instance_valid(placement_preview_controller):
+		return
+	placement_preview_controller = PlacementPreviewControllerScript.new() as PlacementPreviewController
+	placement_preview_controller.name = "PlacementPreviewController"
+	add_child(placement_preview_controller)
+	placement_preview_controller.setup(self)
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.clear_selection()
 
 
 func configure_remote_proxy(peer_id: int, selection: Dictionary) -> void:
@@ -2706,6 +2730,8 @@ func _select_tool(new_index: int, force := false) -> void:
 	# not make the object appear upside down or lying on its side.
 	if not is_shooting_tool:
 		_schedule_held_model_upright(tool_node)
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.set_selection(definition, selected_item)
 
 	_refresh_hotbar()
 	if is_remote_proxy:
@@ -2750,6 +2776,8 @@ func _select_handheld_item(new_index: int, item: Dictionary, force := false) -> 
 	held_item_node.scale = item.get("handheld_scale", handheld_item_scale)
 	_schedule_held_model_upright(held_item_node)
 	held_item_node.set_meta("selection_replication_id", _handheld_item_replication_id(item))
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.set_selection({}, item)
 	_refresh_hotbar()
 	if is_remote_proxy:
 		return
@@ -2878,6 +2906,8 @@ func _ingredient_item_from_replication_id(replication_id: String) -> Dictionary:
 
 
 func _clear_tool_node() -> void:
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.clear_selection()
 	if is_instance_valid(tool_node):
 		tool_pivot.remove_child(tool_node)
 		tool_node.queue_free()
@@ -2885,6 +2915,8 @@ func _clear_tool_node() -> void:
 
 
 func _clear_held_item_node() -> void:
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.clear_selection()
 	if is_instance_valid(held_item_node):
 		tool_pivot.remove_child(held_item_node)
 		held_item_node.queue_free()
@@ -2904,6 +2936,8 @@ func _select_empty_hotbar_slot(selected_slot := -1) -> void:
 	_set_weapon_aiming(false)
 	_clear_tool_node()
 	_clear_held_item_node()
+	if is_instance_valid(placement_preview_controller):
+		placement_preview_controller.clear_selection()
 	current_tool_index = selected_slot
 	_refresh_hotbar()
 	if is_remote_proxy:
@@ -2920,6 +2954,24 @@ func _selected_tool_id() -> String:
 	if is_instance_valid(held_item_node):
 		return str(held_item_node.get_meta("selection_replication_id", ""))
 	return ""
+
+
+func _get_tool_action_cooldown_duration(definition: Dictionary) -> float:
+	if definition.has("placement_cooldown"):
+		return maxf(0.0, float(definition.get("placement_cooldown", 0.0)))
+	if bool(definition.get("consumed_on_use", false)):
+		return 0.0
+	return maxf(0.0, float(definition.get("cooldown", 0.0)))
+
+
+func get_placement_preview_cooldown_remaining() -> float:
+	if current_tool_index < 0 or current_tool_index >= tool_definitions.size() \
+			or current_tool_index >= tool_cooldowns.size():
+		return 0.0
+	var definition: Dictionary = tool_definitions[current_tool_index]
+	if _get_tool_action_cooldown_duration(definition) <= 0.0:
+		return 0.0
+	return maxf(0.0, float(tool_cooldowns[current_tool_index]))
 
 
 func _selected_item_uses_carry_pose() -> bool:
@@ -2942,6 +2994,8 @@ func _use_current_tool() -> void:
 	# always be used for teleportation immediately, so let the authoritative
 	# request decide whether this click is a teleport or a new launch.
 	var selected_tool_id := str(tool_definitions[current_tool_index].get("id", ""))
+	var definition: Dictionary = tool_definitions[current_tool_index]
+	var action_cooldown_duration := _get_tool_action_cooldown_duration(definition)
 	if _selected_weapon_uses_ammo():
 		var selected_item := backpack_items[current_tool_index]
 		if float(selected_item.get("reload_remaining", 0.0)) > 0.0:
@@ -2950,10 +3004,11 @@ func _use_current_tool() -> void:
 		if int(selected_item.get("ammo_in_mag", 0)) <= 0:
 			show_gameplay_notice("弹匣为空，按装弹键换弹")
 			return
-	if tool_cooldowns[current_tool_index] > 0.0 and selected_tool_id != "rift_book":
+	if tool_cooldowns[current_tool_index] > 0.0 \
+			and action_cooldown_duration > 0.0 \
+			and selected_tool_id != "rift_book":
 		_flash_cooldown_slot(current_tool_index)
 		return
-	var definition: Dictionary = tool_definitions[current_tool_index]
 	var category := str(definition.get("category", "utility"))
 	if not tool_node.has_method("emit") \
 			and not bool(definition.get("free_placement", false)) \
@@ -3003,9 +3058,7 @@ func _use_current_tool() -> void:
 	if ret is Dictionary and not str((ret as Dictionary).get("consumed_tool_id", "")).is_empty():
 		starts_tool_cooldown = false
 	if starts_tool_cooldown:
-		tool_cooldowns[current_tool_index] = float(
-			tool_definitions[current_tool_index]["cooldown"]
-		)
+		tool_cooldowns[current_tool_index] = action_cooldown_duration
 	_refresh_hotbar()
 	_update_ammo_ui()
 
@@ -3264,6 +3317,7 @@ func _process(delta: float) -> void:
 	_update_team_money_ui()
 	_refresh_message_area_notice()
 	_update_water_visual_effect()
+	_update_placement_preview()
 	if game_exit_dialog.is_open():
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
@@ -3348,6 +3402,21 @@ func _process(delta: float) -> void:
 	# Reflow the persistent tutorial line after the actionable yellow hint has
 	# been resolved for this frame, preventing both labels from overlapping.
 	_refresh_message_area_notice()
+
+
+func _update_placement_preview() -> void:
+	if not is_instance_valid(placement_preview_controller):
+		return
+	var blocked: bool = is_prone or is_respawning or vehicle_is_active or remote_is_active \
+			or _inventory_ui_blocks_gameplay_actions() \
+			or game_exit_dialog.is_open() \
+			or (is_instance_valid(match_end_page) and match_end_page.visible) \
+			or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open()) \
+			or (is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open()) \
+			or (is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open()) \
+			or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
+			or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open())
+	placement_preview_controller.update_preview(not blocked)
 
 
 func _update_continuous_tool_use() -> void:
@@ -5352,6 +5421,12 @@ func _debug_interaction_shapecast_hits(detector: ShapeCast3D) -> void:
 
 func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary:
 	var candidate_bodies: Dictionary = {}
+	for pickup_value: Variant in get_tree().get_nodes_in_group("dropped_pickup_items"):
+		if pickup_value is PickupItem:
+			var pickup := pickup_value as PickupItem
+			if is_instance_valid(pickup) and pickup.landed \
+					and pickup.global_position.distance_to(global_position) <= INTERACTION_MAX_DISTANCE + 1.0:
+				candidate_bodies[pickup.get_instance_id()] = pickup
 	for area_value: Variant in get_tree().get_nodes_in_group("livestock_interaction_areas"):
 		if area_value is Area3D:
 			var livestock_area := area_value as Area3D

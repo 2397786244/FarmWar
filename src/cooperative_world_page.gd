@@ -17,6 +17,9 @@ var death_mode_option: OptionButton
 var create_button: Button
 var saved_worlds_box: VBoxContainer
 var selected_world_id := ""
+var delete_world_dialog: ConfirmationDialog
+var pending_delete_world_id := ""
+var pending_delete_world_name := ""
 var map_list: ItemList
 var map_details_label: Label
 var maps: Array[Dictionary] = []
@@ -150,6 +153,11 @@ func _build_interface() -> void:
 	saved_worlds_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	saved_worlds_box.add_theme_constant_override("separation", 10)
 	scroll.add_child(saved_worlds_box)
+	delete_world_dialog = ConfirmationDialog.new()
+	delete_world_dialog.title = "删除合作存档"
+	delete_world_dialog.confirmed.connect(_confirm_delete_world)
+	delete_world_dialog.canceled.connect(_clear_pending_delete)
+	add_child(delete_world_dialog)
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 14)
 	root.add_child(footer)
@@ -167,6 +175,11 @@ func _refresh_worlds() -> void:
 		return
 	for world: Dictionary in worlds:
 		var host_summary: Dictionary = world.get("host_summary", {})
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.custom_minimum_size = Vector2(0, 94)
+		row.add_theme_constant_override("separation", 10)
+		saved_worlds_box.add_child(row)
 		var button := _make_button("%s\n%s · %d 人 · %s" % [
 			str(world.get("display_name", "未命名世界")),
 			"%s · 第 %d 天 · 团队金钱 %s · 房主 %s HP %.0f/%.0f · %s" % [
@@ -181,12 +194,20 @@ func _refresh_worlds() -> void:
 			int(world.get("max_players", 4)),
 			_death_mode_text(str(world.get("death_drop_mode", "save"))),
 		])
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.icon = _load_icon(str(world.get("map_icon_path", "")))
 		button.expand_icon = false
 		button.custom_minimum_size.y = 94
 		button.pressed.connect(_on_continue_world_pressed.bind(str(world.get("world_id", ""))))
-		saved_worlds_box.add_child(button)
+		row.add_child(button)
+		var delete_button := _make_delete_button()
+		delete_button.tooltip_text = "删除这个合作世界存档及其玩家档案"
+		delete_button.pressed.connect(_on_delete_world_pressed.bind(
+			str(world.get("world_id", "")),
+			str(world.get("display_name", "未命名世界")),
+		))
+		row.add_child(delete_button)
 
 
 func _on_create_pressed() -> void:
@@ -240,6 +261,35 @@ func _on_continue_world_pressed(world_id: String) -> void:
 	status_label.text = "正在为“%s”创建 Steam 好友 Lobby..." % str(world.get("display_name", "合作世界"))
 	if not SteamService.create_cooperative_lobby(world):
 		status_label.text = "Steam Lobby 创建失败。"
+
+
+func _on_delete_world_pressed(world_id: String, display_name: String) -> void:
+	if world_id.is_empty() or not is_instance_valid(delete_world_dialog):
+		return
+	pending_delete_world_id = world_id
+	pending_delete_world_name = display_name
+	delete_world_dialog.dialog_text = "确定要删除“%s”吗？\n世界进度、玩家档案和该存档中的所有内容都会被永久删除。" % display_name
+	delete_world_dialog.popup_centered(Vector2i(620, 220))
+
+
+func _confirm_delete_world() -> void:
+	var world_id := pending_delete_world_id
+	var display_name := pending_delete_world_name
+	_clear_pending_delete()
+	if world_id.is_empty():
+		return
+	if CooperativeWorldStorage.delete_world(world_id):
+		if selected_world_id == world_id:
+			selected_world_id = ""
+		status_label.text = "已删除合作存档：“%s”。" % display_name
+		_refresh_worlds()
+	else:
+		status_label.text = "删除合作存档失败，请检查存档文件是否被占用。"
+
+
+func _clear_pending_delete() -> void:
+	pending_delete_world_id = ""
+	pending_delete_world_name = ""
 
 
 func _on_lobby_created(_lobby_id: int, _world: Dictionary) -> void:
@@ -423,6 +473,20 @@ func _make_button(text: String) -> Button:
 	button.add_theme_color_override("font_color", COLOR_TEXT)
 	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 16))
 	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 16))
+	return button
+
+
+func _make_delete_button() -> Button:
+	var button := Button.new()
+	button.text = "删除存档"
+	button.custom_minimum_size = Vector2(156, 94)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	button.add_theme_font_size_override("font_size", 20)
+	button.add_theme_color_override("font_color", Color("#FFECEC"))
+	button.add_theme_stylebox_override("normal", _style_box(Color("#8B1E2D"), 16))
+	button.add_theme_stylebox_override("hover", _style_box(Color("#C6283D"), 16))
+	button.add_theme_stylebox_override("pressed", _style_box(Color("#6D1421"), 16))
+	button.add_theme_stylebox_override("focus", _style_box(Color("#C6283D"), 16))
 	return button
 
 

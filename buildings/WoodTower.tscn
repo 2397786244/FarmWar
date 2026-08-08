@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://b4juq50bb05js"]
+
+[ext_resource type="PackedScene" uid="uid://butrvrom0ylx0" path="res://assets/tools/WoodWatchTower.glb" id="1_qhqlu"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_53y0f"]
+size = Vector3(1, 1.5, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_n6gyo"]
+size = Vector3(1, 1.5, 1.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_5unxj"]
+size = Vector3(5, 10.2, 5)
+
+[node name="WoodTower" type="StaticBody3D" unique_id=131246713]
+
+[node name="Mesh" parent="." unique_id=3208848 instance=ExtResource("1_qhqlu")]
+
+[node name="ClimbArea" type="Area3D" parent="." unique_id=666688087]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7199686, 2.8763804)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ClimbArea" unique_id=384335453]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47094983, 0)
+shape = SubResource("BoxShape3D_53y0f")
+
+[node name="ClimbTop" type="Area3D" parent="." unique_id=1594591046]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.985155, 1.9656231)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ClimbTop" unique_id=844165476]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.16276407)
+shape = SubResource("BoxShape3D_n6gyo")
+debug_color = Color(0.9098101, 0.22129303, 0.51040345, 0.41960785)
+
+[node name="TopPos" type="Marker3D" parent="." unique_id=1054548412]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.4893, 1.7439883)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2027753942]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.334798, -0.2507441)
+shape = SubResource("BoxShape3D_5unxj")

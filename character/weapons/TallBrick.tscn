@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://bfbus5plolxdi"]
+
+[ext_resource type="PackedScene" uid="uid://cxa3gi1d65cvv" path="res://assets/tools/TallBrickWall.glb" id="1_xy7k8"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_xy7k8"]
+size = Vector3(6, 10, 1)
+
+[node name="TallBrick" type="StaticBody3D" unique_id=1172522295]
+
+[node name="Mesh" parent="." unique_id=859957877 instance=ExtResource("1_xy7k8")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1619972795]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.956109, 0)
+shape = SubResource("BoxShape3D_xy7k8")

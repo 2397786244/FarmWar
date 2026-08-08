@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://bf4bctult6n8r"]
+
+[ext_resource type="PackedScene" uid="uid://dbrm75mogskbb" path="res://assets/tools/WireMeshWall.glb" id="1_ies3u"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ug2tp"]
+size = Vector3(4, 10, 0.6)
+
+[node name="TallMeshWall" type="StaticBody3D" unique_id=1774406780]
+
+[node name="Mesh" parent="." unique_id=2060617120 instance=ExtResource("1_ies3u")]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1387188]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 2.0479813, 0)
+shape = SubResource("BoxShape3D_ug2tp")

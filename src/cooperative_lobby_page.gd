@@ -10,6 +10,8 @@ const COLOR_PANEL_2 := Color("#22324A")
 const COLOR_TEXT := Color("#F4F7FA")
 const COLOR_MUTED := Color("#AFC2D0")
 const COLOR_ACCENT := Color("#54D6A2")
+const HOST_STARTING_WORLD_TEXT := "启动世界中"
+const CLIENT_JOINING_WORLD_TEXT := "加入世界中"
 
 var world_data: Dictionary = {}
 var world_id := ""
@@ -23,6 +25,7 @@ var members_list: VBoxContainer
 var loadout_holder: Control
 var loadout_ui: MultiplayerLoadoutSelect
 var member_refresh_accumulator := 0.0
+var enter_world_in_progress := false
 
 
 func _ready() -> void:
@@ -201,6 +204,11 @@ func _refresh() -> void:
 	]
 	loadout_button.visible = false
 	enter_world_button.visible = true
+	if enter_world_in_progress:
+		enter_world_button.disabled = true
+		enter_world_button.text = _world_transition_text()
+		enter_world_button.modulate = Color(0.65, 0.70, 0.75, 1.0)
+		return
 	if is_host:
 		enter_world_button.disabled = false
 		enter_world_button.text = "启动合作世界"
@@ -254,18 +262,44 @@ func _on_leave_pressed() -> void:
 
 
 func _on_enter_world_pressed() -> void:
+	if enter_world_in_progress:
+		return
 	var profile := CooperativeWorldStorage.get_local_profile(world_id, SteamService.steam_id)
 	if profile.is_empty():
 		status_label.text = "请先选择角色和初始道具。"
 		return
-	var started := CooperativeSession.start_host(world_data, profile) if SteamService.is_current_lobby_host() else CooperativeSession.join_hosted_world()
+	var is_host := SteamService.is_current_lobby_host()
+	enter_world_in_progress = true
+	enter_world_button.disabled = true
+	enter_world_button.text = HOST_STARTING_WORLD_TEXT if is_host else CLIENT_JOINING_WORLD_TEXT
+	enter_world_button.modulate = Color(0.65, 0.70, 0.75, 1.0)
+	status_label.text = "正在启动合作世界，请稍候。" if is_host else "正在建立 Steam P2P 连接并加入合作世界，请稍候。"
+	call_deferred("_continue_enter_world", profile.duplicate(true), is_host)
+
+
+func _continue_enter_world(profile: Dictionary, is_host: bool) -> void:
+	if not is_inside_tree() or not enter_world_in_progress:
+		return
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree() or not enter_world_in_progress:
+		return
+	var started := CooperativeSession.start_host(world_data, profile) if is_host else CooperativeSession.join_hosted_world()
 	if not started:
+		enter_world_in_progress = false
+		_refresh()
 		status_label.text = "无法建立合作会话，请确认 Steam Lobby 与房主状态。"
 
 
 func _on_session_failed(message: String) -> void:
+	enter_world_in_progress = false
+	_refresh()
 	if is_instance_valid(status_label):
 		status_label.text = message
+
+
+func _world_transition_text() -> String:
+	return HOST_STARTING_WORLD_TEXT if SteamService.is_current_lobby_host() else CLIENT_JOINING_WORLD_TEXT
 
 
 func _on_invite_pressed() -> void:

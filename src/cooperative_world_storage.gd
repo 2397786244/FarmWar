@@ -86,6 +86,22 @@ func select_world(world_id: String) -> Dictionary:
 	return active_world.duplicate(true)
 
 
+func delete_world(world_id: String) -> bool:
+	var normalized_id := world_id.strip_edges()
+	if normalized_id.is_empty() or normalized_id in [".", ".."] \
+			or normalized_id.contains("/") or normalized_id.contains("\\"):
+		return false
+	var folder := "%s/%s" % [WORLD_ROOT, normalized_id]
+	if not DirAccess.dir_exists_absolute(folder):
+		return false
+	if not _remove_directory_recursive(folder):
+		return false
+	_delete_player_profiles(normalized_id)
+	if str(active_world.get("world_id", "")) == normalized_id:
+		active_world.clear()
+	return true
+
+
 func save_world(world: Dictionary) -> bool:
 	var world_id := str(world.get("world_id", ""))
 	if world_id.is_empty():
@@ -224,6 +240,47 @@ func _world_path(world_id: String) -> String:
 
 func _profile_path(world_id: String, steam_id: int) -> String:
 	return "%s/%s_%d.json" % [PROFILE_ROOT, world_id, steam_id]
+
+
+func _remove_directory_recursive(path: String) -> bool:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return false
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+	var success := true
+	while not entry.is_empty():
+		if not entry.begins_with("."):
+			var entry_path := path.path_join(entry)
+			if directory.current_is_dir():
+				if not _remove_directory_recursive(entry_path):
+					success = false
+					break
+			else:
+				var absolute_entry_path := ProjectSettings.globalize_path(entry_path)
+				if DirAccess.remove_absolute(absolute_entry_path) != OK:
+					success = false
+					break
+		entry = directory.get_next()
+	directory.list_dir_end()
+	if not success:
+		return false
+	return DirAccess.remove_absolute(ProjectSettings.globalize_path(path)) == OK
+
+
+func _delete_player_profiles(world_id: String) -> void:
+	var directory := DirAccess.open(PROFILE_ROOT)
+	if directory == null:
+		return
+	var prefix := "%s_" % world_id
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+	while not entry.is_empty():
+		if not directory.current_is_dir() and entry.begins_with(prefix):
+			var profile_path := ProjectSettings.globalize_path(PROFILE_ROOT.path_join(entry))
+			DirAccess.remove_absolute(profile_path)
+		entry = directory.get_next()
+	directory.list_dir_end()
 
 
 func _normalize_death_drop_mode(mode: String) -> String:

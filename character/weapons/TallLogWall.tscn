@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://1xaaywv36rw2"]
+
+[ext_resource type="PackedScene" uid="uid://1kmwsc6jjl21" path="res://assets/tools/LogWall.glb" id="1_txy44"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rnr4t"]
+size = Vector3(6, 9.8, 1)
+
+[node name="TallLogWall" type="StaticBody3D" unique_id=61445558]
+
+[node name="Mesh" parent="." unique_id=413537072 instance=ExtResource("1_txy44")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1838631693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.997012, 0)
+shape = SubResource("BoxShape3D_rnr4t")
