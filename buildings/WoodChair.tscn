@@ -6,6 +6,7 @@
 size = Vector3(2, 1, 1)
 
 [node name="WoodChair" type="StaticBody3D" unique_id=1941240362]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 

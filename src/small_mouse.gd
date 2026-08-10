@@ -419,7 +419,11 @@ func _simulate_ground_motion(move_input: Vector2, delta: float) -> void:
 	if move_direction.length_squared() > 1.0:
 		move_direction = move_direction.normalized()
 
-	var target_velocity := move_direction * move_speed
+	var target_velocity := move_direction * move_speed * GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		tool_owner,
+		"remote"
+	)
 	var response := (
 		acceleration
 		if move_direction.length_squared() > 0.0001

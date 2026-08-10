@@ -12,7 +12,6 @@ const DEFAULT_MAP_VERSION := "1.0.0"
 const REQUIRED_ROOT_NODES := [
 	"Sun",
 	"WorldEnvironment",
-	"NavigationRegion3D",
 	"Ground",
 	"MapBoundaryWalls",
 	"CloudSystem",
@@ -251,6 +250,9 @@ func _validated_map(definition: Dictionary) -> Dictionary:
 		else:
 			if not root.has_method("get_team_spawn_position"):
 				errors.append("未挂载 FarmWorldInitializer")
+			if root.get_node_or_null("NavigationRegion3D") == null \
+					and root.get_node_or_null("DynamicNavigationChunkGrid") == null:
+				errors.append("缺少 NavigationRegion3D 或 DynamicNavigationChunkGrid")
 			for node_name: String in REQUIRED_ROOT_NODES:
 				if root.get_node_or_null(NodePath(node_name)) == null:
 					errors.append("缺少 %s" % node_name)

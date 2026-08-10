@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://bw5wpm7dul5jd"]
+
+[ext_resource type="PackedScene" uid="uid://bwlre71yqw5lx" path="res://assets/buildings/FTF_Structure_Bridge_Wood_11x4m.glb" id="1_oh8lq"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_oh8lq"]
+size = Vector3(0.3, 1.5, 10)
+
+[node name="WoodBridge" type="StaticBody3D" unique_id=1907636449]
+metadata/map_can_overlap_water = true
+collision_layer = 4096
+collision_mask = 45995
+
+[node name="Mesh" parent="." unique_id=1788652051 instance=ExtResource("1_oh8lq")]
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1746916330]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 4.0
+polygon = PackedVector2Array(-5.7458115, 0.23296963, -3.0372655, 0.48689583, -0.635547, 0.6032787, 1.0572941, 0.61385894, 3.9033844, 0.4234143, 5.776091, 0.24354988, 5.78667, -0.07385787, -5.7881327, -0.09501839)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1065352013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7157909, 0.8916119, 0)
+shape = SubResource("BoxShape3D_oh8lq")
+debug_color = Color(0.9672547, 0.04608774, 0.4492057, 0.41960785)
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=1819308734]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7232832, 0.8916119, 0)
+shape = SubResource("BoxShape3D_oh8lq")
+debug_color = Color(0.9672547, 0.04608774, 0.4492057, 0.41960785)

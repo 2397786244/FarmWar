@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://chk1myqr60qkf" path="res://assets/buildings/ChickenChopCompleted.glb" id="3_completed"]
 
 [node name="ChickenChopFrame" type="StaticBody3D" unique_id=97345210]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 0
 script = ExtResource("2_script")

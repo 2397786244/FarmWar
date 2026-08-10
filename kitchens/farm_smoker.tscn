@@ -21,6 +21,7 @@ albedo_color = Color(0.58, 0.38, 0.18, 1)
 size = Vector3(1.5, 0.08, 0.04)
 
 [node name="FarmSmoker" type="StaticBody3D" unique_id=1805026849]
+metadata/map_can_overlap_water = false
 collision_layer = 512
 collision_mask = 11
 script = ExtResource("2_script")

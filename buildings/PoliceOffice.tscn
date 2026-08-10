@@ -6,6 +6,7 @@
 size = Vector3(10, 4, 8)
 
 [node name="PoliceOffice" type="StaticBody3D" unique_id=1463757153]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 12971
 

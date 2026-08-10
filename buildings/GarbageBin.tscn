@@ -5,6 +5,7 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_qjmgl"]
 
 [node name="GarbageBin" type="StaticBody3D" unique_id=964684600]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 12971
 

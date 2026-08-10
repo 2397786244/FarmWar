@@ -164,6 +164,14 @@ func submit_team_chat(message: String, scope := "team") -> void:
 	NetworkSession.submit_action("team_chat", {"message": message, "scope": scope})
 
 
+func submit_gate_action(action: Dictionary) -> void:
+	NetworkSession.submit_action("gate_action", action)
+
+
+func submit_ladder_action(action: Dictionary) -> void:
+	NetworkSession.submit_action("ladder_action", action)
+
+
 func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
 		return
@@ -181,6 +189,8 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 		"remote_action": rpc_endpoint.submit_remote_action(payload)
 		"vehicle_input": rpc_endpoint.submit_vehicle_input(payload)
 		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+		"gate_action": rpc_endpoint.submit_gate_action(payload)
+		"ladder_action": rpc_endpoint.submit_ladder_action(payload)
 		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))
 
 

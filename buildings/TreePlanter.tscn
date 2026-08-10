@@ -6,6 +6,7 @@
 size = Vector3(3, 0.5, 3)
 
 [node name="TreePlanter" type="StaticBody3D" unique_id=370706848]
+metadata/map_can_overlap_water = false
 
 [node name="TreePlanter" parent="." unique_id=1090049584 instance=ExtResource("1_vm6wf")]
 

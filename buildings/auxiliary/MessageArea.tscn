@@ -6,6 +6,7 @@
 size = Vector3(4, 2, 4)
 
 [node name="MessageArea" type="Node3D" unique_id=1957813853]
+metadata/map_can_overlap_water = false
 script = ExtResource("1_message")
 
 [node name="MessageArea" type="Area3D" parent="." unique_id=582197676]

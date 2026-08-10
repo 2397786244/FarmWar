@@ -7,6 +7,7 @@
 size = Vector3(1.26, 1.32, 0.878)
 
 [node name="Sink" type="StaticBody3D"]
+metadata/map_can_overlap_water = false
 collision_layer = 512
 collision_mask = 11
 script = ExtResource("2_script")

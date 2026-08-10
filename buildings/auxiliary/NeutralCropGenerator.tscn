@@ -6,6 +6,7 @@
 size = Vector3(16, 4, 16)
 
 [node name="NeutralCropGenerator" type="Area3D"]
+metadata/map_can_overlap_water = false
 script = ExtResource("1_neutral_crop")
 collision_layer = 0
 collision_mask = 64

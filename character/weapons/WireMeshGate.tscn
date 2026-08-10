@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://bymc1kifsqdv6"]
 
 [ext_resource type="PackedScene" uid="uid://y5sl3eyba77r" path="res://assets/tools/WireMeshGate.glb" id="1_o0x5n"]
+[ext_resource type="Script" uid="uid://bdcccjanbqu36" path="res://src/wire_mesh_gate.gd" id="2_gate_script"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_q3ssh"]
 size = Vector3(4, 10, 0.4)
@@ -8,18 +9,43 @@ size = Vector3(4, 10, 0.4)
 [sub_resource type="BoxShape3D" id="BoxShape3D_o0x5n"]
 size = Vector3(1.5, 2, 2)
 
-[node name="WireMeshGate" type="StaticBody3D" unique_id=760704632]
+[sub_resource type="BoxShape3D" id="BoxShape3D_v5fu4"]
+size = Vector3(4.2, 10.2, 0.6)
+
+[node name="WireMeshGate" type="StaticBody3D" unique_id=760704632 groups=["ai_demolition_target"]]
+metadata/map_can_overlap_water = false
+collision_layer = 128
+collision_mask = 12427
+script = ExtResource("2_gate_script")
+max_hp = 1400.0
 
 [node name="Mesh" parent="." unique_id=989321833 instance=ExtResource("1_o0x5n")]
 transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1495413094]
-transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 1.9641933, 0)
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 2.0479813, 0)
 shape = SubResource("BoxShape3D_q3ssh")
 
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = true
+height = 4.1
+vertices = PackedVector3Array(-0.9, 0, -0.2, 0.9, 0, -0.2, 0.9, 0, 0.2, -0.9, 0, 0.2)
+
 [node name="DoorArea" type="Area3D" parent="." unique_id=792482332]
+collision_layer = 512
+collision_mask = 8
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="DoorArea" unique_id=1498839642]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0366452, 0)
 shape = SubResource("BoxShape3D_o0x5n")
 debug_color = Color(0.9478715, 0.16995737, 0.39832526, 0.41960785)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=62485643]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1171969630]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0.022288322, 2.065568, 0)
+shape = SubResource("BoxShape3D_v5fu4")

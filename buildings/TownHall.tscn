@@ -6,6 +6,7 @@
 size = Vector3(14, 10, 13)
 
 [node name="TownHall" type="StaticBody3D" unique_id=756730018]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 
 [node name="FTF_Building_StoneTownHall_TwoStorey_14x10m2" parent="." unique_id=157646580 instance=ExtResource("1_7xiv6")]

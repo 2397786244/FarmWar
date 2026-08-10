@@ -6,6 +6,7 @@
 size = Vector3(2.5, 4, 2)
 
 [node name="BlueFeedBin" type="StaticBody3D" unique_id=1667551899]
+metadata/map_can_overlap_water = false
 
 [node name="FTF_Building_FarmFeedBin_3_8m_BlueRoof2" parent="." unique_id=1278572432 instance=ExtResource("1_wbrv4")]
 

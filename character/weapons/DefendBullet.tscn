@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://cyj0hyuc8o0bv"]
 
 [ext_resource type="Script" uid="uid://yyhuc8dp3njv" path="res://src/defend_bullet.gd" id="1_dakya"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_trace"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_744bm"]
 albedo_color = Color(0.95361775, 0.9559166, 0.96263593, 1)
@@ -26,3 +27,12 @@ mesh = SubResource("SphereMesh_7px7w")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=507111884]
 shape = SubResource("SphereShape3D_dakya")
+
+[node name="Trace" type="MeshInstance3D" parent="."]
+script = ExtResource("2_trace")
+tracer_color = Color(0.22, 0.86, 1, 1)
+radius = 0.12
+minimum_length = 2.0
+maximum_length = 8.0
+length_multiplier = 3.0
+emission_energy = 20.0

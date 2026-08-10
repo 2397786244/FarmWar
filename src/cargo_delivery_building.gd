@@ -65,6 +65,8 @@ func _apply_building_metadata() -> void:
 
 
 func _register_delivery_building() -> void:
+	if not is_inside_tree():
+		return
 	if is_instance_valid(MapBuildingRegistry):
 		MapBuildingRegistry.register_building(self, building_id, display_name, building_type)
 

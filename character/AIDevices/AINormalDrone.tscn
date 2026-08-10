@@ -6,8 +6,14 @@
 [node name="AINormalDrone" unique_id=260222586 instance=ExtResource("1_normal")]
 script = ExtResource("2_script")
 team_id = "blue"
+use_distance = 200.0
 target_scan_range = 50.0
+search_radius = 80.0
 attack_standoff_distance = 9.0
 ai_move_speed = 11.0
 target_refresh_interval = 0.35
 minimum_effective_signal_to_attack = 0.2
+bomb_damage = 30.0
+strategic_bombard_radius = 10.0
+strategic_bombard_waypoint_switch_radius = 2.5
+strategic_bombard_waypoint_stopping_distance = 0.5

@@ -10,6 +10,7 @@ size = Vector3(16, 9, 12)
 size = Vector3(14, 1, 8)
 
 [node name="WarehouseBlue" type="StaticBody3D" unique_id=29900678]
+metadata/map_can_overlap_water = false
 script = ExtResource("2_cargo_delivery")
 building_id = "blue_warehouse"
 display_name = "蓝队仓库"

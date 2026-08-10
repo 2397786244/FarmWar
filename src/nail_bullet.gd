@@ -12,6 +12,7 @@ var bullet_owner := ""
 var lifetime := 0.0
 var running := false
 var base_bullet_strength := 0.0
+var shooter_reference: WeakRef
 
 
 func make_visual_only() -> void:
@@ -27,12 +28,14 @@ func make_visual_only() -> void:
 func run(
 	spawn_position: Vector3,
 	shoot_direction: Vector3,
-	shooter_team: String
+	shooter_team: String,
+	shooter_node: Node3D = null
 ) -> void:
 	global_position = spawn_position
 	direction = shoot_direction.normalized()
 	start_position = spawn_position
 	bullet_owner = shooter_team
+	shooter_reference = weakref(shooter_node) if is_instance_valid(shooter_node) else null
 	base_bullet_strength = bullet_strength
 	running = true
 	if direction.length_squared() > 0.001:
@@ -40,6 +43,13 @@ func run(
 
 func get_bullet_owner() -> String:
 	return bullet_owner
+
+
+func get_bullet_shooter() -> Node3D:
+	if shooter_reference == null:
+		return null
+	var shooter: Variant = shooter_reference.get_ref()
+	return shooter as Node3D if is_instance_valid(shooter) else null
 
 
 func _physics_process(delta: float) -> void:

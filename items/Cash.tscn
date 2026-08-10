@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://cw2y26butpgg6"]
+
+[ext_resource type="PackedScene" uid="uid://c8ioo5f8nbtsq" path="res://assets/other_items/Cash.glb" id="1_8w3md"]
+[ext_resource type="Script" path="res://src/cash_pickup_visual.gd" id="2_cash_script"]
+
+[node name="CashSmall" type="Node3D" unique_id=823115770]
+script = ExtResource("2_cash_script")
+
+[node name="Mesh" parent="." unique_id=1983627459 instance=ExtResource("1_8w3md")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.030536532, 0)

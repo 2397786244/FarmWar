@@ -529,6 +529,11 @@ func _choose_wander_target() -> void:
 
 
 func _move_horizontal(direction: Vector3, speed: float, delta: float) -> void:
+	speed *= GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		"",
+		"wild_animal"
+	)
 	var move_direction := direction
 	var horizontal_step := direction * speed + _knockback_velocity
 	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta

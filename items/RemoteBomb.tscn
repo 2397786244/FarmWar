@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://uqrfknbee8xk"]
+
+[ext_resource type="PackedScene" uid="uid://b05qj6clrmf1s" path="res://assets/tools/RemoteBomb.glb" id="1_5t3y0"]
+[ext_resource type="Script" path="res://src/remote_bomb.gd" id="2_remote"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_5t3y0"]
+size = Vector3(0.5, 0.3, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_204qn"]
+size = Vector3(0.5, 0.4, 0.5)
+
+[node name="RemoteBomb" type="StaticBody3D" unique_id=318807255]
+script = ExtResource("2_remote")
+max_hp = 50.0
+collision_layer = 128
+collision_mask = 0
+
+[node name="Mesh" parent="." unique_id=1696146887 instance=ExtResource("1_5t3y0")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=591449238]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12885034, 0.00017035007)
+shape = SubResource("BoxShape3D_5t3y0")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=732008845]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1509785684]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.17590159, 0)
+shape = SubResource("BoxShape3D_204qn")

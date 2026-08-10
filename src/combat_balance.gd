@@ -4,6 +4,11 @@ class_name CombatBalance
 ## Authoritative combat defaults. Scene export values may override these at
 ## runtime, but GameAuthority must never carry a second set of literals.
 const PROFILES := {
+	"fall_damage": {
+		"start_height": 5.0,
+		"damage_per_meter": 20.0,
+		"max_damage": 200.0,
+	},
 	"team_rewards": {
 		"enemy_player_kill": 200,
 		"wild_animal_kill": 50,
@@ -14,49 +19,59 @@ const PROFILES := {
 		"completed_dish_collected": 100,
 	},
 	"rubber_revolver": {
-		"range": 55.0, "damage": 30.0, "knockback": 30.0,
-		"visual_speed": 60.0, "visual_lifetime": 0.92,
+		"range": 60.0, "damage": 30.0, "knockback": 30.0,
+		"visual_speed": 90.0, "visual_lifetime": 0.6666667,
 	},
 	"flame_gun": {
 		"range": 100.0, "damage": 50.0, "knockback": 10.0,
-		"visual_speed": 60.0, "visual_lifetime": 1.67,
+		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
 	},
 	"freeze_gun": {
 		"range": 100.0, "damage": 50.0, "knockback": 10.0,
-		"visual_speed": 60.0, "visual_lifetime": 1.67,
+		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
 	},
 	"nail_gun": {
-		"range": 60.0, "damage": 20.0, "knockback": 15.0,
-		"visual_speed": 100.0, "visual_lifetime": 0.6,
+		"range": 80.0, "damage": 20.0, "knockback": 15.0,
+		"visual_speed": 120.0, "visual_lifetime": 0.6666667,
 	},
 	"suppressed_pistol": {
 		"range": 100.0, "damage": 30.0, "knockback": 20.0,
-		"visual_speed": 60.0, "visual_lifetime": 1.67,
+		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
 	"shotgun": {
 		"range": 60.0, "damage": 60.0, "knockback": 30.0,
-		"visual_speed": 60.0, "visual_lifetime": 1.0,
+		"visual_speed": 100.0, "visual_lifetime": 0.6,
 		"bullet_count": 2, "spread_degrees": 3.0,
 	},
 	"hunting_rifle": {
-		"range": 120.0, "damage": 80.0, "knockback": 20.0,
-		"visual_speed": 100.0, "visual_lifetime": 1.2,
+		"range": 150.0, "damage": 100.0, "knockback": 20.0,
+		"visual_speed": 120.0, "visual_lifetime": 1.25,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
 	"m4": {
-		"range": 100.0, "damage": 45.0, "knockback": 18.0,
-		"visual_speed": 90.0, "visual_lifetime": 1.12,
+		"range": 120.0, "damage": 45.0, "knockback": 18.0,
+		"visual_speed": 120.0, "visual_lifetime": 1.0,
+		"bullet_count": 1, "spread_degrees": 0.0,
+	},
+	"mpx": {
+		"range": 100.0, "damage": 30.0, "knockback": 18.0,
+		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
 	"future_m4": {
-		"range": 100.0, "damage": 48.0, "knockback": 20.0,
-		"visual_speed": 90.0, "visual_lifetime": 1.12,
+		"range": 120.0, "damage": 48.0, "knockback": 20.0,
+		"visual_speed": 140.0, "visual_lifetime": 0.8571429,
+		"bullet_count": 1, "spread_degrees": 0.0,
+	},
+	"future_mpx": {
+		"range": 100.0, "damage": 35.0, "knockback": 18.0,
+		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
 	"ar15": {
-		"range": 110.0, "damage": 55.0, "knockback": 20.0,
-		"visual_speed": 100.0, "visual_lifetime": 1.1,
+		"range": 120.0, "damage": 55.0, "knockback": 20.0,
+		"visual_speed": 120.0, "visual_lifetime": 1.0,
 		"bullet_count": 1, "spread_degrees": 0.0,
 	},
 	"medicine_pistol": {
@@ -103,7 +118,10 @@ const PROFILES := {
 		"target_range": 20.0, "projectile_speed": 60.0, "damage": 25.0,
 		"impact_radius": 1.0, "direct_hit_radius": 0.56, "fire_interval": 1.5,
 	},
-	"anti_air": {"intercept_range": 15.0, "magazine_size": 8, "reload_time": 20.0},
+	"anti_air": {
+		"intercept_range": 15.0, "magazine_size": 8, "reload_time": 20.0,
+		"visual_speed": 200.0,
+	},
 	"normal_drone": {
 		"bomb_speed": 10.0, "bomb_damage": 200.0, "bomb_radius": 12.0,
 		"bomb_cooldown": 2.0, "startup_bomb_lock": 3.0,
@@ -193,6 +211,11 @@ const TOOL_MAX_HP := {
 	"area_protector": 300.0,
 	"fake_player": 300.0,
 	"rift_anchor": 100.0,
+	"tall_brick": 1800.0,
+	"tall_log_wall": 1500.0,
+	"tall_mesh_wall": 1200.0,
+	"wire_mesh_gate": 1400.0,
+	"chain_link_fence": 300.0,
 	"default": 200.0,
 }
 
@@ -221,6 +244,17 @@ static func get_float(profile: String, key: String, fallback: float = 0.0) -> fl
 static func get_int(profile: String, key: String, fallback: int = 0) -> int:
 	var values: Dictionary = PROFILES.get(profile, {})
 	return int(values.get(key, fallback))
+
+
+static func calculate_fall_damage(fall_height: float) -> float:
+	var excess_height := maxf(
+		0.0,
+		fall_height - get_float("fall_damage", "start_height", 5.0)
+	)
+	return minf(
+		get_float("fall_damage", "max_damage", 200.0),
+		excess_height * get_float("fall_damage", "damage_per_meter", 20.0)
+	)
 
 
 static func get_tool_max_hp(tool_id: String) -> float:

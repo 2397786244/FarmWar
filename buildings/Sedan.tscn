@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://cuv438oca27f8" path="res://assets/vehicles/FTF_Vehicle_CompactSedan_Black_4_4m.glb" id="1_frvt8"]
 
 [node name="Sedan" type="StaticBody3D" unique_id=995195696]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 

@@ -1,0 +1,21 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/future_engineer_ai.gd" id="1_engineer"]
+
+[node name="FutureEngineer" type="CharacterBody3D"]
+script = ExtResource("1_engineer")
+future_warrior_scene_path = "res://character/hero_skeleton/enemy/future_engineer.tscn"
+max_hp = 250.0
+ar15_tool_id = "future_mpx"
+ar15_scene_path = "res://character/weapons/FutureMPX.tscn"
+ar15_min_range = 2.0
+ar15_max_range = 100.0
+starting_grenade_count = 0
+starting_explosive_count = 10
+max_explosive_count = 10
+use_navigation_agent = true
+remote_bomb_damage = 3000.0
+remote_bomb_radius = 8.0
+remote_bomb_safe_distance = 10.0
+remote_bomb_hp = 50.0
+console_debug_enabled = true

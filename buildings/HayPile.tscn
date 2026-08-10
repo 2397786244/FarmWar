@@ -6,6 +6,7 @@
 size = Vector3(2, 1.5, 1.2)
 
 [node name="HayPile" type="StaticBody3D" unique_id=698454119]
+metadata/map_can_overlap_water = false
 collision_layer = 4097
 
 [node name="FTF_Prop_HayBale_Square_2m2" parent="." unique_id=1365975550 instance=ExtResource("1_xs8rw")]

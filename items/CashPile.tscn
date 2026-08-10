@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://b85gshkb7uiay"]
+
+[ext_resource type="PackedScene" uid="uid://c8ioo5f8nbtsq" path="res://assets/other_items/Cash.glb" id="1_bw1fr"]
+
+[node name="CashPile" type="Node3D" unique_id=851603801]
+
+[node name="Cash" parent="." unique_id=1983627459 instance=ExtResource("1_bw1fr")]
+
+[node name="Cash2" parent="." unique_id=773953853 instance=ExtResource("1_bw1fr")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.13611072)
+
+[node name="Cash3" parent="." unique_id=1045188143 instance=ExtResource("1_bw1fr")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11052188)
+
+[node name="Cash4" parent="." unique_id=1456213271 instance=ExtResource("1_bw1fr")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.18246213, 0, 0)
+
+[node name="Cash5" parent="." unique_id=54061675 instance=ExtResource("1_bw1fr")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.030321807, 0.015194744, 0)
+
+[node name="Cash6" parent="." unique_id=1996969395 instance=ExtResource("1_bw1fr")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.36918366, 0, 0)

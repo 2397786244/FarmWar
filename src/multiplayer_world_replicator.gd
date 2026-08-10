@@ -6,8 +6,10 @@ const PLAYER_SCENE := preload("res://character/player.tscn")
 const AI_SCENES := {
 	"farmer": "res://character/FarmerAI.tscn",
 	"futurewarrior": "res://character/FutureWarriorAI.tscn",
+	"futureengineer": "res://character/FutureEngineerAI.tscn",
 	"assistant": "res://character/AssistantAI.tscn",
 }
+const AI_NORMAL_DRONE_SCENE := preload("res://character/AIDevices/AINormalDrone.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
 const BUG_STORM_SCENE := preload("res://character/weapons/BugStorm.tscn")
@@ -30,6 +32,7 @@ const PROJECTILE_SCENES := {
 	"spicy_bullet": "res://character/weapons/SpicyBullet.tscn",
 	"drone_bomb": "res://character/weapons/boom.tscn",
 	"auto_shooter_boom": "res://character/weapons/boom.tscn",
+	"engineer_remote_bomb": "res://character/weapons/boom.tscn",
 	"wheat_sentry_bullet": "res://character/weapons/NailBullet.tscn",
 	"grenade": "res://character/weapons/Grenade.tscn",
 	"vehicle_shield_laser": "res://character/weapons/ShieldLaser.tscn",
@@ -59,6 +62,11 @@ const PLACED_TOOL_SCENES := {
 	"big_mouth": "res://character/weapons/BigMouth.tscn",
 	"fake_player": "res://character/weapons/FakePlayer.tscn",
 	"rift_anchor": "res://character/weapons/RiftAnchor.tscn",
+	"tall_brick": "res://character/weapons/TallBrick.tscn",
+	"tall_log_wall": "res://character/weapons/TallLogWall.tscn",
+	"tall_mesh_wall": "res://character/weapons/TallMeshWall.tscn",
+	"wire_mesh_gate": "res://character/weapons/WireMeshGate.tscn",
+	"chain_link_fence": "res://character/weapons/ChainLinkFence.tscn",
 }
 const REMOTE_CONTROLLED_DEVICE_TYPES := {
 	"action_drone": true,
@@ -78,6 +86,7 @@ const TILE_TOOL_NAMES := {
 
 var remote_players: Dictionary = {}
 var remote_ai_visuals: Dictionary = {}
+var remote_ai_drone_visuals: Dictionary = {}
 var projectile_visuals: Dictionary = {}
 var projectile_visual_states: Dictionary = {}
 var last_projectile_snapshot_tick := -1
@@ -201,6 +210,7 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_vehicles(snapshot.get("vehicles", []))
 	_sync_players(snapshot.get("players", []), snapshot)
 	_sync_ai_players(snapshot.get("ai_players", []))
+	_sync_ai_drones(snapshot.get("ai_drones", []))
 	_sync_projectiles(snapshot.get("projectiles", []), int(snapshot.get("tick", -1)))
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []), int(snapshot.get("tick", -1)))
@@ -219,7 +229,15 @@ func _apply_authoritative_environment(snapshot: Dictionary) -> void:
 
 
 func _on_visual_world_event_received(event: Dictionary) -> void:
-	if not GameAuthority.is_client_proxy() or str(event.get("type", "")) != "nature_resource_hit":
+	if not GameAuthority.is_client_proxy() and not NetworkSession.is_listen_server():
+		return
+	var event_type := str(event.get("type", ""))
+	if event_type == "visual_projectile_fired":
+		if _resolve_world_root() == null:
+			return
+		_spawn_transient_projectile_visual(event)
+		return
+	if event_type != "nature_resource_hit":
 		return
 	var resource := _nature_resource_by_id(str(event.get("resource_id", "")))
 	if resource != null and resource.has_method("play_hit_effect"):
@@ -295,6 +313,43 @@ func _sync_ai_players(ai_value: Variant) -> void:
 		if is_instance_valid(stale):
 			stale.queue_free()
 		remote_ai_visuals.erase(ai_id)
+
+
+func _sync_ai_drones(drones_value: Variant) -> void:
+	if not drones_value is Array:
+		return
+	var seen: Dictionary = {}
+	for entry_value: Variant in drones_value:
+		if not entry_value is Dictionary:
+			continue
+		var data := entry_value as Dictionary
+		var drone_id := str(data.get("ai_drone_id", ""))
+		if drone_id.is_empty():
+			continue
+		seen[drone_id] = true
+		var drone := remote_ai_drone_visuals.get(drone_id, null) as AINormalDrone
+		if not is_instance_valid(drone):
+			if world_root == null:
+				continue
+			drone = AI_NORMAL_DRONE_SCENE.instantiate() as AINormalDrone
+			if drone == null:
+				continue
+			drone.team_id = str(data.get("team", "red"))
+			drone.tool_owner = drone.team_id
+			drone.name = "RemoteAIDrone_%s" % drone_id.replace(":", "_")
+			drone.set_meta("network_ai_drone_proxy", true)
+			world_root.add_child(drone)
+			_disable_visual_runtime(drone)
+			remote_ai_drone_visuals[drone_id] = drone
+		drone.apply_network_state(data)
+	for drone_id_value: Variant in remote_ai_drone_visuals.keys():
+		var drone_id := str(drone_id_value)
+		if seen.has(drone_id):
+			continue
+		var stale := remote_ai_drone_visuals[drone_id] as Node
+		if is_instance_valid(stale):
+			stale.queue_free()
+		remote_ai_drone_visuals.erase(drone_id)
 
 
 func _get_local_human_peer_id() -> int:
@@ -410,6 +465,13 @@ func _apply_local_player_snapshot(data: Dictionary) -> void:
 			else:
 				node.call("apply_equipped_backpack_snapshot", str(data.get("equipped_backpack_id", "")))
 			var hp := float(data.get("hp", 200.0))
+			var snapshot_ladder_climbing := bool(data.get("ladder_climbing", false))
+			if not snapshot_ladder_climbing and bool(node.get("is_ladder_climbing")) and node.has_method("_exit_ladder_climb"):
+				node.call("_exit_ladder_climb")
+			else:
+				node.set("is_ladder_climbing", snapshot_ladder_climbing)
+			node.set("ladder_tower_id", str(data.get("ladder_tower_id", "")))
+			node.set("ladder_climb_direction", float(data.get("ladder_climb_direction", 1.0)))
 			node.set("labeled_remaining", maxf(0.0, float(data.get("labeled_remaining", 0.0))))
 			var respawn_left := float(data.get("respawn_left", 0.0))
 			var respawn_position: Variant = null
@@ -699,7 +761,15 @@ func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void
 			continue
 		var data := item as Dictionary
 		var tool_id := str(data.get("tool_id", ""))
-		if tool_id.is_empty() or destroyed_tool_visual_ids.has(tool_id):
+		if tool_id.is_empty():
+			continue
+		if destroyed_tool_visual_ids.has(tool_id):
+			var destroyed_map_node := _find_map_placed_tool(tool_id)
+			if is_instance_valid(destroyed_map_node):
+				if destroyed_map_node.has_method("apply_network_destroyed"):
+					destroyed_map_node.call("apply_network_destroyed")
+				else:
+					destroyed_map_node.queue_free()
 			continue
 		seen[tool_id] = true
 		var node := get_node_or_null(NodePath(str(data.get("path", data.get("tool_id", "")))))
@@ -744,7 +814,15 @@ func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void
 				else:
 					(node as Node3D).rotation.y = target_yaw
 		if node != null and node.has_method("apply_network_health"):
+			if bool(data.get("destroyed", false)) and bool(data.get("auto_respawn", false)) \
+					and node.has_method("apply_network_destroyed"):
+				node.call("apply_network_destroyed")
+			elif not bool(data.get("destroyed", false)) and node.has_method("apply_network_respawned"):
+				if bool(node.get("destroyed")):
+					node.call("apply_network_respawned", float(data.get("hp", 0.0)))
 			node.call("apply_network_health", float(data.get("hp", 0.0)))
+		if node is WireMeshGate and data.has("is_open"):
+			(node as WireMeshGate).apply_network_state(data)
 		if node != null and node.has_method("apply_network_visual_state"):
 			if visual_state is Dictionary:
 				node.call("apply_network_visual_state", visual_state)
@@ -840,9 +918,10 @@ func _find_listen_server_authoritative_remote_device(device_id: String) -> Node3
 
 
 func _find_map_placed_tool(tool_id: String) -> Node3D:
-	for node in get_tree().get_nodes_in_group("network_map_devices"):
-		if node is Node3D and is_instance_valid(node) \
-				and str(node.get_meta("network_device_id", "")) == tool_id:
+	for group_name in ["network_map_devices", "network_map_facilities"]:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if node is Node3D and is_instance_valid(node) \
+					and str(node.get_meta("network_device_id", "")) == tool_id:
 				return node as Node3D
 	return null
 
@@ -900,7 +979,7 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 		return null
 	world_root.add_child(visual)
 	visual.set_meta("cooperative_network_spawned", true)
-	visual.set("tool_owner", str(data.get("team", "")))
+	_set_tool_owner_if_supported(visual, str(data.get("team", "")))
 	if visual is KitchenAppliance:
 		(visual as KitchenAppliance).owner_team = str(data.get("team", ""))
 	if visual is AutoCooker:
@@ -926,6 +1005,15 @@ func _get_or_create_placed_tool_visual(tool_id: String, data: Dictionary) -> Nod
 	visual.rotation.y = float(data.get("yaw", 0.0))
 	placed_tool_visuals[tool_id] = visual
 	return visual
+
+
+func _set_tool_owner_if_supported(node: Object, owner: String) -> void:
+	if node == null:
+		return
+	for property_info in node.get_property_list():
+		if str(property_info.get("name", "")) == "tool_owner":
+			node.set("tool_owner", owner)
+			return
 
 
 func _apply_interest_chunk_visibility(snapshot: Dictionary) -> void:
@@ -975,7 +1063,7 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var authority_player_event := NetworkSession.is_listen_server() \
 		and event_type in [
 			"tool_selected", "tool_used", "tool_destroyed",
-			"visual_projectile_fired", "dropped_item_action_result"
+			"dropped_item_action_result"
 		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
@@ -986,8 +1074,6 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	if _resolve_world_root() == null and not pickup_event:
 		return
 	match event_type:
-		"visual_projectile_fired":
-			_spawn_transient_projectile_visual(event)
 		"absorption_visual":
 			_apply_absorption_visual_event(event)
 		"tool_selected":
@@ -1060,6 +1146,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_player_respawn_state_event(event)
 		"tool_destroyed":
 			_apply_tool_destroyed_event(event)
+		"tool_respawned":
+			_apply_tool_respawned_event(event)
 		"lightning_struck":
 			_apply_lightning_strike_event(event)
 		"dropped_item_action_result":
@@ -1093,6 +1181,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_livestock_spawned(event.get("state", {}))
 		"placed_tool_spawned":
 			_apply_placed_tool_spawned(event.get("state", {}))
+		"gate_state":
+			_apply_gate_state_event(event)
 		"remote_device_spawned":
 			_apply_remote_device_spawned(event.get("state", {}))
 		"chopping_action_result":
@@ -1201,6 +1291,34 @@ func _apply_placed_tool_spawned(state_value: Variant) -> void:
 	visual.rotation.y = float(state.get("yaw", visual.rotation.y))
 	if visual.has_method("apply_network_health"):
 		visual.call("apply_network_health", float(state.get("hp", 0.0)))
+	if visual is WireMeshGate:
+		(visual as WireMeshGate).apply_network_state(state)
+
+
+func _apply_gate_state_event(event: Dictionary) -> void:
+	var gate_id := str(event.get("gate_id", event.get("device_id", "")))
+	if gate_id.is_empty() or destroyed_tool_visual_ids.has(gate_id):
+		return
+	var gate: Node3D = _find_listen_server_authoritative_placed_tool(gate_id)
+	if gate == null:
+		gate = placed_tool_visuals.get(gate_id, null) as Node3D
+	if gate == null:
+		gate = _get_or_create_placed_tool_visual(gate_id, {
+			"tool_id": gate_id,
+			"device_id": gate_id,
+			"tool_name": "wire_mesh_gate",
+			"team": str(event.get("team", "")),
+			"scene_path": str(event.get("scene_path", "res://character/weapons/WireMeshGate.tscn")),
+			"position": event.get("position", Vector3.ZERO),
+			"yaw": float(event.get("yaw", 0.0)),
+		})
+	if gate == null:
+		return
+	if gate is WireMeshGate:
+		(gate as WireMeshGate).apply_network_state(event)
+	if event.has("position") and event.get("position") is Vector3:
+		gate.global_position = event.get("position") as Vector3
+	gate.rotation.y = float(event.get("yaw", gate.rotation.y))
 
 
 func _apply_remote_device_spawned(state_value: Variant) -> void:
@@ -2098,9 +2216,11 @@ func _remove_remote_device_visual(device_id: String) -> void:
 
 
 func _remove_placed_tool_visual(tool_id: String) -> void:
-	if tool_id.is_empty() or not placed_tool_visuals.has(tool_id):
+	if tool_id.is_empty():
 		return
-	var visual: Node = placed_tool_visuals[tool_id]
+	var visual: Node = placed_tool_visuals.get(tool_id, null)
+	if not is_instance_valid(visual):
+		visual = _find_map_placed_tool(tool_id)
 	if is_instance_valid(visual):
 		visual.queue_free()
 	placed_tool_visuals.erase(tool_id)
@@ -2225,7 +2345,7 @@ func _apply_projectile_explosion(event: Dictionary) -> void:
 			_spawn_spicy_area_visual(pos, str(event.get("team", "")), event.get("direction", Vector3.FORWARD))
 		elif projectile_type == "grenade":
 			_spawn_grenade_explosion(pos)
-		elif projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+		elif projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb"]:
 			_spawn_boom_effect(pos)
 		else:
 			_spawn_impact_flash(pos, str(event.get("effect", "Explosion")))
@@ -2541,10 +2661,41 @@ func _apply_tool_destroyed_event(event: Dictionary) -> void:
 	var device_id := str(event.get("device_id", event.get("id", "")))
 	if device_id.is_empty():
 		return
+	if bool(event.get("auto_respawn", false)):
+		var facility: Node = placed_tool_visuals.get(device_id, null)
+		if not is_instance_valid(facility):
+			facility = _find_map_placed_tool(device_id)
+		if is_instance_valid(facility) and facility.has_method("apply_network_destroyed"):
+			facility.call("apply_network_destroyed")
+		return
 	if tile_path.is_empty():
 		destroyed_tool_visual_ids[device_id] = int(event.get("tick", 0))
 	_remove_remote_device_visual(device_id)
 	_remove_placed_tool_visual(device_id)
+
+
+func _apply_tool_respawned_event(event: Dictionary) -> void:
+	var state_value: Variant = event.get("state", event)
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var tool_id := str(state.get("tool_id", state.get("device_id", event.get("id", ""))))
+	if tool_id.is_empty():
+		return
+	destroyed_tool_visual_ids.erase(tool_id)
+	var visual := _get_or_create_placed_tool_visual(tool_id, state)
+	if visual == null:
+		return
+	var position: Variant = state.get("position", Vector3.ZERO)
+	if position is Vector3:
+		visual.global_position = position
+	visual.rotation.y = float(state.get("yaw", visual.rotation.y))
+	if visual.has_method("apply_network_respawned"):
+		visual.call("apply_network_respawned", float(state.get("hp", 0.0)))
+	if visual.has_method("apply_network_health"):
+		visual.call("apply_network_health", float(state.get("hp", 0.0)))
+	if visual is WireMeshGate:
+		(visual as WireMeshGate).apply_network_state(state)
 
 
 func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
@@ -2720,7 +2871,7 @@ func _on_disconnected(_reason: String) -> void:
 
 func _clear_all() -> void:
 	_remove_rare_resource_visual()
-	for collection in [remote_players, remote_ai_visuals, projectile_visuals, transient_projectile_visuals, absorption_visuals, remote_device_visuals, placed_tool_visuals, dropped_item_visuals, wild_animal_visuals]:
+	for collection in [remote_players, remote_ai_visuals, remote_ai_drone_visuals, projectile_visuals, transient_projectile_visuals, absorption_visuals, remote_device_visuals, placed_tool_visuals, dropped_item_visuals, wild_animal_visuals]:
 		for key in collection.keys():
 			var item_value: Variant = collection[key]
 			var node_value: Variant = item_value.get("node", null) if item_value is Dictionary else item_value

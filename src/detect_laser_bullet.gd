@@ -2,7 +2,7 @@ extends CharacterBody3D
 class_name DetectLaserBullet
 # 
 @export var speed := 60
-@export var max_distance := 100
+@export var max_distance := 60
 @export var max_lifetime := 2
 @export var knockback_force := 0
 @export var bullet_strength = 5

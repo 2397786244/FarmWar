@@ -3,5 +3,6 @@
 [ext_resource type="PackedScene" uid="uid://cjdo3sqcmxkfe" path="res://assets/buildings/FTF_Garden_FlowerBed_Long_4m.glb" id="1_s3mrs"]
 
 [node name="GardenFlower2" type="StaticBody3D" unique_id=1841070220]
+metadata/map_can_overlap_water = false
 
 [node name="FTF_Garden_FlowerBed_Long_4m2" parent="." unique_id=1070540541 instance=ExtResource("1_s3mrs")]

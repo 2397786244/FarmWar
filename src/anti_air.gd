@@ -1,7 +1,7 @@
 extends CharacterBody3D
 class_name AntiAirTool
 
-@export var defend_bullet_speed = 30
+@export var defend_bullet_speed: float = 200.0
 @export var cooldown_time:float = 10.0
 @export var intercept_range: float = 15.0
 @export var magazine_size: int = 8

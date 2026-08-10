@@ -10,6 +10,7 @@ signal map_initialization_completed
 
 var is_map_initialized := false
 var _configured_ai_nodes: Array[Node] = []
+var _configured_squad_spawners: Array[Node] = []
 
 const FUTURE_WARRIOR_AI_SCENE := preload("res://character/FutureWarriorAI.tscn")
 const FARMER_AI_SCENE := preload("res://character/FarmerAI.tscn")
@@ -17,6 +18,8 @@ const ASSISTANT_AI_SCENE := preload("res://character/AssistantAI.tscn")
 const AI_SCENE_PATHS := {
 	"futurewarrior": "res://character/FutureWarriorAI.tscn",
 	"future_warrior": "res://character/FutureWarriorAI.tscn",
+	"futureengineer": "res://character/FutureEngineerAI.tscn",
+	"future_engineer": "res://character/FutureEngineerAI.tscn",
 	"farmer": "res://character/FarmerAI.tscn",
 	"farmerai": "res://character/FarmerAI.tscn",
 	"assistant": "res://character/AssistantAI.tscn",
@@ -50,6 +53,7 @@ func _ready() -> void:
 	_set_loading_progress(0.25, "正在初始化地图系统")
 	await get_tree().process_frame
 	await _initialize_farm_fields()
+	_register_static_map_facilities()
 	_set_loading_progress(0.96, "正在完成地图初始化")
 	await get_tree().process_frame
 	var player := _create_pending_player()
@@ -61,9 +65,10 @@ func _ready() -> void:
 	# deliberately creates no NPCs.  The host/server owns these nodes in both
 	# single-player and cooperative PvE; clients only receive their replicated
 	# state through the normal authority/replicator path.
-	var is_cooperative_host := CooperativeSession.is_active() and CooperativeSession.is_host()
-	if GameAuthority.is_local_authority() or (GameAuthority.is_server_authority() and is_cooperative_host):
+	## AI 节点必须由本地单机或权威服务器生成；ENet/Steam 客户端只接收快照。
+	if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
 		configured_ai = _spawn_configured_ai()
+		_configured_squad_spawners = _activate_map_squad_spawners()
 	_configured_ai_nodes = configured_ai
 	var cooperative_loading := CooperativeSession.is_active()
 	if not cooperative_loading:
@@ -74,14 +79,72 @@ func _ready() -> void:
 		for ai_value in configured_ai:
 			if is_instance_valid(ai_value):
 				ai_value.process_mode = Node.PROCESS_MODE_INHERIT
+		for spawner in _configured_squad_spawners:
+			if is_instance_valid(spawner) and spawner.has_method("set_gameplay_enabled"):
+				spawner.set_gameplay_enabled(true)
 	is_map_initialized = true
 	map_initialization_completed.emit()
+
+
+func _register_static_map_facilities() -> void:
+	var facilities: Array[Node] = []
+	_collect_static_facilities(self, facilities)
+	var map_id := str(get_meta("farmwar_map_id", loading_map_name)).strip_edges()
+	if map_id.is_empty():
+		map_id = loading_map_name.to_snake_case()
+	for node in facilities:
+		if not is_instance_valid(node) or not node is Node3D:
+			continue
+		var facility := node as Node3D
+		var category := "defense" if facility is MapDefenseFacility else "kitchen"
+		facility.add_to_group("network_map_facilities")
+		var editor_uuid := str(facility.get_meta("map_editor_uuid", ""))
+		var runtime_id := str(facility.get_meta("network_map_facility_id", ""))
+		if runtime_id.is_empty():
+			var stable_part := editor_uuid if not editor_uuid.is_empty() else str(facility.get_meta("map_editor_facility_id", facility.name))
+			runtime_id = "map:%s:%s" % [map_id, stable_part]
+		facility.set_meta("network_map_facility_id", runtime_id)
+		facility.set_meta("network_device_id", runtime_id)
+		facility.set_meta("map_facility_category", category)
+		if category != "defense":
+			continue
+		facility.add_to_group("network_map_devices")
+		var asset := MapFacilityCatalog.get_asset_by_path(
+			str(facility.get_meta("map_editor_asset_path", facility.scene_file_path))
+		)
+		var tool_name := str(facility.get_meta("map_editor_facility_id", asset.get("id", facility.name.to_snake_case())))
+		if tool_name.is_empty():
+			tool_name = facility.name.to_snake_case()
+		var team := str(facility.get("tool_owner")) if facility is MapDefenseFacility else ""
+		if GameAuthority.is_server_authority() or GameAuthority.is_local_authority():
+			GameAuthority.register_map_placed_tool(facility, tool_name, runtime_id, team)
+
+
+func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
+	if node is KitchenAppliance or node is MapDefenseFacility:
+		result.append(node)
+	for child in node.get_children():
+		_collect_static_facilities(child, result)
 
 
 func activate_runtime_entities() -> void:
 	for ai_value in _configured_ai_nodes:
 		if is_instance_valid(ai_value):
 			ai_value.process_mode = Node.PROCESS_MODE_INHERIT
+	for spawner in _configured_squad_spawners:
+		if is_instance_valid(spawner) and spawner.has_method("set_gameplay_enabled"):
+			spawner.set_gameplay_enabled(true)
+
+
+func _activate_map_squad_spawners() -> Array[Node]:
+	var result: Array[Node] = []
+	for node in get_tree().get_nodes_in_group("enemy_squad_spawners"):
+		if not is_ancestor_of(node):
+			continue
+		if node.has_method("activate_runtime_spawning"):
+			node.activate_runtime_spawning()
+			result.append(node)
+	return result
 
 
 func _configure_runtime_shadow_contract() -> void:
@@ -301,7 +364,10 @@ func _spawn_configured_ai() -> Array[Node]:
 			push_warning("地图 AI #%d 没有可用的 %s 队出生点，跳过生成。" % [index + 1, team])
 			ai.free()
 			continue
-		ai.name = str(entry.get("name", "%s_%s_%02d" % [ai_type.capitalize(), team.capitalize(), index + 1]))
+		var ai_name := str(entry.get("name", "")).strip_edges()
+		if ai_name.is_empty():
+			ai_name = "%s_%s_%02d" % [ai_type.capitalize(), team.capitalize(), index + 1]
+		ai.name = ai_name
 		ai.set_meta("network_ai_id", "map_ai_%02d" % (index + 1))
 		ai.set_meta("map_ai_type", ai_type)
 		_set_property_if_present(ai, "team_id", team)
@@ -311,6 +377,23 @@ func _spawn_configured_ai() -> Array[Node]:
 		add_child(ai)
 		if ai is Node3D:
 			(ai as Node3D).global_position = spawn_position
+		var target_path := str(entry.get("target_path", "")).strip_edges()
+		if not target_path.is_empty():
+			var target_node := get_node_or_null(NodePath(target_path)) as Node3D
+			if target_node != null:
+				_set_property_if_present(ai, "target", target_node)
+			else:
+				push_warning("地图 AI #%d 的 target_path 无效：%s" % [index + 1, target_path])
+		if ai is AssistantAI:
+			print(
+				"[AIAssistant] spawned name=%s team=%s spawn=%s target_path=%s"
+				% [ai.name, team, spawn_position, target_path if not target_path.is_empty() else "<enemy_spawn_fallback>"]
+			)
+		elif ai is FutureEngineerAI:
+			print(
+				"[FutureEngineer] spawned name=%s team=%s spawn=%s target_path=%s"
+				% [ai.name, team, spawn_position, target_path if not target_path.is_empty() else "<enemy_spawn_fallback>"]
+			)
 		result.append(ai)
 	return result
 

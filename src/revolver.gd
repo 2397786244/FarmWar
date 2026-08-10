@@ -2,7 +2,7 @@ extends Node3D
 class_name RevolverTool
 
 @export var tool_owner := ""
-@export var bullet_speed := 60.0
+@export var bullet_speed := 90.0
 
 const BULLET_SCENE := preload("res://character/weapons/RubberBullet.tscn")
 
@@ -36,7 +36,9 @@ func _emit_bullet(visual_only: bool) -> void:
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
 	var direction := _get_center_screen_direction(shooter)
-	bullet.speed = bullet_speed
+	bullet.speed = CombatBalance.get_float("rubber_revolver", "visual_speed", bullet_speed)
+	bullet.max_distance = CombatBalance.get_float("rubber_revolver", "range", bullet.max_distance)
+	bullet.max_lifetime = CombatBalance.get_float("rubber_revolver", "visual_lifetime", bullet.max_lifetime)
 	bullet.run(muzzle.global_position, direction, tool_owner, shooter)
 
 	muzzle_flash.restart()

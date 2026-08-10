@@ -36,8 +36,10 @@ size = Vector3(4.2, 0.25, 9)
 size = Vector3(7, 0.3, 11)
 
 [node name="TwoStoryHouse" type="StaticBody3D" unique_id=132356762]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 171
+metadata/map_enterable = true
 
 [node name="TwoStoryHouse" parent="." unique_id=957517251 instance=ExtResource("1_ha3b8")]
 

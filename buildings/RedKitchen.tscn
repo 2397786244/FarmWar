@@ -13,6 +13,8 @@
 [ext_resource type="PackedScene" uid="uid://bl85x4tinjod1" path="res://kitchens/stand_mixer.tscn" id="11_mixer"]
 
 [node name="RedKitchen" type="StaticBody3D" unique_id=64102639]
+metadata/map_can_overlap_water = false
+metadata/map_enterable = true
 
 [node name="RedKitchen" parent="." unique_id=591754071 instance=ExtResource("1_c2wy4")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, 8)

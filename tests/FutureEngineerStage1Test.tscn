@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/future_engineer_stage1_headless.gd" id="1_stage1"]
+
+[node name="FutureEngineerStage1Test" type="Node3D"]
+script = ExtResource("1_stage1")

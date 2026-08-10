@@ -1256,6 +1256,22 @@ func request_team_chat(message: String, scope: String) -> void:
 	GameAuthority.server_team_chat(sender_id, message, scope)
 
 
+@rpc("any_peer", "reliable")
+func request_gate_action(action: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	GameAuthority.server_gate_action(sender_id, action)
+
+
+@rpc("any_peer", "reliable")
+func request_ladder_action(action: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	GameAuthority.server_ladder_action(sender_id, action)
+
+
 @rpc("authority", "unreliable")
 func receive_world_snapshot(snapshot: Dictionary) -> void:
 	pass

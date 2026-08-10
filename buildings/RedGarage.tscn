@@ -26,6 +26,8 @@ size = Vector3(3, 0.14, 0.08)
 size = Vector3(2.5, 2.2, 3)
 
 [node name="RedGarage" type="StaticBody3D" unique_id=324296873]
+metadata/map_can_overlap_water = false
+metadata/map_enterable = true
 script = ExtResource("2_garage")
 
 [node name="RedGarage" parent="." unique_id=1195235063 instance=ExtResource("1_5njvb")]

@@ -33,6 +33,12 @@ const LIVESTOCK_TOOL_SCENES := {
 	"animal_pig": "res://items/Pig.tscn",
 	"animal_angus_cow": "res://items/AngusCow.tscn",
 }
+const WALL_TOOL_SCENES := {
+	"tall_brick": "res://character/weapons/TallBrick.tscn",
+	"tall_log_wall": "res://character/weapons/TallLogWall.tscn",
+	"tall_mesh_wall": "res://character/weapons/TallMeshWall.tscn",
+	"wire_mesh_gate": "res://character/weapons/WireMeshGate.tscn",
+}
 
 var player: Node3D
 var preview_root: Node3D
@@ -49,6 +55,10 @@ var source_collision_shape: Shape3D
 var source_collision_transform := Transform3D.IDENTITY
 var preview_valid := false
 var preview_cooldown_active := false
+var wall_snap_active := false
+var wall_snap_position := Vector3.ZERO
+var wall_snap_source_id := ""
+var wall_snap_source_rid := RID()
 
 
 func setup(next_player: Node3D) -> void:
@@ -94,6 +104,10 @@ func clear_selection() -> void:
 	source_collision_transform = Transform3D.IDENTITY
 	preview_valid = false
 	preview_cooldown_active = false
+	wall_snap_active = false
+	wall_snap_position = Vector3.ZERO
+	wall_snap_source_id = ""
+	wall_snap_source_rid = RID()
 	if is_instance_valid(preview_root):
 		preview_root.visible = false
 	if is_instance_valid(preview_model):
@@ -113,7 +127,8 @@ func update_preview(allowed_by_player_state := true) -> void:
 		preview_root.visible = false
 		return
 
-	var request_value: Variant = player.call("_make_tool_request")
+	# Calculate this frame's snap before the click path consumes the cached result.
+	var request_value: Variant = player.call("_make_tool_request", false)
 	var request: Dictionary = request_value as Dictionary if request_value is Dictionary else {}
 	var yaw := float(player.rotation.y)
 	var cooldown_remaining := 0.0
@@ -245,7 +260,9 @@ func _sanitize_preview_tree(node: Node) -> void:
 	if node is NavigationAgent3D:
 		(node as NavigationAgent3D).avoidance_enabled = false
 	if node is NavigationObstacle3D:
-		(node as NavigationObstacle3D).enabled = false
+		var navigation_obstacle := node as NavigationObstacle3D
+		navigation_obstacle.affect_navigation_mesh = false
+		navigation_obstacle.avoidance_enabled = false
 	if node is Timer:
 		(node as Timer).stop()
 	if node is GPUParticles3D:
@@ -298,18 +315,202 @@ func _update_farm_tile_preview(request: Dictionary, yaw: float, cooldown_active 
 func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := false) -> void:
 	var fallback_distance := 3.0 if current_mode == "livestock" else 4.0
 	var requested_position := _resolve_fallback_target(request, fallback_distance)
+	var placement_position := requested_position
+	var placement_exceptions := _placement_exceptions()
+	_reset_wall_snap()
+	if WALL_TOOL_SCENES.has(current_tool_id):
+		var wall_snap := _resolve_wall_snap(requested_position, yaw)
+		if bool(wall_snap.get("active", false)):
+			placement_position = wall_snap.get("position", requested_position) as Vector3
+			wall_snap_source_id = str(wall_snap.get("source_id", ""))
+			var source_rid_value: Variant = wall_snap.get("source_rid", RID())
+			if source_rid_value is RID:
+				wall_snap_source_rid = source_rid_value as RID
+				if wall_snap_source_rid.is_valid():
+					placement_exceptions.append(wall_snap_source_rid)
+			wall_snap_active = true
+			wall_snap_position = placement_position
 	var result := PlacementQueryScript.resolve_free_placement(
 		player.get_world_3d(),
-		requested_position,
+		placement_position,
 		player.global_position,
 		yaw,
 		source_collision_shape,
 		source_collision_transform,
 		PREVIEW_BLOCKING_MASK,
-		_placement_exceptions(),
+		placement_exceptions,
 	)
-	var position := result.get("position", requested_position) as Vector3
+	var position := result.get("position", placement_position) as Vector3
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
+	if wall_snap_active:
+		wall_snap_position = position
+
+
+func _reset_wall_snap() -> void:
+	wall_snap_active = false
+	wall_snap_position = Vector3.ZERO
+	wall_snap_source_id = ""
+	wall_snap_source_rid = RID()
+
+
+func has_active_wall_snap() -> bool:
+	return wall_snap_active and WALL_TOOL_SCENES.has(current_tool_id)
+
+
+func get_wall_snap_position() -> Vector3:
+	return wall_snap_position
+
+
+func _resolve_wall_snap(requested_position: Vector3, yaw: float) -> Dictionary:
+	var family := PlacementQueryScript.wall_family_for_tool(current_tool_id)
+	if family.is_empty():
+		return {"active": false, "position": requested_position}
+	var current_half_length := PlacementQueryScript.wall_half_length_for_shape(
+		source_collision_shape,
+		source_collision_transform
+	)
+	var candidates := _collect_wall_snap_candidates(family)
+	var result := PlacementQueryScript.resolve_wall_endpoint_snap(
+		requested_position,
+		yaw,
+		current_half_length,
+		candidates,
+		PlacementQueryScript.WALL_SNAP_DISTANCE
+	)
+	if bool(result.get("active", false)):
+		var source_id := str(result.get("source_id", ""))
+		for candidate_value: Variant in candidates:
+			if candidate_value is Dictionary and str((candidate_value as Dictionary).get("source_id", "")) == source_id:
+				result["source_rid"] = (candidate_value as Dictionary).get("source_rid", RID())
+				break
+	return result
+
+
+func _collect_wall_snap_candidates(family: String) -> Array:
+	var candidates: Array = []
+	var seen_ids := {}
+	var authority := get_node_or_null("/root/GameAuthority")
+	if authority != null:
+		var states_value: Variant = authority.get("placed_tool_states")
+		if states_value is Dictionary:
+			for raw_id: Variant in (states_value as Dictionary).keys():
+				var state_value: Variant = (states_value as Dictionary).get(raw_id, {})
+				if not state_value is Dictionary:
+					continue
+				var state := state_value as Dictionary
+				var source_id := str(raw_id)
+				var tool_id := _wall_tool_id_from_state(source_id, state)
+				if PlacementQueryScript.wall_family_for_tool(tool_id) != family:
+					continue
+				var node := _node_for_placement_state(state)
+				var position := _state_position_or_node(state, node)
+				var candidate_yaw := _state_yaw_or_node(state, node)
+				var half_length := float(state.get("wall_half_length", 0.0))
+				if half_length <= 0.0:
+					half_length = PlacementQueryScript.wall_half_length_for_node(node)
+				if half_length <= 0.0:
+					half_length = _wall_half_length_from_scene(str(state.get("scene_path", "")))
+				if half_length <= 0.0:
+					continue
+				candidates.append(_make_wall_candidate(source_id, position, candidate_yaw, half_length, node))
+				seen_ids[source_id] = true
+	var replicator := get_node_or_null("/root/MultiplayerWorldReplicator")
+	if replicator != null:
+		var visuals_value: Variant = replicator.get("placed_tool_visuals")
+		if visuals_value is Dictionary:
+			for raw_id: Variant in (visuals_value as Dictionary).keys():
+				var source_id := str(raw_id)
+				if seen_ids.has(source_id):
+					continue
+				var node := (visuals_value as Dictionary).get(raw_id, null) as Node3D
+				if not is_instance_valid(node):
+					continue
+				var tool_id := _wall_tool_id_from_node(source_id, node)
+				if PlacementQueryScript.wall_family_for_tool(tool_id) != family:
+					continue
+				var half_length := PlacementQueryScript.wall_half_length_for_node(node)
+				if half_length <= 0.0:
+					continue
+				candidates.append(_make_wall_candidate(source_id, node.global_position, node.rotation.y, half_length, node))
+	return candidates
+
+
+func _make_wall_candidate(
+	source_id: String,
+	position: Vector3,
+	yaw: float,
+	half_length: float,
+	node: Node
+) -> Dictionary:
+	var candidate := {
+		"source_id": source_id,
+		"position": position,
+		"yaw": yaw,
+		"half_length": half_length,
+	}
+	if node is CollisionObject3D:
+		candidate["source_rid"] = (node as CollisionObject3D).get_rid()
+	return candidate
+
+
+func _wall_tool_id_from_state(source_id: String, state: Dictionary) -> String:
+	var tool_id := str(state.get("tool_name", state.get("tool_id", source_id)))
+	if not PlacementQueryScript.wall_family_for_tool(tool_id).is_empty():
+		return tool_id.to_lower()
+	return PlacementQueryScript.wall_tool_id_for_scene(str(state.get("scene_path", "")))
+
+
+func _wall_tool_id_from_node(source_id: String, node: Node3D) -> String:
+	if node != null and is_instance_valid(node):
+		var scene_tool_id := PlacementQueryScript.wall_tool_id_for_scene(str(node.scene_file_path))
+		if not scene_tool_id.is_empty():
+			return scene_tool_id
+		var node_name := node.name.to_lower().replace(" ", "_")
+		if node_name.begins_with("tallbrick"):
+			return "tall_brick"
+		if node_name.begins_with("talllogwall"):
+			return "tall_log_wall"
+		if node_name.begins_with("tallmeshwall"):
+			return "tall_mesh_wall"
+		if node_name.begins_with("wiremeshgate"):
+			return "wire_mesh_gate"
+	return PlacementQueryScript.wall_tool_id_for_scene(source_id)
+
+
+func _node_for_placement_state(state: Dictionary) -> Node3D:
+	var path := str(state.get("path", state.get("device_id", "")))
+	if not path.is_empty():
+		var node := get_tree().root.get_node_or_null(NodePath(path)) as Node3D
+		if node != null and is_instance_valid(node):
+			return node
+	return null
+
+
+func _state_position_or_node(state: Dictionary, node: Node3D) -> Vector3:
+	if node != null and is_instance_valid(node):
+		return node.global_position
+	var value: Variant = state.get("position", Vector3.ZERO)
+	return value as Vector3 if value is Vector3 else Vector3.ZERO
+
+
+func _state_yaw_or_node(state: Dictionary, node: Node3D) -> float:
+	if node != null and is_instance_valid(node):
+		return node.rotation.y
+	return float(state.get("yaw", 0.0))
+
+
+func _wall_half_length_from_scene(scene_path: String) -> float:
+	if scene_path.is_empty():
+		return 0.0
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		return 0.0
+	var source := packed.instantiate() as Node3D
+	if source == null:
+		return 0.0
+	var half_length := PlacementQueryScript.wall_half_length_for_node(source)
+	source.free()
+	return half_length
 
 
 func _resolve_target_farm_tile() -> Node3D:

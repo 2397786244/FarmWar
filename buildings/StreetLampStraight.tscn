@@ -8,6 +8,7 @@ height = 4.0
 radius = 0.3
 
 [node name="StreetLampStraight" type="StaticBody3D" unique_id=525411482]
+metadata/map_can_overlap_water = false
 script = ExtResource("2_street_lamp")
 night_light_energy = 13.0
 

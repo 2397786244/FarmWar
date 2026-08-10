@@ -34,7 +34,7 @@ func rescan_current_map() -> void:
 
 
 func register_building(building: Node3D, building_id := "", display_name := "", building_type := "") -> Dictionary:
-	if building == null or not is_instance_valid(building):
+	if building == null or not is_instance_valid(building) or not building.is_inside_tree():
 		return {}
 	var entry := _describe_building(building, building_id, display_name, building_type)
 	if entry.is_empty():
@@ -78,7 +78,7 @@ func get_delivery_locations(building_type := "", delivery_category := "") -> Arr
 
 
 func _describe_building(node: Node3D, forced_id := "", forced_name := "", forced_type := "") -> Dictionary:
-	if node == null or not is_instance_valid(node):
+	if node == null or not is_instance_valid(node) or not node.is_inside_tree():
 		return {}
 	var node_name := str(node.name)
 	var lower := node_name.to_lower()

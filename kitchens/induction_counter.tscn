@@ -58,6 +58,7 @@ material = SubResource("StandardMaterial_pot_smoke")
 size = Vector2(0.62, 0.62)
 
 [node name="InductionCounter" type="StaticBody3D" unique_id=983687736 groups=["induction_counters"]]
+metadata/map_can_overlap_water = false
 collision_layer = 512
 collision_mask = 11
 script = ExtResource("2_script")

@@ -351,8 +351,13 @@ func _simulate_flight(move_input: Vector2, vertical_input: float, delta: float) 
 	if horizontal_direction.length_squared() > 1.0:
 		horizontal_direction = horizontal_direction.normalized()
 
-	var target_velocity := horizontal_direction * move_speed
-	target_velocity.y = vertical_input * ascend_speed
+	var speed_multiplier := GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		tool_owner,
+		"remote"
+	)
+	var target_velocity := horizontal_direction * move_speed * speed_multiplier
+	target_velocity.y = vertical_input * ascend_speed * speed_multiplier
 
 	var has_input := (
 		horizontal_direction.length_squared() > 0.0001

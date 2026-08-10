@@ -1,0 +1,37 @@
+[gd_scene format=3 uid="uid://clua832tau5s4"]
+
+[ext_resource type="PackedScene" uid="uid://jobgptl5oj5p" path="res://assets/tools/ChainLinkFence.glb" id="1_iqgt6"]
+[ext_resource type="Script" path="res://src/chain_link_fence.gd" id="2_script"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_sisbq"]
+height = 4.0
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_06a3e"]
+height = 4.0
+radius = 0.6
+
+[node name="ChainLinkFence" type="StaticBody3D" unique_id=2140708003 groups=["ai_demolition_target"]]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=1665339465 instance=ExtResource("1_iqgt6")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=943849575]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0, 0.5994202, 0)
+shape = SubResource("CylinderShape3D_sisbq")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = true
+height = 4.0
+vertices = PackedVector3Array(-2.6, 0, -0.7, 2.6, 0, -0.7, 2.6, 0, 0.7, -2.6, 0, 0.7)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=31305059]
+collision_layer = 128
+collision_mask = 41128
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1603734086]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0, 0.5855267, 0)
+shape = SubResource("CylinderShape3D_06a3e")

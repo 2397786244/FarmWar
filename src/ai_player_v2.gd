@@ -894,6 +894,11 @@ func _apply_movement(direction: Vector3, delta: float) -> void:
 	var speed := base_speed
 	if slow_remaining > 0.0:
 		speed *= 0.5
+	speed *= GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team_id,
+		"ai"
+	)
 	var horizontal_step := direction * speed + rubber_knockback
 	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
 	if WaterBody3D.is_navigation_blocked(proposed):

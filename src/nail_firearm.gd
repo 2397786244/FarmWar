@@ -26,13 +26,40 @@ func emit_visual_only() -> void:
 	_emit_bullets(true)
 
 
-func _emit_bullets(visual_only: bool) -> void:
+## AI authority uses a server-side hitscan for gameplay, then calls this
+## method to draw the same shot locally without creating a damage projectile.
+## Keeping the direction/distance explicit prevents the visual tracer from
+## diverging from the authoritative AI ray.
+func emit_visual_only_tracer(
+	direction: Vector3,
+	travel_distance: float = -1.0
+) -> void:
+	_emit_bullets(true, direction, travel_distance)
+
+
+func get_fire_origin() -> Vector3:
+	return muzzle.global_position if is_instance_valid(muzzle) else global_position
+
+
+func get_fire_direction() -> Vector3:
+	if is_instance_valid(muzzle):
+		return -muzzle.global_transform.basis.z.normalized()
+	return -global_transform.basis.z.normalized()
+
+
+func _emit_bullets(
+	visual_only: bool,
+	direction_override: Vector3 = Vector3.ZERO,
+	travel_distance: float = -1.0
+) -> void:
 	if tool_owner.is_empty() or profile_id.is_empty() \
 			or not is_instance_valid(GlobalVar.gameworld):
 		return
 
 	var shooter := _get_shooter()
 	var center_direction := _get_center_screen_direction(shooter)
+	if direction_override.length_squared() > 0.001:
+		center_direction = direction_override.normalized()
 	var bullet_count := maxi(1, CombatBalance.get_int(profile_id, "bullet_count", 1))
 	var spread_degrees := CombatBalance.get_float(profile_id, "spread_degrees")
 	var spread_axis := _get_spread_axis(shooter)
@@ -46,7 +73,9 @@ func _emit_bullets(visual_only: bool) -> void:
 			)
 		_spawn_bullet(
 			center_direction.rotated(spread_axis, deg_to_rad(angle_degrees)),
-			visual_only
+			visual_only,
+			shooter,
+			travel_distance
 		)
 
 	muzzle_flash.restart()
@@ -62,18 +91,31 @@ func play_muzzle_visual() -> void:
 	_play_recoil()
 
 
-func _spawn_bullet(direction: Vector3, visual_only := false) -> void:
+func _spawn_bullet(
+	direction: Vector3,
+	visual_only := false,
+	shooter: CollisionObject3D = null,
+	travel_distance: float = -1.0
+) -> void:
 	var bullet := BULLET_SCENE.instantiate() as NailBullet
 	if bullet == null:
 		return
 	bullet.speed = CombatBalance.get_float(profile_id, "visual_speed")
 	bullet.max_distance = CombatBalance.get_float(profile_id, "range")
+	bullet.max_lifetime = CombatBalance.get_float(profile_id, "visual_lifetime", bullet.max_lifetime)
+	if travel_distance >= 0.0:
+		bullet.max_distance = minf(bullet.max_distance, maxf(0.01, travel_distance))
+		if bullet.speed > 0.01:
+			bullet.max_lifetime = minf(
+				bullet.max_lifetime,
+				maxf(0.01, travel_distance / bullet.speed)
+			)
 	bullet.bullet_strength = CombatBalance.get_float(profile_id, "damage")
 	bullet.knockback_force = CombatBalance.get_float(profile_id, "knockback")
 	if visual_only:
 		bullet.make_visual_only()
 	GlobalVar.gameworld.add_child(bullet)
-	bullet.run(muzzle.global_position, direction.normalized(), tool_owner)
+	bullet.run(muzzle.global_position, direction.normalized(), tool_owner, shooter)
 
 
 func _get_shooter() -> CollisionObject3D:

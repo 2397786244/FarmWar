@@ -105,6 +105,18 @@ func submit_team_chat(message: String, scope: String) -> void:
 	request_team_chat.rpc_id(1, message, scope)
 
 
+func submit_gate_action(action: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_gate_action.rpc_id(1, action)
+
+
+func submit_ladder_action(action: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_ladder_action.rpc_id(1, action)
+
+
 @rpc("any_peer", "reliable")
 func request_submit_player_setup(_setup_data: Dictionary) -> void:
 	# 这个函数在客户端只作为 RPC 路径占位。
@@ -179,6 +191,16 @@ func request_vehicle_session(_vehicle_id: String, _connected: bool, _seat_index:
 
 @rpc("any_peer", "call_remote", "reliable", 4)
 func request_team_chat(_message: String, _scope: String) -> void:
+	pass
+
+
+@rpc("any_peer", "reliable")
+func request_gate_action(_action: Dictionary) -> void:
+	pass
+
+
+@rpc("any_peer", "reliable")
+func request_ladder_action(_action: Dictionary) -> void:
 	pass
 
 

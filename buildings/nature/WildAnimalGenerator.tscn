@@ -4,5 +4,6 @@
 [ext_resource type="PackedScene" uid="uid://b8kice1gwtdfw" path="res://items/BlackBear.tscn" id="2_bear"]
 
 [node name="WildAnimalGenerator" type="Marker3D"]
+metadata/map_can_overlap_water = false
 script = ExtResource("1_generator")
 animal_scene = ExtResource("2_bear")

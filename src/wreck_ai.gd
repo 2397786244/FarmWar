@@ -1415,7 +1415,13 @@ func _apply_movement(direction: Vector3, delta: float) -> void:
 		if difficulty == Difficulty.EASY
 		else hard_move_acceleration
 	)
-	var horizontal_step := direction * move_speed + rubber_knockback
+	var speed_multiplier := GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team_id,
+		"ai"
+	)
+	var effective_move_speed := move_speed * speed_multiplier
+	var horizontal_step := direction * effective_move_speed + rubber_knockback
 	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
 	if WaterBody3D.is_navigation_blocked(proposed):
 		# Enemy vehicles also treat water as a navigation exclusion.
@@ -1423,7 +1429,7 @@ func _apply_movement(direction: Vector3, delta: float) -> void:
 		rubber_knockback.x = 0.0
 		rubber_knockback.z = 0.0
 
-	var desired_velocity := direction * move_speed + rubber_knockback
+	var desired_velocity := direction * effective_move_speed + rubber_knockback
 	rubber_knockback = rubber_knockback.move_toward(
 		Vector3.ZERO,
 		18.0 * delta

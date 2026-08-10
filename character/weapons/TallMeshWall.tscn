@@ -1,11 +1,20 @@
 [gd_scene format=3 uid="uid://bf4bctult6n8r"]
 
 [ext_resource type="PackedScene" uid="uid://dbrm75mogskbb" path="res://assets/tools/WireMeshWall.glb" id="1_ies3u"]
+[ext_resource type="Script" path="res://src/map_defense_facility.gd" id="2_defense"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ug2tp"]
 size = Vector3(4, 10, 0.6)
 
-[node name="TallMeshWall" type="StaticBody3D" unique_id=1774406780]
+[sub_resource type="BoxShape3D" id="BoxShape3D_ies3u"]
+size = Vector3(4.2, 10.2, 0.6)
+
+[node name="TallMeshWall" type="StaticBody3D" unique_id=1774406780 groups=["ai_demolition_target"]]
+metadata/map_can_overlap_water = false
+collision_layer = 128
+collision_mask = 12427
+script = ExtResource("2_defense")
+max_hp = 1200.0
 
 [node name="Mesh" parent="." unique_id=2060617120 instance=ExtResource("1_ies3u")]
 transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
@@ -13,3 +22,18 @@ transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1387188]
 transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 2.0479813, 0)
 shape = SubResource("BoxShape3D_ug2tp")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = true
+height = 4.1
+vertices = PackedVector3Array(-0.9, 0, -0.2, 0.9, 0, -0.2, 0.9, 0, 0.2, -0.9, 0, 0.2)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=442346695]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1460229566]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0.022288322, 2.065568, 0)
+shape = SubResource("BoxShape3D_ies3u")

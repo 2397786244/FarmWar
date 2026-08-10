@@ -46,6 +46,7 @@ const INTERACTION_OCCLUSION_MASK := 2
 const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const CooldownRingScene := preload("res://src/cooldown_ring.gd")
 const PlacementPreviewControllerScript := preload("res://src/placement_preview_controller.gd")
+const CombatBalance = preload("res://src/combat_balance.gd")
 const HANDHELD_WEAPON_TOOL_IDS := {
 	"sprout_blaster": true,
 	"wreck": true,
@@ -81,6 +82,12 @@ var server_hp := PLAYER_MAX_HP
 var respawn_left := 0.0
 var is_respawning := false
 var death_respawn_duration := 0.0
+var is_ladder_climbing := false
+var ladder_tower: Node3D
+var ladder_tower_id := ""
+var ladder_climb_direction := 1.0
+var ladder_transition_cooldown := 0.0
+const LADDER_CLIMB_SPEED := 2.6
 var flame_remaining := 0.0
 var freeze_remaining := 0.0
 var lightening_remaining := 0.0
@@ -179,6 +186,10 @@ var team_money_delta_tweens: Dictionary = {}
 var _cargo_crate_hold_target: CargoCrateGround
 var _cargo_crate_hold_started_msec := 0
 const CARGO_CRATE_PICKUP_HOLD_MSEC := 650
+const WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS := 10.0
+var gate_lockpick_target_id := ""
+var gate_lockpick_started_msec := 0
+var gate_lockpick_duration := WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS
 var team_marker: MeshInstance3D
 var team_outline_material: StandardMaterial3D
 var team_visibility_accumulator := 0.0
@@ -225,6 +236,8 @@ var skeleton:Skeleton3D
 var action_anim_locked:bool = false
 var was_on_floor:bool = true # 记录上一帧是不是在地面上
 var landing_animation:bool = false
+var fall_tracking_active := false
+var fall_peak_y := 0.0
 var upper_body_look_modifiers:Array[LookAtModifier3D] = []
 var upper_body_look_weights:Array[float] = []
 var right_arm_ik:TwoBoneIK3D
@@ -1068,7 +1081,9 @@ func apply_authoritative_dropped_item_action_result(result: Dictionary) -> void:
 			if slots_value is Array:
 				apply_cargo_backpack_slots(slots_value as Array)
 				return
-			if str(item.get("kind", "")) == "tool" or str(item.get("kind", "")) == "weapon":
+			if str(item.get("kind", "")) == "cash":
+				show_gameplay_notice("队伍资金 +$%d" % int(item.get("money_value", 0)))
+			elif str(item.get("kind", "")) == "tool" or str(item.get("kind", "")) == "weapon":
 				add_backpack_tool(str(item.get("tool_id", "")), item)
 			elif str(item.get("kind", "")) == "equipment":
 				add_equipment_item(str(item.get("equipment_id", "")), item)
@@ -1224,6 +1239,8 @@ func _can_accept_dropped_item(item: Dictionary) -> bool:
 
 func _dropped_item_rejection_notice(item: Dictionary) -> String:
 	var kind := str(item.get("kind", ""))
+	if kind == "cash":
+		return "" if int(item.get("money_value", 0)) > 0 else "这张钞票的金额无效"
 	if kind in ["tool", "weapon"]:
 		var tool_id := str(item.get("tool_id", ""))
 		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
@@ -1612,6 +1629,10 @@ func _apply_remote_render_state(snapshot: Dictionary) -> void:
 	var previous_locomotion_state := remote_locomotion_state
 	remote_grounded = bool(snapshot.get("grounded", remote_grounded))
 	remote_locomotion_state = str(snapshot.get("locomotion_state", remote_locomotion_state))
+	if is_remote_proxy:
+		is_ladder_climbing = bool(snapshot.get("ladder_climbing", remote_locomotion_state == "ladder_climb"))
+		ladder_tower_id = str(snapshot.get("ladder_tower_id", ladder_tower_id))
+		ladder_climb_direction = float(snapshot.get("ladder_climb_direction", ladder_climb_direction))
 	var remote_velocity: Variant = snapshot.get("velocity", Vector3.ZERO)
 	remote_swim_moving = remote_locomotion_state == "swim" \
 		and remote_velocity is Vector3 \
@@ -1670,6 +1691,8 @@ func _update_remote_locomotion_animation(previous_state: String) -> void:
 	if landing_animation:
 		return
 	match remote_locomotion_state:
+		"ladder_climb":
+			_play_body_animation(&"LadderClimb" if appearance_player.has_animation(&"LadderClimb") else &"Walk", 0.10)
 		"prone":
 			_play_body_animation(&"ProneCrawl", 0.10)
 		"swim":
@@ -1853,6 +1876,9 @@ func _input(event: InputEvent) -> void:
 			_suppress_esc_mouse_release = true
 		else:
 			_open_game_exit_dialog()
+		get_viewport().set_input_as_handled()
+		return
+	if is_ladder_climbing:
 		get_viewport().set_input_as_handled()
 		return
 	if is_instance_valid(government_notice_page) and government_notice_page.is_open():
@@ -2083,7 +2109,8 @@ func _submit_authority_input(
 	jumped: bool,
 	delta: float,
 	swim_up := false,
-	diving := false
+	diving := false,
+	ladder_move := 0.0
 ) -> void:
 	input_sequence += 1
 	if jumped:
@@ -2100,6 +2127,10 @@ func _submit_authority_input(
 		"prone": is_prone,
 		"swim_up": swim_up,
 		"dive": diving,
+		"ladder_climbing": is_ladder_climbing,
+		"ladder_tower_id": ladder_tower_id,
+		"ladder_climb_direction": ladder_climb_direction,
+		"ladder_move": ladder_move,
 	}
 	# Jump is a one-shot action. Keep its sequence in the local prediction frame,
 	# but send ordinary movement without it; the reliable jump request below is
@@ -2140,7 +2171,7 @@ func _is_authority_local_player() -> bool:
 	return GameAuthority.is_local_authority() or CooperativeSession.is_host()
 
 
-func _make_tool_request() -> Dictionary:
+func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 	var tool_id := ""
 	if current_tool_index >= 0 and current_tool_index < tool_definitions.size():
 		tool_id = str(tool_definitions[current_tool_index].get("id", ""))
@@ -2185,6 +2216,13 @@ func _make_tool_request() -> Dictionary:
 		"yaw": rotation.y,
 		"pitch": Head.rotation.x,
 	}
+	if use_cached_wall_snap and is_instance_valid(placement_preview_controller) \
+			and placement_preview_controller.has_method("has_active_wall_snap") \
+			and bool(placement_preview_controller.call("has_active_wall_snap")):
+		var snapped_position: Variant = placement_preview_controller.call("get_wall_snap_position")
+		if snapped_position is Vector3:
+			request["target_position"] = snapped_position
+			request["target_tile_path"] = ""
 	if tool_id == "sprout_blaster":
 		request["seed_id"] = _get_selected_sprout_seed_id()
 	return request
@@ -2328,6 +2366,7 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		return
 	var connected := bool(result.get("connected", false))
 	if connected:
+		_clear_fall_damage_tracking()
 		_disconnect_active_vehicle_damage_signal()
 		active_vehicle = vehicle if is_instance_valid(vehicle) else _find_vehicle_by_id(str(result.get("vehicle_id", "")))
 		if not is_instance_valid(active_vehicle):
@@ -2341,6 +2380,7 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		_ensure_vehicle_camera()
 		_update_vehicle_occupant_presentation()
 	else:
+		_clear_fall_damage_tracking()
 		_disconnect_active_vehicle_damage_signal()
 		var exit_position: Variant = result.get("exit_position", Vector3.ZERO)
 		vehicle_is_active = false
@@ -2485,6 +2525,9 @@ func _apply_server_correction() -> void:
 	var server_velocity: Variant = correction.get("velocity", velocity)
 	if not server_position is Vector3 or not server_velocity is Vector3:
 		return
+	is_ladder_climbing = bool(correction.get("ladder_climbing", is_ladder_climbing))
+	ladder_tower_id = str(correction.get("ladder_tower_id", ladder_tower_id))
+	ladder_climb_direction = float(correction.get("ladder_climb_direction", ladder_climb_direction))
 	if is_respawning:
 		_update_cooldown_ring()
 		# A dead player must never replay buffered input. Keep its presentation
@@ -2548,7 +2591,8 @@ func _replay_predicted_input(frame: Dictionary) -> void:
 		float(frame.get("yaw", rotation.y)),
 		bool(frame.get("prone", is_prone)),
 		bool(frame.get("swim_up", false)),
-		bool(frame.get("dive", false))
+		bool(frame.get("dive", false)),
+		float(frame.get("ladder_move", 0.0))
 	)
 
 
@@ -2559,6 +2603,128 @@ func _vector2_from_input(value: Variant) -> Vector2:
 		return Vector2(float(value[0]), float(value[1]))
 	return Vector2.ZERO
 
+func _try_begin_ladder_climb() -> bool:
+	if is_ladder_climbing or is_respawning or vehicle_is_active or remote_is_active or is_prone:
+		return false
+	if not is_on_floor() and not authoritative_grounded:
+		return false
+	for candidate in get_tree().get_nodes_in_group("wood_towers"):
+		if not candidate is Node3D or not is_instance_valid(candidate):
+			continue
+		var tower := candidate as Node3D
+		if tower.has_method("can_start_from_bottom") and bool(tower.call("can_start_from_bottom", global_position, true, self)):
+			_begin_ladder_climb(tower, 1.0)
+			return true
+		if tower.has_method("can_start_from_top") and bool(tower.call("can_start_from_top", global_position, true, self)):
+			_begin_ladder_climb(tower, -1.0)
+			return true
+	return false
+
+
+func _resolve_ladder_tower(tower_id: String, tower_position: Variant) -> Node3D:
+	for candidate in get_tree().get_nodes_in_group("wood_towers"):
+		if candidate is Node3D and is_instance_valid(candidate) \
+				and not tower_id.is_empty() and str(candidate.get_path()) == tower_id:
+			return candidate as Node3D
+	if tower_position is Vector3:
+		var nearest: Node3D = null
+		var nearest_distance_squared := INF
+		for candidate in get_tree().get_nodes_in_group("wood_towers"):
+			if not candidate is Node3D or not is_instance_valid(candidate):
+				continue
+			var candidate_tower := candidate as Node3D
+			var distance_squared := candidate_tower.global_position.distance_squared_to(tower_position as Vector3)
+			if distance_squared < nearest_distance_squared:
+				nearest_distance_squared = distance_squared
+				nearest = candidate_tower
+		return nearest
+	return null
+
+
+func _request_ladder_action(tower: Node3D, direction: float) -> void:
+	if tower == null or not is_instance_valid(tower) or is_ladder_climbing:
+		return
+	var payload := {
+		"action": "start",
+		"tower_id": str(tower.get_path()),
+		"tower_position": tower.global_position,
+		"direction": 1.0 if direction >= 0.0 else -1.0,
+		"player_position": global_position,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_ladder_action(payload)
+	elif _is_authority_local_player():
+		_handle_ladder_action_result(GameAuthority.local_ladder_action(authority_peer_id, payload))
+
+
+func _handle_ladder_action_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", 0)) != authority_peer_id:
+		return
+	if not bool(result.get("ok", false)):
+		return
+	if str(result.get("ladder_action", "")) != "start":
+		return
+	var tower := _resolve_ladder_tower(
+		str(result.get("tower_id", "")),
+		result.get("tower_position", Vector3.ZERO)
+	)
+	if tower == null or not is_instance_valid(tower):
+		return
+	_begin_ladder_climb(
+		tower,
+		float(result.get("direction", 1.0)),
+		result.get("start_position", null),
+		result.get("yaw", null)
+	)
+
+func _begin_ladder_climb(
+	tower: Node3D,
+	direction: float,
+	start_position: Variant = null,
+	start_yaw: Variant = null
+) -> void:
+	_clear_fall_damage_tracking()
+	is_ladder_climbing = true
+	ladder_tower = tower
+	ladder_tower_id = str(tower.get_path())
+	ladder_climb_direction = 1.0 if direction >= 0.0 else -1.0
+	if ladder_climb_direction < 0.0:
+		if start_position is Vector3:
+			global_position = start_position as Vector3
+		elif tower.has_method("get_climb_down_position"):
+			var climb_down_position: Variant = tower.call("get_climb_down_position")
+			if climb_down_position is Vector3:
+				global_position = climb_down_position as Vector3
+		if start_yaw is float or start_yaw is int:
+			rotation.y = float(start_yaw)
+		elif tower.has_method("get_climb_down_yaw"):
+			rotation.y = float(tower.call("get_climb_down_yaw"))
+	authoritative_grounded = false
+	velocity = Vector3.ZERO
+	rubber_knockback = Vector3.ZERO
+	_set_prone_state(false)
+	_set_weapon_aiming(false)
+	action_anim_locked = false
+
+func _exit_ladder_climb() -> void:
+	_clear_fall_damage_tracking()
+	is_ladder_climbing = false
+	ladder_tower = null
+	ladder_tower_id = ""
+	ladder_climb_direction = 1.0
+	ladder_transition_cooldown = 0.45
+	authoritative_grounded = true
+	velocity = Vector3.ZERO
+	action_anim_locked = false
+
+func _clear_ladder_climb_state() -> void:
+	_clear_fall_damage_tracking()
+	is_ladder_climbing = false
+	ladder_tower = null
+	ladder_tower_id = ""
+	ladder_climb_direction = 1.0
+	ladder_transition_cooldown = 0.0
+
 
 func _simulate_predicted_movement(
 	delta: float,
@@ -2567,8 +2733,51 @@ func _simulate_predicted_movement(
 	movement_yaw := rotation.y,
 	prone_state := is_prone,
 	swim_up := false,
-	diving := false
+	diving := false,
+	ladder_move := 0.0
 ) -> void:
+	var local_fall_tracking_enabled: bool = GameAuthority.is_local_authority() and not is_remote_proxy
+	var local_fall_was_grounded: bool = is_on_floor()
+	if is_ladder_climbing:
+		if local_fall_tracking_enabled:
+			_clear_fall_damage_tracking()
+		velocity = Vector3.ZERO
+		var tower := ladder_tower
+		if not is_instance_valid(tower) and not ladder_tower_id.is_empty():
+			for candidate in get_tree().get_nodes_in_group("wood_towers"):
+				if candidate is Node3D and str(candidate.get_path()) == ladder_tower_id:
+					tower = candidate as Node3D
+					ladder_tower = tower
+		var climb_speed := LADDER_CLIMB_SPEED
+		if is_instance_valid(tower) and tower.has_method("get_climb_speed"):
+			climb_speed = float(tower.call("get_climb_speed"))
+		var requested_ladder_move := clampf(ladder_move, -1.0, 1.0)
+		if is_instance_valid(tower):
+			var at_bottom := tower.has_method("is_climb_area_position") \
+					and bool(tower.call("is_climb_area_position", global_position))
+			var at_top := tower.has_method("is_climb_top_position") \
+					and bool(tower.call("is_climb_top_position", global_position))
+			var reached_end := false
+			var snap_to_top := false
+			if ladder_climb_direction > 0.0 and at_bottom and requested_ladder_move < -0.001:
+				reached_end = true
+			elif ladder_climb_direction < 0.0 and at_top and requested_ladder_move > 0.001:
+				reached_end = true
+				snap_to_top = true
+			if not reached_end:
+				global_position.y += requested_ladder_move * climb_speed * delta
+				if ladder_climb_direction > 0.0 and tower.has_method("is_climb_top_position") \
+						and bool(tower.call("is_climb_top_position", global_position)):
+					reached_end = true
+					snap_to_top = true
+				elif ladder_climb_direction < 0.0 and tower.has_method("is_climb_area_position") \
+						and bool(tower.call("is_climb_area_position", global_position)):
+					reached_end = true
+			if reached_end:
+				if snap_to_top and tower.has_method("get_top_position"):
+					global_position = tower.call("get_top_position")
+				_exit_ladder_climb()
+		return
 	var water_surface_y := _get_water_surface_y()
 	var swimming := _is_in_swimming_water(water_surface_y)
 	# A player whose feet are still supported by the shore/floor may jump out of
@@ -2610,6 +2819,11 @@ func _simulate_predicted_movement(
 	var direction := (basis * Vector3(input_direction.x, 0.0, input_direction.y)).normalized()
 	var move_speed := SWIM_HORIZONTAL_SPEED * _equipped_legwear_speed_multiplier() if swimming else SPEED * _equipped_legwear_speed_multiplier()
 	move_speed *= PRONE_SPEED_MULTIPLIER if prone_state and not swimming else 1.0
+	move_speed *= GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team,
+		"player"
+	)
 	if swimming and direction.length_squared() > 0.001:
 		# A shallow bank can leave the capsule touching the shore while the swim
 		# controller is still applying a small downward sink. Give the player an
@@ -2634,6 +2848,38 @@ func _simulate_predicted_movement(
 			elif global_position.y < current_surface_y - SWIM_MAX_DEPTH:
 				global_position.y = current_surface_y - SWIM_MAX_DEPTH
 				velocity.y = maxf(velocity.y, 0.0)
+	if local_fall_tracking_enabled:
+		_update_local_fall_damage_tracking(local_fall_was_grounded, swimming)
+
+
+func _clear_fall_damage_tracking() -> void:
+	fall_tracking_active = false
+	fall_peak_y = global_position.y
+
+
+func _update_local_fall_damage_tracking(was_grounded: bool, was_swimming: bool) -> void:
+	if not GameAuthority.is_local_authority() or is_remote_proxy:
+		return
+	if is_respawning or is_ladder_climbing or vehicle_is_active or was_swimming \
+			or _is_in_swimming_water():
+		_clear_fall_damage_tracking()
+		return
+	var grounded := is_on_floor()
+	if not grounded:
+		if was_grounded and not fall_tracking_active:
+			fall_tracking_active = true
+			fall_peak_y = global_position.y
+		elif fall_tracking_active:
+			fall_peak_y = maxf(fall_peak_y, global_position.y)
+		return
+	if not fall_tracking_active:
+		fall_peak_y = global_position.y
+		return
+	fall_peak_y = maxf(fall_peak_y, global_position.y)
+	var fall_height := maxf(0.0, fall_peak_y - global_position.y)
+	_clear_fall_damage_tracking()
+	if fall_height > CombatBalance.get_float("fall_damage", "start_height", 5.0):
+		GameAuthority.local_apply_fall_damage(authority_peer_id, fall_height)
 
 
 func _get_water_surface_y() -> float:
@@ -2701,7 +2947,9 @@ func _select_tool(new_index: int, force := false) -> void:
 	if tool_node is VehicleBase:
 		(tool_node as VehicleBase).vehicle_deployed = false
 	tool_pivot.add_child(tool_node)
-	tool_node.set("tool_owner", team)
+	_set_tool_owner_if_supported(tool_node, team)
+	if bool(definition.get("free_placement", false)) and not tool_node.has_method("activate_tool"):
+		_disable_handheld_item_collision(tool_node)
 	if str(definition.get("id", "")) == "sprout_blaster":
 		var seed_id := _get_selected_sprout_seed_id()
 		backpack_items[current_tool_index]["selected_seed_id"] = seed_id
@@ -2981,7 +3229,7 @@ func _selected_item_uses_carry_pose() -> bool:
 
 func _use_current_tool() -> void:
 	#emotion_controller.set_expression(EmotionController.EmotionType.FUNNY)
-	if is_respawning or is_prone or _inventory_ui_blocks_gameplay_actions():
+	if is_respawning or is_ladder_climbing or is_prone or _inventory_ui_blocks_gameplay_actions():
 		return
 	var selected_inventory_item := get_backpack_item(current_tool_index)
 	if str(selected_inventory_item.get("kind", "")) == "cargo_crate":
@@ -3244,7 +3492,7 @@ func _exit_game() -> void:
 
 
 func _set_prone_state(value: bool) -> void:
-	var next_prone := value and not vehicle_is_active and not remote_is_active and not is_respawning
+	var next_prone := value and not is_ladder_climbing and not vehicle_is_active and not remote_is_active and not is_respawning
 	if is_prone == next_prone:
 		return
 	is_prone = next_prone
@@ -3324,6 +3572,7 @@ func _process(delta: float) -> void:
 		_update_crosshair_visibility()
 		return
 	if _chat_input_captures_gameplay():
+		_cancel_gate_lockpick(true)
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
@@ -3342,7 +3591,15 @@ func _process(delta: float) -> void:
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
+	if is_ladder_climbing:
+		if is_instance_valid(interact_hint):
+			interact_hint.visible = false
+		_set_weapon_aiming(false)
+		_update_cooldown_ring()
+		_update_crosshair_visibility()
+		return
 	if is_respawning:
+		_cancel_gate_lockpick(true)
 		if GameAuthority.is_local_authority():
 			respawn_left = maxf(0.0, respawn_left - delta)
 		_update_death_appearance_visibility()
@@ -3441,7 +3698,7 @@ func _ensure_local_camera_ownership() -> void:
 
 
 func _use_fist() -> void:
-	if is_prone or current_tool_index < 0 or current_tool_index >= HOTBAR_SLOT_COUNT:
+	if is_ladder_climbing or is_prone or current_tool_index < 0 or current_tool_index >= HOTBAR_SLOT_COUNT:
 		return
 	if is_instance_valid(appearance_player):
 		action_anim_locked = true
@@ -3487,6 +3744,7 @@ func _physics_process(delta: float) -> void:
 	if GameAuthority.is_local_authority() and global_position.y < GameAuthority.PLAYER_VOID_DEATH_Y:
 		GameAuthority.check_local_player_void_fall(authority_peer_id, global_position)
 	if is_respawning:
+		_clear_fall_damage_tracking()
 		velocity = Vector3.ZERO
 		return
 	if game_exit_dialog.is_open():
@@ -3500,6 +3758,7 @@ func _physics_process(delta: float) -> void:
 		_update_player_action_animation(Vector2.ZERO)
 		return
 	if big_mouth_capture_remaining > 0.0:
+		_clear_fall_damage_tracking()
 		_update_big_mouth_capture(delta)
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
 		_update_player_action_animation(Vector2.ZERO)
@@ -3519,7 +3778,16 @@ func _physics_process(delta: float) -> void:
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
 		_update_player_action_animation(Vector2.ZERO)
 		return
+	ladder_transition_cooldown = maxf(0.0, ladder_transition_cooldown - delta)
+	if is_ladder_climbing:
+		var ladder_input := Input.get_vector("left", "right", "forward", "backward")
+		var ladder_move := -ladder_input.y
+		_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, Vector2.ZERO, false, rotation.y, false, false, false, ladder_move)
+		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA, false, false, ladder_move)
+		_update_player_action_animation(ladder_input)
+		return
 	if remote_is_active:
+		_clear_fall_damage_tracking()
 		_submit_remote_control_frame()
 		# One shared input owner keeps armed remote devices from double-submitting.
 		if (remote_tool_node is SmallMouse or remote_tool_node is NormalDrone or remote_tool_node is TechDrone) and Input.is_action_just_pressed("remote_primary_action") and remote_tool_node.has_method("request_primary_action"):
@@ -3528,6 +3796,7 @@ func _physics_process(delta: float) -> void:
 			remote_tool_node.call("request_secondary_action")
 		return
 	if vehicle_is_active:
+		_clear_fall_damage_tracking()
 		_submit_vehicle_control_frame()
 		_update_vehicle_occupant_presentation()
 		return
@@ -3560,6 +3829,7 @@ func _physics_process(delta: float) -> void:
 
 
 func apply_big_mouth_capture(anchor_position: Vector3, duration: float, pull_seconds: float) -> void:
+	_clear_fall_damage_tracking()
 	big_mouth_anchor = anchor_position
 	big_mouth_capture_remaining = maxf(big_mouth_capture_remaining, duration)
 	big_mouth_pull_remaining = maxf(big_mouth_pull_remaining, pull_seconds)
@@ -3643,6 +3913,10 @@ func _update_player_action_animation(direction_strength:Vector2):
 	if appearance_player==null:
 		return
 	if action_anim_locked:
+		return
+	if is_ladder_climbing:
+		_play_body_animation(&"LadderClimb" if appearance_player.has_animation(&"LadderClimb") else &"Walk", 0.10)
+		was_on_floor = false
 		return
 	if _is_in_swimming_water():
 		# There is no swim animation yet. Keep local presentation identical to the
@@ -3966,6 +4240,34 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if is_remote_proxy:
 		return
 	var event_type := str(event.get("type", ""))
+	if event_type == "ladder_action_result":
+		var ladder_result: Variant = event.get("data", {})
+		if ladder_result is Dictionary \
+				and int((ladder_result as Dictionary).get("peer_id", 0)) == authority_peer_id:
+			_handle_ladder_action_result(ladder_result as Dictionary)
+		return
+	if event_type == "gate_lockpick_started":
+		if int(event.get("peer_id", 0)) == authority_peer_id:
+			_begin_gate_lockpick_ui(
+				str(event.get("gate_id", event.get("device_id", ""))),
+				float(event.get("duration", WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS))
+			)
+		return
+	if event_type == "gate_lockpick_cancelled":
+		if int(event.get("peer_id", 0)) == authority_peer_id:
+			_clear_gate_lockpick_ui()
+		return
+	if event_type == "gate_action_result":
+		var gate_result: Variant = event.get("data", {})
+		if gate_result is Dictionary \
+				and int((gate_result as Dictionary).get("peer_id", 0)) == authority_peer_id:
+			_handle_gate_action_result(gate_result as Dictionary)
+		return
+	if event_type == "gate_state":
+		if int(event.get("actor_peer_id", 0)) == authority_peer_id \
+				or gate_lockpick_target_id == str(event.get("gate_id", event.get("device_id", ""))):
+			_clear_gate_lockpick_ui()
+		return
 	if event_type == "match_ended":
 		var settlement_value: Variant = event.get("settlement", {})
 		show_match_end_page(settlement_value as Dictionary if settlement_value is Dictionary else {})
@@ -4192,7 +4494,14 @@ func _update_cooldown_ring() -> void:
 		return
 	var remaining := 0.0
 	var duration := 0.0
-	if _selected_weapon_uses_ammo() \
+	if not gate_lockpick_target_id.is_empty() and gate_lockpick_started_msec > 0:
+		var elapsed := float(Time.get_ticks_msec() - gate_lockpick_started_msec) / 1000.0
+		remaining = maxf(0.0, gate_lockpick_duration - elapsed)
+		duration = gate_lockpick_duration
+		if remaining <= 0.0:
+			_clear_gate_lockpick_ui()
+			return
+	elif _selected_weapon_uses_ammo() \
 			and float(backpack_items[current_tool_index].get("reload_remaining", 0.0)) > 0.0:
 		var item := backpack_items[current_tool_index]
 		remaining = float(item.get("reload_remaining", 0.0))
@@ -4431,6 +4740,9 @@ func _update_tranquilizer_overlay() -> void:
 
 
 func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = null) -> void:
+	_clear_fall_damage_tracking()
+	if next_respawn_left > 0.0 or (spawn_position is Vector3 and next_respawn_left <= 0.0):
+		_clear_ladder_climb_state()
 	if spawn_position is Vector3 and next_respawn_left <= 0.0:
 		global_position = spawn_position
 		velocity = Vector3.ZERO
@@ -4907,6 +5219,15 @@ func _node_numeric_property(node: Object, property_names: Array[String], fallbac
 	return fallback
 
 
+func _set_tool_owner_if_supported(node: Object, owner: String) -> void:
+	if node == null:
+		return
+	for property_info in node.get_property_list():
+		if str(property_info.get("name", "")) == "tool_owner":
+			node.set("tool_owner", owner)
+			return
+
+
 func _status_health_color(value: float, maximum: float) -> Color:
 	var ratio := value / maxf(maximum, 0.01)
 	if ratio > 0.6:
@@ -5027,6 +5348,10 @@ func _disable_legacy_tool_ui() -> void:
 func _update_interaction() -> void:
 	if _chat_input_captures_gameplay() or remote_is_active or vehicle_is_active:
 		return
+	if _update_ladder_interaction():
+		return
+	if _update_wire_mesh_gate_interaction():
+		return
 	if _cargo_crate_hold_target != null and not is_instance_valid(_cargo_crate_hold_target):
 		_cargo_crate_hold_target = null
 	if is_instance_valid(_cargo_crate_hold_target):
@@ -5142,6 +5467,10 @@ func _update_interaction() -> void:
 		return
 	var target := _get_best_interaction_target(true)
 	match str(target.get("kind", "")):
+		"wire_mesh_gate":
+			# Gate interaction is handled before the normal one-shot interaction
+			# dispatch so enemy lockpicking can consume the full key hold.
+			return
 		"crop":
 			_request_single_crop_harvest(target.get("tile") as FarmTile, target.get("body") as Node3D)
 		"livestock":
@@ -5382,6 +5711,54 @@ func _create_interact_hint() -> void:
 	$SubViewport.add_child(interact_hint)
 
 
+func _get_ladder_interaction_target() -> Dictionary:
+	if is_ladder_climbing or is_respawning or vehicle_is_active or remote_is_active or is_prone:
+		return {}
+	var grounded := is_on_floor() or authoritative_grounded
+	if not grounded:
+		return {}
+	var best_target: Dictionary = {}
+	var best_distance_squared := INF
+	for candidate in get_tree().get_nodes_in_group("wood_towers"):
+		if not candidate is Node3D or not is_instance_valid(candidate):
+			continue
+		var tower := candidate as Node3D
+		var direction := 0.0
+		if tower.has_method("can_start_from_bottom") \
+				and bool(tower.call("can_start_from_bottom", global_position, grounded, self)):
+			direction = 1.0
+		elif tower.has_method("can_start_from_top") \
+				and bool(tower.call("can_start_from_top", global_position, grounded, self)):
+			direction = -1.0
+		if is_zero_approx(direction):
+			continue
+		var distance_squared := global_position.distance_squared_to(tower.global_position)
+		if distance_squared >= best_distance_squared:
+			continue
+		best_distance_squared = distance_squared
+		best_target = {
+			"kind": "wood_tower_ladder",
+			"body": tower,
+			"tower": tower,
+			"direction": direction,
+			"interaction_position": tower.global_position,
+			"hint": "[E] 爬梯子" if direction > 0.0 else "[E] 下梯子",
+		}
+	return best_target
+
+
+func _update_ladder_interaction() -> bool:
+	var target := _get_ladder_interaction_target()
+	if target.is_empty():
+		return false
+	if Input.is_action_just_pressed("interact"):
+		_request_ladder_action(
+			target.get("tower") as Node3D,
+			float(target.get("direction", 1.0))
+		)
+	return true
+
+
 func _get_interactable_crop_tile(body: Node3D) -> FarmTile:
 	if not is_instance_valid(body):
 		return null
@@ -5420,6 +5797,9 @@ func _debug_interaction_shapecast_hits(detector: ShapeCast3D) -> void:
 
 
 func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary:
+	var ladder_target := _get_ladder_interaction_target()
+	if not ladder_target.is_empty():
+		return ladder_target
 	var candidate_bodies: Dictionary = {}
 	for pickup_value: Variant in get_tree().get_nodes_in_group("dropped_pickup_items"):
 		if pickup_value is PickupItem:
@@ -5452,6 +5832,11 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 			var cargo_area := area_value as Area3D
 			if is_instance_valid(cargo_area) and cargo_area.overlaps_body(self):
 				candidate_bodies[cargo_area.get_instance_id()] = cargo_area
+	for area_value: Variant in get_tree().get_nodes_in_group("wire_mesh_gate_interaction_areas"):
+		if area_value is Area3D:
+			var gate_area := area_value as Area3D
+			if is_instance_valid(gate_area) and gate_area.overlaps_body(self):
+				candidate_bodies[gate_area.get_instance_id()] = gate_area
 	for detector: ShapeCast3D in _get_interaction_detectors():
 		if not detector.enabled:
 			continue
@@ -5488,7 +5873,11 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 		var inside_board_area := body is Area3D \
 				and body.is_in_group("government_board_interaction_areas") \
 				and (body as Area3D).overlaps_body(self)
-		var inside_interaction_area := inside_shop_area or inside_cargo_area or inside_board_area
+		var inside_gate_area := str(target.get("kind", "")) == "wire_mesh_gate" \
+				and body is WireMeshGate \
+				and (body as WireMeshGate).is_actor_inside_interaction_area(self)
+		var inside_interaction_area := inside_shop_area or inside_cargo_area \
+				or inside_board_area or inside_gate_area
 		var interaction_position: Vector3 = global_position if inside_interaction_area \
 				else target.get("interaction_position", body.global_position)
 		var to_target := interaction_position - global_position
@@ -5552,6 +5941,14 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 			"kind": "cargo_crate", "body": crate_body,
 			"interaction_position": crate_body.global_position,
 			"hint": crate_body.get_interaction_hint(self),
+		}
+	var gate := _wire_mesh_gate_from_node(body)
+	if gate != null:
+		return {
+			"kind": "wire_mesh_gate",
+			"body": gate,
+			"interaction_position": gate.get_interaction_position(),
+			"hint": gate.get_interaction_hint(self),
 		}
 	if body is CargoCarInteractionArea:
 		var interaction_area := body as CargoCarInteractionArea
@@ -5753,6 +6150,107 @@ func _refresh_interact_hint() -> void:
 	interact_hint.visible = not target.is_empty()
 	if interact_hint.visible:
 		interact_hint.text = str(target.get("hint", "[E] 交互"))
+
+
+func _wire_mesh_gate_from_node(body: Node) -> WireMeshGate:
+	var candidate := body as WireMeshGate
+	var current := body
+	while candidate == null and current != null:
+		current = current.get_parent()
+		candidate = current as WireMeshGate if current is Node else null
+	if candidate != null:
+		return candidate
+	if body is Area3D and (body as Area3D).name == "DoorArea":
+		return body.get_parent() as WireMeshGate
+	return null
+
+
+func _update_wire_mesh_gate_interaction() -> bool:
+	var target := _get_best_interaction_target()
+	var gate := target.get("body") as WireMeshGate if str(target.get("kind", "")) == "wire_mesh_gate" else null
+	var active_gate_id := gate_lockpick_target_id
+	if not active_gate_id.is_empty():
+		if gate == null or gate.get_gate_id() != active_gate_id or gate.is_open:
+			_cancel_gate_lockpick(true)
+			return gate != null
+		if not Input.is_action_pressed("interact"):
+			_cancel_gate_lockpick(true)
+			return true
+		return true
+	if gate == null:
+		return false
+	if not Input.is_action_just_pressed("interact"):
+		return true
+	if gate.is_open or gate.is_direct_open_allowed(team):
+		_submit_gate_action(gate, "toggle")
+	else:
+		_begin_gate_lockpick_ui(gate.get_gate_id(), WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS)
+		_submit_gate_action(gate, "lockpick_start")
+	return true
+
+
+func _submit_gate_action(gate: WireMeshGate, action: String) -> void:
+	if gate == null or not is_instance_valid(gate):
+		return
+	var payload := {
+		"gate_id": gate.get_gate_id(),
+		"action": action,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_gate_action(payload)
+		if action == "lockpick_cancel":
+			_clear_gate_lockpick_ui()
+	elif _is_authority_local_player():
+		var result := GameAuthority.local_gate_action(authority_peer_id, payload)
+		_handle_gate_action_result(result)
+
+
+func _handle_gate_action_result(result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		if str(result.get("gate_action", "")) == "lockpick_start":
+			_begin_gate_lockpick_ui(
+				str(result.get("gate_id", "")),
+				float(result.get("duration", WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS))
+			)
+		elif str(result.get("gate_action", "")) in ["lockpick_cancel", "open", "close"]:
+			_clear_gate_lockpick_ui()
+		return
+	if gate_lockpick_target_id == str(result.get("gate_id", "")):
+		_clear_gate_lockpick_ui()
+	var reason := str(result.get("reason", ""))
+	if not reason.is_empty() and reason != "gate_lockpick_cancelled":
+		show_gameplay_notice("无法操作铁丝网门")
+
+
+func _begin_gate_lockpick_ui(gate_id: String, duration: float) -> void:
+	if gate_id.is_empty():
+		return
+	if gate_lockpick_target_id == gate_id and gate_lockpick_started_msec > 0:
+		return
+	gate_lockpick_target_id = gate_id
+	gate_lockpick_started_msec = Time.get_ticks_msec()
+	gate_lockpick_duration = maxf(0.1, duration)
+	_update_cooldown_ring()
+
+
+func _clear_gate_lockpick_ui() -> void:
+	gate_lockpick_target_id = ""
+	gate_lockpick_started_msec = 0
+	gate_lockpick_duration = WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS
+	_update_cooldown_ring()
+
+
+func _cancel_gate_lockpick(submit_request: bool) -> void:
+	var gate_id := gate_lockpick_target_id
+	if gate_id.is_empty():
+		return
+	if submit_request:
+		var payload := {"gate_id": gate_id, "action": "lockpick_cancel"}
+		if GameAuthority.should_send_network_requests():
+			MultiplayerNetwork.submit_gate_action(payload)
+		elif _is_authority_local_player():
+			_handle_gate_action_result(GameAuthority.local_gate_action(authority_peer_id, payload))
+	_clear_gate_lockpick_ui()
 
 
 func _set_weapon_aiming(value: bool) -> void:

@@ -10,8 +10,10 @@
 size = Vector3(8, 1, 8)
 
 [node name="Bar" type="StaticBody3D" unique_id=1082154414]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 12971
+metadata/map_enterable = true
 script = ExtResource("5_cargo_delivery")
 building_id = "creston_bar"
 display_name = "克勒斯顿酒吧"

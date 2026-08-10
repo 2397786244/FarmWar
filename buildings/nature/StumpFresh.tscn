@@ -10,6 +10,7 @@ height = 0.8
 height = 0.8
 
 [node name="StumpFresh" type="StaticBody3D" unique_id=729415914]
+metadata/map_can_overlap_water = false
 collision_layer = 128
 collision_mask = 32
 script = ExtResource("2_tree")

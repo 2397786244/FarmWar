@@ -32,6 +32,7 @@ const PLAYER_JUMP_GRACE_TICKS := 3
 const PLAYER_MAX_HP := 200.0
 const PLAYER_RESPAWN_SECONDS := 10.0
 const PLAYER_VOID_DEATH_Y := -50.0
+const WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS := 10.0
 const LOCAL_MATCH_DURATION_SECONDS := 48.0 * 60.0
 const PLAYER_KNOCKBACK_DECELERATION := 18.0
 const PLAYER_PRONE_SPEED_MULTIPLIER := 0.4
@@ -63,6 +64,7 @@ const MEDICINE_STORM_SCENE := preload("res://character/weapons/MedicineStorm.tsc
 const SPICY_AREA_SCENE := preload("res://character/weapons/SpicyArea.tscn")
 const BOOM_BULLET_SCENE := preload("res://character/weapons/boom.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
+const DEFEND_BULLET_SCENE := preload("res://character/weapons/DefendBullet.tscn")
 const GRENADE_VISUAL_SCENE := preload("res://character/weapons/Grenade.tscn")
 const SHIELD_LASER_VISUAL_SCENE := preload("res://character/weapons/ShieldLaser.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
@@ -79,8 +81,20 @@ const FINITE_AMMO_WEAPON_IDS := {
 	"shotgun": true,
 	"hunting_rifle": true,
 	"m4": true,
+	"mpx": true,
 	"future_m4": true,
+	"future_mpx": true,
 	"ar15": true,
+}
+const ENEMY_ONLY_PLACED_TOOL_TYPES := {
+	"tall_brick": true,
+	"tall_log_wall": true,
+	"tall_mesh_wall": true,
+	"wire_mesh_gate": true,
+	"tallbrick": true,
+	"talllogwall": true,
+	"tallmeshwall": true,
+	"wiremeshgate": true,
 }
 # Server combat queries hit only meaningful gameplay targets and blockers.
 # Water (65536), shops (512), and other non-combat layers intentionally stay out.
@@ -150,6 +164,7 @@ const PROJECTILE_COLLISION_MASK_BY_TYPE := {
 	"boom": 20481 | COLLISION_LAYER_WILD_ANIMAL,
 	"drone_bomb": 20481 | COLLISION_LAYER_WILD_ANIMAL,
 	"auto_shooter_boom": 20481 | COLLISION_LAYER_WILD_ANIMAL,
+	"engineer_remote_bomb": 20481 | COLLISION_LAYER_WILD_ANIMAL,
 	"bug_boom": 16387,
 	"medicine_boom": 16387,
 	"spicy_bullet": COLLISION_LAYER_GROUND,
@@ -190,6 +205,7 @@ var next_dropped_item_id := 1
 var next_livestock_id := 1
 var remote_device_states: Dictionary = {}
 var placed_tool_states: Dictionary = {}
+var gate_lockpick_states: Dictionary = {}
 var rift_anchor_by_peer: Dictionary = {}
 var dropped_item_nodes: Dictionary = {}
 var chat_submission_times_msec: Dictionary = {}
@@ -367,6 +383,7 @@ func _reset_runtime_state(clear_players := true) -> void:
 	chat_submission_times_msec.clear()
 	remote_device_states.clear()
 	placed_tool_states.clear()
+	gate_lockpick_states.clear()
 	rift_anchor_by_peer.clear()
 	vehicle_states.clear()
 	cargo_car_respawn_states.clear()
@@ -449,6 +466,7 @@ func _run_authority_tick(delta: float) -> void:
 	_update_remote_device_link_quality()
 	_simulate_projectiles(simulation_delta)
 	_simulate_medicine_storms(simulation_delta)
+	_simulate_gate_interactions(simulation_delta)
 	_simulate_placed_tools(simulation_delta)
 	_reserve_ready_ingredient_pickups()
 	_release_invalid_kitchen_users()
@@ -485,6 +503,7 @@ func _check_player_void_fall(peer_id: int, state: Dictionary, position: Vector3)
 	if position.y >= PLAYER_VOID_DEATH_Y \
 			or float(state.get("respawn_left", 0.0)) > 0.0:
 		return false
+	_clear_player_fall_tracking(state, position)
 	state["position"] = position
 	state["hp"] = 0.0
 	state["velocity"] = Vector3.ZERO
@@ -503,6 +522,184 @@ func check_local_player_void_fall(peer_id: int, observed_position: Vector3) -> b
 	return _check_player_void_fall(peer_id, state, observed_position)
 
 
+func local_apply_fall_damage(peer_id: int, fall_height: float) -> bool:
+	if mode != MODE_LOCAL or not player_states.has(peer_id):
+		return false
+	_sync_local_player_interaction_state(peer_id)
+	var state: Dictionary = player_states[peer_id]
+	if float(state.get("respawn_left", 0.0)) > 0.0 \
+			or bool(state.get("swimming", false)) \
+			or bool(state.get("ladder_climbing", false)) \
+			or not str(state.get("vehicle_id", "")).is_empty():
+		_clear_player_fall_tracking(state)
+		player_states[peer_id] = state
+		return false
+	var damage := CombatBalance.calculate_fall_damage(fall_height)
+	_clear_player_fall_tracking(state)
+	player_states[peer_id] = state
+	if damage <= 0.0:
+		return false
+	return _damage_player(peer_id, damage, 0.0, Vector3.ZERO, "", "fall")
+
+
+func _clear_player_fall_tracking(state: Dictionary, reference_position: Variant = null) -> void:
+	var reference_y := _vector3_from_value(state.get("position", Vector3.ZERO)).y
+	if reference_position is Vector3:
+		reference_y = (reference_position as Vector3).y
+	state["fall_active"] = false
+	state["fall_peak_y"] = reference_y
+
+
+func _update_player_fall_tracking(
+	state: Dictionary,
+	was_grounded: bool,
+	grounded: bool,
+	swimming: bool,
+	position: Vector3
+) -> float:
+	if swimming or bool(state.get("ladder_climbing", false)) \
+			or not str(state.get("vehicle_id", "")).is_empty():
+		_clear_player_fall_tracking(state, position)
+		return 0.0
+	var fall_active := bool(state.get("fall_active", false))
+	var fall_peak_y := float(state.get("fall_peak_y", position.y))
+	if not grounded:
+		if was_grounded and not fall_active:
+			fall_active = true
+			fall_peak_y = position.y
+		elif fall_active:
+			fall_peak_y = maxf(fall_peak_y, position.y)
+		state["fall_active"] = fall_active
+		state["fall_peak_y"] = fall_peak_y
+		return 0.0
+	if not fall_active:
+		_clear_player_fall_tracking(state, position)
+		return 0.0
+	fall_peak_y = maxf(fall_peak_y, position.y)
+	var fall_height := maxf(0.0, fall_peak_y - position.y)
+	_clear_player_fall_tracking(state, position)
+	return CombatBalance.calculate_fall_damage(fall_height)
+
+func _find_wood_tower_for_ladder(position: Vector3, tower_id := "", from_top := false) -> Node3D:
+	for candidate in get_tree().get_nodes_in_group("wood_towers"):
+		if not candidate is Node3D or not is_instance_valid(candidate):
+			continue
+		var tower := candidate as Node3D
+		if not tower_id.is_empty() and str(tower.get_path()) != tower_id:
+			continue
+		var matches := false
+		if from_top and tower.has_method("is_climb_top_position"):
+			matches = bool(tower.call("is_climb_top_position", position))
+		elif not from_top and tower.has_method("is_climb_area_position"):
+			matches = bool(tower.call("is_climb_area_position", position))
+		if matches:
+			return tower
+	return null
+
+
+func _find_wood_tower_for_ladder_action(
+	position: Vector3,
+	tower_id: String,
+	from_top: bool,
+	requested_tower_position: Variant
+) -> Node3D:
+	var tower := _find_wood_tower_for_ladder(position, tower_id, from_top)
+	if tower != null:
+		return tower
+	if requested_tower_position is Vector3:
+		var nearest: Node3D = null
+		var nearest_distance_squared := INF
+		for candidate in get_tree().get_nodes_in_group("wood_towers"):
+			if not candidate is Node3D or not is_instance_valid(candidate):
+				continue
+			var candidate_tower := candidate as Node3D
+			var matches := false
+			if from_top and candidate_tower.has_method("is_climb_top_position"):
+				matches = bool(candidate_tower.call("is_climb_top_position", position))
+			elif not from_top and candidate_tower.has_method("is_climb_area_position"):
+				matches = bool(candidate_tower.call("is_climb_area_position", position))
+			if not matches:
+				continue
+			var distance_squared := candidate_tower.global_position.distance_squared_to(
+				requested_tower_position as Vector3
+			)
+			if distance_squared < nearest_distance_squared:
+				nearest_distance_squared = distance_squared
+				nearest = candidate_tower
+		if nearest != null:
+			return nearest
+	return _find_wood_tower_for_ladder(position, "", from_top)
+
+func _simulate_authoritative_ladder(state: Dictionary, input: Dictionary, delta: float, position: Vector3) -> Dictionary:
+	var active := bool(state.get("ladder_climbing", false))
+	var tower_id := str(state.get("ladder_tower_id", ""))
+	var tower: Node3D = null
+	if active:
+		for candidate in get_tree().get_nodes_in_group("wood_towers"):
+			if candidate is Node3D and (tower_id.is_empty() or str(candidate.get_path()) == tower_id):
+				tower = candidate as Node3D
+				break
+		if tower == null:
+			var active_direction := float(state.get("ladder_climb_direction", 1.0))
+			tower = _find_wood_tower_for_ladder(position, "", active_direction < 0.0)
+		if tower == null:
+			active = false
+	if not active and bool(input.get("ladder_climbing", false)):
+		var requested_direction := 1.0 if float(input.get("ladder_climb_direction", 1.0)) >= 0.0 else -1.0
+		tower = _find_wood_tower_for_ladder(
+			position,
+			str(input.get("ladder_tower_id", "")),
+			requested_direction < 0.0
+		)
+		if tower == null:
+			tower = _find_wood_tower_for_ladder(position, "", requested_direction < 0.0)
+		if tower != null and bool(state.get("grounded", true)):
+			active = true
+			tower_id = str(tower.get_path())
+			state["ladder_climbing"] = true
+			state["ladder_tower_id"] = tower_id
+			state["ladder_climb_direction"] = requested_direction
+	if not active or tower == null:
+		state["ladder_climbing"] = false
+		state["ladder_tower_id"] = ""
+		return {"handled": false, "state": state, "position": position}
+	var climb_speed := float(tower.call("get_climb_speed")) if tower.has_method("get_climb_speed") else 2.6
+	var ladder_move := clampf(float(input.get("ladder_move", 0.0)), -1.0, 1.0)
+	var direction := float(state.get("ladder_climb_direction", 1.0))
+	var reached_end := false
+	var snap_to_top := false
+	var at_bottom := tower.has_method("is_climb_area_position") \
+			and bool(tower.call("is_climb_area_position", position))
+	var at_top := tower.has_method("is_climb_top_position") \
+			and bool(tower.call("is_climb_top_position", position))
+	if direction > 0.0 and at_bottom and ladder_move < -0.001:
+		reached_end = true
+	elif direction < 0.0 and at_top and ladder_move > 0.001:
+		reached_end = true
+		snap_to_top = true
+	if not reached_end:
+		position.y += ladder_move * climb_speed * delta
+		if direction > 0.0 and tower.has_method("is_climb_top_position"):
+			reached_end = bool(tower.call("is_climb_top_position", position))
+			snap_to_top = reached_end
+		elif direction < 0.0 and tower.has_method("is_climb_area_position"):
+			reached_end = bool(tower.call("is_climb_area_position", position))
+	if reached_end:
+		if snap_to_top and tower.has_method("get_top_position"):
+			position = tower.call("get_top_position")
+		state["ladder_climbing"] = false
+		state["ladder_tower_id"] = ""
+		state["ladder_climb_direction"] = 1.0
+	state["position"] = position
+	state["velocity"] = Vector3.ZERO
+	state["knockback_velocity"] = Vector3.ZERO
+	state["grounded"] = reached_end
+	state["swimming"] = false
+	state["prone"] = false
+	state["locomotion_state"] = "ladder_climb" if not reached_end else "idle"
+	return {"handled": true, "state": state, "position": position}
+
+
 func _simulate_players(delta: float) -> void:
 	for raw_peer_id in player_states.keys():
 		var peer_id := int(raw_peer_id)
@@ -517,6 +714,7 @@ func _simulate_players(delta: float) -> void:
 			state["respawn_left"] = respawn_left
 			state["velocity"] = Vector3.ZERO
 			state["knockback_velocity"] = Vector3.ZERO
+			_clear_player_fall_tracking(state)
 			player_states[peer_id] = state
 			if respawn_left <= 0.0:
 				_respawn_player(peer_id)
@@ -539,6 +737,7 @@ func _simulate_players(delta: float) -> void:
 			state["position"] = position
 			state["velocity"] = Vector3.ZERO
 			state["knockback_velocity"] = Vector3.ZERO
+			_clear_player_fall_tracking(state, position)
 			state["locomotion_state"] = "idle"
 			player_states[peer_id] = state
 			if mode == MODE_SERVER:
@@ -553,6 +752,7 @@ func _simulate_players(delta: float) -> void:
 			var vehicle := _find_vehicle(vehicle_id)
 			var seat_index := int(state.get("vehicle_seat_index", -1))
 			if vehicle != null and vehicle.get_seat_index_for_peer(peer_id) == seat_index:
+				_clear_player_fall_tracking(state)
 				_sync_occupied_player_state(peer_id, state, vehicle)
 				if _check_player_void_fall(
 						peer_id,
@@ -588,6 +788,21 @@ func _simulate_players(delta: float) -> void:
 		var input: Dictionary = latest_inputs.get(peer_id, {})
 		var move := _vector2_from_value(input.get("move", Vector2.ZERO))
 		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		var ladder_result := _simulate_authoritative_ladder(state, input, delta, position)
+		if bool(ladder_result.get("handled", false)):
+			state = ladder_result.get("state", state)
+			position = _vector3_from_value(ladder_result.get("position", position))
+			_clear_player_fall_tracking(state, position)
+			state["last_input_seq"] = int(input.get("input_seq", state.get("last_input_seq", 0)))
+			if mode == MODE_SERVER:
+				var ladder_proxy := _ensure_player_physics_node(peer_id, position)
+				if ladder_proxy != null:
+					ladder_proxy.global_position = position
+					ladder_proxy.velocity = Vector3.ZERO
+			player_states[peer_id] = state
+			if server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+				player_correction_ready.emit(peer_id, _make_player_correction(peer_id))
+			continue
 		var water_surface_y := WaterBody3D.get_surface_level_at(position)
 		var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
 		var swim_up := swimming and bool(input.get("swim_up", false))
@@ -607,6 +822,11 @@ func _simulate_players(delta: float) -> void:
 			)
 		else:
 			speed *= PLAYER_PRONE_SPEED_MULTIPLIER if prone else 1.0
+		speed *= get_chain_link_fence_speed_multiplier(
+			position,
+			str(state.get("team", "")),
+			"player"
+		)
 		var velocity := _vector3_from_value(state.get("velocity", Vector3.ZERO))
 		var knockback_velocity := _vector3_from_value(state.get("knockback_velocity", Vector3.ZERO))
 		knockback_velocity.y = 0.0
@@ -745,6 +965,19 @@ func _simulate_players(delta: float) -> void:
 		state["grounded"] = grounded
 		state["locomotion_state"] = _locomotion_state_for(state, move)
 		state["last_input_seq"] = int(input.get("input_seq", state.get("last_input_seq", 0)))
+		var fall_damage := 0.0
+		if mode == MODE_SERVER:
+			var final_surface_y := WaterBody3D.get_surface_level_at(position)
+			var post_swimming := final_surface_y < INF and position.y <= final_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+			fall_damage = _update_player_fall_tracking(
+				state,
+				was_grounded,
+				grounded,
+				swimming or post_swimming,
+				position
+			)
+		else:
+			_clear_player_fall_tracking(state, position)
 		var cooldowns: Dictionary = state.get("tool_cooldowns", {})
 		for tool_id in cooldowns.keys():
 			cooldowns[tool_id] = maxf(0.0, float(cooldowns[tool_id]) - delta)
@@ -752,6 +985,10 @@ func _simulate_players(delta: float) -> void:
 		if _check_player_void_fall(peer_id, state, position):
 			continue
 		player_states[peer_id] = state
+		if fall_damage > 0.0:
+			_damage_player(peer_id, fall_damage, 0.0, Vector3.ZERO, "", "fall")
+			if float((player_states.get(peer_id, {}) as Dictionary).get("respawn_left", 0.0)) > 0.0:
+				continue
 		if server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
 			player_correction_ready.emit(peer_id, _make_player_correction(peer_id))
 
@@ -811,6 +1048,9 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["pitch"] = float(existing.get("pitch", 0.0))
 	existing["prone"] = bool(existing.get("prone", false))
 	existing["swimming"] = bool(existing.get("swimming", false))
+	existing["ladder_climbing"] = bool(existing.get("ladder_climbing", false))
+	existing["ladder_tower_id"] = str(existing.get("ladder_tower_id", ""))
+	existing["ladder_climb_direction"] = float(existing.get("ladder_climb_direction", 1.0))
 	existing["hp"] = float(existing.get("hp", PLAYER_MAX_HP))
 	existing["current_tool_index"] = int(existing.get("current_tool_index", 0))
 	existing["current_tool_id"] = str(existing.get("current_tool_id", ""))
@@ -866,6 +1106,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["labeled_remaining"] = float(existing.get("labeled_remaining", 0.0))
 	existing["vehicle_id"] = str(existing.get("vehicle_id", ""))
 	existing["vehicle_seat_index"] = int(existing.get("vehicle_seat_index", -1))
+	_clear_player_fall_tracking(existing)
 	player_states[peer_id] = existing
 	if mode == MODE_SERVER:
 		var proxy := _ensure_player_physics_node(peer_id, _vector3_from_value(existing.get("position", Vector3.ZERO)))
@@ -1498,6 +1739,10 @@ func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 		"prone": requested_prone,
 		"swim_up": swimming and bool(input_frame.get("swim_up", false)),
 		"dive": swimming and bool(input_frame.get("dive", false)),
+		"ladder_climbing": bool(input_frame.get("ladder_climbing", false)),
+		"ladder_tower_id": str(input_frame.get("ladder_tower_id", "")),
+		"ladder_climb_direction": 1.0 if float(input_frame.get("ladder_climb_direction", 1.0)) >= 0.0 else -1.0,
+		"ladder_move": clampf(float(input_frame.get("ladder_move", 0.0)), -1.0, 1.0),
 	}
 	state["last_received_input_seq"] = input_seq
 	player_states[peer_id] = state
@@ -1583,6 +1828,7 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 				var requested_seat := vehicle.get_available_seat_index(true) if seat_index < 0 else seat_index
 				if vehicle.enter_seat(peer_id, requested_seat):
 					state["prone"] = false
+					_clear_player_fall_tracking(state)
 					state["vehicle_id"] = vehicle.get_vehicle_id()
 					state["vehicle_seat_index"] = requested_seat
 					player_states[peer_id] = state
@@ -1607,6 +1853,7 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 					state["vehicle_seat_index"] = -1
 					state["position"] = exit_position
 					state["velocity"] = Vector3.ZERO
+					_clear_player_fall_tracking(state, exit_position)
 					player_states[peer_id] = state
 					_set_server_player_vehicle_collision(peer_id, false, exit_position)
 					result["ok"] = true
@@ -1833,6 +2080,7 @@ func _sync_occupied_player_state(peer_id: int, state: Dictionary, vehicle: Vehic
 	state["yaw"] = occupant_transform.basis.get_euler().y
 	state["grounded"] = true
 	state["prone"] = false
+	_clear_player_fall_tracking(state, occupant_transform.origin)
 	state["locomotion_state"] = "idle"
 	player_states[peer_id] = state
 	_set_server_player_vehicle_collision(peer_id, true, occupant_transform.origin)
@@ -1906,7 +2154,7 @@ func server_select_tool(peer_id: int, tool_index: int, tool_id := "") -> void:
 	if not player_states.has(peer_id):
 		return
 	var state: Dictionary = player_states[peer_id]
-	if float(state.get("respawn_left", 0.0)) > 0.0:
+	if float(state.get("respawn_left", 0.0)) > 0.0 or bool(state.get("ladder_climbing", false)):
 		return
 	var held_ingredient := _ingredient_from_selection_id(tool_id)
 	var held_dish_id := _dish_from_selection_id(tool_id)
@@ -1949,6 +2197,8 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		return {"ok": false, "reason": "player_respawning"}
 	if bool(state.get("prone", false)):
 		return {"ok": false, "reason": "player_prone"}
+	if bool(state.get("ladder_climbing", false)):
+		return {"ok": false, "reason": "player_climbing"}
 	var tool_id := str(tool_request.get("tool_id", ""))
 	if tool_id.is_empty():
 		tool_id = _tool_id_from_index(state, int(tool_request.get("tool_index", state.get("current_tool_index", 0))))
@@ -2044,6 +2294,357 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 	return result
 
 
+func local_gate_action(peer_id: int, action: Dictionary) -> Dictionary:
+	return server_gate_action(peer_id, action)
+
+
+func local_ladder_action(peer_id: int, action: Dictionary) -> Dictionary:
+	_sync_local_player_interaction_state(peer_id)
+	return server_ladder_action(peer_id, action)
+
+
+func server_ladder_action(peer_id: int, action: Dictionary) -> Dictionary:
+	var requested_direction := 1.0 if float(action.get("direction", 1.0)) >= 0.0 else -1.0
+	var result := {
+		"ok": false,
+		"peer_id": peer_id,
+		"tower_id": str(action.get("tower_id", "")),
+		"tower_position": action.get("tower_position", Vector3.ZERO),
+		"direction": requested_direction,
+		"ladder_action": "start",
+		"tick": server_tick,
+	}
+	if peer_id <= 0 or not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+		return _finish_ladder_action_result(result)
+	var state: Dictionary = player_states[peer_id]
+	if float(state.get("respawn_left", 0.0)) > 0.0:
+		result["reason"] = "player_respawning"
+		return _finish_ladder_action_result(result)
+	if bool(state.get("ladder_climbing", false)):
+		result["reason"] = "already_climbing"
+		return _finish_ladder_action_result(result)
+	if not str(state.get("vehicle_id", "")).is_empty():
+		result["reason"] = "player_in_vehicle"
+		return _finish_ladder_action_result(result)
+	if bool(state.get("prone", false)) or bool(state.get("swimming", false)):
+		result["reason"] = "player_not_standing"
+		return _finish_ladder_action_result(result)
+	if not bool(state.get("grounded", true)):
+		result["reason"] = "player_not_grounded"
+		return _finish_ladder_action_result(result)
+	var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var tower_position_value: Variant = action.get("tower_position", Vector3.ZERO)
+	var from_top := requested_direction < 0.0
+	var tower := _find_wood_tower_for_ladder_action(
+		position,
+		str(action.get("tower_id", "")),
+		from_top,
+		tower_position_value
+	)
+	if tower == null or not is_instance_valid(tower):
+		result["reason"] = "not_in_climb_area"
+		return _finish_ladder_action_result(result)
+	var climb_yaw := float(state.get("yaw", 0.0))
+	if from_top and tower.has_method("get_climb_down_position"):
+		position = _vector3_from_value(tower.call("get_climb_down_position"))
+		if tower.has_method("get_climb_down_yaw"):
+			climb_yaw = float(tower.call("get_climb_down_yaw"))
+	state["ladder_climbing"] = true
+	state["ladder_tower_id"] = str(tower.get_path())
+	state["ladder_climb_direction"] = requested_direction
+	state["yaw"] = climb_yaw
+	state["velocity"] = Vector3.ZERO
+	state["knockback_velocity"] = Vector3.ZERO
+	state["prone"] = false
+	state["swimming"] = false
+	state["grounded"] = false
+	state["locomotion_state"] = "ladder_climb"
+	state["position"] = position
+	player_states[peer_id] = state
+	result["ok"] = true
+	result["tower_id"] = str(tower.get_path())
+	result["tower_position"] = tower.global_position
+	result["start_position"] = position
+	result["yaw"] = climb_yaw
+	result["direction"] = requested_direction
+	return _finish_ladder_action_result(result)
+
+
+func _finish_ladder_action_result(result: Dictionary) -> Dictionary:
+	var peer_id := int(result.get("peer_id", 0))
+	if peer_id > 0:
+		reliable_world_event_ready.emit({
+			"type": "ladder_action_result",
+			"peer_id": peer_id,
+			"data": result.duplicate(true),
+			"tick": server_tick,
+		})
+	return result
+
+
+func server_gate_action(peer_id: int, action: Dictionary) -> Dictionary:
+	var gate_id := str(action.get("gate_id", ""))
+	var action_name := str(action.get("action", ""))
+	var result := {
+		"ok": false,
+		"gate_id": gate_id,
+		"peer_id": peer_id,
+		"gate_action": action_name,
+		"tick": server_tick,
+	}
+	if peer_id <= 0 or not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+		return _finish_gate_action_result(result)
+	var gate := _wire_mesh_gate_for_id(gate_id)
+	if gate == null or not is_instance_valid(gate):
+		result["reason"] = "gate_not_found"
+		return _finish_gate_action_result(result)
+	_ensure_wire_mesh_gate_registered(gate)
+	if not _gate_player_in_range(peer_id, gate):
+		result["reason"] = "gate_out_of_range"
+		return _finish_gate_action_result(result)
+	var player_team := str((player_states[peer_id] as Dictionary).get("team", ""))
+	var direct_access := gate.is_direct_open_allowed(player_team)
+
+	match action_name:
+		"toggle":
+			if not gate.is_open and not direct_access:
+				result["reason"] = "enemy_requires_lockpick"
+				return _finish_gate_action_result(result)
+			_cancel_gate_lockpick_state(gate_id, "toggle")
+			gate.apply_open_state(not gate.is_open)
+			_emit_gate_state(gate, peer_id)
+			result["ok"] = true
+			result["gate_action"] = "open" if gate.is_open else "close"
+			result["is_open"] = gate.is_open
+		"lockpick_start":
+			if gate.is_open:
+				result["reason"] = "gate_already_open"
+				return _finish_gate_action_result(result)
+			if direct_access:
+				gate.apply_open_state(true)
+				_emit_gate_state(gate, peer_id)
+				result["ok"] = true
+				result["gate_action"] = "open"
+				result["is_open"] = true
+				return _finish_gate_action_result(result)
+			var existing: Dictionary = gate_lockpick_states.get(gate_id, {})
+			if not existing.is_empty() and int(existing.get("peer_id", 0)) != peer_id:
+				result["reason"] = "gate_busy"
+				return _finish_gate_action_result(result)
+			gate_lockpick_states[gate_id] = {
+				"actor_kind": "player",
+				"peer_id": peer_id,
+				"remaining": WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS,
+			}
+			reliable_world_event_ready.emit({
+				"type": "gate_lockpick_started",
+				"gate_id": gate_id,
+				"device_id": gate_id,
+				"peer_id": peer_id,
+				"duration": WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS,
+				"tick": server_tick,
+			})
+			result["ok"] = true
+			result["gate_action"] = "lockpick_start"
+			result["duration"] = WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS
+		"lockpick_cancel":
+			var lockpick: Dictionary = gate_lockpick_states.get(gate_id, {})
+			if lockpick.is_empty() or int(lockpick.get("peer_id", 0)) != peer_id:
+				result["reason"] = "gate_lockpick_not_owned"
+				return _finish_gate_action_result(result)
+			_cancel_gate_lockpick_state(gate_id, "released")
+			result["ok"] = true
+			result["gate_action"] = "lockpick_cancel"
+		_:
+			result["reason"] = "unsupported_gate_action"
+	return _finish_gate_action_result(result)
+
+
+func _finish_gate_action_result(result: Dictionary) -> Dictionary:
+	var peer_id := int(result.get("peer_id", 0))
+	if peer_id > 0:
+		reliable_world_event_ready.emit({
+			"type": "gate_action_result",
+			"peer_id": peer_id,
+			"data": result.duplicate(true),
+			"tick": server_tick,
+		})
+	return result
+
+
+func _wire_mesh_gate_for_id(gate_id: String) -> WireMeshGate:
+	if gate_id.is_empty():
+		return null
+	var state: Dictionary = placed_tool_states.get(gate_id, {})
+	var path := str(state.get("path", gate_id))
+	var node := get_node_or_null(NodePath(path))
+	if node is WireMeshGate:
+		return node as WireMeshGate
+	for gate_value: Variant in get_tree().get_nodes_in_group("wire_mesh_gates"):
+		if gate_value is WireMeshGate:
+			var gate := gate_value as WireMeshGate
+			if gate.get_gate_id() == gate_id or str(gate.get_path()) == gate_id:
+				return gate
+	return null
+
+
+func _ensure_wire_mesh_gate_registered(gate: WireMeshGate) -> void:
+	if gate == null or not is_instance_valid(gate) or (not is_server_authority() and not is_local_authority()):
+		return
+	var gate_id := gate.get_gate_id()
+	var is_map_static := str(gate.get_meta("map_editor_category", "")) == "facility" \
+		or bool(gate.get_meta("map_static", false))
+	if not placed_tool_states.has(gate_id):
+		register_map_placed_tool(gate, "wire_mesh_gate", gate_id, str(gate.tool_owner))
+	var state: Dictionary = placed_tool_states.get(gate_id, {})
+	state["tool_id"] = gate_id
+	state["device_id"] = gate_id
+	state["tool_name"] = "wire_mesh_gate"
+	state["path"] = str(gate.get_path())
+	state["scene_path"] = "res://character/weapons/WireMeshGate.tscn"
+	state["team"] = str(gate.tool_owner)
+	state["position"] = gate.global_position
+	state["yaw"] = gate.rotation.y
+	state["is_open"] = gate.is_open
+	state["free_placement"] = false if is_map_static else true
+	state["map_static"] = is_map_static
+	placed_tool_states[gate_id] = state
+
+
+func _gate_player_in_range(peer_id: int, gate: WireMeshGate) -> bool:
+	var player_state: Dictionary = player_states.get(peer_id, {})
+	if float(player_state.get("respawn_left", 0.0)) > 0.0:
+		return false
+	var player_position := _vector3_from_value(player_state.get("position", Vector3.ZERO))
+	return gate.global_position.distance_to(player_position) <= PLAYER_VEHICLE_INTERACTION_RANGE
+
+
+func _emit_gate_state(gate: WireMeshGate, actor_peer_id := 0) -> void:
+	if gate == null or not is_instance_valid(gate):
+		return
+	var gate_id := gate.get_gate_id()
+	_ensure_wire_mesh_gate_registered(gate)
+	var state: Dictionary = placed_tool_states.get(gate_id, {})
+	state["is_open"] = gate.is_open
+	state["position"] = gate.global_position
+	state["yaw"] = gate.rotation.y
+	state["team"] = str(gate.tool_owner)
+	placed_tool_states[gate_id] = state
+	reliable_world_event_ready.emit({
+		"type": "gate_state",
+		"gate_id": gate_id,
+		"device_id": gate_id,
+		"actor_peer_id": actor_peer_id,
+		"team": str(gate.tool_owner),
+		"is_open": gate.is_open,
+		"open_angle_degrees": gate.open_angle_degrees,
+		"position": gate.global_position,
+		"yaw": gate.rotation.y,
+		"scene_path": "res://character/weapons/WireMeshGate.tscn",
+		"tick": server_tick,
+	})
+
+
+func _cancel_gate_lockpick_state(gate_id: String, reason: String) -> void:
+	var lockpick: Dictionary = gate_lockpick_states.get(gate_id, {})
+	if lockpick.is_empty():
+		return
+	gate_lockpick_states.erase(gate_id)
+	var peer_id := int(lockpick.get("peer_id", 0))
+	if peer_id > 0:
+		reliable_world_event_ready.emit({
+			"type": "gate_lockpick_cancelled",
+			"gate_id": gate_id,
+			"device_id": gate_id,
+			"peer_id": peer_id,
+			"reason": reason,
+			"tick": server_tick,
+		})
+
+
+func _gate_ai_team(actor: Node) -> String:
+	if actor == null or not is_instance_valid(actor):
+		return ""
+	for property_name: String in ["team_id", "team", "tool_owner"]:
+		if _node_has_property(actor, property_name):
+			return str(actor.get(property_name))
+	return ""
+
+
+func _find_gate_ai_nearby(gate: WireMeshGate) -> Node3D:
+	var seen: Dictionary = {}
+	for group_name: String in ["ai_players", "farmer_ai", "assistant_ai", "future_warrior_ai"]:
+		for actor_value: Variant in get_tree().get_nodes_in_group(group_name):
+			if not actor_value is Node3D or not is_instance_valid(actor_value):
+				continue
+			var actor := actor_value as Node3D
+			if seen.has(actor.get_instance_id()):
+				continue
+			seen[actor.get_instance_id()] = true
+			if gate.is_actor_inside_interaction_area(actor) and not _gate_ai_team(actor).is_empty():
+				return actor
+	return null
+
+
+func _simulate_gate_interactions(delta: float) -> void:
+	if not is_server_authority() and not is_local_authority():
+		return
+	for gate_value: Variant in get_tree().get_nodes_in_group("wire_mesh_gates"):
+		if gate_value is WireMeshGate:
+			_ensure_wire_mesh_gate_registered(gate_value as WireMeshGate)
+	for raw_gate_id: Variant in placed_tool_states.keys().duplicate():
+		var gate_id := str(raw_gate_id)
+		var state: Dictionary = placed_tool_states.get(gate_id, {})
+		if str(state.get("tool_name", "")).to_lower() != "wire_mesh_gate":
+			continue
+		var gate := _wire_mesh_gate_for_id(gate_id)
+		if gate == null or not is_instance_valid(gate):
+			_cancel_gate_lockpick_state(gate_id, "gate_removed")
+			continue
+		if gate.is_open:
+			_cancel_gate_lockpick_state(gate_id, "gate_opened")
+			continue
+		var lockpick: Dictionary = gate_lockpick_states.get(gate_id, {})
+		if not lockpick.is_empty():
+			var actor_kind := str(lockpick.get("actor_kind", "player"))
+			var actor_valid := false
+			if actor_kind == "player":
+				var peer_id := int(lockpick.get("peer_id", 0))
+				actor_valid = _gate_player_in_range(peer_id, gate)
+			else:
+				var actor_value: Variant = lockpick.get("actor", null)
+				actor_valid = actor_value is Node3D and is_instance_valid(actor_value) \
+						and gate.is_actor_inside_interaction_area(actor_value as Node3D)
+			if not actor_valid:
+				_cancel_gate_lockpick_state(gate_id, "actor_left_area")
+				continue
+			lockpick["remaining"] = maxf(0.0, float(lockpick.get("remaining", WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS)) - delta)
+			if float(lockpick["remaining"]) <= 0.0:
+				var actor_peer_id := int(lockpick.get("peer_id", 0))
+				gate.apply_open_state(true)
+				gate_lockpick_states.erase(gate_id)
+				_emit_gate_state(gate, actor_peer_id)
+			else:
+				gate_lockpick_states[gate_id] = lockpick
+			continue
+		var ai_actor := _find_gate_ai_nearby(gate)
+		if ai_actor == null:
+			continue
+		var ai_team := _gate_ai_team(ai_actor)
+		if gate.is_direct_open_allowed(ai_team):
+			gate.apply_open_state(true)
+			_emit_gate_state(gate)
+		else:
+			gate_lockpick_states[gate_id] = {
+				"actor_kind": "ai",
+				"actor": ai_actor,
+				"peer_id": 0,
+				"remaining": WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS,
+			}
+
+
 func local_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 	return server_reload_weapon(peer_id, tool_id)
 
@@ -2054,7 +2655,7 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 		result["reason"] = "unknown_player"
 		return result
 	var state: Dictionary = player_states[peer_id]
-	if float(state.get("respawn_left", 0.0)) > 0.0 or not _player_has_tool(state, tool_id):
+	if float(state.get("respawn_left", 0.0)) > 0.0 or bool(state.get("ladder_climbing", false)) or not _player_has_tool(state, tool_id):
 		result["reason"] = "player_unavailable"
 		return result
 	if bool(state.get("prone", false)):
@@ -2096,6 +2697,8 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 
 
 func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
+	if bool(state.get("ladder_climbing", false)):
+		return "ladder_climb"
 	if bool(state.get("swimming", false)):
 		return "swim"
 	if not bool(state.get("grounded", true)):
@@ -2109,7 +2712,7 @@ func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
 
 func _animation_action_for_tool(tool_id: String) -> String:
 	match tool_id:
-		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "m4", "future_m4", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
+		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
 			return "shooting"
 		"eater":
 			return "melee"
@@ -2151,7 +2754,7 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float("nail_gun", "visual_speed")
 			lifetime = CombatBalance.get_float("nail_gun", "visual_lifetime")
-		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "future_m4", "ar15":
+		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15":
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float(tool_id, "visual_speed")
 			lifetime = CombatBalance.get_float(tool_id, "visual_lifetime")
@@ -2224,7 +2827,10 @@ func _emit_visual_projectile(
 		return
 	var visual_id := next_visual_projectile_id
 	next_visual_projectile_id += 1
-	reliable_world_event_ready.emit({
+	# This is a transient cosmetic tracer only. Gameplay damage is already
+	# resolved authoritatively before this event is emitted, so packet loss must
+	# not consume the reliable world-event channel.
+	visual_world_event_ready.emit({
 		"type": "visual_projectile_fired",
 		"visual_id": visual_id,
 		"owner_peer_id": owner_peer_id,
@@ -2266,7 +2872,7 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("freeze_gun", "range"), CombatBalance.get_float("freeze_gun", "damage"), CombatBalance.get_float("freeze_gun", "knockback"), "freeze"), true)
 		"nail_gun":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("nail_gun", "range"), CombatBalance.get_float("nail_gun", "damage"), CombatBalance.get_float("nail_gun", "knockback"), "nail"), true)
-		"suppressed_pistol", "hunting_rifle", "m4", "future_m4", "ar15":
+		"suppressed_pistol", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float(tool_id, "range"), CombatBalance.get_float(tool_id, "damage"), CombatBalance.get_float(tool_id, "knockback"), "nail"), true)
 		"shotgun":
 			result.merge(_server_shotgun(peer_id, tool_request), true)
@@ -2350,6 +2956,16 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/BigMouth.tscn", "big_mouth"), true)
 		"fake_player":
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/FakePlayer.tscn", "fake_player"), true)
+		"tall_brick":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/TallBrick.tscn", "tall_brick"), true)
+		"tall_log_wall":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/TallLogWall.tscn", "tall_log_wall"), true)
+		"tall_mesh_wall":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/TallMeshWall.tscn", "tall_mesh_wall"), true)
+		"wire_mesh_gate":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/WireMeshGate.tscn", "wire_mesh_gate"), true)
+		"chain_link_fence":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/ChainLinkFence.tscn", "chain_link_fence"), true)
 		_:
 			result["ok"] = false
 			result["reason"] = "unsupported_tool"
@@ -2669,6 +3285,7 @@ func _server_rift_book(peer_id: int, tool_request: Dictionary) -> Dictionary:
 				state["position"] = teleport_position
 				state["velocity"] = Vector3.ZERO
 				state["knockback_velocity"] = Vector3.ZERO
+				_clear_player_fall_tracking(state, teleport_position)
 				player_states[peer_id] = state
 				if mode == MODE_SERVER:
 					var proxy := _ensure_player_physics_node(peer_id, teleport_position)
@@ -2777,6 +3394,53 @@ func destroy_harvest_tree(tree: HarvestTree, log_count: int) -> void:
 
 func spawn_tree_log_pickups(position: Vector3, log_count: int) -> void:
 	spawn_nature_resource_drops(position, [{"item_id": "log", "count": log_count, "weight_kg": 2.0, "model_path": LOG_DROP_MODEL}])
+
+
+func spawn_cash_drop(
+	position: Vector3,
+	amount: int,
+	source_team := "",
+	direction := Vector3.ZERO
+) -> bool:
+	## 现金沿用通用 PickupItem；source_team 只用于调用方记录，不限制谁可以拾取。
+	if not (is_server_authority() or is_local_authority()) or amount <= 0:
+		return false
+	var launch_direction := direction
+	launch_direction.y = clampf(launch_direction.y, 0.2, 0.65)
+	if launch_direction.length_squared() <= 0.001:
+		launch_direction = Vector3(
+			randf_range(-1.0, 1.0),
+			0.35,
+			randf_range(-1.0, 1.0)
+		)
+	if launch_direction.length_squared() <= 0.001:
+		launch_direction = Vector3.FORWARD
+	launch_direction = launch_direction.normalized()
+	var item := {
+		"kind": "cash",
+		"item_id": "cash",
+		"display_name": "钞票",
+		"money_value": maxi(1, amount),
+		"source_team": str(source_team),
+	}
+	var state := {
+		"item_id": _allocate_dropped_item_id("cash"),
+		"item": item,
+		"model_path": "res://items/Cash.tscn",
+		"position": position + Vector3.UP * 1.0 + launch_direction * 0.55,
+		"velocity": launch_direction * 3.5 + Vector3.UP * 2.5,
+		"angular_velocity": Vector3(1.5, 2.0, 0.8),
+		"landed": false,
+		"lifetime_remaining": PickupItem.LIFETIME_SECONDS,
+	}
+	if not _spawn_authoritative_dropped_item(state):
+		return false
+	reliable_world_event_ready.emit({
+		"type": "dropped_item_spawned",
+		"item_state": state,
+		"tick": server_tick,
+	})
+	return true
 
 
 func spawn_nature_resource_drops(position: Vector3, drops: Array) -> void:
@@ -4224,21 +4888,41 @@ func server_dropped_item_action(peer_id: int, action: Dictionary) -> Dictionary:
 				result["reason"] = "item_unavailable"
 			elif not _can_server_pickup_dropped_item(state, pickup.global_position, action):
 				result["reason"] = "item_out_of_range"
-			elif str(pickup.item_data.get("kind", "")) in ["tool", "weapon"] \
+			else:
+				var item_kind := str(pickup.item_data.get("kind", ""))
+				if item_kind == "cash":
+					var cash_amount := maxi(0, int(pickup.item_data.get("money_value", 0)))
+					var team := str(state.get("team", ""))
+					if cash_amount <= 0:
+						result["reason"] = "invalid_cash_amount"
+					elif team.is_empty():
+						result["reason"] = "missing_team"
+					elif not GlobalVar.add_item(team, "money", float(cash_amount)):
+						result["reason"] = "money_add_failed"
+					else:
+						var item := pickup.item_data.duplicate(true)
+						_remove_authoritative_dropped_item(item_id, false)
+						result["ok"] = true
+						result["item_id"] = item_id
+						result["item"] = item
+						result["cash_amount"] = cash_amount
+						result["team"] = team
+						result["team_money"] = GlobalVar.check_team_item_amount(team, "money")
+				elif item_kind in ["tool", "weapon"] \
 					and _player_has_tool(state, str(pickup.item_data.get("tool_id", ""))) \
 					and not _tool_allows_multiple(str(pickup.item_data.get("tool_id", ""))):
-				result["reason"] = "unique_tool_already_owned"
-			elif not _can_add_dropped_item_to_player(state, pickup.item_data):
-				result["reason"] = "personal_bag_full"
-			else:
-				var item := pickup.item_data.duplicate(true)
-				_restore_dropped_item_to_player(state, item)
-				player_states[peer_id] = state
-				_remove_authoritative_dropped_item(item_id, false)
-				result["ok"] = true
-				result["item_id"] = item_id
-				result["item"] = item
-				result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+					result["reason"] = "unique_tool_already_owned"
+				elif not _can_add_dropped_item_to_player(state, pickup.item_data):
+					result["reason"] = "personal_bag_full"
+				else:
+					var item := pickup.item_data.duplicate(true)
+					_restore_dropped_item_to_player(state, item)
+					player_states[peer_id] = state
+					_remove_authoritative_dropped_item(item_id, false)
+					result["ok"] = true
+					result["item_id"] = item_id
+					result["item"] = item
+					result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
 		_:
 			result["reason"] = "unsupported_action"
 	reliable_world_event_ready.emit({"type": "dropped_item_action_result", "data": result, "tick": server_tick})
@@ -6094,6 +6778,166 @@ func _server_hitscan(
 	}
 
 
+## Server-authoritative hitscan for AI-controlled handheld weapons.
+##
+## Player shots enter _server_hitscan through a peer request. AI has no player
+## peer state, so it needs this parallel entry point. The query and damage
+## routing deliberately use the same combat ray mask and collider resolver as
+## player hitscan, while the shooter node is excluded from its own ray.
+func server_ai_hitscan(
+	shooter: Node3D,
+	attacker_team: String,
+	tool_id: String,
+	origin: Vector3,
+	direction: Vector3
+) -> Dictionary:
+	var result := {
+		"ok": false,
+		"hit_kind": "none",
+		"hit_position": origin,
+		"direction": direction,
+		"effect": "nail",
+		"damage": 0.0,
+		"knockback": 0.0,
+	}
+	if not is_server_authority() and not is_local_authority():
+		result["reason"] = "not_authority"
+		return result
+	if not is_instance_valid(shooter):
+		result["reason"] = "invalid_shooter"
+		return result
+
+	var normalized_direction := direction.normalized()
+	if normalized_direction.length_squared() <= 0.001:
+		normalized_direction = -shooter.global_transform.basis.z.normalized()
+	if normalized_direction.length_squared() <= 0.001:
+		normalized_direction = Vector3.FORWARD
+	var max_distance := maxf(0.1, CombatBalance.get_float(tool_id, "range"))
+	var damage := maxf(0.0, CombatBalance.get_float(tool_id, "damage"))
+	var knockback := maxf(0.0, CombatBalance.get_float(tool_id, "knockback"))
+	var end := origin + normalized_direction * max_distance
+	var exclude: Array[RID] = []
+	if shooter is CollisionObject3D:
+		exclude.append((shooter as CollisionObject3D).get_rid())
+	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclude)
+	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
+	var hit_position := trace_end
+	var hit_kind := "world" if hit.has("collider") else "none"
+
+	var hit_peer_id := _valid_hitscan_player_target(
+		_peer_id_for_player_physics_collider(hit.get("collider", null)),
+		0,
+		attacker_team
+	)
+	if hit_peer_id == 0:
+		hit_peer_id = _find_player_hit_by_segment(
+			0,
+			attacker_team,
+			origin,
+			trace_end,
+			0.75
+		)
+
+	var damage_position := hit_position
+	if hit_peer_id != 0 and player_states.has(hit_peer_id):
+		damage_position = _vector3_from_value(
+			(player_states[hit_peer_id] as Dictionary).get("position", hit_position)
+		)
+	var applied_damage := damage * AreaProtectorTool.get_damage_multiplier_at(
+		self,
+		damage_position,
+		attacker_team
+	)
+	var damage_applied := false
+	if hit_peer_id != 0:
+		hit_kind = "player"
+		damage_applied = _damage_player(
+			hit_peer_id,
+			applied_damage,
+			knockback,
+			normalized_direction,
+			attacker_team,
+			"nail"
+		)
+	elif hit.has("collider"):
+		var collider = hit.get("collider")
+		var hit_wild_animal := _wild_animal_for_collider(collider)
+		hit_position = hit.get("position", end)
+		applied_damage = damage * AreaProtectorTool.get_damage_multiplier_at(
+			self,
+			hit_position,
+			attacker_team
+		)
+		damage_applied = _apply_hit_to_collider(
+			collider,
+			"nail",
+			applied_damage,
+			attacker_team,
+			int(hit.get("shape", -1)),
+			0,
+			shooter
+		)
+		if damage_applied:
+			hit_kind = "wild_animal" if hit_wild_animal != null else "tool"
+
+	result["ok"] = true
+	result["hit_kind"] = hit_kind
+	result["hit_peer_id"] = hit_peer_id
+	result["hit_position"] = hit_position
+	result["direction"] = normalized_direction
+	result["damage"] = applied_damage if damage_applied else 0.0
+	result["knockback"] = knockback
+	result["visual_distance"] = origin.distance_to(hit_position)
+	_emit_ai_hitscan_visual(
+		shooter,
+		attacker_team,
+		tool_id,
+		origin,
+		normalized_direction,
+		float(result["visual_distance"])
+	)
+	return result
+
+
+func _emit_ai_hitscan_visual(
+	shooter: Node3D,
+	attacker_team: String,
+	tool_id: String,
+	origin: Vector3,
+	direction: Vector3,
+	travel_distance: float
+) -> void:
+	if not is_server_authority():
+		return
+	var visual_speed := maxf(0.1, CombatBalance.get_float(tool_id, "visual_speed"))
+	var configured_lifetime := maxf(
+		0.01,
+		CombatBalance.get_float(tool_id, "visual_lifetime", 0.5)
+	)
+	var lifetime := minf(
+		configured_lifetime,
+		maxf(0.01, travel_distance / visual_speed)
+	)
+	# The hitscan result above is authoritative; this event only draws a
+	# short-lived tracer and therefore belongs to the unreliable visual channel.
+	visual_world_event_ready.emit({
+		"type": "visual_projectile_fired",
+		"visual_id": next_visual_projectile_id,
+		"owner_peer_id": 0,
+		"team": attacker_team,
+		"visual_type": "nail_bullet",
+		"origin": origin,
+		"direction": direction,
+		"speed": visual_speed,
+		"lifetime": lifetime,
+		"effect": "nail",
+		"spawn_for_owner": true,
+		"source_ai_id": shooter.get_instance_id() if is_instance_valid(shooter) else 0,
+		"tick": server_tick,
+	})
+	next_visual_projectile_id += 1
+
+
 func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 	var center_direction := _vector3_from_value(
 		tool_request.get("direction", Vector3.FORWARD)
@@ -6529,8 +7373,23 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 	var position := target_position if target_position != Vector3.ZERO else _vector3_from_value(hit.get("position", player_position + direction * 4.0))
 	if position.distance_to(player_position) > 10.0:
 		position = player_position + direction * 4.0
+	var wall_snap := _resolve_authoritative_wall_snap(device_type, scene_path, position, placement_yaw)
+	var wall_snap_exceptions: Array = []
+	if bool(wall_snap.get("active", false)):
+		position = _vector3_from_value(wall_snap.get("position", position))
+		var source_rid_value: Variant = wall_snap.get("source_rid", RID())
+		if source_rid_value is RID and (source_rid_value as RID).is_valid():
+			wall_snap_exceptions.append(source_rid_value as RID)
+	if position.distance_to(player_position) > 10.0:
+		return {"ok": false, "reason": "placement_too_far", "device_type": device_type}
 	if _is_free_placement_tool(device_type):
-		var placement := _validate_free_placement(peer_id, scene_path, position, placement_yaw)
+		var placement := _validate_free_placement(
+			peer_id,
+			scene_path,
+			position,
+			placement_yaw,
+			wall_snap_exceptions
+		)
 		if not bool(placement.get("ok", false)):
 			return {
 				"ok": false,
@@ -6551,7 +7410,8 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 	GlobalVar.gameworld.add_child(node)
 	node.global_position = position
 	node.rotation.y = placement_yaw
-	node.set("tool_owner", team)
+	if _node_has_property(node, "tool_owner"):
+		node.set("tool_owner", team)
 	if node is KitchenAppliance:
 		(node as KitchenAppliance).owner_team = team
 	if node.has_method("activate_tool"):
@@ -6596,6 +7456,13 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 		placed_state["device_id"] = device_id
 		placed_state["scene_path"] = scene_path
 		placed_state["free_placement"] = true
+		if node is WireMeshGate:
+			placed_state["is_open"] = (node as WireMeshGate).is_open
+			placed_state["open_angle_degrees"] = (node as WireMeshGate).open_angle_degrees
+		if not PlacementQueryScript.wall_family_for_tool(device_type).is_empty():
+			placed_state["wall_half_length"] = _wall_half_length_for_scene(scene_path)
+			if bool(wall_snap.get("active", false)):
+				placed_state["wall_snap_source_id"] = str(wall_snap.get("source_id", ""))
 		placed_tool_states[device_id] = placed_state
 		if mode == MODE_SERVER:
 			reliable_world_event_ready.emit({
@@ -6620,6 +7487,8 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 		"category": str(authoritative_tool_definitions.get(device_type, {}).get("category", "utility")),
 		"scene_path": scene_path,
 	}
+	if bool(wall_snap.get("active", false)):
+		result["wall_snap_source_id"] = str(wall_snap.get("source_id", ""))
 	if mode == MODE_LOCAL and is_remote_device:
 		# 单人本地权威需要把实例返回给 Player，便于立刻进入无人机/小车等遥控视角。
 		# Dedicated Server 模式不能把 Node 放进 RPC 事件，否则网络序列化会失败。
@@ -6720,9 +7589,21 @@ func register_map_placed_tool(
 		"hp": tool_max_hp,
 		"max_hp": tool_max_hp,
 		"cooldown_left": 0.0,
-		"scene_path": str(definition.get("path", "")),
-		"free_placement": true,
+		"scene_path": str(definition.get("path", node.scene_file_path)),
+		"free_placement": false,
+		"map_static": true,
+		"facility_id": str(node.get_meta("network_map_facility_id", tool_id)),
+		"auto_respawn": bool(_node_has_property(node, "auto_respawn") and node.get("auto_respawn")),
+		"respawn_seconds": maxf(1.0, _node_float_property(node, "respawn_seconds", 60.0)),
+		"respawn_left": 0.0,
+		"destroyed": false,
 	}
+	if node is WireMeshGate:
+		placed_tool_states[tool_id]["is_open"] = (node as WireMeshGate).is_open
+		placed_tool_states[tool_id]["open_angle_degrees"] = (node as WireMeshGate).open_angle_degrees
+	if not PlacementQueryScript.wall_family_for_tool(tool_name).is_empty():
+		placed_tool_states[tool_id]["wall_half_length"] = \
+			PlacementQueryScript.wall_half_length_for_node(node)
 	return true
 
 
@@ -6935,7 +7816,120 @@ func _placement_yaw_for_peer(peer_id: int, tool_request: Dictionary) -> float:
 	return wrapf(yaw, -PI, PI)
 
 
-func _validate_free_placement(peer_id: int, scene_path: String, requested_position: Vector3, placement_yaw: float) -> Dictionary:
+func _resolve_authoritative_wall_snap(
+	device_type: String,
+	scene_path: String,
+	requested_position: Vector3,
+	placement_yaw: float
+) -> Dictionary:
+	var family := PlacementQueryScript.wall_family_for_tool(device_type)
+	if family.is_empty():
+		return {"active": false, "position": requested_position}
+	var current_half_length := _wall_half_length_for_scene(scene_path)
+	if current_half_length <= 0.0:
+		return {"active": false, "position": requested_position}
+	var candidates: Array = []
+	for raw_id: Variant in placed_tool_states.keys():
+		var source_id := str(raw_id)
+		var state_value: Variant = placed_tool_states.get(raw_id, {})
+		if not state_value is Dictionary:
+			continue
+		var state := state_value as Dictionary
+		if float(state.get("hp", 1.0)) <= 0.0:
+			continue
+		var tool_id := _wall_tool_id_from_state(source_id, state)
+		if PlacementQueryScript.wall_family_for_tool(tool_id) != family:
+			continue
+		var node := _wall_node_for_state(source_id, state)
+		var position := _wall_state_position(state, node)
+		var yaw := _wall_state_yaw(state, node)
+		var half_length := float(state.get("wall_half_length", 0.0))
+		if half_length <= 0.0:
+			half_length = PlacementQueryScript.wall_half_length_for_node(node)
+		if half_length <= 0.0:
+			half_length = _wall_half_length_for_scene(str(state.get("scene_path", "")))
+		if half_length <= 0.0:
+			continue
+		var candidate := {
+			"source_id": source_id,
+			"position": position,
+			"yaw": yaw,
+			"half_length": half_length,
+		}
+		if node is CollisionObject3D:
+			candidate["source_rid"] = (node as CollisionObject3D).get_rid()
+		candidates.append(candidate)
+	var snap := PlacementQueryScript.resolve_wall_endpoint_snap(
+		requested_position,
+		placement_yaw,
+		current_half_length,
+		candidates,
+		PlacementQueryScript.WALL_SNAP_DISTANCE
+	)
+	if bool(snap.get("active", false)):
+		var source_id := str(snap.get("source_id", ""))
+		for candidate_value: Variant in candidates:
+			if candidate_value is Dictionary \
+					and str((candidate_value as Dictionary).get("source_id", "")) == source_id:
+				snap["source_rid"] = (candidate_value as Dictionary).get("source_rid", RID())
+				break
+	return snap
+
+
+func _wall_tool_id_from_state(source_id: String, state: Dictionary) -> String:
+	var tool_id := str(state.get("tool_name", state.get("tool_id", source_id)))
+	if not PlacementQueryScript.wall_family_for_tool(tool_id).is_empty():
+		return tool_id.to_lower()
+	return PlacementQueryScript.wall_tool_id_for_scene(str(state.get("scene_path", "")))
+
+
+func _wall_node_for_state(source_id: String, state: Dictionary) -> Node3D:
+	var path := str(state.get("path", state.get("device_id", source_id)))
+	if not path.is_empty():
+		var node := get_tree().root.get_node_or_null(NodePath(path)) as Node3D
+		if node != null and is_instance_valid(node):
+			return node
+	if has_method("_node_for_tool_ref"):
+		var resolved: Variant = _node_for_tool_ref({"kind": "placed", "id": source_id})
+		if resolved is Node3D and is_instance_valid(resolved):
+			return resolved as Node3D
+	return null
+
+
+func _wall_state_position(state: Dictionary, node: Node3D) -> Vector3:
+	if node != null and is_instance_valid(node):
+		return node.global_position
+	var value: Variant = state.get("position", Vector3.ZERO)
+	return value as Vector3 if value is Vector3 else Vector3.ZERO
+
+
+func _wall_state_yaw(state: Dictionary, node: Node3D) -> float:
+	if node != null and is_instance_valid(node):
+		return node.rotation.y
+	return float(state.get("yaw", 0.0))
+
+
+func _wall_half_length_for_scene(scene_path: String) -> float:
+	if scene_path.is_empty():
+		return 0.0
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		return 0.0
+	var source := packed.instantiate() as Node3D
+	if source == null:
+		return 0.0
+	var half_length := PlacementQueryScript.wall_half_length_for_node(source)
+	source.free()
+	return half_length
+
+
+func _validate_free_placement(
+	peer_id: int,
+	scene_path: String,
+	requested_position: Vector3,
+	placement_yaw: float,
+	additional_exceptions: Array = []
+) -> Dictionary:
 	_free_placement_debug("request peer=%d scene=%s requested=%s" % [peer_id, scene_path, requested_position])
 	var player_state: Dictionary = player_states.get(peer_id, {})
 	var player_position := _vector3_from_value(player_state.get("position", requested_position))
@@ -6963,6 +7957,10 @@ func _validate_free_placement(peer_id: int, scene_path: String, requested_positi
 		_free_placement_debug("rejected reason=placement_missing_world")
 		return {"ok": false, "reason": "placement_missing_world"}
 	var exceptions := _placement_exception_rids(peer_id)
+	for exception_value: Variant in additional_exceptions:
+		if exception_value is RID and (exception_value as RID).is_valid() \
+				and not exceptions.has(exception_value):
+			exceptions.append(exception_value)
 	var placement := PlacementQueryScript.resolve_free_placement(
 		world_3d,
 		requested_position,
@@ -7085,6 +8083,173 @@ func _spawn_server_projectile(
 			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
 		_spawn_local_projectile_visual(projectile_id, BOOM_BULLET_SCENE, projectile_states[projectile_id])
 	return {"ok": true, "projectile_id": projectile_id, "projectile_type": projectile_type, "position": origin}
+
+
+## AI 无人机没有玩家 peer；仍需将炸弹纳入权威投射物状态，
+## 以便 AntiAir 能在服务器上发现、销毁并向客户端同步拦截弹视觉。
+func spawn_ai_drone_bomb(
+	origin: Vector3,
+	initial_velocity: Vector3,
+	team: String,
+	damage: float,
+	radius: float
+) -> bool:
+	if not is_server_authority() and not is_local_authority():
+		return false
+	var projectile_id := next_projectile_id
+	next_projectile_id += 1
+	projectile_states[projectile_id] = {
+		"projectile_id": projectile_id,
+		"type": "drone_bomb",
+		"team": team,
+		"owner_peer_id": 0,
+		"position": origin,
+		"velocity": initial_velocity,
+		"damage": damage,
+		"radius": radius,
+		"effect": "Explosion",
+		"show_owner_hit_marker": false,
+		"collision_mask": _projectile_collision_mask_for_type("drone_bomb"),
+		"gravity": 18.0,
+		"life": 0.0,
+		"max_life": 8.0,
+	}
+	if _should_render_authoritative_projectiles_locally():
+		_spawn_local_projectile_visual(
+			projectile_id,
+			BOOM_BULLET_SCENE,
+			projectile_states[projectile_id]
+		)
+	return true
+
+
+## FutureWarrior 没有玩家 peer，但手雷仍进入与玩家完全相同的权威投射物链路：
+## 同样的伤害、半径、重力、引信、线性衰减以及本地/多人视觉同步。
+func spawn_ai_grenade(
+	origin: Vector3,
+	initial_velocity: Vector3,
+	team: String,
+	owner_instance_id := 0
+) -> bool:
+	if not is_server_authority() and not is_local_authority():
+		return false
+	var projectile_id := next_projectile_id
+	next_projectile_id += 1
+	projectile_states[projectile_id] = {
+		"projectile_id": projectile_id,
+		"type": "grenade",
+		"team": team,
+		"owner_peer_id": 0,
+		"owner_instance_id": owner_instance_id,
+		"position": origin,
+		"velocity": initial_velocity,
+		"damage": CombatBalance.get_float("grenade", "damage"),
+		"radius": CombatBalance.get_float("grenade", "damage_radius"),
+		"effect": "grenade",
+		"show_owner_hit_marker": false,
+		"collision_mask": _projectile_collision_mask_for_type("grenade"),
+		"gravity": CombatBalance.get_float("grenade", "gravity"),
+		"life": 0.0,
+		"max_life": CombatBalance.get_float("grenade", "lifetime"),
+		"fuse_only": true,
+		"friendly_fire": true,
+		"linear_falloff": true,
+		"knockback": CombatBalance.get_float("grenade", "knockback"),
+	}
+	_spawn_local_projectile_visual(
+		projectile_id,
+		GRENADE_VISUAL_SCENE,
+		projectile_states[projectile_id]
+	)
+	return true
+
+
+## 返回距离当前 AI 很近的活动手雷威胁。
+##
+## 这里只读取服务器/单人权威端当前的 projectile_states，不做轨迹、速度或
+## 引信时间预测。explosion_position 因而表示本帧权威投射物的爆炸中心候选点，
+## 没有可预测的未来落点时与 position 相同。
+## 返回值刻意只包含 AI 规避所需的三个字段：当前坐标、爆炸点、爆炸半径。
+func get_grenade_threat_for_ai(ai: Node3D) -> Dictionary:
+	if ai == null or not is_instance_valid(ai):
+		return {}
+	if not is_server_authority() and not is_local_authority():
+		return {}
+
+	var ai_position := ai.global_position
+	var detection_margin := 2.0
+	if _node_has_property(ai, "grenade_avoidance_trigger_margin"):
+		detection_margin = maxf(
+			0.0,
+			float(ai.get("grenade_avoidance_trigger_margin"))
+		)
+	var closest_distance := INF
+	var closest_threat := {}
+	for raw_projectile_id: Variant in projectile_states.keys():
+		var projectile_id := int(raw_projectile_id)
+		var projectile: Dictionary = projectile_states.get(projectile_id, {})
+		if str(projectile.get("type", "")) != "grenade":
+			continue
+
+		var grenade_position := _vector3_from_value(
+			projectile.get("position", Vector3.ZERO)
+		)
+		var radius := maxf(
+			0.1,
+			float(projectile.get("radius", CombatBalance.get_float("grenade", "damage_radius")))
+		)
+		var distance := ai_position.distance_to(grenade_position)
+		if distance > radius + detection_margin or distance >= closest_distance:
+			continue
+
+		closest_distance = distance
+		closest_threat = {
+			"position": grenade_position,
+			"explosion_position": grenade_position,
+			"radius": radius,
+		}
+
+	return closest_threat
+
+
+## FutureEngineer 的 RemoteBomb 使用同一套服务器权威爆炸结算。
+## 炸药已经是静态放置物，所以这里只登记一次瞬时爆炸状态，不生成飞行弹视觉。
+func detonate_engineer_remote_bomb(
+	position: Vector3,
+	team: String,
+	damage: float,
+	radius: float,
+	owner_instance_id := 0
+) -> bool:
+	if not is_server_authority() and not is_local_authority():
+		return false
+	if radius <= 0.0 or damage <= 0.0:
+		return false
+	var projectile_id := next_projectile_id
+	next_projectile_id += 1
+	projectile_states[projectile_id] = {
+		"projectile_id": projectile_id,
+		"type": "engineer_remote_bomb",
+		"team": team,
+		"owner_peer_id": 0,
+		"owner_instance_id": owner_instance_id,
+		"position": position,
+		"velocity": Vector3.ZERO,
+		"damage": damage,
+		"radius": radius,
+		"effect": "Explosion",
+		"show_owner_hit_marker": false,
+		"collision_mask": _projectile_collision_mask_for_type("engineer_remote_bomb"),
+		"friendly_fire": true,
+		"linear_falloff": true,
+		"knockback": 20.0,
+		"life": 0.0,
+		"max_life": 0.0,
+	}
+	_explode_projectile(projectile_id, position, 0, true)
+	projectile_states.erase(projectile_id)
+	_remove_local_projectile_visual(projectile_id)
+	return true
 
 
 func _spawn_grenade_projectile(peer_id: int, tool_request: Dictionary) -> Dictionary:
@@ -7340,10 +8505,60 @@ func _register_placed_tool(peer_id: int, tool_name: String, team: String, tool_p
 	}
 
 
+func _respawn_registered_map_tool(tool_id: String, tool: Dictionary) -> void:
+	if tool_id.is_empty() or not bool(tool.get("map_static", false)):
+		return
+	var node := _node_for_tool_ref({"kind": "placed", "id": tool_id}) as Node3D
+	if node == null:
+		var scene_path := str(tool.get("scene_path", ""))
+		var packed := load(scene_path) as PackedScene if not scene_path.is_empty() else null
+		if packed != null and is_instance_valid(GlobalVar.gameworld):
+			node = packed.instantiate() as Node3D
+			if node != null:
+				GlobalVar.gameworld.add_child(node)
+	if node == null or not is_instance_valid(node):
+		return
+	node.set_meta("network_device_id", tool_id)
+	var position := _vector3_from_value(tool.get("position", node.global_position))
+	node.global_position = position
+	node.rotation.y = float(tool.get("yaw", node.rotation.y))
+	if _node_has_property(node, "tool_owner"):
+		node.set("tool_owner", str(tool.get("team", "")))
+	var max_hp := maxf(0.0, float(tool.get("max_hp", _configured_tool_hp(str(tool.get("tool_name", "")), node))))
+	tool["path"] = str(node.get_path())
+	tool["max_hp"] = max_hp
+	tool["hp"] = max_hp
+	tool["respawn_left"] = 0.0
+	tool["destroyed"] = false
+	if node.has_method("apply_network_respawned"):
+		node.call("apply_network_respawned", max_hp)
+	elif _node_has_property(node, "current_hp"):
+		node.set("current_hp", max_hp)
+	if node is WireMeshGate:
+		tool["is_open"] = false
+	placed_tool_states[tool_id] = tool
+	reliable_world_event_ready.emit({
+		"type": "tool_respawned",
+		"state": tool.duplicate(true),
+		"tick": server_tick,
+	})
+
+
 func _simulate_placed_tools(delta: float) -> void:
 	for raw_id in placed_tool_states.keys():
 		var tool_id := str(raw_id)
 		var tool: Dictionary = placed_tool_states[tool_id]
+		var respawn_left := maxf(0.0, float(tool.get("respawn_left", 0.0)))
+		if respawn_left > 0.0:
+			respawn_left = maxf(0.0, respawn_left - delta)
+			tool["respawn_left"] = respawn_left
+			placed_tool_states[tool_id] = tool
+			if respawn_left <= 0.0:
+				_respawn_registered_map_tool(tool_id, tool)
+			continue
+		if bool(tool.get("destroyed", false)):
+			placed_tool_states[tool_id] = tool
+			continue
 		var cooldown_left := maxf(0.0, float(tool.get("cooldown_left", 0.0)) - delta)
 		tool["cooldown_left"] = cooldown_left
 		if cooldown_left > 0.0:
@@ -7550,26 +8765,110 @@ func _server_intercept_enemy_projectile(tool: Dictionary, range: float) -> bool:
 		return false
 	var intercepted: Dictionary = projectile_states.get(best_projectile_id, {})
 	projectile_states.erase(best_projectile_id)
+	# 单人/监听服务器为权威炮弹创建了独立的视觉节点；拦截时必须同步移除，
+	# 否则炮弹会在最后一次位置永久悬停。
+	_remove_local_projectile_visual(best_projectile_id)
 	var intercept_position := _vector3_from_value(intercepted.get("position", origin))
+	var intercepted_type := str(intercepted.get("type", ""))
+	# 拦截代表炸弹在空中被引爆。只播放特效，不调用 _explode_projectile，
+	# 避免已被防空销毁的炸弹再次造成范围伤害。
+	if mode == MODE_LOCAL and intercepted_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+		_spawn_local_boom_explosion(intercept_position)
 	var intercept_direction := (intercept_position - origin).normalized()
 	if intercept_direction.length_squared() > 0.001:
+		var defend_bullet_speed := CombatBalance.get_float("anti_air", "visual_speed", 200.0)
+		# 单人模式没有 MultiplayerWorldReplicator 接收 reliable event。
+		# 在本地直接生成无碰撞的纯视觉拦截弹；多人仍由事件同步给客户端。
+		if mode == MODE_LOCAL:
+			var local_visual_lifetime := maxf(
+				0.30,
+				origin.distance_to(intercept_position) / defend_bullet_speed
+			)
+			_spawn_local_intercept_visual(
+				origin + Vector3.UP * 1.2,
+				intercept_direction,
+				defend_bullet_speed,
+				local_visual_lifetime
+			)
+			_spawn_local_intercept_trail(
+				origin + Vector3.UP * 1.2,
+				intercept_position,
+				local_visual_lifetime
+			)
 		_emit_visual_projectile(
 			int(tool.get("owner_peer_id", 0)),
 			"defend_bullet",
 			origin + Vector3.UP * 1.2,
 			intercept_direction,
-			200.0,
-			maxf(0.05, origin.distance_to(intercept_position) / 200.0),
+			defend_bullet_speed,
+			maxf(0.05, origin.distance_to(intercept_position) / defend_bullet_speed),
 			"",
 			true
 		)
 	reliable_world_event_ready.emit({
 		"type": "projectile_intercepted",
 		"projectile_id": best_projectile_id,
+		"projectile_type": intercepted_type,
+		"team": intercepted.get("team", ""),
+		"effect": "Explosion",
 		"position": intercepted.get("position", origin),
 		"tick": server_tick,
 	})
 	return true
+
+
+func _spawn_local_intercept_visual(
+	origin: Vector3,
+	direction: Vector3,
+	speed: float,
+	lifetime: float
+) -> void:
+	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
+	if world == null:
+		return
+	var visual := DEFEND_BULLET_SCENE.instantiate() as DefendBullet
+	if visual == null:
+		return
+	visual.lifetime = lifetime
+	visual.move_speed = speed
+	visual.collision_layer = 0
+	visual.collision_mask = 0
+	world.add_child(visual)
+	visual.global_position = origin
+	visual.velocity = direction * speed
+
+
+## 高速拦截弹本体很小，拖尾组件也会在前两帧预热。
+## 额外绘制一次短暂的发光轨迹，保证单人玩家能清楚看到防空已开火。
+func _spawn_local_intercept_trail(origin: Vector3, target: Vector3, lifetime: float) -> void:
+	var segment := target - origin
+	var length := segment.length()
+	if length <= 0.01:
+		return
+	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
+	if world == null:
+		return
+	var trail := MeshInstance3D.new()
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.10
+	mesh.bottom_radius = 0.055
+	mesh.height = length
+	mesh.radial_segments = 8
+	trail.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	material.albedo_color = Color(0.22, 0.86, 1.0, 0.9)
+	material.emission_enabled = true
+	material.emission = Color(0.22, 0.86, 1.0, 1.0)
+	material.emission_energy_multiplier = 8.0
+	material.disable_receive_shadows = true
+	trail.material_override = material
+	world.add_child(trail)
+	trail.global_position = origin + segment * 0.5
+	trail.global_basis = Basis(Quaternion(Vector3.UP, segment.normalized()))
+	get_tree().create_timer(lifetime).timeout.connect(trail.queue_free)
 
 
 ## Local BoomBullet entities (Wreck, NormalDrone, and AutoShooter) use this
@@ -7655,6 +8954,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			var target: Dictionary = player_states[peer_id]
 			if not friendly_fire and str(target.get("team", "")) == team:
 				continue
+			var target_team := str(target.get("team", ""))
+			var is_enemy_target := not team.is_empty() and not target_team.is_empty() and target_team != team
 			var is_direct_hit := int(peer_id) == direct_hit_peer_id
 			var position_value: Variant = get_authoritative_player_position(int(peer_id))
 			var pos: Vector3 = position_value as Vector3 if position_value is Vector3 else _vector3_from_value(target.get("position", Vector3.ZERO))
@@ -7669,8 +8970,9 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 					int(peer_id), applied_damage, knockback_strength * ratio * occlusion,
 					dir, damage_team, effect, int(projectile.get("owner_peer_id", 0))
 				):
-					confirmed_target_count += 1
-					confirmed_total_damage += applied_damage
+					if is_enemy_target:
+						confirmed_target_count += 1
+						confirmed_total_damage += applied_damage
 		var future_warrior_damage := _damage_future_warriors_in_radius(
 			hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire
 		)
@@ -7717,10 +9019,29 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		confirmed_target_count += damaged_vehicles
 		if damaged_vehicles > 0:
 			confirmed_total_damage += damage
-		var damaged_tools := _damage_tools_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff)
+		var damaged_tools := _damage_tools_in_radius(
+			hit_position,
+			radius,
+			damage,
+			damage_team,
+			effect,
+			linear_falloff,
+			team,
+			friendly_fire
+		)
 		confirmed_target_count += damaged_tools
 		if damaged_tools > 0:
 			confirmed_total_damage += damage
+		var damaged_remote_bombs := _damage_remote_bombs_in_radius(
+			hit_position,
+			radius,
+			damage,
+			damage_team,
+			effect,
+			linear_falloff
+		)
+		confirmed_target_count += int(damaged_remote_bombs.get("count", 0))
+		confirmed_total_damage += float(damaged_remote_bombs.get("total_damage", 0.0))
 		var damaged_trees := _damage_harvest_trees_in_radius(
 			hit_position, radius, damage, damage_team, effect, linear_falloff,
 			int(projectile.get("owner_peer_id", 0))
@@ -7753,7 +9074,7 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 	if projectile_type == "grenade":
 		_spawn_local_grenade_explosion(hit_position)
 	elif _should_render_authoritative_projectiles_locally() \
-			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom"]:
+			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb"]:
 		_spawn_local_boom_explosion(hit_position)
 	reliable_world_event_ready.emit({
 		"type": "projectile_exploded",
@@ -7772,7 +9093,7 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 func _projectile_camera_shake_radius(projectile_type: String, explosion_radius: float) -> float:
 	if projectile_type == "grenade":
 		return CombatBalance.get_float("grenade", "shake_radius")
-	if projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "bug_boom", "medicine_boom", "boom_buggy_explosion"]:
+	if projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb", "bug_boom", "medicine_boom", "boom_buggy_explosion"]:
 		return maxf(8.0, explosion_radius * 1.5)
 	return 0.0
 
@@ -8359,6 +9680,9 @@ func _begin_player_respawn(peer_id: int) -> void:
 		return
 		release_big_mouth_capture(peer_id, "player_died")
 	state = player_states.get(peer_id, state)
+	state["ladder_climbing"] = false
+	state["ladder_tower_id"] = ""
+	state["ladder_climb_direction"] = 1.0
 	_remove_player_from_vehicle(peer_id, true)
 	state = player_states.get(peer_id, {})
 	_destroy_owned_remote_devices_for_player(peer_id)
@@ -8369,6 +9693,7 @@ func _begin_player_respawn(peer_id: int) -> void:
 	state["hp"] = 0.0
 	state["velocity"] = Vector3.ZERO
 	state["knockback_velocity"] = Vector3.ZERO
+	_clear_player_fall_tracking(state)
 	state["spicy_remaining"] = 0.0
 	state["spicy_dps"] = 0.0
 	state["labeled_remaining"] = 0.0
@@ -8581,6 +9906,7 @@ func _remove_player_from_vehicle(peer_id: int, notify_player: bool) -> void:
 	state["vehicle_seat_index"] = -1
 	state["position"] = exit_position
 	state["velocity"] = Vector3.ZERO
+	_clear_player_fall_tracking(state, exit_position)
 	player_states[peer_id] = state
 	_set_server_player_vehicle_collision(peer_id, false, exit_position)
 	if notify_player:
@@ -8632,9 +9958,13 @@ func _respawn_player(peer_id: int) -> void:
 	state["velocity"] = Vector3.ZERO
 	state["knockback_velocity"] = Vector3.ZERO
 	state["hp"] = PLAYER_MAX_HP
+	_clear_player_fall_tracking(state, spawn_position)
 	state["respawn_left"] = 0.0
 	state["grounded"] = true
 	state["locomotion_state"] = "idle"
+	state["ladder_climbing"] = false
+	state["ladder_tower_id"] = ""
+	state["ladder_climb_direction"] = 1.0
 	player_states[peer_id] = state
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CharacterBody3D:
@@ -8704,7 +10034,8 @@ func _apply_hit_to_collider(
 	damage: float,
 	attacker_team: String,
 	shape_index: int = -1,
-	attacker_peer_id := 0
+	attacker_peer_id := 0,
+	attacker_node: Node3D = null
 ) -> bool:
 	if collider == null or not is_instance_valid(collider):
 		return false
@@ -8717,6 +10048,23 @@ func _apply_hit_to_collider(
 	var node = collider
 	while node != null:
 		if node is FutureWarriorAI:
+			if attacker_peer_id > 0 and (node as FutureWarriorAI).has_method("impact_from_peer"):
+				return bool((node as FutureWarriorAI).impact_from_peer(
+					effect,
+					damage,
+					attacker_team,
+					attacker_peer_id
+				))
+			if is_instance_valid(attacker_node) and attacker_node is CharacterBody3D:
+				var hit_direction := (node as FutureWarriorAI).global_position \
+					- attacker_node.global_position
+				return bool((node as FutureWarriorAI).impact(
+					effect,
+					damage,
+					attacker_team,
+					hit_direction,
+					attacker_node as CharacterBody3D
+				))
 			return bool((node as FutureWarriorAI).impact(effect, damage, attacker_team))
 		if node is FarmerAI:
 			return bool((node as FarmerAI).impact(effect, damage, attacker_team))
@@ -8869,6 +10217,16 @@ func _tool_max_hp(tool_name: String) -> float:
 			return CombatBalance.get_tool_max_hp("fake_player")
 		"rift_anchor", "RiftAnchor":
 			return CombatBalance.get_tool_max_hp("rift_anchor")
+		"tall_brick", "TallBrick":
+			return CombatBalance.get_tool_max_hp("tall_brick")
+		"tall_log_wall", "TallLogWall":
+			return CombatBalance.get_tool_max_hp("tall_log_wall")
+		"tall_mesh_wall", "TallMeshWall":
+			return CombatBalance.get_tool_max_hp("tall_mesh_wall")
+		"wire_mesh_gate", "WireMeshGate":
+			return CombatBalance.get_tool_max_hp("wire_mesh_gate")
+		"chain_link_fence", "ChainLinkFence":
+			return CombatBalance.get_tool_max_hp("chain_link_fence")
 		_:
 			return CombatBalance.get_tool_max_hp("default")
 
@@ -8962,7 +10320,13 @@ func _node_for_tool_ref(tool_ref: Dictionary):
 	return get_node_or_null(NodePath(path))
 
 
-func _damage_registered_tool_ref(tool_ref: Dictionary, damage: float, effect: String, attacker_team: String) -> bool:
+func _damage_registered_tool_ref(
+	tool_ref: Dictionary,
+	damage: float,
+	effect: String,
+	attacker_team: String,
+	allow_friendly_fire := false
+) -> bool:
 	if damage <= 0.0:
 		return false
 	var kind := str(tool_ref.get("kind", ""))
@@ -8973,8 +10337,11 @@ func _damage_registered_tool_ref(tool_ref: Dictionary, damage: float, effect: St
 	if state.is_empty():
 		return false
 	var team := str(state.get("team", ""))
+	var enemy_only := _is_enemy_only_tool_state(state) and not team.is_empty()
 	var is_enemy_tool := not attacker_team.is_empty() and not team.is_empty() and team != attacker_team
-	if not attacker_team.is_empty() and team == attacker_team:
+	if not allow_friendly_fire and enemy_only and not is_enemy_tool:
+		return false
+	if not allow_friendly_fire and not attacker_team.is_empty() and team == attacker_team:
 		return false
 	var node = _node_for_tool_ref(tool_ref)
 	var before_hp := float(state.get("hp", _tool_max_hp(str(state.get("tool_name", state.get("device_type", ""))))))
@@ -9009,7 +10376,145 @@ func _damage_registered_tool_ref(tool_ref: Dictionary, damage: float, effect: St
 		placed_tool_states[id] = state
 	elif kind == "remote":
 		remote_device_states[id] = state
-	return is_enemy_tool and float(state.get("hp", before_hp)) < before_hp
+	var can_show_hit_confirmation := (is_enemy_tool or (team.is_empty() and not attacker_team.is_empty()))
+	return can_show_hit_confirmation and float(state.get("hp", before_hp)) < before_hp
+
+
+func get_chain_link_fence_speed_multiplier(
+	world_position: Vector3,
+	target_team := "",
+	target_kind := ""
+) -> float:
+	var multiplier := 1.0
+	for fence_value: Variant in get_tree().get_nodes_in_group("chain_link_fences"):
+		if not fence_value is Node3D or not is_instance_valid(fence_value):
+			continue
+		var fence := fence_value as Node3D
+		if not fence.has_method("contains_world_position") \
+				or not fence.has_method("is_target_slowed"):
+			continue
+		if not bool(fence.call("contains_world_position", world_position)):
+			continue
+		if bool(fence.call("is_target_slowed", target_team, target_kind)):
+			multiplier = minf(multiplier, 0.5)
+	return multiplier
+
+
+func apply_chain_link_fence_effect(
+	fence: Node3D,
+	body: Node3D,
+	damage: float
+) -> bool:
+	if fence == null or body == null or not is_instance_valid(fence) \
+			or not is_instance_valid(body) or damage <= 0.0 \
+			or (not is_server_authority() and not is_local_authority()):
+		return false
+	if not fence.has_method("is_target_slowed"):
+		return false
+	var target := _chain_link_target_root(body)
+	if target == null or target == fence or target.has_method("get_bullet_owner"):
+		return false
+	var target_kind := _chain_link_target_kind(target)
+	if target_kind.is_empty():
+		return false
+	var target_team := _chain_link_target_team(target)
+	if not bool(fence.call("is_target_slowed", target_team, target_kind)):
+		return false
+	var fence_team := str(fence.get("tool_owner")) if _node_has_property(fence, "tool_owner") else ""
+	var registered_ref := _registered_tool_ref_for_node(target)
+	if str(registered_ref.get("kind", "")) == "remote":
+		var remote_state: Dictionary = _state_dictionary_for_tool_ref(registered_ref)
+		var remote_type := str(remote_state.get("device_type", ""))
+		if remote_type in ["normal_drone", "tech_drone", "boom_buggy", "small_mouse"]:
+			return true
+	if target_kind == "player":
+		var peer_id := get_authority_player_peer_id(target)
+		return peer_id > 0 and _damage_player(
+			peer_id, damage, 0.0, Vector3.ZERO, fence_team, "chain_link_fence"
+		)
+	if target_kind == "vehicle" and target is VehicleBase:
+		var vehicle_team := _vehicle_team(target as VehicleBase)
+		if not fence_team.is_empty() and not vehicle_team.is_empty() \
+				and vehicle_team == fence_team:
+			return false
+		return (target as VehicleBase).impact("chain_link_fence", damage, fence_team)
+	if target_kind == "wild_animal":
+		return target.has_method("impact") \
+			and bool(target.call("impact", "chain_link_fence", damage, fence_team))
+	if target_kind == "ai":
+		if target is AIPlayerv2:
+			# AIPlayerv2 applies its normal combat damage scale internally.
+			(target as AIPlayerv2).impact("chain_link_fence", damage * 2.0, fence_team)
+			return true
+		return target.has_method("impact") \
+			and bool(target.call("impact", "chain_link_fence", damage, fence_team))
+	return false
+
+
+func _chain_link_target_root(body: Node) -> Node3D:
+	var cursor: Node = body
+	var depth := 0
+	while cursor != null and depth < 16:
+		if cursor is VehicleBase or cursor is FarmLivestock \
+				or cursor.is_in_group("wild_animals") \
+				or cursor.is_in_group("ai_normal_drones") \
+				or cursor.is_in_group("ai_players") \
+				or cursor.is_in_group("future_warrior_ai") \
+				or cursor.is_in_group("assistant_ai") \
+				or cursor.is_in_group("farmer_ai") \
+				or cursor is GamePlayer:
+			return cursor as Node3D
+		cursor = cursor.get_parent()
+		depth += 1
+	return body if body is Node3D else null
+
+
+func _chain_link_target_kind(target: Node3D) -> String:
+	if target is GamePlayer or get_authority_player_peer_id(target) > 0:
+		return "player"
+	if target is VehicleBase:
+		return "vehicle"
+	if target is FarmLivestock:
+		return "livestock"
+	if target.is_in_group("wild_animals"):
+		return "wild_animal"
+	# AINormalDrone is controlled by the AI, but it is still a remote device
+	# for chain-link-fence purposes: it can be slowed by an enemy fence, never
+	# damaged by the fence itself.
+	if target.is_in_group("ai_normal_drones"):
+		return "remote"
+	if target.is_in_group("ai_players") \
+			or target.is_in_group("future_warrior_ai") \
+			or target.is_in_group("assistant_ai") \
+			or target.is_in_group("farmer_ai"):
+		return "ai"
+	var registered_ref := _registered_tool_ref_for_node(target)
+	if str(registered_ref.get("kind", "")) == "remote":
+		return "remote"
+	return ""
+
+
+func _chain_link_target_team(target: Node3D) -> String:
+	var peer_id := get_authority_player_peer_id(target)
+	if peer_id > 0 and player_states.has(peer_id):
+		return str((player_states[peer_id] as Dictionary).get("team", ""))
+	if target.has_method("get_combat_team"):
+		return str(target.call("get_combat_team"))
+	if _node_has_property(target, "team_id"):
+		return str(target.get("team_id"))
+	if target is VehicleBase:
+		return _vehicle_team(target as VehicleBase)
+	if _node_has_property(target, "owner_team"):
+		return str(target.get("owner_team"))
+	if _node_has_property(target, "tool_owner"):
+		return str(target.get("tool_owner"))
+	return ""
+
+
+func _is_enemy_only_tool_state(state: Dictionary) -> bool:
+	var tool_name := str(state.get("tool_name", state.get("device_type", ""))).to_lower()
+	return ENEMY_ONLY_PLACED_TOOL_TYPES.has(tool_name) \
+		or ENEMY_ONLY_PLACED_TOOL_TYPES.has(tool_name.replace("_", ""))
 
 
 func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
@@ -9019,12 +10524,37 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 	if str(state.get("device_type", state.get("tool_name", ""))).to_lower() == "big_mouth":
 		release_big_mouth_captures_for_device(id, "destroyed")
 	var node = _node_for_tool_ref(tool_ref)
+	var auto_respawn := kind == "placed" and bool(state.get("auto_respawn", false))
+	if auto_respawn:
+		_cancel_gate_lockpick_state(id, "gate_destroyed")
+		var respawn_seconds := maxf(1.0, float(state.get("respawn_seconds", 60.0)))
+		state["hp"] = 0.0
+		state["respawn_left"] = respawn_seconds
+		state["destroyed"] = true
+		if node != null and is_instance_valid(node):
+			if node.has_method("apply_network_destroyed"):
+				node.call("apply_network_destroyed")
+			elif node.has_method("apply_network_health"):
+				node.call("apply_network_health", 0.0)
+		placed_tool_states[id] = state
+		reliable_world_event_ready.emit({
+			"type": "tool_destroyed",
+			"kind": kind,
+			"id": id,
+			"device_id": str(state.get("device_id", id)),
+			"position": state.get("position", Vector3.ZERO),
+			"auto_respawn": true,
+			"respawn_left": respawn_seconds,
+			"tick": server_tick,
+		})
+		return
 	if node != null and is_instance_valid(node):
 		if node is FarmTile:
 			(node as FarmTile).apply_authoritative_tool_destroyed()
 		else:
 			node.queue_free()
 	if kind == "placed":
+		_cancel_gate_lockpick_state(id, "gate_removed")
 		placed_tool_states.erase(id)
 		remote_device_states.erase(id)
 	elif kind == "remote":
@@ -9044,7 +10574,16 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 	})
 
 
-func _damage_tools_in_radius(center: Vector3, radius: float, damage: float, attacker_team: String, effect: String, linear_falloff := false) -> int:
+func _damage_tools_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false,
+	structure_attacker_team := "",
+	allow_friendly_fire := false
+) -> int:
 	if radius <= 0.0 or damage <= 0.0:
 		return 0
 	var touched_paths := {}
@@ -9066,7 +10605,12 @@ func _damage_tools_in_radius(center: Vector3, radius: float, damage: float, atta
 			pos + Vector3.UP * 0.5,
 			node
 		)
-		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, attacker_team):
+		var damage_team := attacker_team
+		var target_allows_friendly_fire := false
+		if not structure_attacker_team.is_empty() and _is_enemy_only_tool_state(state):
+			damage_team = structure_attacker_team
+			target_allows_friendly_fire = allow_friendly_fire
+		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, damage_team, target_allows_friendly_fire):
 			damaged_count += 1
 		touched_paths[str(state.get("path", id))] = true
 	for raw_id in remote_device_states.keys():
@@ -9089,9 +10633,53 @@ func _damage_tools_in_radius(center: Vector3, radius: float, damage: float, atta
 			pos + Vector3.UP * 0.5,
 			node
 		)
-		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, attacker_team):
+		var damage_team := attacker_team
+		var target_allows_friendly_fire := false
+		if not structure_attacker_team.is_empty() and _is_enemy_only_tool_state(state):
+			damage_team = structure_attacker_team
+			target_allows_friendly_fire = allow_friendly_fire
+		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, damage_team, target_allows_friendly_fire):
 			damaged_count += 1
 	return damaged_count
+
+
+func _damage_remote_bombs_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false
+) -> Dictionary:
+	if radius <= 0.0 or damage <= 0.0:
+		return {"count": 0, "total_damage": 0.0}
+
+	var damaged_count := 0
+	var total_damage := 0.0
+	for bomb_value: Variant in get_tree().get_nodes_in_group("remote_bombs"):
+		if not bomb_value is RemoteBomb or not is_instance_valid(bomb_value):
+			continue
+		var bomb := bomb_value as RemoteBomb
+		if bomb.is_destroyed or bomb.is_detonating:
+			continue
+		var distance := bomb.global_position.distance_to(center)
+		if distance > radius:
+			continue
+		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff \
+			else 1.0 - (distance / radius) * 0.5
+		var occlusion := _explosion_damage_multiplier(
+			center,
+			bomb.global_position + Vector3.UP * 0.5,
+			bomb
+		)
+		var applied_damage := damage * ratio * occlusion
+		var before_hp := bomb.current_hp
+		if bomb.impact(effect, applied_damage, attacker_team) \
+				and bomb.current_hp < before_hp:
+			damaged_count += 1
+			total_damage += before_hp - bomb.current_hp
+
+	return {"count": damaged_count, "total_damage": total_damage}
 
 
 func _damage_harvest_trees_in_radius(
@@ -10079,6 +11667,9 @@ func _build_world_snapshot() -> Dictionary:
 			"grounded": bool(state.get("grounded", true)),
 			"prone": bool(state.get("prone", false)),
 			"swimming": bool(state.get("swimming", false)),
+			"ladder_climbing": bool(state.get("ladder_climbing", false)),
+			"ladder_tower_id": str(state.get("ladder_tower_id", "")),
+			"ladder_climb_direction": float(state.get("ladder_climb_direction", 1.0)),
 			"locomotion_state": state.get("locomotion_state", "idle_tool"),
 			"hp": float(state.get("hp", PLAYER_MAX_HP)),
 			"respawn_left": float(state.get("respawn_left", 0.0)),
@@ -10171,11 +11762,20 @@ func _build_world_snapshot() -> Dictionary:
 			"scene_path": tool.get("scene_path", ""),
 			"team": tool.get("team", ""),
 			"free_placement": bool(tool.get("free_placement", false)),
+			"map_static": bool(tool.get("map_static", false)),
+			"facility_id": str(tool.get("facility_id", "")),
+			"auto_respawn": bool(tool.get("auto_respawn", false)),
+			"respawn_seconds": float(tool.get("respawn_seconds", 60.0)),
+			"respawn_left": float(tool.get("respawn_left", 0.0)),
+			"destroyed": bool(tool.get("destroyed", false)),
 			"anchor_landed": bool(tool.get("anchor_landed", false)),
 			"position": tool.get("position", Vector3.ZERO),
 			"yaw": float(tool.get("yaw", 0.0)),
 			"hp": float(tool.get("hp", 0.0)),
 		}
+		if str(tool.get("tool_name", "")).to_lower() == "wire_mesh_gate":
+			public_tool["is_open"] = bool(tool.get("is_open", false))
+			public_tool["open_angle_degrees"] = float(tool.get("open_angle_degrees", 90.0))
 		if str(tool.get("tool_name", "")).to_lower() == "rift_anchor":
 			var flight_state: Dictionary = {}
 			if node != null and node.has_method("get_network_flight_state"):
@@ -10205,6 +11805,13 @@ func _build_world_snapshot() -> Dictionary:
 			var ai_state := ai_value.call("get_network_state") as Dictionary
 			if not ai_state.is_empty():
 				public_ai_players.append(ai_state)
+	var public_ai_drones: Array[Dictionary] = []
+	for drone_value in get_tree().get_nodes_in_group("ai_normal_drones"):
+		if not is_instance_valid(drone_value) or not drone_value.has_method("get_network_state"):
+			continue
+		var drone_state := drone_value.call("get_network_state") as Dictionary
+		if not drone_state.is_empty():
+			public_ai_drones.append(drone_state)
 	var weather_state: Dictionary = {}
 	var weather_system := get_tree().get_first_node_in_group("weather_systems")
 	if weather_system != null and weather_system.has_method("get_authoritative_weather_state"):
@@ -10223,6 +11830,7 @@ func _build_world_snapshot() -> Dictionary:
 		"placed_tools": public_placed_tools,
 		"wild_animals": public_wild_animals,
 		"ai_players": public_ai_players,
+		"ai_drones": public_ai_drones,
 	}
 
 
@@ -10237,6 +11845,7 @@ func _estimate_world_snapshot_bytes(snapshot: Dictionary) -> int:
 	var tools_value: Variant = snapshot.get("placed_tools", [])
 	var animals_value: Variant = snapshot.get("wild_animals", [])
 	var ai_value: Variant = snapshot.get("ai_players", [])
+	var ai_drones_value: Variant = snapshot.get("ai_drones", [])
 	if players_value is Array:
 		estimate += (players_value as Array).size() * 320
 	if vehicles_value is Array:
@@ -10251,6 +11860,8 @@ func _estimate_world_snapshot_bytes(snapshot: Dictionary) -> int:
 		estimate += (animals_value as Array).size() * 160
 	if ai_value is Array:
 		estimate += (ai_value as Array).size() * 240
+	if ai_drones_value is Array:
+		estimate += (ai_drones_value as Array).size() * 144
 	return estimate
 
 
@@ -10363,6 +11974,9 @@ func _make_player_correction(peer_id: int) -> Dictionary:
 		"last_jump_seq": int(state.get("last_jump_seq", 0)),
 		"yaw": float(state.get("yaw", 0.0)),
 		"pitch": float(state.get("pitch", 0.0)),
+		"ladder_climbing": bool(state.get("ladder_climbing", false)),
+		"ladder_tower_id": str(state.get("ladder_tower_id", "")),
+		"ladder_climb_direction": float(state.get("ladder_climb_direction", 1.0)),
 	}
 
 

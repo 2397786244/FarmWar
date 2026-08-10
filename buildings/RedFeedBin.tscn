@@ -6,6 +6,7 @@
 size = Vector3(2.5, 4, 2)
 
 [node name="RedFeedBin" type="StaticBody3D" unique_id=731286778]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 
 [node name="FTF_Building_FarmFeedBin_3_8m2" parent="." unique_id=1182570870 instance=ExtResource("1_dtcoh")]

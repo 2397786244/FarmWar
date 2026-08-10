@@ -12,6 +12,8 @@ enum OperationState {
 @export_enum("red", "blue") var team_id := "blue"
 ## Optional map-assigned spawn. Empty means a random spawn point in team_id.
 @export var spawn_point_id := ""
+## 可选战略目标。设置后优先推进至此；为空时使用敌方出生点。
+@export var target: Node3D
 @export var max_hp := 200.0
 @export var respawn_seconds := 10.0
 @export var drone_respawn_time := 45.0
@@ -23,6 +25,9 @@ enum OperationState {
 @export var deployment_advance_distance := 30.0
 @export var own_farm_advance_radius := 45.0
 @export var navigation_refresh_interval := 0.25
+## 调试期间在权威端命令行输出 Assistant 与 AI 无人机状态。
+@export var console_debug_enabled := true
+@export_range(0.2, 10.0, 0.1) var console_debug_interval := 1.0
 @export_range(0.0, 1.0, 0.01) var signal_advance_threshold := 0.20
 @export_range(0.0, 1.0, 0.01) var signal_recover_threshold := 0.60
 @export_file("*.tscn") var drone_scene_path := "res://character/AIDevices/AINormalDrone.tscn"
@@ -62,6 +67,7 @@ var debug_label: Label3D
 var advancing_for_signal_recovery := false
 var enemy_spawn_target := Vector3.INF
 var team_marker: MeshInstance3D
+var console_debug_timer := 0.0
 const TEAM_MARKER_HEIGHT := 3.15
 
 @onready var hit_3d := get_node_or_null("Hit3D") as Area3D
@@ -73,7 +79,8 @@ const TEAM_MARKER_HEIGHT := 3.15
 func _ready() -> void:
 	current_hp = max_hp
 	collision_layer = 8
-	collision_mask = 519
+	# 519 + 工具层 128：已放置的 TallLogWall 等防御建筑必须阻挡 Assistant。
+	collision_mask = 647
 	add_to_group("assistant_ai")
 	add_to_group("combat_characters")
 	_create_hand_mount()
@@ -131,6 +138,7 @@ func _physics_process(delta: float) -> void:
 			_defensive_patrol(delta)
 	_update_character_animation()
 	_update_debug_label()
+	_emit_console_debug(delta)
 
 
 func _spawn_drone() -> void:
@@ -144,6 +152,10 @@ func _spawn_drone() -> void:
 		return
 	spawned.team_id = team_id
 	spawned.tool_owner = team_id
+	# 运行时无人机需要独立于 Assistant 本体进行多人同步。控制器的网络 ID
+	# 在地图加载时稳定，因此可用于客户端重建同一架无人机的视觉代理。
+	var controller_network_id := str(get_meta("network_ai_id", name))
+	spawned.set_meta("network_ai_drone_id", "%s:drone" % controller_network_id)
 	spawned.set_ai_controller(self)
 	GlobalVar.gameworld.add_child(spawned)
 	spawned.global_position = global_position + Vector3.UP * spawned.cruise_altitude
@@ -241,11 +253,11 @@ func _enter_defensive_mode() -> void:
 
 
 func _initialize_deployment_advance() -> void:
-	var enemy_target := _get_enemy_spawn_position()
-	if enemy_target == Vector3.INF:
+	var attack_target := get_attack_target_position()
+	if attack_target == Vector3.INF:
 		return
 	deployment_origin = global_position
-	var direction := enemy_target - deployment_origin
+	var direction := attack_target - deployment_origin
 	direction.y = 0.0
 	if direction.length_squared() <= 0.01:
 		return
@@ -273,6 +285,15 @@ func _get_enemy_spawn_position() -> Vector3:
 	return Vector3.INF
 
 
+## 提供给 AINormalDrone 的共享战略目标：地图 target 优先；未配置时缓存当前随机敌方出生点。
+func get_attack_target_position(force_refresh := false) -> Vector3:
+	if is_instance_valid(target):
+		return target.global_position
+	if force_refresh:
+		enemy_spawn_target = Vector3.INF
+	return _get_enemy_spawn_position()
+
+
 func _is_in_own_farm_area() -> bool:
 	var game_world: Node = GlobalVar.gameworld
 	if not is_instance_valid(game_world):
@@ -283,10 +304,10 @@ func _is_in_own_farm_area() -> bool:
 
 
 func _advance_toward_enemy_farm(delta: float) -> void:
-	var enemy_target := _get_enemy_spawn_position()
-	if enemy_target == Vector3.INF:
+	var attack_target := get_attack_target_position()
+	if attack_target == Vector3.INF:
 		return
-	_move_toward_position(enemy_target, advance_speed, delta)
+	_move_toward_position(attack_target, advance_speed, delta)
 
 
 func _update_signal_recovery_state() -> void:
@@ -334,6 +355,11 @@ func _hold_position(delta: float) -> void:
 
 
 func _move_with_horizontal_velocity(desired: Vector3, delta: float) -> void:
+	desired *= GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team_id,
+		"ai"
+	)
 	knockback_velocity = knockback_velocity.move_toward(Vector3.ZERO, 18.0 * delta)
 	var proposed := global_position + Vector3(
 		desired.x + knockback_velocity.x,
@@ -714,13 +740,48 @@ func _update_debug_label() -> void:
 		OperationState.DEFENSIVE_PATROL:
 			state_text = "防御警戒"
 	var navigation_text := "导航: 已连接" if _navigation_map_is_ready() else "导航: 直线回退"
+	var target_position := get_attack_target_position()
+	var target_source := "target: %s" % target.name if is_instance_valid(target) else "target: 敌方出生点"
+	var target_text := "%s  (%s)" % [target_source, _format_debug_position(target_position)]
 	var drone_text := "无人机: 未部署"
 	if is_instance_valid(drone):
 		drone_text = "无人机: " + drone.get_debug_status()
 	elif operation_state == OperationState.DEFENSIVE_PATROL:
 		drone_text = "无人机重建: %.1fs" % respawn_timer
 	debug_label.visible = true
-	debug_label.text = "DEBUG  %s\n%s\n%s" % [state_text, navigation_text, drone_text]
+	debug_label.text = "DEBUG Assistant: %s\n%s\n%s\n%s" % [state_text, target_text, navigation_text, drone_text]
+
+
+func _format_debug_position(value: Vector3) -> String:
+	if value == Vector3.INF:
+		return "未解析"
+	return "%.1f, %.1f, %.1f" % [value.x, value.y, value.z]
+
+
+func _emit_console_debug(delta: float) -> void:
+	if not console_debug_enabled or GameAuthority.is_client_proxy():
+		return
+	if not (GameAuthority.is_local_authority() or GameAuthority.is_server_authority()):
+		return
+	console_debug_timer = maxf(0.0, console_debug_timer - delta)
+	if console_debug_timer > 0.0:
+		return
+	console_debug_timer = console_debug_interval
+	var state_text := "部署推进"
+	if operation_state == OperationState.CONTROLLING_DRONE:
+		state_text = "无人机操控"
+	elif operation_state == OperationState.DEFENSIVE_PATROL:
+		state_text = "防御警戒"
+	var target_position := get_attack_target_position()
+	var target_source := str(target.name) if is_instance_valid(target) else "敌方出生点"
+	var drone_status := "未部署"
+	if is_instance_valid(drone):
+		drone_status = drone.get_console_debug_status() if drone.has_method("get_console_debug_status") else drone.get_debug_status()
+	print(
+		"[AIAssistant] name=%s team=%s state=%s pos=(%s) target=%s(%s) drone=%s"
+		% [name, team_id, state_text, _format_debug_position(global_position), target_source,
+			_format_debug_position(target_position), drone_status]
+	)
 
 
 func _create_hand_mount() -> void:

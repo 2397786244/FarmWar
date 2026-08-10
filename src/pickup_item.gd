@@ -12,6 +12,8 @@ const ROTATION_SPEED := 0.65
 var item_id := ""
 var item_data: Dictionary = {}
 var model_path := ""
+## 现金是通用 PickupItem 的一种不可入包物品；金额由权威掉落状态携带。
+var money_value := 0
 var landed := false
 var lifetime_remaining := LIFETIME_SECONDS
 var _elapsed := 0.0
@@ -37,6 +39,7 @@ func setup(state: Dictionary) -> void:
 	item_id = str(state.get("item_id", ""))
 	item_data = (state.get("item", {}) as Dictionary).duplicate(true) if state.get("item", {}) is Dictionary else {}
 	model_path = str(state.get("model_path", ""))
+	money_value = maxi(0, int(item_data.get("money_value", 0)))
 	lifetime_remaining = maxf(0.0, float(state.get("lifetime_remaining", LIFETIME_SECONDS)))
 	_spawn_model()
 	global_position = state.get("position", global_position) as Vector3 if state.get("position", null) is Vector3 else global_position
@@ -77,6 +80,8 @@ func get_pickup_state() -> Dictionary:
 
 
 func get_interaction_hint(_player: GamePlayer) -> String:
+	if str(item_data.get("kind", "")) == "cash":
+		return "[E] 拾取钞票 +$%d" % money_value
 	return "[E] 捡起%s" % str(item_data.get("display_name", "物品"))
 
 
@@ -119,6 +124,7 @@ func _set_landed() -> void:
 	rotation = Vector3(0.0, rotation.y, 0.0)
 	collision_mask = 0
 	glow_ring.visible = true
+	pickup_label.text = get_interaction_hint(null)
 	pickup_label.visible = true
 
 
@@ -135,6 +141,8 @@ func _spawn_model() -> void:
 	_model = packed_scene.instantiate() as Node3D
 	if _model == null:
 		return
+	if str(item_data.get("kind", "")) == "cash" and _model.has_method("set_money_value"):
+		_model.call("set_money_value", money_value)
 	if fallback_visual != null:
 		fallback_visual.visible = false
 	_prepare_model_runtime(_model)

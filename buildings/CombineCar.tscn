@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://ncatbrqpbup7" path="res://assets/vehicles/FTF_Vehicle_CombineHarvester_BlackYellow_7m.glb" id="1_tyc17"]
 
 [node name="CombineCar" type="StaticBody3D" unique_id=598947128]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 

@@ -6,6 +6,7 @@
 size = Vector3(12, 8, 7)
 
 [node name="Barn" type="StaticBody3D" unique_id=815941709]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 12715
 

@@ -7,6 +7,7 @@
 size = Vector3(1.2, 1.053667, 0.8375)
 
 [node name="ChoppingStation" type="StaticBody3D"]
+metadata/map_can_overlap_water = false
 collision_layer = 512
 collision_mask = 11
 script = ExtResource("2_script")

@@ -24,6 +24,7 @@ cap_top = false
 cap_bottom = false
 
 [node name="StreetLamp2" type="StaticBody3D" unique_id=1543496913]
+metadata/map_can_overlap_water = false
 script = ExtResource("2_street_lamp")
 night_light_energy = 15.0
 

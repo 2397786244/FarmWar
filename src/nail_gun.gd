@@ -2,7 +2,7 @@ extends Node3D
 class_name NailGunTool
 
 @export var tool_owner := ""
-@export var bullet_speed := 100
+@export var bullet_speed := 120
 
 const BULLET_SCENE := preload("res://character/weapons/NailBullet.tscn")
 
@@ -35,7 +35,9 @@ func _emit_bullet(visual_only: bool) -> void:
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
 	var direction := _get_center_screen_direction(shooter)
-	bullet.speed = bullet_speed
+	bullet.speed = CombatBalance.get_float("nail_gun", "visual_speed", bullet_speed)
+	bullet.max_distance = CombatBalance.get_float("nail_gun", "range", bullet.max_distance)
+	bullet.max_lifetime = CombatBalance.get_float("nail_gun", "visual_lifetime", bullet.max_lifetime)
 	bullet.run(muzzle.global_position, direction, tool_owner)
 
 	muzzle_flash.restart()

@@ -53,6 +53,7 @@ enum ToolMode {
 	ORE,
 	SPAWN,
 	BUILDING,
+	FACILITY,
 	AUXILIARY,
 	AI,
 	OBJECT_EDIT,
@@ -95,6 +96,8 @@ const ROAD_SCRIPT_PATH = "res://src/terrain/road_path_3d.gd"
 const ROAD_TYPE_RAIL = 4
 const TREE_FOREST_MANAGER_PATH = "res://src/tree_forest_manager.gd"
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
+const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
+const PLACEMENT_QUERY_SCRIPT = preload("res://src/placement_query.gd")
 # The shared scenery implementation was moved out of src/environment.  Keep
 # the editor on the same script as the shipped maps; the old path silently
 # produced a plain Node3D and therefore no distant ring at all.
@@ -104,6 +107,8 @@ const DAY_NIGHT_SYSTEM_PATH = "res://worlds/shared/day_night_system.tscn"
 const WEATHER_SYSTEM_PATH = "res://worlds/shared/weather_system.tscn"
 const WATER_BODY_PATH = "res://worlds/shared/WaterBody3D.tscn"
 const TEAM_SPAWN_POINT_PATH = "res://buildings/TeamSpawnPoint.tscn"
+const ENEMY_SQUAD_SPAWNER_PATH = "res://character/EnemySquadSpawner.tscn"
+const SQUAD_TARGET_POINT_PATH = "res://buildings/SquadTargetPoint.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
 const FARM_FIELD_GENERATOR_SCRIPT_PATH = "res://src/farm_field_generator.gd"
@@ -137,6 +142,12 @@ const BUILDINGS_RESOURCE_ROOT = "res://buildings"
 const BUILDINGS_EXCLUDED_ROOT = "res://buildings/nature"
 const BUILDING_THUMBNAIL_SIZE = Vector2i(192, 128)
 const BUILDING_BROWSER_CARD_SIZE = Vector2(172.0, 178.0)
+const ENTERABLE_BUILDING_SCENE_PATHS = [
+	"res://buildings/bar.tscn",
+	"res://buildings/canadahouse_alberta.tscn",
+	"res://buildings/canadahouse_prairiebungalow.tscn",
+	"res://buildings/twostoryhouse.tscn"
+]
 
 const CRESTON_PALETTE_PATH = "res://worlds/creston_town/creston_town_surface_palette.tres"
 const REDPINE_PALETTE_PATH = "res://worlds/redpine_county/redpine_county_surface_palette.tres"
@@ -148,6 +159,7 @@ const WATER_COLLISION_MASK = 8 | 8192
 const GRASS_CHUNK_SIZE = 32.0
 const MAX_RAY_DISTANCE = 6000.0
 const EDITOR_MARKER_META = &"farmwar_editor_visual_only"
+const MAP_CAN_OVERLAP_WATER_META = &"map_can_overlap_water"
 
 const TREE_ASSETS = [
 	{"label": "CottonWood", "path": "res://buildings/nature/CottonWood.tscn", "id": "cottonwood"},
@@ -175,7 +187,13 @@ const ORE_ASSETS = [
 const AI_TYPES := [
 	{"id": "farmer", "label": "FarmerAI", "scene": "res://character/FarmerAI.tscn"},
 	{"id": "futurewarrior", "label": "FutureWarriorAI", "scene": "res://character/FutureWarriorAI.tscn"},
+	{"id": "futureengineer", "label": "FutureEngineerAI", "scene": "res://character/FutureEngineerAI.tscn"},
 	{"id": "assistant", "label": "AssistantAI", "scene": "res://character/AssistantAI.tscn"},
+]
+
+const SQUAD_MEMBER_TYPES := [
+	{"id": "future_warrior", "label": "FutureWarrior"},
+	{"id": "future_engineer", "label": "FutureEngineer"},
 ]
 
 const FALLBACK_SURFACES = [
@@ -329,6 +347,10 @@ var _farmland_width_tiles := 16
 var _selected_farmland_owner := ""
 var _ai_configurations: Array = []
 var _selected_ai_index := -1
+var _selected_squad_spawner_index := -1
+var _selected_squad_member_index := 0
+## AI 工具中的一次性地图放置动作：squad_spawner / squad_target / 空。
+var _ai_placement_mode := ""
 var _brush_radius = 8.0
 var _brush_strength = 2.5
 var _grass_density = 0.15
@@ -348,6 +370,12 @@ var _building_assets: Array[Dictionary] = []
 var _filtered_building_assets: Array[Dictionary] = []
 var _building_categories: PackedStringArray = PackedStringArray(["All"])
 var _selected_building_asset: Dictionary = {}
+var _facility_assets: Array[Dictionary] = []
+var _selected_facility_category := "kitchen"
+var _selected_facility_team := "red"
+var _selected_defense_team := ""
+var _selected_defense_auto_respawn := false
+var _selected_defense_respawn_seconds := 60.0
 var _building_search_text = ""
 var _building_category_filter = "All"
 var _building_preview: Node3D
@@ -540,6 +568,7 @@ func _ready() -> void:
 	_build_building_footprint_preview()
 	_build_thumbnail_renderer()
 	_scan_building_assets()
+	_scan_facility_assets()
 	_build_editor_ui()
 	set_process(true)
 	set_physics_process(true)
@@ -788,6 +817,7 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
 	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
 	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
+	_add_tool_button(column, group, ToolMode.FACILITY, "Facilities", "Place map kitchens and defensive facilities")
 	_add_tool_button(column, group, ToolMode.FARMLAND, "Farmland", "Place configurable FarmFieldGenerator regions")
 	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
 	_add_tool_button(column, group, ToolMode.AI, "AI Players", "Configure map AI players, teams, spawn points and respawn times")
@@ -970,6 +1000,11 @@ func _refresh_bottom_dock() -> void:
 			_add_building_placement_controls()
 			_bottom_content = _building_browser_content
 			_add_building_browser()
+		ToolMode.FACILITY:
+			_tool_title_label.text = "设施放置"
+			_add_facility_inspector_controls()
+			_bottom_content = _building_browser_content
+			_add_facility_browser()
 		ToolMode.FARMLAND:
 			_tool_title_label.text = "Farmland Placement"
 			_add_farmland_controls()
@@ -992,7 +1027,7 @@ func _refresh_bottom_dock() -> void:
 			_tool_title_label.text = "Unavailable"
 
 func _configure_bottom_dock_for_tool() -> void:
-	var building_mode = _tool_mode == ToolMode.BUILDING
+	var building_mode = _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]
 	if _brush_settings_grid != null:
 		_brush_settings_grid.visible = _tool_mode in [ToolMode.TERRAIN, ToolMode.SURFACE, ToolMode.GRASS, ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.AUXILIARY]
 	if _bottom_dock_panel != null:
@@ -1401,6 +1436,8 @@ func _add_ai_configuration_controls() -> void:
 		empty_label.text = "当前地图没有 AI 配置。点击“添加 AI”后再选择类型、队伍和出生点。"
 		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bottom_content.add_child(empty_label)
+		_bottom_content.add_child(HSeparator.new())
+		_add_squad_generator_controls()
 		return
 	if _selected_ai_index < 0 or _selected_ai_index >= _ai_configurations.size():
 		_selected_ai_index = 0
@@ -1478,6 +1515,176 @@ func _add_ai_configuration_controls() -> void:
 	hint.text = "出生点编号只在编辑器预览中显示（R#01 / B#01），实际游戏不会显示。空出生点表示从所选队伍的出生点中随机选择。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
+	_bottom_content.add_child(HSeparator.new())
+	_add_squad_generator_controls()
+
+
+func _add_squad_generator_controls() -> void:
+	var heading := Label.new()
+	heading.text = "小队生成器"
+	heading.add_theme_font_size_override("font_size", 20)
+	_bottom_content.add_child(heading)
+
+	var explanation := Label.new()
+	explanation.text = "生成器在其圆形区域内生成一批 AI。整批成员全部死亡后开始计时，随后删除旧批次并生成一批全新的成员。"
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(explanation)
+
+	var spawners := _get_editor_squad_spawners()
+	if _selected_squad_spawner_index >= spawners.size():
+		_selected_squad_spawner_index = spawners.size() - 1
+	var list_row := HBoxContainer.new()
+	list_row.add_child(_make_label("生成器"))
+	var list_option := OptionButton.new()
+	list_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for index in range(spawners.size()):
+		var item := spawners[index]
+		list_option.add_item("%02d  %s · %s · %d人" % [
+			index + 1,
+			item.spawner_id,
+			"红队" if item.team_id == "red" else "蓝队",
+			item.member_roles.size(),
+		])
+	list_option.disabled = spawners.is_empty()
+	if _selected_squad_spawner_index >= 0:
+		list_option.select(_selected_squad_spawner_index)
+	list_option.item_selected.connect(func(index: int) -> void:
+		_selected_squad_spawner_index = index
+		_selected_squad_member_index = 0
+		_refresh_bottom_dock()
+	)
+	list_row.add_child(list_option)
+	var place_button := Button.new()
+	place_button.text = "+ 放置生成器"
+	place_button.pressed.connect(func() -> void:
+		_ai_placement_mode = "squad_spawner"
+		_set_status("小队生成器放置模式：在地图上左键确定生成区域中心")
+	)
+	list_row.add_child(place_button)
+	_bottom_content.add_child(list_row)
+
+	if spawners.is_empty():
+		var empty := Label.new()
+		empty.text = "当前没有小队生成器。点击“放置生成器”，然后在地图上选择生成区域中心。"
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(empty)
+		return
+	if _selected_squad_spawner_index < 0:
+		_selected_squad_spawner_index = 0
+	var spawner := spawners[_selected_squad_spawner_index]
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("小队队伍"))
+	var team_option := OptionButton.new()
+	team_option.add_item("红队")
+	team_option.add_item("蓝队")
+	team_option.select(0 if spawner.team_id == "red" else 1)
+	team_option.item_selected.connect(func(index: int) -> void:
+		_record_squad_spawner_property(spawner, "team_id", "red" if index == 0 else "blue", "Change Squad Team")
+	)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
+	var count_row := HBoxContainer.new()
+	count_row.add_child(_make_label("成员个数"))
+	var count_spin := SpinBox.new()
+	count_spin.min_value = 1
+	count_spin.max_value = 32
+	count_spin.step = 1
+	count_spin.value = spawner.member_roles.size()
+	count_spin.value_changed.connect(func(value: float) -> void:
+		var roles := spawner.member_roles.duplicate()
+		var requested := clampi(roundi(value), 1, 32)
+		while roles.size() < requested:
+			roles.append("future_warrior")
+		while roles.size() > requested:
+			roles.remove_at(roles.size() - 1)
+		_selected_squad_member_index = mini(_selected_squad_member_index, roles.size() - 1)
+		_record_squad_spawner_property(spawner, "member_roles", roles, "Change Squad Member Count")
+	)
+	count_row.add_child(count_spin)
+	_bottom_content.add_child(count_row)
+
+	var member_row := HBoxContainer.new()
+	member_row.add_child(_make_label("成员"))
+	var member_option := OptionButton.new()
+	for index in range(spawner.member_roles.size()):
+		member_option.add_item("成员 %02d" % (index + 1))
+	_selected_squad_member_index = clampi(_selected_squad_member_index, 0, spawner.member_roles.size() - 1)
+	member_option.select(_selected_squad_member_index)
+	member_option.item_selected.connect(func(index: int) -> void:
+		_selected_squad_member_index = index
+		_refresh_bottom_dock()
+	)
+	member_row.add_child(member_option)
+	var role_option := OptionButton.new()
+	for role_value in SQUAD_MEMBER_TYPES:
+		var role := role_value as Dictionary
+		role_option.add_item(str(role.get("label", "AI")))
+		role_option.set_item_metadata(role_option.item_count - 1, str(role.get("id", "future_warrior")))
+		if str(spawner.member_roles[_selected_squad_member_index]) == str(role.get("id", "")):
+			role_option.select(role_option.item_count - 1)
+	role_option.item_selected.connect(func(index: int) -> void:
+		var roles := spawner.member_roles.duplicate()
+		roles[_selected_squad_member_index] = str(role_option.get_item_metadata(index))
+		_record_squad_spawner_property(spawner, "member_roles", roles, "Change Squad Member Role")
+	)
+	member_row.add_child(role_option)
+	_bottom_content.add_child(member_row)
+
+	var respawn_row := HBoxContainer.new()
+	respawn_row.add_child(_make_label("新批次时间 (秒)"))
+	var respawn_spin := SpinBox.new()
+	respawn_spin.min_value = 1.0
+	respawn_spin.max_value = 600.0
+	respawn_spin.step = 1.0
+	respawn_spin.value = spawner.respawn_seconds
+	respawn_spin.value_changed.connect(func(value: float) -> void:
+		_record_squad_spawner_property(spawner, "respawn_seconds", value, "Change Squad Respawn Time")
+	)
+	respawn_row.add_child(respawn_spin)
+	_bottom_content.add_child(respawn_row)
+
+	var radius_row := HBoxContainer.new()
+	radius_row.add_child(_make_label("生成半径 (米)"))
+	var radius_spin := SpinBox.new()
+	radius_spin.min_value = 1.0
+	radius_spin.max_value = 30.0
+	radius_spin.step = 0.5
+	radius_spin.value = spawner.spawn_radius
+	radius_spin.value_changed.connect(func(value: float) -> void:
+		_record_squad_spawner_property(spawner, "spawn_radius", value, "Change Squad Spawn Radius")
+		_refresh_squad_spawner_editor_marker(spawner)
+	)
+	radius_row.add_child(radius_spin)
+	_bottom_content.add_child(radius_row)
+
+	var target_row := HBoxContainer.new()
+	target_row.add_child(_make_label("Target"))
+	var current_target := _find_squad_target_marker(spawner.target_marker_id)
+	var target_label := Label.new()
+	target_label.text = current_target.name if is_instance_valid(current_target) else "未设置（运行时随机敌方出生点）"
+	target_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	target_row.add_child(target_label)
+	var target_button := Button.new()
+	target_button.text = "地图设置"
+	target_button.pressed.connect(func() -> void:
+		_ai_placement_mode = "squad_target"
+		_set_status("小队 Target 放置模式：在地图上左键放置黄色圆柱标记")
+	)
+	target_row.add_child(target_button)
+	_bottom_content.add_child(target_row)
+
+	var delete_button := Button.new()
+	delete_button.text = "删除当前小队生成器"
+	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.pressed.connect(_delete_selected_squad_spawner)
+	_bottom_content.add_child(delete_button)
+
+	var hint := Label.new()
+	hint.text = "青色标记表示生成区域，黄色圆柱表示共享 target。游戏运行时两种编辑器外观都会隐藏，但 target 的 Node3D 会保留。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
 
 
 func _ai_type_label(ai_type: String) -> String:
@@ -1540,6 +1747,74 @@ func _apply_ai_configuration(value: Array) -> void:
 	if _map_root != null:
 		_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
 	_refresh_bottom_dock()
+
+
+func _get_editor_squad_spawners() -> Array[EnemySquadSpawner]:
+	var result: Array[EnemySquadSpawner] = []
+	if _spawns_root == null:
+		return result
+	for child in _spawns_root.get_children():
+		if child is EnemySquadSpawner:
+			result.append(child as EnemySquadSpawner)
+	return result
+
+
+func _record_squad_spawner_property(
+	spawner: EnemySquadSpawner,
+	property_name: String,
+	value: Variant,
+	action_name: String
+) -> void:
+	if not is_instance_valid(spawner):
+		return
+	var before: Variant = spawner.get(property_name)
+	if before == value:
+		return
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_squad_spawner_property.bind(spawner, property_name, value))
+	_undo_redo.add_undo_method(_apply_squad_spawner_property.bind(spawner, property_name, before))
+	_undo_redo.commit_action()
+
+
+func _apply_squad_spawner_property(spawner: EnemySquadSpawner, property_name: String, value: Variant) -> void:
+	if not is_instance_valid(spawner):
+		return
+	spawner.set(property_name, value)
+	_refresh_squad_spawner_editor_marker(spawner)
+	if _tool_mode == ToolMode.AI:
+		_refresh_bottom_dock()
+
+
+func _find_squad_target_marker(target_id: String) -> SquadTargetPoint:
+	if target_id.is_empty() or _spawns_root == null:
+		return null
+	for child in _spawns_root.get_children():
+		if child is SquadTargetPoint and (child as SquadTargetPoint).target_id == target_id:
+			return child as SquadTargetPoint
+	return null
+
+
+func _delete_selected_squad_spawner() -> void:
+	var spawners := _get_editor_squad_spawners()
+	if _selected_squad_spawner_index < 0 or _selected_squad_spawner_index >= spawners.size():
+		return
+	var spawner := spawners[_selected_squad_spawner_index]
+	var records: Array = [_serialize_editor_object(spawner)]
+	var target_marker := _find_squad_target_marker(spawner.target_marker_id)
+	if is_instance_valid(target_marker):
+		records.append(_serialize_editor_object(target_marker))
+	_undo_redo.create_action("Delete Squad Generator")
+	_undo_redo.add_do_method(_apply_squad_object_change.bind([], records))
+	_undo_redo.add_undo_method(_apply_squad_object_change.bind(records, []))
+	_undo_redo.commit_action()
+	_selected_squad_spawner_index = mini(_selected_squad_spawner_index, _get_editor_squad_spawners().size() - 1)
+	_selected_squad_member_index = 0
+
+
+func _apply_squad_object_change(records_to_restore: Array, records_to_remove: Array) -> void:
+	_apply_object_change(records_to_restore, records_to_remove)
+	if _tool_mode == ToolMode.AI:
+		_refresh_bottom_dock()
 
 
 func _get_editor_team_spawn_points(team_filter: String = "") -> Array[TeamSpawnPoint]:
@@ -1648,6 +1923,165 @@ func _add_building_browser() -> void:
 	_refresh_building_browser_grid()
 
 
+func _add_facility_inspector_controls() -> void:
+	var heading := Label.new()
+	heading.text = "设施类别与默认配置"
+	_bottom_content.add_child(heading)
+
+	var category_row := HBoxContainer.new()
+	category_row.add_child(_make_label("类别"))
+	var category_option := OptionButton.new()
+	category_option.add_item("厨具")
+	category_option.set_item_metadata(0, "kitchen")
+	category_option.add_item("防御设施")
+	category_option.set_item_metadata(1, "defense")
+	category_option.add_item("室内设施")
+	category_option.set_item_metadata(2, "interior")
+	var category_index := 0
+	if _selected_facility_category == "defense":
+		category_index = 1
+	elif _selected_facility_category == "interior":
+		category_index = 2
+	category_option.select(category_index)
+	category_option.item_selected.connect(func(index: int) -> void:
+		_selected_facility_category = str(category_option.get_item_metadata(index))
+		var assets := MAP_FACILITY_CATALOG.get_assets(_selected_facility_category)
+		if assets.is_empty():
+			_selected_building_asset = {}
+		else:
+			_selected_building_asset = (assets[0] as Dictionary).duplicate(true)
+		_building_preview_yaw = 0.0
+		_rebuild_building_preview()
+		_refresh_bottom_dock()
+	)
+	category_row.add_child(category_option)
+	_bottom_content.add_child(category_row)
+
+	if _selected_facility_category == "kitchen":
+		var kitchen_team_row := HBoxContainer.new()
+		kitchen_team_row.add_child(_make_label("队伍所属"))
+		var kitchen_team_option := OptionButton.new()
+		kitchen_team_option.add_item("红队")
+		kitchen_team_option.add_item("蓝队")
+		kitchen_team_option.select(0 if _selected_facility_team == "red" else 1)
+		kitchen_team_option.item_selected.connect(func(index: int) -> void:
+			_selected_facility_team = "red" if index == 0 else "blue"
+		)
+		kitchen_team_row.add_child(kitchen_team_option)
+		_bottom_content.add_child(kitchen_team_row)
+	elif _selected_facility_category == "defense":
+		var defense_team_row := HBoxContainer.new()
+		defense_team_row.add_child(_make_label("队伍所属"))
+		var defense_team_option := OptionButton.new()
+		defense_team_option.add_item("无归属")
+		defense_team_option.add_item("红队")
+		defense_team_option.add_item("蓝队")
+		defense_team_option.select(0 if _selected_defense_team.is_empty() else (1 if _selected_defense_team == "red" else 2))
+		defense_team_option.item_selected.connect(func(index: int) -> void:
+			_selected_defense_team = "" if index == 0 else ("red" if index == 1 else "blue")
+		)
+		defense_team_row.add_child(defense_team_option)
+		_bottom_content.add_child(defense_team_row)
+	else:
+		var interior_hint := Label.new()
+		interior_hint.text = "室内设施只能放入可进入建筑；水体重叠由场景根节点的 map_can_overlap_water 标记决定。"
+		interior_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(interior_hint)
+
+	if _selected_facility_category == "defense":
+		var respawn_check := CheckBox.new()
+		respawn_check.text = "自动复活"
+		respawn_check.button_pressed = _selected_defense_auto_respawn
+		_bottom_content.add_child(respawn_check)
+
+		var respawn_row := HBoxContainer.new()
+		respawn_row.add_child(_make_label("复活时间 (秒)"))
+		var respawn_spin := SpinBox.new()
+		respawn_spin.min_value = 1.0
+		respawn_spin.max_value = 3600.0
+		respawn_spin.step = 1.0
+		respawn_spin.value = _selected_defense_respawn_seconds
+		respawn_spin.editable = _selected_defense_auto_respawn
+		respawn_spin.value_changed.connect(func(value: float) -> void:
+			_selected_defense_respawn_seconds = clampf(value, 1.0, 3600.0)
+		)
+		respawn_row.add_child(respawn_spin)
+		_bottom_content.add_child(respawn_row)
+		respawn_check.toggled.connect(func(value: bool) -> void:
+			_selected_defense_auto_respawn = value
+			respawn_spin.editable = value
+		)
+
+	var hint := Label.new()
+	hint.text = "厨具只设置队伍所属，默认启用；防御设施可设置队伍所属和是否自动复活。四种墙体支持同族端点吸附：距离 1m 内且夹角至少 30°。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_facility_browser() -> void:
+	var browser := VBoxContainer.new()
+	browser.name = "FacilityBrowser"
+	browser.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	browser.add_theme_constant_override("separation", 6)
+	_bottom_content.add_child(browser)
+
+	var toolbar := HBoxContainer.new()
+	toolbar.add_theme_constant_override("separation", 8)
+	browser.add_child(toolbar)
+
+	var title := Label.new()
+	title.text = "设施目录"
+	toolbar.add_child(title)
+
+	var refresh_button := Button.new()
+	refresh_button.text = "重新扫描"
+	refresh_button.tooltip_text = "重新读取厨具、防御设施和 res://facilities/interior/ 下的场景"
+	refresh_button.pressed.connect(_rescan_facility_assets)
+	toolbar.add_child(refresh_button)
+
+	var rotate_button := Button.new()
+	rotate_button.text = "旋转预览 +%d°" % int(building_rotation_step_degrees)
+	rotate_button.pressed.connect(_rotate_building_preview_once)
+	toolbar.add_child(rotate_button)
+
+	_building_count_label = Label.new()
+	_building_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_building_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	toolbar.add_child(_building_count_label)
+
+	var hint := Label.new()
+	hint.text = "选择设施后，鼠标左键放置；室内设施自动读取 res://facilities/interior/。地图加载时恢复设施的运行时脚本。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	browser.add_child(hint)
+
+	_building_grid = GridContainer.new()
+	_building_grid.columns = maxi(2, int((get_viewport().get_visible_rect().size.x - 570.0) / BUILDING_BROWSER_CARD_SIZE.x))
+	_building_grid.add_theme_constant_override("h_separation", 8)
+	_building_grid.add_theme_constant_override("v_separation", 8)
+	browser.add_child(_building_grid)
+	_building_thumbnail_cards.clear()
+	var assets := MAP_FACILITY_CATALOG.get_assets(_selected_facility_category)
+	_building_count_label.text = "%d 个设施" % assets.size()
+	for asset_value in assets:
+		_add_building_asset_card(asset_value as Dictionary, true)
+
+
+func _select_facility_asset(asset: Dictionary) -> void:
+	_selected_building_asset = asset.duplicate(true)
+	_selected_facility_category = str(asset.get("category", "kitchen"))
+	_building_preview_yaw = 0.0
+	_rebuild_building_preview()
+	_refresh_bottom_dock()
+	_set_status("已选择设施：%s" % str(asset.get("label", "Facility")))
+
+
+func _rescan_facility_assets() -> void:
+	_building_thumbnail_queue.clear()
+	_facility_assets = MAP_FACILITY_CATALOG.get_assets()
+	_refresh_bottom_dock()
+	_set_status("已重新扫描设施目录，共 %d 个设施" % _facility_assets.size())
+
+
 func _add_object_edit_controls() -> void:
 	var mode_label = Label.new()
 	mode_label.text = "Transform Mode"
@@ -1739,6 +2173,8 @@ func _add_object_edit_controls() -> void:
 
 	if is_instance_valid(_selected_map_object) and _is_farmland(_selected_map_object):
 		_add_farmland_inspector_controls()
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "facility":
+		_add_facility_object_inspector_controls()
 
 	var action_row = HBoxContainer.new()
 	_bottom_content.add_child(action_row)
@@ -1762,6 +2198,92 @@ func _add_object_edit_controls() -> void:
 
 	_update_object_edit_status()
 	_sync_object_numeric_controls()
+
+
+func _add_facility_object_inspector_controls() -> void:
+	var facility := _selected_map_object
+	var facility_category := str(facility.get_meta("map_editor_facility_category", ""))
+	if facility_category.is_empty():
+		facility_category = str(MAP_FACILITY_CATALOG.get_asset_by_path(str(facility.get_meta("map_editor_asset_path", facility.scene_file_path))).get("category", ""))
+	var heading := Label.new()
+	var category_label := "厨具"
+	if facility_category == "defense":
+		category_label = "防御设施"
+	elif facility_category == "interior":
+		category_label = "室内设施"
+	heading.text = "设施 Inspector · %s" % category_label
+	_bottom_content.add_child(heading)
+	if facility_category == "interior":
+		var interior_info := Label.new()
+		interior_info.text = "只能放入可进入建筑；允许水体重叠：%s" % ("是" if _can_overlap_water(facility) else "否")
+		interior_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(interior_info)
+		return
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("队伍所属"))
+	var team_option := OptionButton.new()
+	var current_team := str(_get_property_or(facility, "owner_team" if facility_category == "kitchen" else "tool_owner", ""))
+	if facility_category == "kitchen":
+		team_option.add_item("红队")
+		team_option.add_item("蓝队")
+		team_option.select(0 if current_team == "red" else 1)
+		team_option.item_selected.connect(func(index: int) -> void:
+			_set_facility_object_property("owner_team", "red" if index == 0 else "blue")
+		)
+	else:
+		team_option.add_item("无归属")
+		team_option.add_item("红队")
+		team_option.add_item("蓝队")
+		team_option.select(0 if current_team.is_empty() else (1 if current_team == "red" else 2))
+		team_option.item_selected.connect(func(index: int) -> void:
+			_set_facility_object_property("tool_owner", "" if index == 0 else ("red" if index == 1 else "blue"))
+		)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
+	if facility_category != "defense":
+		return
+	var respawn_check := CheckBox.new()
+	respawn_check.text = "自动复活"
+	respawn_check.button_pressed = bool(_get_property_or(facility, "auto_respawn", false))
+	_bottom_content.add_child(respawn_check)
+
+	var respawn_row := HBoxContainer.new()
+	respawn_row.add_child(_make_label("复活时间 (秒)"))
+	var respawn_spin := SpinBox.new()
+	respawn_spin.min_value = 1.0
+	respawn_spin.max_value = 3600.0
+	respawn_spin.step = 1.0
+	respawn_spin.value = float(_get_property_or(facility, "respawn_seconds", 60.0))
+	respawn_spin.editable = respawn_check.button_pressed
+	respawn_spin.value_changed.connect(func(value: float) -> void:
+		_set_facility_object_property("respawn_seconds", clampf(value, 1.0, 3600.0))
+	)
+	respawn_row.add_child(respawn_spin)
+	_bottom_content.add_child(respawn_row)
+	respawn_check.toggled.connect(func(value: bool) -> void:
+		_set_facility_object_property("auto_respawn", value)
+		respawn_spin.editable = value
+	)
+
+
+func _set_facility_object_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or str(_selected_map_object.get_meta("map_editor_category", "")) != "facility":
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit Facility")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
 
 
 func _add_message_area_inspector_controls() -> void:
@@ -1978,6 +2500,13 @@ func _add_farmland_inspector_controls() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
+	var delete_button := Button.new()
+	delete_button.text = "Delete Farmland"
+	delete_button.tooltip_text = "删除当前选中的农田区域（支持撤回）"
+	delete_button.modulate = Color(1.0, 0.42, 0.42, 1.0)
+	delete_button.pressed.connect(_delete_selected_object)
+	_bottom_content.add_child(delete_button)
+
 
 func _set_farmland_property(property_name: String, value: Variant) -> void:
 	if not is_instance_valid(_selected_map_object) or not _is_farmland(_selected_map_object):
@@ -2006,6 +2535,9 @@ func _apply_object_property_by_uuid(uuid: String, property_name: String, value: 
 		node.call("refresh_visuals")
 	if _is_farmland(node):
 		_refresh_farmland_preview(node)
+		if node == _selected_map_object:
+			_refresh_selection_visual()
+			_refresh_transform_gizmo()
 
 
 func _add_transform_spin_group(title: String, suffix_text: String) -> void:
@@ -2069,6 +2601,12 @@ func _scan_building_assets() -> void:
 	_building_categories.insert(0, "All")
 	if _selected_building_asset.is_empty() and not _building_assets.is_empty():
 		_selected_building_asset = _building_assets[0].duplicate(true)
+
+
+func _scan_facility_assets() -> void:
+	_facility_assets = MAP_FACILITY_CATALOG.get_assets()
+	if _selected_building_asset.is_empty() and not _facility_assets.is_empty():
+		_selected_building_asset = (_facility_assets[0] as Dictionary).duplicate(true)
 
 
 func _scan_building_directory(
@@ -2161,7 +2699,7 @@ func _refresh_building_browser_grid() -> void:
 		_building_count_label.text = "%d / %d assets" % [_filtered_building_assets.size(), _building_assets.size()]
 
 
-func _add_building_asset_card(asset: Dictionary) -> void:
+func _add_building_asset_card(asset: Dictionary, is_facility := false) -> void:
 	var path = str(asset.get("path", ""))
 	var card = PanelContainer.new()
 	card.custom_minimum_size = BUILDING_BROWSER_CARD_SIZE
@@ -2185,7 +2723,10 @@ func _add_building_asset_card(asset: Dictionary) -> void:
 	select_button.toggle_mode = true
 	select_button.button_pressed = path == str(_selected_building_asset.get("path", ""))
 	select_button.tooltip_text = path
-	select_button.pressed.connect(_select_building_asset.bind(asset))
+	if is_facility:
+		select_button.pressed.connect(_select_facility_asset.bind(asset))
+	else:
+		select_button.pressed.connect(_select_building_asset.bind(asset))
 	column.add_child(select_button)
 
 	var category_label = Label.new()
@@ -2622,10 +3163,18 @@ func _select_tool(mode: ToolMode) -> void:
 		_finish_active_water()
 	if _tool_mode == ToolMode.OBJECT_EDIT and mode != ToolMode.OBJECT_EDIT:
 		_end_object_transform_drag()
+	if mode != ToolMode.AI:
+		_ai_placement_mode = ""
 	_tool_mode = mode
+	if mode == ToolMode.FACILITY:
+		var selected_path := str(_selected_building_asset.get("path", ""))
+		if MAP_FACILITY_CATALOG.get_asset_by_path(selected_path).is_empty():
+			var default_facilities := MAP_FACILITY_CATALOG.get_assets(_selected_facility_category)
+			if not default_facilities.is_empty():
+				_selected_building_asset = (default_facilities[0] as Dictionary).duplicate(true)
 	_set_road_edit_visuals_visible(mode == ToolMode.ROAD)
 	_set_water_edit_visuals_visible(mode == ToolMode.WATER)
-	if mode != ToolMode.BUILDING:
+	if mode not in [ToolMode.BUILDING, ToolMode.FACILITY]:
 		_set_building_preview_visible(false)
 		if _brush_preview_material != null:
 			_brush_preview_material.albedo_color = Color(1.0, 0.8, 0.1, 0.95)
@@ -2891,6 +3440,7 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.ORE: return "Ores"
 		ToolMode.SPAWN: return "Spawn Points"
 		ToolMode.BUILDING: return "Buildings"
+		ToolMode.FACILITY: return "Facilities"
 		ToolMode.FARMLAND: return "Farmland"
 		ToolMode.AUXILIARY: return "Auxiliary Areas"
 		ToolMode.AI: return "Map AI Players"
@@ -3033,17 +3583,24 @@ func _farmland_preview_color(owner: String, outline := false) -> Color:
 	return color
 
 
-func _configure_farmland_preview(preview_root: Node3D, length_tiles: int, width_tiles: int, owner: String) -> void:
+func _configure_farmland_preview(
+	preview_root: Node3D,
+	length_tiles: int,
+	width_tiles: int,
+	owner: String,
+	tile_spacing: float = FARM_FIELD_TILE_SPACING
+) -> void:
 	if preview_root == null:
 		return
 	var length := maxi(1, length_tiles)
 	var width := maxi(1, width_tiles)
-	var size_x := float(length) * FARM_FIELD_TILE_SPACING
-	var size_z := float(width) * FARM_FIELD_TILE_SPACING
+	var spacing := tile_spacing if tile_spacing > 0.0 else FARM_FIELD_TILE_SPACING
+	var size_x := float(length) * spacing
+	var size_z := float(width) * spacing
 	var center := Vector3(
-		float(length - 1) * FARM_FIELD_TILE_SPACING * 0.5,
+		float(length - 1) * spacing * 0.5,
 		0.05,
-		float(width - 1) * FARM_FIELD_TILE_SPACING * 0.5
+		float(width - 1) * spacing * 0.5
 	)
 	var fill := preview_root.get_node_or_null("Fill") as MeshInstance3D
 	if fill != null:
@@ -3095,7 +3652,8 @@ func _refresh_farmland_preview(field: Node3D) -> void:
 		preview,
 		int(_get_property_or(field, "length_tiles", _farmland_length_tiles)),
 		int(_get_property_or(field, "width_tiles", _farmland_width_tiles)),
-		str(_get_property_or(field, "field_owner", ""))
+		str(_get_property_or(field, "field_owner", "")),
+		float(_get_property_or(field, "tile_spacing", FARM_FIELD_TILE_SPACING))
 	)
 
 
@@ -3281,7 +3839,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_duplicate_selected_object()
 			get_viewport().set_input_as_handled()
 			return
-		if _tool_mode == ToolMode.BUILDING and key_event.keycode == KEY_R:
+		if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY] and key_event.keycode == KEY_R:
 			_building_preview_yaw += deg_to_rad(building_rotation_step_degrees)
 			_update_building_preview_from_latest_hit()
 			get_viewport().set_input_as_handled()
@@ -3397,7 +3955,7 @@ func _physics_process(delta: float) -> void:
 		_brush_preview.visible = false
 		_set_farmland_cursor_preview_visible(false)
 		_set_height_boundary_visible(false)
-		if _tool_mode == ToolMode.BUILDING:
+		if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]:
 			_set_building_preview_visible(false)
 		return
 
@@ -3420,7 +3978,7 @@ func _physics_process(delta: float) -> void:
 		_update_farmland_cursor_preview(hit_position)
 	else:
 		_set_farmland_cursor_preview_visible(false)
-	if _tool_mode == ToolMode.BUILDING:
+	if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]:
 		_set_height_boundary_visible(false)
 		_update_building_preview(hit_position)
 	else:
@@ -3448,11 +4006,13 @@ func _physics_process(delta: float) -> void:
 			_apply_scene_placement_brush(hit_position, delta, _ores_root, "ore")
 		ToolMode.SPAWN:
 			_apply_spawn_brush(hit_position)
+		ToolMode.AI:
+			_apply_ai_squad_brush(hit_position)
 		ToolMode.AUXILIARY:
 			_apply_auxiliary_brush(hit_position)
 		ToolMode.FARMLAND:
 			_apply_farmland_brush(hit_position)
-		ToolMode.BUILDING:
+		ToolMode.BUILDING, ToolMode.FACILITY:
 			_apply_building_placement(hit_position)
 
 func _update_free_camera(delta: float) -> void:
@@ -3542,7 +4102,7 @@ func _end_stroke() -> void:
 			_commit_surface_stroke()
 		ToolMode.GRASS:
 			_commit_grass_stroke()
-		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.BUILDING, ToolMode.AUXILIARY, ToolMode.FARMLAND:
+		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.AI, ToolMode.BUILDING, ToolMode.FACILITY, ToolMode.AUXILIARY, ToolMode.FARMLAND:
 			_commit_object_stroke()
 
 	_stroke_height_before.clear()
@@ -3856,6 +4416,9 @@ func create_new_map(
 	_next_spawn_id = 1
 	_ai_configurations = []
 	_selected_ai_index = -1
+	_selected_squad_spawner_index = -1
+	_selected_squad_member_index = 0
+	_ai_placement_mode = ""
 	_clear_map_icon()
 
 	_create_terrain_material()
@@ -4071,13 +4634,16 @@ func _create_environment_skeleton() -> void:
 	world_environment.environment = environment
 	_map_root.add_child(world_environment)
 
-	var navigation = NavigationRegion3D.new()
-	navigation.name = "NavigationRegion3D"
-	var navigation_mesh = NavigationMesh.new()
-	navigation_mesh.agent_height = 1.8
-	navigation_mesh.agent_radius = 0.4
-	navigation.navigation_mesh = navigation_mesh
-	_map_root.add_child(navigation)
+	## 运行时地图统一使用 64m x 64m 的动态导航区块。管理器会在
+	## _map_root 完成 Ground/Grass 和 TerrainChunk 创建后再延迟初始化，
+	## 因此生成地图的地形也会被纳入每个区块的局部 bake。
+	var navigation_grid := DynamicNavigationChunkGrid.new()
+	navigation_grid.name = "DynamicNavigationChunkGrid"
+	navigation_grid.map_origin = _terrain_origin
+	navigation_grid.map_size = _map_size
+	navigation_grid.chunk_size = 64.0
+	navigation_grid.ground_source_root_path = NodePath("../Ground/Grass")
+	_map_root.add_child(navigation_grid)
 
 	var cloud_scene = _load_resource_or_null(CLOUD_SYSTEM_PATH) as PackedScene
 	if cloud_scene != null:
@@ -4336,6 +4902,7 @@ func _create_terrain_chunks() -> void:
 
 			var mesh_instance = MeshInstance3D.new()
 			mesh_instance.name = "Mesh"
+			mesh_instance.add_to_group("navigation_ground")
 			mesh_instance.material_override = _terrain_material
 			# Terrain is a receiver, not a caster. A full-map terrain mesh in the
 			# directional shadow pass creates a camera-following square/self-shadow.
@@ -5420,7 +5987,17 @@ func _erase_nodes_in_radius(category_root: Node3D, center: Vector3, radius: floa
 		if not category_filter.is_empty() and str(node.get_meta("map_editor_category", "")) != category_filter:
 			continue
 		var node_xz = Vector2(node.position.x, node.position.z)
-		if node_xz.distance_to(center_xz) <= radius:
+		var should_erase := node_xz.distance_to(center_xz) <= radius
+		if category_filter == "farmland" and _is_farmland(node):
+			var local_center := node.to_local(Vector3(center.x, node.global_position.y, center.z))
+			var field_rect := _get_farmland_preview_rect_local(node)
+			var closest_x := clampf(local_center.x, field_rect.position.x, field_rect.end.x)
+			var closest_z := clampf(local_center.z, field_rect.position.y, field_rect.end.y)
+			var scale_x := maxf(node.global_basis.x.length(), 0.001)
+			var scale_z := maxf(node.global_basis.z.length(), 0.001)
+			var local_radius := radius / maxf(scale_x, scale_z)
+			should_erase = Vector2(local_center.x - closest_x, local_center.z - closest_z).length() <= local_radius
+		if should_erase:
 			_stroke_removed_objects.append(_serialize_editor_object(node))
 			category_root.remove_child(node)
 			node.free()
@@ -5454,6 +6031,135 @@ func _apply_spawn_brush(center: Vector3) -> void:
 	else:
 		_place_giant_crop_spawn(center)
 	_stroke_placed_once = true
+
+
+func _apply_ai_squad_brush(center: Vector3) -> void:
+	if _stroke_placed_once or _ai_placement_mode.is_empty():
+		return
+	if _is_point_in_water(Vector2(center.x, center.z), center.y):
+		_set_status("小队生成器/Target 不能放置在水中")
+		return
+	match _ai_placement_mode:
+		"squad_spawner":
+			_place_enemy_squad_spawner(center)
+		"squad_target":
+			_place_selected_squad_target(center)
+
+
+func _place_enemy_squad_spawner(center: Vector3) -> void:
+	var packed := _load_resource_or_null(ENEMY_SQUAD_SPAWNER_PATH) as PackedScene
+	if packed == null:
+		_set_status("Missing EnemySquadSpawner scene")
+		return
+	var spawner := packed.instantiate() as EnemySquadSpawner
+	if spawner == null:
+		return
+	var sequence: int = int(_next_spawn_id)
+	spawner.name = "SquadSpawner_%03d" % sequence
+	spawner.spawner_id = "%s_squad_%03d" % [_map_id.to_snake_case(), sequence]
+	spawner.spawn_on_ready = false
+	spawner.process_mode = Node.PROCESS_MODE_DISABLED
+	spawner.set_meta("map_editor_category", "spawn")
+	spawner.set_meta("map_editor_spawn_kind", "squad_generator")
+	spawner.set_meta("map_editor_asset_path", ENEMY_SQUAD_SPAWNER_PATH)
+	spawner.set_meta("map_editor_uuid", _new_editor_uuid("squad_generator"))
+	spawner.set_meta("map_editor_align_mode", "upright")
+	spawner.set_meta("map_editor_ground_offset", 0.05)
+	_spawns_root.add_child(spawner)
+	_place_node_on_terrain(spawner, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+	_add_squad_spawner_editor_marker(spawner)
+	_stroke_added_objects.append(_serialize_editor_object(spawner))
+	_next_spawn_id += 1
+	_selected_squad_spawner_index = _get_editor_squad_spawners().find(spawner)
+	_selected_squad_member_index = 0
+	_stroke_placed_once = true
+	_ai_placement_mode = ""
+	_set_status("已放置小队生成器 %s" % spawner.spawner_id)
+	_refresh_bottom_dock()
+
+
+func _place_selected_squad_target(center: Vector3) -> void:
+	var spawners := _get_editor_squad_spawners()
+	if _selected_squad_spawner_index < 0 or _selected_squad_spawner_index >= spawners.size():
+		_set_status("请先选择一个小队生成器")
+		return
+	var spawner := spawners[_selected_squad_spawner_index]
+	var target_marker := _find_squad_target_marker(spawner.target_marker_id)
+	if is_instance_valid(target_marker):
+		_stroke_removed_objects.append(_serialize_editor_object(target_marker))
+		_place_node_on_terrain(target_marker, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+		_stroke_added_objects.append(_serialize_editor_object(target_marker))
+	else:
+		var packed := _load_resource_or_null(SQUAD_TARGET_POINT_PATH) as PackedScene
+		if packed == null:
+			_set_status("Missing SquadTargetPoint scene")
+			return
+		target_marker = packed.instantiate() as SquadTargetPoint
+		if target_marker == null:
+			return
+		var target_sequence: int = int(_next_spawn_id)
+		target_marker.name = "SquadTarget_%03d" % target_sequence
+		target_marker.target_id = "%s_target_%03d" % [_map_id.to_snake_case(), target_sequence]
+		target_marker.set_meta("map_editor_category", "spawn")
+		target_marker.set_meta("map_editor_spawn_kind", "squad_target")
+		target_marker.set_meta("map_editor_asset_path", SQUAD_TARGET_POINT_PATH)
+		target_marker.set_meta("map_editor_uuid", _new_editor_uuid("squad_target"))
+		target_marker.set_meta("map_editor_align_mode", "upright")
+		target_marker.set_meta("map_editor_ground_offset", 0.05)
+		target_marker.process_mode = Node.PROCESS_MODE_DISABLED
+		_spawns_root.add_child(target_marker)
+		_place_node_on_terrain(target_marker, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+		_add_spawn_editor_marker(target_marker, Color(1.0, 0.88, 0.08, 1.0))
+		_stroke_added_objects.append(_serialize_editor_object(target_marker))
+		_next_spawn_id += 1
+	spawner.target_marker_id = target_marker.target_id
+	_stroke_placed_once = true
+	_ai_placement_mode = ""
+	_set_status("已设置 %s 的 target：%s" % [spawner.spawner_id, target_marker.name])
+	_refresh_bottom_dock()
+
+
+func _add_squad_spawner_editor_marker(spawner: EnemySquadSpawner) -> void:
+	if not is_instance_valid(spawner):
+		return
+	var visual := Node3D.new()
+	visual.name = "_EditorSquadSpawnArea"
+	visual.set_meta(EDITOR_MARKER_META, true)
+	var area := MeshInstance3D.new()
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = spawner.spawn_radius
+	cylinder.bottom_radius = spawner.spawn_radius
+	cylinder.height = 0.08
+	area.mesh = cylinder
+	area.position.y = 0.08
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(0.1, 0.9, 1.0, 0.24)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	area.material_override = material
+	area.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	visual.add_child(area)
+	var pole := MeshInstance3D.new()
+	var pole_mesh := CylinderMesh.new()
+	pole_mesh.top_radius = 0.28
+	pole_mesh.bottom_radius = 0.28
+	pole_mesh.height = 3.0
+	pole.mesh = pole_mesh
+	pole.position.y = 1.5
+	pole.material_override = material
+	pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	visual.add_child(pole)
+	spawner.add_child(visual)
+
+
+func _refresh_squad_spawner_editor_marker(spawner: EnemySquadSpawner) -> void:
+	if not is_instance_valid(spawner):
+		return
+	var existing := spawner.get_node_or_null("_EditorSquadSpawnArea")
+	if is_instance_valid(existing):
+		spawner.remove_child(existing)
+		existing.queue_free()
+	_add_squad_spawner_editor_marker(spawner)
 
 
 func _place_team_spawn(center: Vector3, team: String, record_undo := true) -> void:
@@ -5786,6 +6492,10 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"process_mode": int(node.process_mode),
 		"align_mode": str(node.get_meta("map_editor_align_mode", "surface_normal")),
 		"ground_offset": float(node.get_meta("map_editor_ground_offset", placed_object_ground_offset)),
+		"facility_category": str(node.get_meta("map_editor_facility_category", "")),
+		"facility_id": str(node.get_meta("map_editor_facility_id", "")),
+		"map_enterable": bool(node.get_meta("map_enterable", false)),
+		"map_can_overlap_water": bool(node.get_meta(MAP_CAN_OVERLAP_WATER_META, false)),
 		"properties": {},
 	}
 	node.set_meta("map_editor_uuid", record["uuid"])
@@ -5811,6 +6521,18 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"tile_spacing",
 		"field_owner",
 		"generate_on_ready",
+		"owner_team",
+		"tool_owner",
+		"auto_respawn",
+		"respawn_seconds",
+		"max_hp",
+		"spawner_id",
+		"team_id",
+		"member_roles",
+		"spawn_radius",
+		"target_marker_id",
+		"spawn_on_ready",
+		"target_id",
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
@@ -5905,6 +6627,19 @@ func _restore_object_records(records: Array) -> void:
 		node.set_meta("map_editor_asset_path", asset_path)
 		node.set_meta("map_editor_align_mode", str(record.get("align_mode", "surface_normal")))
 		node.set_meta("map_editor_ground_offset", float(record.get("ground_offset", placed_object_ground_offset)))
+		if category in ["building", "facility"]:
+			node.set_meta(
+				MAP_CAN_OVERLAP_WATER_META,
+				bool(record.get("map_can_overlap_water", node.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
+			)
+		if category == "building":
+			node.set_meta("map_enterable", bool(record.get("map_enterable", node.get_meta("map_enterable", false))))
+		var facility_category := str(record.get("facility_category", ""))
+		var facility_id := str(record.get("facility_id", ""))
+		if not facility_category.is_empty():
+			node.set_meta("map_editor_facility_category", facility_category)
+		if not facility_id.is_empty():
+			node.set_meta("map_editor_facility_id", facility_id)
 		if not spawn_kind.is_empty():
 			node.set_meta("map_editor_spawn_kind", spawn_kind)
 
@@ -5923,7 +6658,11 @@ func _restore_object_records(records: Array) -> void:
 
 		if category == "spawn":
 			node.process_mode = Node.PROCESS_MODE_DISABLED
-			if spawn_kind == "wild_animal":
+			if spawn_kind == "squad_generator" and node is EnemySquadSpawner:
+				_add_squad_spawner_editor_marker(node as EnemySquadSpawner)
+			elif spawn_kind == "squad_target":
+				_add_spawn_editor_marker(node, Color(1.0, 0.88, 0.08, 1.0))
+			elif spawn_kind == "wild_animal":
 				_add_spawn_editor_marker(node, Color(0.2, 0.75, 1.0, 1.0))
 			elif spawn_kind == "team_red":
 				_add_spawn_editor_marker(node, Color(0.95, 0.2, 0.2, 1.0))
@@ -5944,6 +6683,8 @@ func _category_root_for_record(category: String) -> Node3D:
 		"ore":
 			return _ores_root
 		"building":
+			return _buildings_root
+		"facility":
 			return _buildings_root
 		"auxiliary":
 			return _buildings_root
@@ -6017,7 +6758,11 @@ func _apply_building_placement(center: Vector3) -> void:
 		_set_status("Building placement blocked: %s" % _building_preview_block_reason)
 		return
 	var scene_path = str(_selected_building_asset.get("path", ""))
-	if not scene_path.begins_with(BUILDINGS_RESOURCE_ROOT + "/") or scene_path.begins_with(BUILDINGS_EXCLUDED_ROOT + "/"):
+	var is_facility: bool = _tool_mode == ToolMode.FACILITY
+	var facility_category := str(_selected_building_asset.get("category", "")) if is_facility else ""
+	var valid_building_path := scene_path.begins_with(BUILDINGS_RESOURCE_ROOT + "/") and not scene_path.begins_with(BUILDINGS_EXCLUDED_ROOT + "/")
+	var valid_facility_path := not MAP_FACILITY_CATALOG.get_asset_by_path(scene_path).is_empty()
+	if (not is_facility and not valid_building_path) or (is_facility and not valid_facility_path):
 		_set_status("Rejected building path: %s" % scene_path)
 		return
 	var packed = _load_resource_or_null(scene_path) as PackedScene
@@ -6029,14 +6774,38 @@ func _apply_building_placement(center: Vector3) -> void:
 		_set_status("Building scene root is not Node3D: %s" % scene_path)
 		return
 	instance.name = "%s_%04d" % [str(_selected_building_asset.get("id", "building")).capitalize(), _next_object_id]
-	instance.set_meta("map_editor_category", "building")
+	instance.set_meta("map_editor_category", "facility" if is_facility else "building")
 	instance.set_meta("map_editor_asset_path", scene_path)
-	instance.set_meta("map_editor_uuid", _new_editor_uuid("building"))
+	instance.set_meta("map_editor_uuid", _new_editor_uuid("facility" if is_facility else "building"))
+	instance.set_meta(MAP_CAN_OVERLAP_WATER_META, bool(instance.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
+	if not is_facility:
+		instance.set_meta(
+			"map_enterable",
+			bool(instance.get_meta("map_enterable", false))
+				or _is_enterable_building_asset_path(scene_path)
+		)
+	if is_facility:
+		instance.set_meta("map_editor_facility_category", facility_category)
+		instance.set_meta("map_editor_facility_id", str(_selected_building_asset.get("id", "facility")))
+		if facility_category == "kitchen":
+			_set_property_if_present(instance, "owner_team", _selected_facility_team)
+		else:
+			_set_property_if_present(instance, "tool_owner", _selected_defense_team)
+			_set_property_if_present(instance, "auto_respawn", _selected_defense_auto_respawn)
+			_set_property_if_present(instance, "respawn_seconds", _selected_defense_respawn_seconds)
 	instance.set_meta("map_editor_align_mode", "upright")
 	instance.set_meta("map_editor_ground_offset", building_ground_offset)
+	var wall_snap := _resolve_editor_wall_snap(center, instance)
+	var placement_center := center
+	if bool(wall_snap.get("active", false)):
+		placement_center = wall_snap.get("position", center) as Vector3
 	_buildings_root.add_child(instance)
-	_place_map_object_at_terrain(instance, Vector2(center.x, center.z), _building_preview_yaw, false, building_ground_offset)
-	var validation = _validate_building_node(instance, instance)
+	_place_map_object_at_terrain(instance, Vector2(placement_center.x, placement_center.z), _building_preview_yaw, false, building_ground_offset)
+	var validation = _validate_building_node(
+		instance,
+		instance,
+		str(wall_snap.get("source_id", "")) if bool(wall_snap.get("active", false)) else ""
+	)
 	if not bool(validation.get("valid", false)):
 		_buildings_root.remove_child(instance)
 		instance.queue_free()
@@ -6045,7 +6814,7 @@ func _apply_building_placement(center: Vector3) -> void:
 	_stroke_added_objects.append(_serialize_editor_object(instance))
 	_next_object_id += 1
 	_stroke_placed_once = true
-	_set_status("Placed building: %s" % str(_selected_building_asset.get("label", instance.name)))
+	_set_status("Placed %s: %s" % ["facility" if is_facility else "building", str(_selected_building_asset.get("label", instance.name))])
 
 func _rebuild_building_preview() -> void:
 	_clear_building_preview()
@@ -6061,6 +6830,10 @@ func _rebuild_building_preview() -> void:
 	_prepare_editor_preview_scene(preview)
 	preview.name = "BuildingPlacementPreview"
 	preview.set_meta(EDITOR_MARKER_META, true)
+	if _tool_mode == ToolMode.FACILITY:
+		preview.set_meta("map_editor_category", "facility")
+		preview.set_meta("map_editor_facility_category", str(_selected_building_asset.get("category", "")))
+		preview.set_meta("map_editor_asset_path", path)
 	add_child(preview)
 	_building_preview = preview
 	_update_building_preview_from_latest_hit()
@@ -6118,16 +6891,83 @@ func _update_building_preview(center: Vector3) -> void:
 			_rebuild_building_preview()
 		if not is_instance_valid(_building_preview):
 			return
-	var world_xz = Vector2(center.x, center.z)
+	var wall_snap := _resolve_editor_wall_snap(center, _building_preview)
+	var placement_center := center
+	if bool(wall_snap.get("active", false)):
+		placement_center = wall_snap.get("position", center) as Vector3
+	var world_xz = Vector2(placement_center.x, placement_center.z)
 	_place_map_object_at_terrain(_building_preview, world_xz, _building_preview_yaw, false, building_ground_offset)
-	var validation = _validate_building_node(_building_preview, null)
+	var validation = _validate_building_node(
+		_building_preview,
+		null,
+		str(wall_snap.get("source_id", "")) if bool(wall_snap.get("active", false)) else ""
+	)
 	_building_preview_valid = bool(validation.get("valid", false))
 	_building_preview_block_reason = str(validation.get("reason", ""))
 	_building_preview.visible = true
 	_draw_building_footprint(_get_node_footprint_polygon(_building_preview), _building_preview_valid)
 	_brush_preview_material.albedo_color = Color(0.2, 1.0, 0.25, 0.95) if _building_preview_valid else Color(1.0, 0.1, 0.05, 0.95)
 
-func _validate_building_node(node: Node3D, ignore_node: Node3D) -> Dictionary:
+
+func _resolve_editor_wall_snap(requested_position: Vector3, wall_node: Node3D) -> Dictionary:
+	if _tool_mode != ToolMode.FACILITY or wall_node == null or not is_instance_valid(wall_node):
+		return {"active": false, "position": requested_position}
+	var wall_tool_id := str(_selected_building_asset.get("id", ""))
+	if PLACEMENT_QUERY_SCRIPT.wall_family_for_tool(wall_tool_id).is_empty():
+		wall_tool_id = PLACEMENT_QUERY_SCRIPT.wall_tool_id_for_scene(
+			str(_selected_building_asset.get("path", ""))
+		)
+	var wall_family := PLACEMENT_QUERY_SCRIPT.wall_family_for_tool(wall_tool_id)
+	if wall_family.is_empty():
+		return {"active": false, "position": requested_position}
+	var current_half_length := PLACEMENT_QUERY_SCRIPT.wall_half_length_for_node(wall_node)
+	if current_half_length <= 0.0:
+		return {"active": false, "position": requested_position}
+	var candidates := _collect_editor_wall_snap_candidates(wall_family, wall_node)
+	var snap := PLACEMENT_QUERY_SCRIPT.resolve_wall_endpoint_snap(
+		requested_position,
+		_building_preview_yaw,
+		current_half_length,
+		candidates,
+		PLACEMENT_QUERY_SCRIPT.WALL_SNAP_DISTANCE
+	)
+	if not bool(snap.get("active", false)):
+		snap["position"] = requested_position
+	return snap
+
+
+func _collect_editor_wall_snap_candidates(family: String, ignored_node: Node3D = null) -> Array:
+	var candidates: Array = []
+	if _buildings_root == null:
+		return candidates
+	for child_value: Variant in _buildings_root.get_children():
+		var node := child_value as Node3D
+		if node == null or not is_instance_valid(node) or node == ignored_node \
+				or bool(node.get_meta(EDITOR_MARKER_META, false)) \
+				or node.is_queued_for_deletion():
+			continue
+		var tool_id := PLACEMENT_QUERY_SCRIPT.wall_tool_id_for_scene(str(node.scene_file_path))
+		if tool_id.is_empty():
+			tool_id = str(node.get_meta("map_editor_facility_id", ""))
+		if PLACEMENT_QUERY_SCRIPT.wall_family_for_tool(tool_id) != family:
+			continue
+		var half_length := PLACEMENT_QUERY_SCRIPT.wall_half_length_for_node(node)
+		if half_length <= 0.0:
+			continue
+		var source_id := str(node.get_meta("map_editor_uuid", node.get_path()))
+		candidates.append({
+			"source_id": source_id,
+			"position": node.global_position,
+			"yaw": node.rotation.y,
+			"half_length": half_length,
+		})
+	return candidates
+
+func _validate_building_node(
+	node: Node3D,
+	ignore_node: Node3D,
+	ignored_wall_source_id := ""
+) -> Dictionary:
 	var polygon = _get_node_footprint_polygon(node)
 	if polygon.size() < 3:
 		return {"valid": false, "reason": "building has no usable visual bounds"}
@@ -6135,24 +6975,95 @@ func _validate_building_node(node: Node3D, ignore_node: Node3D) -> Dictionary:
 		if not _point_inside_map(corner, 0.05):
 			return {"valid": false, "reason": "footprint crosses the map boundary"}
 	var center_xz = Vector2(node.global_position.x, node.global_position.z)
-	if _is_point_in_water(center_xz, node.global_position.y):
-		return {"valid": false, "reason": "footprint is inside water"}
-	for corner in polygon:
-		if _is_point_in_water(corner, get_terrain_height_world(corner)):
-			return {"valid": false, "reason": "footprint overlaps water"}
+	if not _can_overlap_water(node):
+		if _is_point_in_water(center_xz, node.global_position.y):
+			return {"valid": false, "reason": "footprint is inside water"}
+		for corner in polygon:
+			if _is_point_in_water(corner, get_terrain_height_world(corner)):
+				return {"valid": false, "reason": "footprint overlaps water"}
 	var normal = get_terrain_normal_world(center_xz)
 	var slope_degrees = rad_to_deg(acos(clampf(normal.dot(Vector3.UP), -1.0, 1.0)))
 	if slope_degrees > building_max_slope_degrees:
 		return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [slope_degrees, building_max_slope_degrees]}
+	var allow_kitchen_inside_buildings := _is_kitchen_facility_node(node)
+	var require_enterable_building := _is_interior_facility_node(node)
+	var overlaps_enterable_building := false
 	for candidate in _get_building_overlap_candidates():
 		if candidate == ignore_node or not is_instance_valid(candidate):
+			continue
+		if not ignored_wall_source_id.is_empty() \
+				and str(candidate.get_meta("map_editor_uuid", candidate.get_path())) == ignored_wall_source_id:
 			continue
 		var candidate_polygon = _get_node_footprint_polygon(candidate)
 		if candidate_polygon.size() < 3:
 			continue
-		if _footprint_polygons_overlap(polygon, candidate_polygon, building_overlap_margin):
+		var overlaps_candidate := _footprint_polygons_overlap(polygon, candidate_polygon, building_overlap_margin)
+		if require_enterable_building and _is_enterable_building_node(candidate):
+			if overlaps_candidate:
+				overlaps_enterable_building = true
+			continue
+		if overlaps_candidate:
+			if allow_kitchen_inside_buildings and _is_enterable_building_node(candidate):
+				continue
 			return {"valid": false, "reason": "overlaps %s" % candidate.name}
+	if require_enterable_building and not overlaps_enterable_building:
+		return {"valid": false, "reason": "interior facility must overlap an enterable building"}
 	return {"valid": true, "reason": ""}
+
+
+func _is_kitchen_facility_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var category := str(node.get_meta("map_editor_category", ""))
+	var facility_category := str(node.get_meta("map_editor_facility_category", ""))
+	if node == _building_preview and category.is_empty():
+		category = "facility"
+		facility_category = str(_selected_building_asset.get("category", ""))
+	if category != "facility":
+		return false
+	if facility_category.is_empty():
+		facility_category = str(MAP_FACILITY_CATALOG.get_asset_by_path(
+			str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+		).get("category", ""))
+	return facility_category == "kitchen"
+
+
+func _is_interior_facility_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var category := str(node.get_meta("map_editor_category", ""))
+	var facility_category := str(node.get_meta("map_editor_facility_category", ""))
+	if node == _building_preview and category.is_empty():
+		category = "facility"
+		facility_category = str(_selected_building_asset.get("category", ""))
+	if category != "facility":
+		return false
+	if facility_category.is_empty():
+		facility_category = str(MAP_FACILITY_CATALOG.get_asset_by_path(
+			str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+		).get("category", ""))
+	return facility_category == "interior"
+
+
+func _can_overlap_water(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	return bool(node.get_meta(MAP_CAN_OVERLAP_WATER_META, false))
+
+
+func _is_enterable_building_asset_path(asset_path: String) -> bool:
+	return ENTERABLE_BUILDING_SCENE_PATHS.has(asset_path.to_lower())
+
+
+func _is_enterable_building_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node) \
+			or str(node.get_meta("map_editor_category", "")) != "building":
+		return false
+	if node.has_meta("map_enterable"):
+		return bool(node.get_meta("map_enterable", false))
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	return _is_enterable_building_asset_path(asset_path) \
+		or _is_enterable_building_asset_path(str(node.scene_file_path))
 
 
 func _get_building_overlap_candidates() -> Array[Node3D]:
@@ -6568,7 +7479,7 @@ func _update_selected_object_transform_validity() -> void:
 	_object_transform_valid = true
 	if not is_instance_valid(_selected_map_object):
 		return
-	if str(_selected_map_object.get_meta("map_editor_category", "")) == "building":
+	if str(_selected_map_object.get_meta("map_editor_category", "")) in ["building", "facility"]:
 		var validation = _validate_building_node(_selected_map_object, _selected_map_object)
 		_object_transform_valid = bool(validation.get("valid", false))
 		_draw_building_footprint(_get_node_footprint_polygon(_selected_map_object), _object_transform_valid)
@@ -6587,6 +7498,55 @@ func _handle_object_edit_left_press() -> void:
 		return
 	_select_map_object(picked)
 
+
+func _get_farmland_preview_rect_local(field: Node3D) -> Rect2:
+	if field == null or not _is_farmland(field):
+		return Rect2()
+	var length := maxi(1, int(_get_property_or(field, "length_tiles", _farmland_length_tiles)))
+	var width := maxi(1, int(_get_property_or(field, "width_tiles", _farmland_width_tiles)))
+	var spacing := float(_get_property_or(field, "tile_spacing", FARM_FIELD_TILE_SPACING))
+	if spacing <= 0.0:
+		spacing = FARM_FIELD_TILE_SPACING
+	var size := Vector2(float(length) * spacing, float(width) * spacing)
+	var center := Vector2(
+		float(length - 1) * spacing * 0.5,
+		float(width - 1) * spacing * 0.5
+	)
+	return Rect2(center - size * 0.5, size)
+
+
+func _pick_farmland_at_mouse(ray_origin: Vector3, ray_direction: Vector3) -> Node3D:
+	if _farmlands_root == null:
+		return null
+	var closest_field: Node3D = null
+	var closest_distance := INF
+	for child in _farmlands_root.get_children():
+		var field := child as Node3D
+		if field == null or not _is_farmland(field):
+			continue
+		var field_up := field.global_basis.y
+		if field_up.length_squared() <= 0.000001:
+			field_up = Vector3.UP
+		var hit: Variant = _intersect_ray_plane(
+			ray_origin,
+			ray_direction,
+			field.global_position,
+			field_up.normalized()
+		)
+		if hit == null:
+			continue
+		var hit_position := hit as Vector3
+		var local_position := field.to_local(hit_position)
+		if not _get_farmland_preview_rect_local(field).has_point(Vector2(local_position.x, local_position.z)):
+			continue
+		var distance := ray_origin.distance_to(hit_position)
+		if distance < 0.0 or distance >= closest_distance:
+			continue
+		closest_distance = distance
+		closest_field = field
+	return closest_field
+
+
 func _pick_editor_object_at_mouse() -> Node3D:
 	if _editor_camera == null:
 		return null
@@ -6604,6 +7564,13 @@ func _pick_editor_object_at_mouse() -> Node3D:
 		var root = _find_editable_object_root(collider)
 		if root != null:
 			return root
+
+	# Farmland is intentionally represented by an editor-only preview and has
+	# no runtime collision body. Pick the persistent rectangle directly so the
+	# Transform tool can select it anywhere inside the visible field area.
+	var farmland := _pick_farmland_at_mouse(ray_from, _editor_camera.project_ray_normal(mouse_position).normalized())
+	if farmland != null:
+		return farmland
 
 	var best: Node3D = null
 	var best_score = INF
@@ -6649,6 +7616,9 @@ func _get_all_editable_objects() -> Array[Node3D]:
 
 
 func _get_object_selection_center(node: Node3D) -> Vector3:
+	if _is_farmland(node):
+		var field_rect := _get_farmland_preview_rect_local(node)
+		return node.to_global(Vector3(field_rect.get_center().x, 0.05, field_rect.get_center().y))
 	var aabb = _calculate_node_aabb_relative_to(node, node)
 	if aabb.size.length_squared() <= 0.000001:
 		return node.global_position
@@ -6784,6 +7754,8 @@ func _apply_object_transform_by_uuid(uuid: String, transform_value: Transform3D)
 	if node == null:
 		return
 	node.transform = transform_value
+	if _is_farmland(node):
+		_refresh_farmland_preview(node)
 	if node == _selected_map_object:
 		_refresh_selection_visual()
 		_refresh_transform_gizmo()
@@ -6807,6 +7779,8 @@ func _delete_selected_object() -> void:
 	_undo_redo.commit_action(false)
 	_rebuild_resource_multimeshes_deferred()
 	_rebuild_power_wires()
+	if _tool_mode == ToolMode.OBJECT_EDIT:
+		_refresh_bottom_dock()
 
 
 func _duplicate_selected_object() -> void:
@@ -6815,6 +7789,12 @@ func _duplicate_selected_object() -> void:
 	var record = _serialize_editor_object(_selected_map_object)
 	record["uuid"] = _new_editor_uuid(str(record.get("category", "object")))
 	record["name"] = "%s_Copy" % str(record.get("name", "MapObject"))
+	if _selected_map_object is EnemySquadSpawner:
+		var properties := record.get("properties", {}) as Dictionary
+		properties["spawner_id"] = "%s_copy_%s" % [
+			str(properties.get("spawner_id", "squad_spawner")),
+			str(record["uuid"]).right(6),
+		]
 	var transform_value = record.get("transform", Transform3D.IDENTITY) as Transform3D
 	var local_aabb = _calculate_node_aabb_relative_to(_selected_map_object, _selected_map_object)
 	var offset_distance = maxf(1.0, local_aabb.size.x + building_overlap_margin + 0.5)
@@ -7212,6 +8192,7 @@ func _update_map_metadata_before_save() -> void:
 	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
 	_map_root.set_meta("integrated_systems", [
 		"explicit_ground_static_body",
+		"dynamic_navigation_chunk_grid_64m",
 		"dynamic_height_terrain",
 		"terrain_foundation_and_skirt",
 		"surface_mask",
@@ -7231,6 +8212,11 @@ func _update_map_metadata_before_save() -> void:
 		"object_transform_editor",
 		"farmland_field_generator",
 		"neutral_crop_generator",
+		"facility_catalog",
+		"static_kitchen_facilities",
+		"static_defense_facilities",
+		"enemy_squad_generators",
+		"persistent_squad_target_points",
 	])
 
 
@@ -7322,10 +8308,14 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"ore_count": _ores_root.get_child_count(),
 			"spawn_count": _spawns_root.get_child_count(),
 			"building_count": _buildings_root.get_child_count(),
+			"facility_count": _count_map_facilities(),
+			"kitchen_facility_count": _count_map_facilities("kitchen"),
+			"defense_facility_count": _count_map_facilities("defense"),
 			"farmland_count": _farmlands_root.get_child_count(),
 			"neutral_crop_generator_count": _count_neutral_crop_generators(),
 			"ai_configuration": _ai_configurations.duplicate(true),
 			"ai_count": _ai_configurations.size(),
+			"squad_generator_count": _get_editor_squad_spawners().size(),
 		},
 		"features": {
 			"building_placement_enabled": true,
@@ -7337,6 +8327,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
 			"size_aware_far_scenery": true,
 			"water_bodies_enabled": true,
+			"enemy_squad_generators_enabled": true,
 		},
 	}
 
@@ -7610,6 +8601,8 @@ func open_map_package(manifest_path: String) -> void:
 	_load_surface_mask_sidecar(_current_map_folder.path_join(str(terrain_data.get("surface_mask", "surface_mask.png"))))
 	_load_manual_grass_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("manual_grass", "manual_grass.dat"))))
 	_load_editor_objects_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("editor_objects", EDITOR_OBJECTS_FILE_NAME))))
+	_selected_squad_spawner_index = 0 if not _get_editor_squad_spawners().is_empty() else -1
+	_selected_squad_member_index = 0
 	_recalculate_loaded_object_counters()
 	_load_roads_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("roads", ROADS_FILE_NAME))))
 	_load_water_bodies_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("water_bodies", WATER_BODIES_FILE_NAME))))
@@ -8172,6 +9165,18 @@ func _count_neutral_crop_generators() -> int:
 	var count := 0
 	for child in _buildings_root.get_children():
 		if child is Node3D and _is_neutral_crop_generator(child as Node3D):
+			count += 1
+	return count
+
+
+func _count_map_facilities(category := "") -> int:
+	if _buildings_root == null:
+		return 0
+	var count := 0
+	for child in _buildings_root.get_children():
+		if not child is Node3D or str(child.get_meta("map_editor_category", "")) != "facility":
+			continue
+		if category.is_empty() or str(child.get_meta("map_editor_facility_category", "")) == category:
 			count += 1
 	return count
 

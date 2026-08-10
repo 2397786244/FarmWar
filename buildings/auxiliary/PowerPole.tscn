@@ -9,6 +9,7 @@ height = 8.0
 size = Vector3(3, 0.5, 1)
 
 [node name="PowerPole" type="StaticBody3D" unique_id=1063295051]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 

@@ -626,7 +626,11 @@ func _simulate_drive(move_input: Vector2, delta: float) -> void:
 	if horizontal_direction.length_squared() > 1.0:
 		horizontal_direction = horizontal_direction.normalized()
 
-	var target_planar_velocity: Vector3 = horizontal_direction * drive_speed
+	var target_planar_velocity: Vector3 = horizontal_direction * drive_speed * GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		tool_owner,
+		"remote"
+	)
 	var current_planar_velocity: Vector3 = Vector3(
 		velocity.x,
 		0.0,

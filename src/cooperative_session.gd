@@ -705,6 +705,10 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 			GameAuthority.server_vehicle_session(sender_id, str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
 		"team_chat":
 			GameAuthority.server_team_chat(sender_id, str(payload.get("message", "")), str(payload.get("scope", "team")))
+		"gate_action":
+			GameAuthority.server_gate_action(sender_id, payload)
+		"ladder_action":
+			GameAuthority.server_ladder_action(sender_id, payload)
 
 
 @rpc("authority", "call_remote", "reliable", 1)
@@ -911,8 +915,12 @@ func _send_hit_confirmation_to_peer(peer_id: int, event: Dictionary) -> void:
 
 
 func _broadcast_visual_event(event: Dictionary) -> void:
-	if is_host():
-		receive_visual_event.rpc(event)
+	if not is_host():
+		return
+	# call_remote does not execute on the listen-server host. Feed the same
+	# event into the local visual path so the host sees tracers/effects too.
+	MultiplayerNetwork.visual_world_event_received.emit(event)
+	receive_visual_event.rpc(event)
 
 
 func _broadcast_player_correction(peer_id: int, correction: Dictionary) -> void:
@@ -1724,6 +1732,10 @@ func _capture_persistent_world_state() -> Dictionary:
 		var state := (state_value as Dictionary).duplicate(true)
 		if bool(state.get("free_placement", false)) \
 				or str(state.get("tool_name", "")) == "cargo_crate":
+			var tool_node: Variant = GameAuthority.call("_node_for_tool_ref", {"kind": "placed", "id": str(state.get("tool_id", ""))})
+			if tool_node is WireMeshGate:
+				state["is_open"] = (tool_node as WireMeshGate).is_open
+				state["open_angle_degrees"] = (tool_node as WireMeshGate).open_angle_degrees
 			placed_tools.append(state)
 	for node in get_tree().get_nodes_in_group("cargo_crates"):
 		if not node is CargoCrateGround:
@@ -1758,14 +1770,16 @@ func _capture_persistent_world_state() -> Dictionary:
 func _capture_persistent_station_states() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	var groups := [
-		"chopping_stations", "ingredient_extractors", "auto_cookers", "stand_mixers",
+		"ingredient_pickups", "chopping_stations", "ingredient_extractors", "auto_cookers", "stand_mixers",
 		"oven_stations", "smoker_stations", "freezer_stations", "griddle_stations",
 		"induction_counters", "plating_stations", "livestock_chops",
 	]
 	for group_name: String in groups:
 		for node in get_tree().get_nodes_in_group(group_name):
 			var state: Dictionary = {}
-			if node.has_method("get_station_state"):
+			if node.has_method("get_staged_state"):
+				state = node.call("get_staged_state") as Dictionary
+			elif node.has_method("get_station_state"):
 				state = node.call("get_station_state") as Dictionary
 			elif node.has_method("get_extractor_state"):
 				state = node.call("get_extractor_state") as Dictionary
@@ -1776,6 +1790,7 @@ func _capture_persistent_station_states() -> Array[Dictionary]:
 			elif node.has_method("get_chop_state"):
 				state = node.call("get_chop_state") as Dictionary
 			if not state.is_empty():
+				state["facility_id"] = str(node.get_meta("network_map_facility_id", ""))
 				entries.append({"group": group_name, "state": state})
 	return entries
 
@@ -1904,11 +1919,15 @@ func _restore_persistent_tools(value: Variant) -> void:
 				(node as CargoCrateGround).setup_crate(crate_data as Dictionary)
 			GameAuthority.register_map_cargo_crate(node as CargoCrateGround)
 		else:
-			node.set("tool_owner", str(state.get("team", "red")))
+			if GameAuthority.has_method("_node_has_property") \
+					and bool(GameAuthority.call("_node_has_property", node, "tool_owner")):
+				node.set("tool_owner", str(state.get("team", "red")))
 			if node is KitchenAppliance:
 				(node as KitchenAppliance).owner_team = str(state.get("team", "red"))
 			if node.has_method("activate_tool"):
 				node.call("activate_tool")
+			if node is WireMeshGate:
+				(node as WireMeshGate).apply_network_state(state)
 			GameAuthority.register_map_placed_tool(
 				node, str(state.get("tool_name", "")), tool_id, str(state.get("team", "red"))
 			)
@@ -1960,7 +1979,9 @@ func _restore_persistent_stations(value: Variant) -> void:
 		var station := _find_station_for_restore(str(entry.get("group", "")), state)
 		if station == null:
 			continue
-		if station.has_method("apply_authoritative_station_state"):
+		if station.has_method("apply_authoritative_staged_state"):
+			station.call("apply_authoritative_staged_state", state)
+		elif station.has_method("apply_authoritative_station_state"):
 			station.call("apply_authoritative_station_state", state)
 		elif station.has_method("apply_authoritative_extractor_state"):
 			station.call("apply_authoritative_extractor_state", state)
@@ -2006,6 +2027,11 @@ func _find_livestock_for_restore(animal_id: String) -> FarmLivestock:
 
 
 func _find_station_for_restore(group_name: String, state: Dictionary) -> Node:
+	var facility_id := str(state.get("facility_id", ""))
+	if not facility_id.is_empty():
+		for facility_value: Variant in get_tree().get_nodes_in_group("network_map_facilities"):
+			if facility_value is Node and str((facility_value as Node).get_meta("network_map_facility_id", "")) == facility_id:
+				return facility_value as Node
 	var path_text := str(state.get("station_path", ""))
 	var direct := get_node_or_null(NodePath(path_text))
 	if direct != null:

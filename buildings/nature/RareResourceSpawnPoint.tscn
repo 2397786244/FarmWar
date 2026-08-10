@@ -3,4 +3,5 @@
 [ext_resource type="Script" path="res://src/rare_resource_spawn_point.gd" id="1_point"]
 
 [node name="RareResourceSpawnPoint" type="Marker3D"]
+metadata/map_can_overlap_water = false
 script = ExtResource("1_point")

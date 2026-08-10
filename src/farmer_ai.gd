@@ -1384,13 +1384,19 @@ func _update_movement(delta: float) -> void:
 
 
 func _apply_movement(direction: Vector3, delta: float) -> void:
-	var horizontal_step := direction * move_speed + knockback_velocity
+	var speed_multiplier := GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team_id,
+		"ai"
+	)
+	var effective_move_speed := move_speed * speed_multiplier
+	var horizontal_step := direction * effective_move_speed + knockback_velocity
 	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
 	if WaterBody3D.is_navigation_blocked(proposed):
 		# Do not let patrol or flee movement enter water; NavigationObstacle3D
 		# handles path planning, this guard covers direct movement/knockback.
 		direction = Vector3.ZERO
-	var desired_velocity := direction * move_speed + knockback_velocity
+	var desired_velocity := direction * effective_move_speed + knockback_velocity
 	knockback_velocity = knockback_velocity.move_toward(Vector3.ZERO, 18.0 * delta)
 
 	velocity.x = move_toward(

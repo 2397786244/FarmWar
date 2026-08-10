@@ -25,17 +25,17 @@ class_name FutureWarriorAI
 ## - res://character/hero_skeleton/enemy/future_warrior.tscn
 ##
 ## 初始装备：
-## - AR15
+## - FutureM4
 ## - SuppressedPistol
 ## - 2 枚 Grenade
 ##
 ## 行为：
 ## - 沿导航路径前往敌方农场，并以扇形视锥左右搜索敌方玩家。
 ## - 不种地、不收获、不放置农场工具。
-## - 中远距离 AR15 点射。
-## - 近距离自动切换 SuppressedPistol。
-## - 合适时投掷手雷。
-## - 受伤时进行战术撤退，并在撤退时用手枪还击。
+## - 默认使用 FutureM4；主武器弹匣打空且仍在交火时才切换 SuppressedPistol。
+## - 两把武器弹匣都打空时切回 FutureM4 换弹。
+## - 每次锁定新的交火目标时尝试投掷一枚手雷，每人最多 2 枚。
+## - 受伤时立即锁定、转向并反击实际攻击者。
 ##
 ## 兼容项目已有接口：
 ## - get_combat_team()
@@ -76,6 +76,10 @@ enum GrenadeMode {
 
 const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const INVALID_POSITION := Vector3(INF, INF, INF)
+const SquadMessageTypes := preload("res://src/squad_message.gd")
+
+## 仅供本地调试/测试界面监听；导航刷新不会进入 Squad 通信频道。
+signal navigation_path_refreshed(chunk_ids: Array, was_stuck: bool)
 
 
 # ------------------------------------------------------------------
@@ -104,13 +108,13 @@ var future_warrior_scene_path: String = \
 
 ## 优先从 tool_definitions.json 中按 ID 查找。
 ## 找不到时使用下面的 fallback scene path。
-@export var ar15_tool_id: String = "ar15"
+@export var ar15_tool_id: String = "future_m4"
 @export var suppressed_pistol_tool_id: String = "suppressed_pistol"
 @export var grenade_tool_id: String = "grenade"
 
 @export_file("*.tscn")
 var ar15_scene_path: String = \
-	"res://character/weapons/AR15.tscn"
+	"res://character/weapons/FutureM4.tscn"
 
 @export_file("*.tscn")
 var suppressed_pistol_scene_path: String = \
@@ -158,10 +162,25 @@ var respawn_seconds: float = 10.0
 ## Optional map-assigned spawn. Empty means a random spawn point in team_id.
 @export var spawn_point_id: String = ""
 
+## 可选战略目标。设置后，搜索阶段前往并巡逻该目标；为空时使用敌方出生点。
+@export var target: Node3D
+
 ## 子弹没有公开 damage/bullet_damage 属性时使用。
 @export var default_bullet_damage: float = 12.0
 @export var color_bullet_damage: float = 15.0
 @export var explosion_damage_multiplier: float = 1.0
+
+@export_category("Death Drop")
+
+## FutureWarrior/FutureEngineer 共用的现金掉落规则。
+@export_range(0.0, 1.0, 0.05)
+var cash_drop_chance := 0.5
+
+@export_range(1, 1000000, 1)
+var cash_drop_minimum := 50
+
+@export_range(1, 1000000, 1)
+var cash_drop_maximum := 300
 
 ## 每次受伤后是否触发短暂撤退。
 @export var flee_on_any_damage: bool = true
@@ -214,11 +233,29 @@ var low_health_flee_ratio: float = 0.38
 @export var strafe_change_min: float = 0.8
 @export var strafe_change_max: float = 1.7
 
-## 地图有 NavigationRegion3D 时使用导航。
-## 没有有效导航地图时自动回退到直线移动 + RayCast 避障。
+## 地图有 NavigationRegion3D 时优先使用导航；未接入 Squad 的旧式 AI
+## 才在导航不可用时回退到直线移动 + RayCast 避障。
 @export var use_navigation_agent: bool = true
 
+## 启用 NavigationAgent3D 的 RVO 局部速度避让。
+## 这不会改变导航路径，角色仍必须使用 velocity_computed 返回的安全速度移动。
+@export var navigation_avoidance_enabled: bool = true
+@export var navigation_avoidance_neighbor_distance: float = 8.0
+@export_range(1, 16, 1)
+var navigation_avoidance_max_neighbors: int = 8
+
 @export var navigation_refresh_interval: float = 0.18
+
+
+@export_category("Grenade Avoidance")
+
+## 手雷当前坐标进入爆炸半径外的这段缓冲区后，AI开始主动规避。
+@export var grenade_avoidance_trigger_margin: float = 2.0
+## AI 需要离开爆炸半径再加这一段余量，才算到达安全距离。
+@export var grenade_avoidance_safe_margin: float = 1.5
+## 到达安全距离后继续保持规避覆盖至少 5 秒，期间仍照常攻击/反击。
+@export var grenade_avoidance_resume_delay: float = 5.0
+@export var grenade_avoidance_repath_interval: float = 0.25
 
 @export_category("Farm Search And Vision")
 
@@ -243,16 +280,73 @@ var low_health_flee_ratio: float = 0.38
 
 
 # ------------------------------------------------------------------
-# AR15
+# Squad communication
 # ------------------------------------------------------------------
 
-@export_category("AR15")
+@export_category("Squad Communication")
+
+@export var squad_demolition_probe_distance := 3.0
+@export var squad_demolition_request_cooldown := 0.75
+## 进入 COMBAT 后首次立即请求；之后每 10 秒最多重复一次。
+@export var squad_support_request_cooldown := 10.0
+@export var squad_support_timeout := 12.0
+## 响应支援时走到支援点附近 2.5m，再进入支援观察窗口。
+@export var squad_support_arrival_distance := 2.5
+@export var squad_support_wait_seconds := 10.0
+@export var squad_support_max_response_distance := 50.0
+## 只有远距离且明显偏离当前战略 target 的支援请求才会被忽略。
+@export_range(0.0, 180.0, 1.0) var squad_support_max_off_target_angle_degrees := 120.0
+@export var squad_warning_retreat_seconds := 12.0
+## 收到 Squad 的“这里将要爆破请撤退”后，至少撤离到爆炸点 10m 外。
+@export var squad_warning_retreat_distance := 10.0
+@export var squad_minimum_member_distance := 2.0
+@export_range(0.0, 1.0, 0.05) var squad_separation_weight := 0.35
+
+## Squad 成员在推进状态下连续一段时间没有向当前行为目标取得有效进展时，
+## 判定可能被障碍、边界或队友卡住。除了位移，还会检查目标距离、来回振荡
+## 和 move_and_slide 的墙体碰撞，避免小范围来回移动一直被当成正常前进。
+@export var squad_stuck_detection_seconds := 2.0
+## 保留旧字段作为“窗口内有效目标进展”的兼容配置。
+@export var squad_stuck_min_progress := 1.5
+## 目标距离至少减少这么多才算有效推进；小于这个值时继续检查阻挡/振荡。
+@export var squad_stuck_min_goal_progress := 0.75
+## 窗口内实际移动少于这个距离时，即使没有报告碰撞也视为疑似卡住。
+@export var squad_stuck_min_actual_motion := 0.65
+## 持续碰撞超过这个时间后可直接确认卡住，不必等完整窗口结束。
+@export var squad_stuck_blocked_seconds := 0.45
+## 实际路程明显大于净位移时，判定为来回振荡。
+@export_range(0.1, 0.95, 0.05) var squad_stuck_oscillation_ratio := 0.45
+## 卡住状态持续 10 秒后执行一次随机方向脱困。
+@export var squad_stuck_escape_after_seconds := 10.0
+@export var squad_escape_distance := 5.0
+@export var squad_escape_duration := 5.0
+@export var squad_entry_arrival_distance := 1.1
+## 入口消息先到、队员稍后才卡住时仍保留这条消息一段时间。
+@export var squad_entry_message_lifetime := 30.0
+## 炸弹警告撤退被碰撞卡住时，先用随机方向脱离队员/墙体拥挤区域。
+@export var squad_warning_stuck_after_seconds := 1.5
+@export var squad_warning_escape_duration := 3.0
+
+## 从 COMBAT 转为 CHASE 后，最多离开交火点 20m；超过后放弃追击并恢复 target。
+@export var chase_max_distance_from_engagement := 20.0
+
+
+# ------------------------------------------------------------------
+# FutureM4
+# ------------------------------------------------------------------
+
+@export_category("FutureM4")
 
 @export var ar15_min_range: float = 5.5
 @export var ar15_max_range: float = 34.0
 
 ## 最小射击间隔。即使 JSON cooldown 更小，也不会快于该值。
 @export var ar15_fire_interval: float = 0.11
+
+## tool_definitions.json 缺失弹药字段时使用的后备值。
+@export_range(1, 200, 1) var ar15_magazine_size: int = 60
+@export_range(0, 1000, 1) var ar15_initial_reserve_ammo: int = 200
+@export var ar15_reload_time: float = 2.0
 
 @export_range(1, 12, 1)
 var ar15_burst_size: int = 5
@@ -269,6 +363,9 @@ var ar15_burst_size: int = 5
 @export var pistol_switch_distance: float = 7.0
 @export var pistol_max_range: float = 13.0
 @export var pistol_fire_interval: float = 0.28
+@export_range(1, 200, 1) var pistol_magazine_size: int = 30
+@export_range(0, 1000, 1) var pistol_initial_reserve_ammo: int = 200
+@export var pistol_reload_time: float = 1.5
 
 
 # ------------------------------------------------------------------
@@ -301,8 +398,9 @@ var ar15_burst_size: int = 5
 
 @export var grenade_friendly_safety_radius: float = 5.0
 
+## 保留该字段兼容旧场景；新逻辑不再随机掷雷，而是在新交火开始时确定性尝试一次。
 @export_range(0.0, 1.0, 0.01)
-var grenade_use_chance: float = 0.72
+var grenade_use_chance: float = 1.0
 
 ## 投射物手雷推荐实现：
 ## launch(initial_velocity: Vector3, owner_team: String)
@@ -315,9 +413,9 @@ var grenade_use_chance: float = 0.72
 
 @export_category("Runtime Collision")
 
-## 与现有玩家/AI CharacterBody3D 设置一致。
+## Character 层为 8；mask 额外包含工具层 128，使其能够阻挡已放置的防御墙。
 @export var body_collision_layer: int = 8
-@export var body_collision_mask: int = 519
+@export_flags_3d_physics var body_collision_mask: int = 647
 
 ## 与现有玩家/AI Hit3D 设置一致。
 @export var hit_area_collision_layer: int = 0
@@ -369,6 +467,10 @@ var right_probe: RayCast3D
 
 var navigation_agent: NavigationAgent3D
 
+## NavigationAgent3D 的 RVO 回调结果在下一次物理移动中使用。
+var _avoidance_safe_velocity := Vector3.ZERO
+var _avoidance_safe_velocity_valid := false
+
 var hit_3d: Area3D
 var hit_collision_shape: CollisionShape3D
 
@@ -398,12 +500,18 @@ var was_on_floor: bool = true
 # ------------------------------------------------------------------
 
 var weapon_data: Dictionary = {}
+## 每个武器槽独立保存弹匣、备用弹药和换弹配置；切枪不会重置弹药。
+var weapon_ammo: Dictionary = {}
 
 var current_weapon_slot: int = -1
 var held_weapon: Node3D
+var reloading_weapon_slot: int = -1
+var weapon_reload_timer: float = 0.0
 
 var grenade_data: Dictionary = {}
 var grenades_remaining: int = 0
+var engagement_grenade_target_id: int = 0
+var engagement_grenade_pending: bool = false
 
 var fire_timer: float = 0.0
 var grenade_timer: float = 0.0
@@ -423,6 +531,8 @@ var target_player: CharacterBody3D
 var last_known_target_position: Vector3 = INVALID_POSITION
 var retaliation_target: CharacterBody3D
 var retaliation_timer: float = 0.0
+var combat_engagement_point: Vector3 = INVALID_POSITION
+var combat_engagement_target_id: int = 0
 
 var target_refresh_timer: float = 0.0
 var navigation_refresh_timer: float = 0.0
@@ -437,6 +547,13 @@ var flee_timer: float = 0.0
 var flee_retrigger_timer: float = 0.0
 var low_health_flee_used: bool = false
 
+var _grenade_avoidance_active := false
+var _grenade_avoidance_safe_elapsed := 0.0
+var _grenade_avoidance_repath_timer := 0.0
+var _grenade_avoidance_center := INVALID_POSITION
+var _grenade_avoidance_radius := 0.0
+var _grenade_avoidance_direction := Vector3.ZERO
+
 var damage_memory_timer: float = 0.0
 var recent_damage: float = 0.0
 var last_damage_source_position: Vector3 = INVALID_POSITION
@@ -448,6 +565,48 @@ var jump_timer: float = 0.0
 
 var rubber_knockback: Vector3 = Vector3.ZERO
 var rng := RandomNumberGenerator.new()
+var _fallback_strategic_target: Node3D
+
+var squad: Node
+var squad_member_id := ""
+var squad_ai_type := "future_warrior"
+var squad_communicator: Node
+var external_respawn_controller: Node
+var last_squad_message_text := ""
+var last_squad_message_type := -1
+var _squad_demolition_probe_timer := 0.0
+var _squad_support_request_timer := 0.0
+var _squad_support_request_id := ""
+var _squad_support_position := INVALID_POSITION
+var _squad_support_timer := 0.0
+var _squad_support_hold_timer := 0.0
+var _squad_support_arrived := false
+var _squad_support_broadcast_active := false
+var _squad_support_pending_after_bullet := false
+var _squad_warning_position := INVALID_POSITION
+var _squad_warning_radius := 0.0
+var _squad_warning_timer := 0.0
+var _squad_stuck := false
+var _squad_stuck_elapsed := 0.0
+var _squad_progress_window_elapsed := 0.0
+var _squad_progress_anchor := INVALID_POSITION
+var _squad_tracking_goal := INVALID_POSITION
+var _squad_window_travel_distance := 0.0
+var _squad_blocked_elapsed := 0.0
+var _squad_navigation_retry_timer := 0.0
+var _navigation_using_direct_fallback := false
+var _squad_entry_waypoint := INVALID_POSITION
+var _squad_entry_request_id := ""
+var _squad_pending_entry_position := INVALID_POSITION
+var _squad_pending_entry_request_id := ""
+var _squad_pending_entry_msec := 0
+var _squad_escape_waypoint := INVALID_POSITION
+var _squad_escape_direction := Vector3.ZERO
+var _squad_escape_timer := 0.0
+var _squad_warning_progress_anchor := INVALID_POSITION
+var _squad_warning_no_progress_elapsed := 0.0
+var _squad_warning_escape_direction := Vector3.ZERO
+var _squad_warning_escape_timer := 0.0
 
 
 # ------------------------------------------------------------------
@@ -470,8 +629,9 @@ func _ready() -> void:
 	_create_required_runtime_nodes()
 	_load_future_warrior_appearance()
 	_load_starting_loadout()
+	_initialize_weapon_ammo()
 
-	## 出生后直接手持 AR15；若资源路径错误则退回消音手枪。
+	## 出生后直接手持 FutureM4；若资源路径错误则退回消音手枪。
 	if not _equip_weapon(WeaponSlot.AR15):
 		_equip_weapon(WeaponSlot.SUPPRESSED_PISTOL)
 
@@ -490,6 +650,10 @@ func _process(delta: float) -> void:
 	if state == AIState.DEAD:
 		return
 
+	## 状态和最近一条 Squad 消息需要在状态切换后立即反映到头顶 Label3D；
+	## 这里也覆盖多人客户端收到 apply_network_state 后的显示更新。
+	_update_health_label()
+
 	## 与 player.gd 一致：
 	## 先更新上半身瞄准和 IK，再执行枪械基准矫正。
 	_update_upper_body_aim(delta)
@@ -504,7 +668,44 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_update_timers(delta)
+	_squad_navigation_retry_timer = maxf(
+		0.0,
+		_squad_navigation_retry_timer - delta
+	)
+	## target 始终保持为 Node3D；未配置时创建指向敌方随机出生点的 fallback。
+	## FutureEngineerAI 覆盖了这个方法，因此会继续使用 Engineer 自己的实现。
+	_ensure_strategic_target()
 	_refresh_target()
+	if not _is_valid_target(target_player):
+		_maintain_out_of_combat_loadout()
+	_update_squad_obstacle_reporting()
+
+	## 手雷规避是移动覆盖层，不切换 COMBAT/SEARCH 状态，也不清除 target。
+	## 因而下面的原有攻击、换弹、反击和角色专属逻辑仍会继续执行。
+	_update_grenade_avoidance(delta)
+	if _grenade_avoidance_active:
+		_maintain_combat_during_grenade_avoidance()
+
+	## 爆破警告撤退是 Squad 成员的最高优先级；但放置炸药的 Engineer
+	## 使用自己的 RETREAT_FROM_EXPLOSIVE 状态，因此不会依赖这里。
+	if _squad_warning_can_override_role_behavior() and _update_squad_warning_retreat(delta):
+		return
+
+	## 10 秒仍未恢复移动时，先执行一次随机方向脱困，再恢复原 target。
+	if _update_squad_escape(delta):
+		return
+
+	## 角色专属行为可以在这里接管本帧移动。FutureEngineer 使用这个钩子
+	## 插入爆破流程，同时继续复用本类的目标刷新、导航、移动和战斗接口。
+	if _update_role_specific_behavior(delta):
+		return
+
+	## 只有已经判定卡住的成员才响应“这里有入口”；正常经过的成员忽略该消息。
+	if _update_squad_entry_waypoint(delta):
+		return
+
+	if _update_squad_support(delta):
+		return
 
 	var move_direction := Vector3.ZERO
 	var move_speed := combat_move_speed
@@ -541,6 +742,570 @@ func _has_simulation_authority() -> bool:
 		return true
 
 	return multiplayer.is_server()
+
+
+## 子类角色可以在这里接管本帧 AI 行为；普通 FutureWarrior 不接管。
+## 返回 true 表示子类已经完成本帧移动/行为处理。
+func _update_role_specific_behavior(_delta: float) -> bool:
+	return false
+
+
+# ------------------------------------------------------------------
+# Squad membership and communication
+# ------------------------------------------------------------------
+
+func configure_squad_membership(
+	value_squad: Node,
+	member_id: String,
+	ai_type: String,
+	communicator: Node
+) -> void:
+	squad = value_squad
+	squad_member_id = member_id
+	squad_ai_type = ai_type
+	squad_communicator = communicator
+	last_squad_message_text = ""
+	last_squad_message_type = -1
+	_debug("joined squad=%s member=%s type=%s" % [value_squad.name, member_id, ai_type])
+
+
+func set_squad(value: Node) -> void:
+	squad = value
+
+
+func set_external_respawn_controller(value: Node) -> void:
+	external_respawn_controller = value
+
+
+func is_eliminated_for_squad_batch() -> bool:
+	return state == AIState.DEAD
+
+
+func send_squad_message(type: int, payload: Dictionary = {}, reply_to := "") -> Dictionary:
+	if not is_instance_valid(squad_communicator):
+		return {"accepted": false, "reason": "not_in_squad"}
+	return squad_communicator.send_message(type, payload, reply_to)
+
+
+## 由 SquadCommunicator 在频道实际广播后调用。
+## 只记录 sender_member_id 等于本 AI 的消息，收到队友消息不会覆盖自己的最近发布记录。
+func record_squad_message(message: Dictionary) -> void:
+	if squad_member_id.is_empty():
+		return
+	if str(message.get("sender_member_id", "")) != squad_member_id:
+		return
+	last_squad_message_type = int(message.get("type", -1))
+	last_squad_message_text = SquadMessageTypes.type_name(last_squad_message_type)
+	_update_health_label()
+
+
+func _last_squad_message_label() -> String:
+	return last_squad_message_text if not last_squad_message_text.is_empty() else "无"
+
+
+func _status_label_text() -> String:
+	match state:
+		AIState.SEARCH:
+			return "SEARCH"
+		AIState.CHASE:
+			return "CHASE"
+		AIState.COMBAT:
+			return "COMBAT"
+		AIState.FLEE:
+			return "FLEE"
+		AIState.DEAD:
+			return "DEAD"
+	return "UNKNOWN"
+
+
+func _squad_stuck_label_text() -> String:
+	return "是" if _squad_stuck else "否"
+
+
+func receive_squad_message(message: Dictionary) -> void:
+	if state == AIState.DEAD:
+		return
+	var type := int(message.get("type", -1))
+	var payload: Dictionary = message.get("payload", {})
+	var request_id := str(message.get("request_id", ""))
+	match type:
+		SquadMessageTypes.Type.SET_TARGET:
+			var new_target := payload.get("target") as Node3D
+			if is_instance_valid(new_target):
+				set_strategic_target(new_target)
+				enemy_farm_position = INVALID_POSITION
+				farm_patrol_position = INVALID_POSITION
+				navigation_refresh_timer = 0.0
+		SquadMessageTypes.Type.DEMOLITION_REQUEST:
+			_try_claim_squad_demolition(request_id)
+		SquadMessageTypes.Type.DEMOLITION_WARNING:
+			if str(message.get("sender_member_id", "")) != squad_member_id:
+				_receive_squad_demolition_warning(payload)
+		SquadMessageTypes.Type.ENTRY_FOUND:
+			if str(message.get("sender_member_id", "")) != squad_member_id:
+				_receive_squad_entry_found(payload, request_id)
+		SquadMessageTypes.Type.SUPPORT_REQUEST:
+			var support_position: Vector3 = payload.get("position", INVALID_POSITION)
+			_try_claim_squad_support(request_id, support_position)
+
+
+func _try_claim_squad_demolition(request_id: String) -> void:
+	if request_id.is_empty() or not has_method("is_available_for_demolition"):
+		return
+	## 频道重新开放任务时，原持有者会先完成本地清理；避免在同一调用栈中立刻抢回。
+	if get("squad_demolition_request_id") == request_id:
+		return
+	if not call("is_available_for_demolition"):
+		return
+	var result := send_squad_message(SquadMessageTypes.Type.DEMOLITION_CLAIM, {"member_id": squad_member_id}, request_id)
+	if not bool(result.get("accepted", false)):
+		return
+	var task: Dictionary = result.get("task", {})
+	if has_method("accept_squad_demolition_task"):
+		call("accept_squad_demolition_task", request_id, task)
+
+
+func _try_claim_squad_support(request_id: String, support_position: Vector3) -> void:
+	if request_id.is_empty() or not _can_accept_squad_support():
+		return
+	if not support_position.is_finite():
+		return
+	var support_distance := _horizontal_distance(global_position, support_position)
+	if _support_request_is_far_and_off_target(support_position, support_distance):
+		var target_direction := _horizontal_direction(global_position, target.global_position)
+		var support_direction := _horizontal_direction(global_position, support_position)
+		var angle_degrees := rad_to_deg(target_direction.angle_to(support_direction))
+		_debug(
+			"support ignored distance=%.1fm angle=%.1fdeg limit=%.1fdeg target=%s"
+			% [
+				support_distance,
+				angle_degrees,
+				squad_support_max_off_target_angle_degrees,
+				_target_name(target),
+			]
+		)
+		return
+	var result := send_squad_message(SquadMessageTypes.Type.SUPPORT_ACK, {"member_id": squad_member_id}, request_id)
+	if not bool(result.get("accepted", false)):
+		return
+	_squad_support_request_id = request_id
+	_squad_support_position = result.get("position", INVALID_POSITION)
+	_squad_support_timer = squad_support_timeout
+	_squad_support_hold_timer = 0.0
+	_squad_support_arrived = false
+
+
+func _support_request_is_far_and_off_target(
+	support_position: Vector3,
+	support_distance: float
+) -> bool:
+	## 距离不超过 50m 时始终允许响应；只有远距离请求才检查推进方向。
+	if support_distance <= squad_support_max_response_distance:
+		return false
+	## 没有战略 target 时无法判断是否偏离，不能退化成“超过 50m 一律拒绝”。
+	if not is_instance_valid(target) or target.is_queued_for_deletion():
+		return false
+	var target_direction := _horizontal_direction(global_position, target.global_position)
+	var support_direction := _horizontal_direction(global_position, support_position)
+	if target_direction == Vector3.ZERO or support_direction == Vector3.ZERO:
+		return false
+	## 以自身为顶点，比较“自身 -> target”和“自身 -> 支援点”两条射线。
+	## 夹角超过阈值代表支援点位于当前推进方向的明显反向区域。
+	var angle_degrees := rad_to_deg(target_direction.angle_to(support_direction))
+	return angle_degrees > squad_support_max_off_target_angle_degrees
+
+
+func _can_accept_squad_support() -> bool:
+	return (
+		state != AIState.DEAD
+		and state != AIState.COMBAT
+		and _squad_support_timer <= 0.0
+		and not _squad_support_arrived
+	)
+
+
+func _receive_squad_demolition_warning(payload: Dictionary) -> void:
+	var position: Vector3 = payload.get("position", INVALID_POSITION)
+	var radius := maxf(
+		float(payload.get("radius", 0.0)),
+		squad_warning_retreat_distance
+	)
+	if not position.is_finite():
+		return
+	var distance := _horizontal_distance(global_position, position)
+	## 不要在接收时直接丢弃远处成员的警告。队员当前可能在安全距离外，
+	## 但仍会沿 target 接近炸点；保留警告后，进入危险范围的下一帧仍能及时撤离。
+	_squad_warning_position = position
+	_squad_warning_radius = radius
+	_squad_warning_timer = maxf(0.1, squad_warning_retreat_seconds)
+	_squad_warning_progress_anchor = global_position
+	_squad_warning_no_progress_elapsed = 0.0
+	_squad_warning_escape_direction = Vector3.ZERO
+	_squad_warning_escape_timer = 0.0
+	_debug(
+		"squad demolition warning received position=%s radius=%.1fm distance=%.1fm action=%s"
+		% [
+			_format_position(position),
+			radius,
+			distance,
+			"retreat" if distance < radius else "monitor",
+		]
+	)
+
+
+func _receive_squad_entry_found(payload: Dictionary, request_id: String) -> void:
+	var position: Variant = payload.get("position", INVALID_POSITION)
+	if not position is Vector3 or not (position as Vector3).is_finite():
+		return
+	var entry_position := position as Vector3
+	if not _squad_entry_is_ahead(entry_position):
+		## 已经经过该入口的正常队员不回头响应旧入口。
+		_clear_pending_squad_entry()
+		return
+	## 消息可能先于卡住状态到达，先保存；只有卡住成员才接管入口航点。
+	_squad_pending_entry_position = entry_position
+	_squad_pending_entry_request_id = request_id
+	_squad_pending_entry_msec = Time.get_ticks_msec()
+	_debug(
+		"squad entry received request=%s position=%s stuck=%s"
+		% [request_id, _format_position(entry_position), str(_squad_stuck)]
+	)
+	if _squad_stuck:
+		_activate_pending_squad_entry()
+
+
+func _update_squad_warning_retreat(delta: float) -> bool:
+	if not _squad_warning_position.is_finite():
+		return false
+	if _squad_warning_timer <= 0.0:
+		_clear_squad_warning_state()
+		return false
+	var away := global_position - _squad_warning_position
+	away.y = 0.0
+	if away.length_squared() < 0.01:
+		away = Vector3.RIGHT.rotated(Vector3.UP, rng.randf_range(-PI, PI))
+	var safe_distance := maxf(_squad_warning_radius, squad_warning_retreat_distance)
+	if _horizontal_distance(global_position, _squad_warning_position) >= safe_distance:
+		## 已经在安全距离外时不打断原来的 SEARCH/CHASE；警告仍保留到
+		## 窗口结束，防止队员继续推进时重新进入爆炸范围。
+		return false
+
+	var previous_distance := _horizontal_distance(
+		global_position,
+		_squad_warning_position
+	)
+	var retreat_direction := away.normalized()
+	if _squad_warning_escape_timer > 0.0:
+		_squad_warning_escape_timer = maxf(0.0, _squad_warning_escape_timer - delta)
+		retreat_direction = _squad_warning_escape_direction
+	else:
+		## 炸弹安全撤退不再把目标交给 NavigationAgent，避免安全点落在
+		## 导航网格外时得到零方向；先按爆炸点反方向直接撤离。
+		retreat_direction = _find_open_movement_direction(retreat_direction)
+		retreat_direction = _avoid_immediate_obstacle(retreat_direction)
+	if _movement_direction_is_blocked(retreat_direction, 0.8):
+		_try_jump_over_obstacle()
+
+	_apply_character_movement(
+		retreat_direction,
+		flee_speed,
+		delta,
+		## 爆破撤退必须优先于队形 RVO；仍保留 test_move、射线避障和碰撞，
+		## 只是避免 NavigationAgent 的安全速度把撤退方向压成零速度。
+		false
+	)
+	var progress := (
+		_horizontal_distance(global_position, _squad_warning_position)
+		- previous_distance
+	)
+	if progress >= 0.12:
+		_squad_warning_progress_anchor = global_position
+		_squad_warning_no_progress_elapsed = 0.0
+	elif _squad_warning_escape_timer <= 0.0:
+		_squad_warning_no_progress_elapsed += delta
+		if _squad_warning_no_progress_elapsed >= squad_warning_stuck_after_seconds:
+			_start_squad_warning_escape(away)
+	return true
+
+
+func _clear_squad_warning_state() -> void:
+	_squad_warning_position = INVALID_POSITION
+	_squad_warning_radius = 0.0
+	_squad_warning_timer = 0.0
+	_squad_warning_progress_anchor = INVALID_POSITION
+	_squad_warning_no_progress_elapsed = 0.0
+	_squad_warning_escape_direction = Vector3.ZERO
+	_squad_warning_escape_timer = 0.0
+
+
+func _start_squad_warning_escape(away: Vector3) -> void:
+	var direction := away
+	direction.y = 0.0
+	if direction.length_squared() <= 0.01:
+		direction = -global_transform.basis.z
+	if direction.length_squared() <= 0.01:
+		direction = Vector3.FORWARD
+	## 以远离炸药为主，在左右方向加入随机偏转，绕开堵住的队员/墙角。
+	direction = direction.normalized().rotated(
+		Vector3.UP,
+		rng.randf_range(-PI * 0.75, PI * 0.75)
+	).normalized()
+	direction = _find_open_movement_direction(direction)
+	_squad_warning_escape_direction = direction
+	_squad_warning_escape_timer = maxf(0.5, squad_warning_escape_duration)
+	_squad_warning_no_progress_elapsed = 0.0
+	_debug(
+		"squad warning escape started direction=%s duration=%.1fs"
+		% [_format_position(direction), _squad_warning_escape_timer]
+	)
+
+
+func _clear_pending_squad_entry() -> void:
+	_squad_pending_entry_position = INVALID_POSITION
+	_squad_pending_entry_request_id = ""
+	_squad_pending_entry_msec = 0
+
+
+func _squad_entry_is_ahead(entry_position: Vector3) -> bool:
+	if not entry_position.is_finite():
+		return false
+	if not is_instance_valid(target):
+		return true
+	## 如果队员已经在入口之后，不允许它因旧消息折返。
+	return _horizontal_distance(entry_position, target.global_position) <= (
+		_horizontal_distance(global_position, target.global_position)
+		+ squad_entry_arrival_distance
+	)
+
+
+func _activate_pending_squad_entry() -> bool:
+	if not _squad_stuck:
+		return false
+	if not _squad_pending_entry_position.is_finite():
+		return false
+	if (
+		_squad_pending_entry_msec <= 0
+		or Time.get_ticks_msec() - _squad_pending_entry_msec
+			> int(maxf(1.0, squad_entry_message_lifetime) * 1000.0)
+	):
+		_clear_pending_squad_entry()
+		return false
+	if not _squad_entry_is_ahead(_squad_pending_entry_position):
+		_clear_pending_squad_entry()
+		return false
+	_squad_entry_waypoint = _squad_pending_entry_position
+	_squad_entry_request_id = _squad_pending_entry_request_id
+	_clear_pending_squad_entry()
+	_squad_stuck = false
+	_squad_stuck_elapsed = 0.0
+	_squad_progress_window_elapsed = 0.0
+	_squad_progress_anchor = global_position
+	_squad_escape_waypoint = INVALID_POSITION
+	_squad_escape_direction = Vector3.ZERO
+	_squad_escape_timer = 0.0
+	_reset_navigation_path()
+	_debug(
+		"squad entry activated request=%s position=%s; stuck state cleared"
+		% [_squad_entry_request_id, _format_position(_squad_entry_waypoint)]
+	)
+	return true
+
+
+func _update_squad_entry_waypoint(delta: float) -> bool:
+	if _squad_entry_waypoint == INVALID_POSITION:
+		return false
+	var distance := _horizontal_distance(global_position, _squad_entry_waypoint)
+	if distance <= squad_entry_arrival_distance:
+		var completed_request_id := _squad_entry_request_id
+		_debug(
+			"squad entry reached request=%s position=%s; resume target"
+			% [_squad_entry_request_id, _format_position(_squad_entry_waypoint)]
+		)
+		_squad_entry_waypoint = INVALID_POSITION
+		_squad_entry_request_id = ""
+		if _squad_pending_entry_request_id == completed_request_id:
+			_clear_pending_squad_entry()
+		_reset_navigation_path()
+		return false
+	var direction := _horizontal_direction(global_position, _squad_entry_waypoint)
+	if direction.length_squared() <= 0.001:
+		return true
+	## 入口是刚刚被打开的真实通路，优先使用入口点的直接方向；
+	## RVO 仍会在 _apply_character_movement 内处理队员之间的避让。
+	## 卡住队员的入口确认属于脱困动作，不让 RVO 再次把队员挡在入口外。
+	_apply_character_movement(_avoid_immediate_obstacle(direction), chase_speed, delta, false)
+	return true
+
+
+func _update_squad_escape(delta: float) -> bool:
+	if _squad_escape_waypoint == INVALID_POSITION:
+		return false
+	_squad_escape_timer = maxf(0.0, _squad_escape_timer - delta)
+	if _squad_escape_timer <= 0.0:
+		_debug(
+			"squad escape completed position=%s; resume target navigation"
+			% _format_position(global_position)
+		)
+		_squad_escape_waypoint = INVALID_POSITION
+		_squad_escape_direction = Vector3.ZERO
+		_squad_escape_timer = 0.0
+		_reset_navigation_path()
+		return false
+	## 脱困动作固定持续 5 秒，不能因为提前接近临时 waypoint 就立即恢复 target。
+	if _movement_direction_is_blocked(_squad_escape_direction, 0.8):
+		_try_jump_over_obstacle()
+	## 方向在脱困开始时确定后，整整 5 秒不再用前方探测改向；这样
+	## 墙边来回跳跃不会把“随机固定方向”重新变成原来的卡墙方向。
+	_apply_character_movement(
+		_squad_escape_direction,
+		flee_speed,
+		delta,
+		false,
+		true
+	)
+	return true
+
+
+func _update_squad_support(delta: float) -> bool:
+	if not _squad_support_position.is_finite():
+		return false
+
+	## 支援路上或支援点附近发现敌人进入 COMBAT，就立即结束支援移动，
+	## 由普通战斗状态接管，不让支援优先级压住实际交火。
+	if _squad_support_can_enter_combat():
+		_clear_squad_support()
+		state = AIState.COMBAT
+		_begin_combat_engagement_if_needed(target_player)
+		return false
+
+	if not _squad_support_arrived:
+		if _horizontal_distance(global_position, _squad_support_position) <= squad_support_arrival_distance:
+			_squad_support_arrived = true
+			_squad_support_timer = 0.0
+			_squad_support_hold_timer = maxf(0.1, squad_support_wait_seconds)
+			if _grenade_avoidance_active:
+				_apply_character_movement(Vector3.ZERO, flee_speed, delta)
+			else:
+				velocity = Vector3.ZERO
+			_debug(
+				"support arrived position=%s wait=%.1fs"
+				% [_format_position(_squad_support_position), _squad_support_hold_timer]
+			)
+			return true
+		_apply_character_movement(
+			_avoid_immediate_obstacle(_direction_to_goal(_squad_support_position)),
+			chase_speed,
+			delta
+		)
+		return true
+
+	if _squad_support_hold_timer > 0.0:
+		if _grenade_avoidance_active:
+			## 支援等待不是“暂停模拟”；活动手雷出现时仍立即离开，
+			## 同时 _maintain_combat_during_grenade_avoidance() 保持射击/反击。
+			_apply_character_movement(Vector3.ZERO, flee_speed, delta)
+		else:
+			velocity = Vector3.ZERO
+		return true
+
+	## 到达支援点后 10 秒没有进入 COMBAT，放弃本次支援并恢复原战略 target。
+	_clear_squad_support()
+	state = AIState.SEARCH
+	target_player = null
+	last_known_target_position = INVALID_POSITION
+	target_refresh_timer = 0.0
+	_debug("support timeout; resume strategic target")
+	return false
+
+
+func _squad_support_can_enter_combat() -> bool:
+	if state == AIState.COMBAT:
+		return true
+	if not _is_valid_target(target_player):
+		return false
+	var distance := _horizontal_distance(global_position, target_player.global_position)
+	return (
+		_has_clear_line_to(target_player)
+		and distance <= preferred_combat_range + combat_range_tolerance
+	)
+
+
+func _clear_squad_support() -> void:
+	_squad_support_request_id = ""
+	_squad_support_position = INVALID_POSITION
+	_squad_support_timer = 0.0
+	_squad_support_hold_timer = 0.0
+	_squad_support_arrived = false
+
+
+func _activate_squad_support_broadcast() -> void:
+	if state != AIState.COMBAT:
+		return
+	_squad_support_broadcast_active = true
+	_squad_support_pending_after_bullet = false
+	_squad_support_request_timer = 0.0
+	_request_squad_support()
+
+
+func _request_squad_support() -> void:
+	if (
+		state != AIState.COMBAT
+		or not _squad_support_broadcast_active
+		or _squad_support_request_timer > 0.0
+		or not is_instance_valid(squad_communicator)
+	):
+		return
+	var result := send_squad_message(SquadMessageTypes.Type.SUPPORT_REQUEST, {"position": global_position})
+	if bool(result.get("accepted", false)):
+		_squad_support_request_timer = squad_support_request_cooldown
+
+
+func _update_squad_obstacle_reporting() -> void:
+	if _squad_demolition_probe_timer > 0.0 or not _uses_squad_demolition_requests():
+		return
+	if not is_instance_valid(squad_communicator) or state != AIState.SEARCH or _is_valid_target(target_player):
+		return
+	_squad_demolition_probe_timer = squad_demolition_request_cooldown
+	var detected := _detect_squad_demolition_obstacle()
+	if detected.is_empty():
+		return
+	send_squad_message(SquadMessageTypes.Type.DEMOLITION_REQUEST, detected)
+
+
+func _uses_squad_demolition_requests() -> bool:
+	return true
+
+
+func _detect_squad_demolition_obstacle() -> Dictionary:
+	var strategic_position := _resolve_enemy_farm_position()
+	if not strategic_position.is_finite():
+		return {}
+	var direction := _direction_to_goal(strategic_position)
+	if direction.length_squared() < 0.01:
+		return {}
+	direction = direction.normalized()
+	var origin := global_position + Vector3.UP * 0.9
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * squad_demolition_probe_distance, body_collision_mask, [get_rid()])
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return {}
+	var obstacle := _resolve_squad_demolition_root(hit.get("collider") as Node)
+	if not is_instance_valid(obstacle):
+		return {}
+	return {"target": obstacle, "position": hit.get("position", obstacle.global_position), "normal": hit.get("normal", Vector3.UP)}
+
+
+func _resolve_squad_demolition_root(node: Node) -> Node3D:
+	var cursor := node
+	var depth := 0
+	while is_instance_valid(cursor) and depth < 8:
+		if cursor is Node3D and cursor.is_in_group("ai_demolition_target"):
+			return cursor as Node3D
+		cursor = cursor.get_parent()
+		depth += 1
+	return null
 
 
 # ------------------------------------------------------------------
@@ -701,7 +1466,11 @@ func _create_required_runtime_nodes() -> void:
 	navigation_agent.height = body_capsule_height
 	navigation_agent.path_desired_distance = 0.55
 	navigation_agent.target_desired_distance = 1.0
-	navigation_agent.avoidance_enabled = false
+	navigation_agent.avoidance_enabled = navigation_avoidance_enabled
+	navigation_agent.neighbor_distance = maxf(1.0, navigation_avoidance_neighbor_distance)
+	navigation_agent.max_neighbors = maxi(1, navigation_avoidance_max_neighbors)
+	if not navigation_agent.velocity_computed.is_connected(_on_navigation_velocity_computed):
+		navigation_agent.velocity_computed.connect(_on_navigation_velocity_computed)
 
 	hit_3d = _ensure_area3d(
 		self,
@@ -743,7 +1512,7 @@ func _create_required_runtime_nodes() -> void:
 		2.65,
 		0.0
 	)
-	health_label.visible = show_health_label
+	health_label.visible = show_health_label and state != AIState.DEAD
 
 
 func _ensure_node3d(
@@ -1402,7 +2171,10 @@ func _load_starting_loadout() -> void:
 		ar15_grip_position,
 		ar15_grip_rotation,
 		ar15_grip_scale,
-		ar15_fire_interval
+		ar15_fire_interval,
+		ar15_magazine_size,
+		ar15_initial_reserve_ammo,
+		ar15_reload_time
 	)
 
 	weapon_data[
@@ -1413,7 +2185,10 @@ func _load_starting_loadout() -> void:
 		pistol_grip_position,
 		pistol_grip_rotation,
 		pistol_grip_scale,
-		pistol_fire_interval
+		pistol_fire_interval,
+		pistol_magazine_size,
+		pistol_initial_reserve_ammo,
+		pistol_reload_time
 	)
 
 	grenade_data = _load_item_data(
@@ -1432,7 +2207,10 @@ func _load_item_data(
 	fallback_position: Vector3,
 	fallback_rotation: Vector3,
 	fallback_scale: Vector3,
-	fallback_cooldown: float
+	fallback_cooldown: float,
+	fallback_magazine_size: int = 0,
+	fallback_reserve_ammo: int = 0,
+	fallback_reload_time: float = 0.0
 ) -> Dictionary:
 	var result := {
 		"id": tool_id,
@@ -1441,6 +2219,9 @@ func _load_item_data(
 		"grip_rotation": fallback_rotation,
 		"grip_scale": fallback_scale,
 		"cooldown": fallback_cooldown,
+		"magazine_size": fallback_magazine_size,
+		"initial_reserve_ammo": fallback_reserve_ammo,
+		"reload_time": fallback_reload_time,
 		"scene": null,
 	}
 
@@ -1484,6 +2265,27 @@ func _load_item_data(
 			json_definition.get(
 				"cooldown",
 				fallback_cooldown
+			)
+		)
+
+		result["magazine_size"] = int(
+			json_definition.get(
+				"magazine_size",
+				fallback_magazine_size
+			)
+		)
+
+		result["initial_reserve_ammo"] = int(
+			json_definition.get(
+				"initial_reserve_ammo",
+				fallback_reserve_ammo
+			)
+		)
+
+		result["reload_time"] = float(
+			json_definition.get(
+				"reload_time",
+				fallback_reload_time
 			)
 		)
 
@@ -1605,6 +2407,120 @@ func _variant_to_vector3(
 	return fallback
 
 
+func _initialize_weapon_ammo() -> void:
+	weapon_ammo.clear()
+	reloading_weapon_slot = -1
+	weapon_reload_timer = 0.0
+	for slot_value: Variant in weapon_data.keys():
+		var slot := int(slot_value)
+		var definition: Dictionary = weapon_data.get(slot, {})
+		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
+		weapon_ammo[slot] = {
+			"ammo_in_mag": capacity,
+			"reserve_ammo": maxi(0, int(definition.get("initial_reserve_ammo", 0))),
+			"magazine_size": capacity,
+			"reload_time": maxf(0.05, float(definition.get("reload_time", 1.0))),
+		}
+
+
+func _weapon_ammo_in_mag(slot: int) -> int:
+	var ammo_state: Dictionary = weapon_ammo.get(slot, {})
+	return maxi(0, int(ammo_state.get("ammo_in_mag", 0)))
+
+
+func _weapon_reserve_ammo(slot: int) -> int:
+	var ammo_state: Dictionary = weapon_ammo.get(slot, {})
+	return maxi(0, int(ammo_state.get("reserve_ammo", 0)))
+
+
+func _weapon_magazine_capacity(slot: int) -> int:
+	var ammo_state: Dictionary = weapon_ammo.get(slot, {})
+	return maxi(1, int(ammo_state.get("magazine_size", 1)))
+
+
+func _weapon_has_loaded_rounds(slot: int) -> bool:
+	return weapon_data.has(slot) and _weapon_ammo_in_mag(slot) > 0
+
+
+func _weapon_can_reload(slot: int) -> bool:
+	return (
+		weapon_data.has(slot)
+		and _weapon_ammo_in_mag(slot) < _weapon_magazine_capacity(slot)
+		and _weapon_reserve_ammo(slot) > 0
+	)
+
+
+func _consume_weapon_round(slot: int) -> void:
+	if not weapon_ammo.has(slot):
+		return
+	var ammo_state: Dictionary = weapon_ammo[slot]
+	ammo_state["ammo_in_mag"] = maxi(0, int(ammo_state.get("ammo_in_mag", 0)) - 1)
+	weapon_ammo[slot] = ammo_state
+	_update_health_label()
+
+
+func _start_weapon_reload(slot: int) -> bool:
+	if not _weapon_can_reload(slot):
+		return false
+	if reloading_weapon_slot == slot:
+		return true
+	if reloading_weapon_slot >= 0:
+		_cancel_weapon_reload("switch_reload")
+	if not _equip_weapon(slot):
+		return false
+	var ammo_state: Dictionary = weapon_ammo.get(slot, {})
+	reloading_weapon_slot = slot
+	weapon_reload_timer = maxf(0.05, float(ammo_state.get("reload_time", 1.0)))
+	if slot == WeaponSlot.AR15:
+		ar15_burst_shots_remaining = 0
+		ar15_burst_pause_timer = 0.0
+	_debug(
+		"reload started slot=%d mag=%d reserve=%d duration=%.2fs"
+		% [slot, _weapon_ammo_in_mag(slot), _weapon_reserve_ammo(slot), weapon_reload_timer]
+	)
+	return true
+
+
+func _finish_weapon_reload() -> void:
+	var slot := reloading_weapon_slot
+	reloading_weapon_slot = -1
+	weapon_reload_timer = 0.0
+	if slot < 0 or not weapon_ammo.has(slot):
+		return
+	var ammo_state: Dictionary = weapon_ammo[slot]
+	var needed := maxi(0, _weapon_magazine_capacity(slot) - int(ammo_state.get("ammo_in_mag", 0)))
+	var transferred := mini(needed, maxi(0, int(ammo_state.get("reserve_ammo", 0))))
+	ammo_state["ammo_in_mag"] = int(ammo_state.get("ammo_in_mag", 0)) + transferred
+	ammo_state["reserve_ammo"] = int(ammo_state.get("reserve_ammo", 0)) - transferred
+	weapon_ammo[slot] = ammo_state
+	_debug(
+		"reload completed slot=%d mag=%d reserve=%d"
+		% [slot, _weapon_ammo_in_mag(slot), _weapon_reserve_ammo(slot)]
+	)
+	_update_health_label()
+
+
+func _cancel_weapon_reload(reason: String) -> void:
+	if reloading_weapon_slot < 0:
+		return
+	_debug("reload cancelled slot=%d reason=%s" % [reloading_weapon_slot, reason])
+	reloading_weapon_slot = -1
+	weapon_reload_timer = 0.0
+
+
+func _maintain_out_of_combat_loadout() -> void:
+	if reloading_weapon_slot >= 0:
+		return
+	## 脱离交火后先补满主武器，再补副武器，最后恢复默认手持 FutureM4。
+	if _weapon_can_reload(WeaponSlot.AR15):
+		_start_weapon_reload(WeaponSlot.AR15)
+		return
+	if _weapon_can_reload(WeaponSlot.SUPPRESSED_PISTOL):
+		_start_weapon_reload(WeaponSlot.SUPPRESSED_PISTOL)
+		return
+	_equip_weapon(WeaponSlot.AR15)
+
+
 func _equip_weapon(slot: int) -> bool:
 	if (
 		current_weapon_slot == slot
@@ -1707,6 +2623,34 @@ func _equip_weapon(slot: int) -> bool:
 # ------------------------------------------------------------------
 
 func _update_timers(delta: float) -> void:
+	if reloading_weapon_slot >= 0:
+		weapon_reload_timer = maxf(0.0, weapon_reload_timer - delta)
+		if weapon_reload_timer <= 0.0:
+			_finish_weapon_reload()
+	_squad_demolition_probe_timer = maxf(0.0, _squad_demolition_probe_timer - delta)
+	_squad_support_request_timer = maxf(0.0, _squad_support_request_timer - delta)
+	_squad_support_timer = maxf(0.0, _squad_support_timer - delta)
+	_squad_support_hold_timer = maxf(0.0, _squad_support_hold_timer - delta)
+	_squad_warning_timer = maxf(0.0, _squad_warning_timer - delta)
+	if (
+		not _squad_support_arrived
+		and _squad_support_timer <= 0.0
+		and _squad_support_position.is_finite()
+	):
+		_clear_squad_support()
+	if state != AIState.COMBAT:
+		_squad_support_broadcast_active = false
+	if state in [AIState.SEARCH, AIState.FLEE]:
+		_squad_support_pending_after_bullet = false
+	## 警告计时只用于记录初始撤退窗口，不能在队员仍处于爆炸半径内时
+	## 清除警告；真正的清理由 _update_squad_warning_retreat 在到达安全距离后完成。
+	if (
+		_squad_pending_entry_position.is_finite()
+		and _squad_pending_entry_msec > 0
+		and Time.get_ticks_msec() - _squad_pending_entry_msec
+			> int(maxf(1.0, squad_entry_message_lifetime) * 1000.0)
+	):
+		_clear_pending_squad_entry()
 	target_refresh_timer = maxf(
 		0.0,
 		target_refresh_timer - delta
@@ -1782,11 +2726,68 @@ func _reset_strafe_timer() -> void:
 # Target selection
 # ------------------------------------------------------------------
 
+## Squad/地图可以通过这个接口设置战略目标。
+## target 的类型始终是 Node3D；传入 null 时下一次 AI 更新会重新选择敌方出生点。
+func set_strategic_target(value: Node3D) -> void:
+	if is_instance_valid(_fallback_strategic_target) and _fallback_strategic_target != value:
+		_fallback_strategic_target.queue_free()
+		_fallback_strategic_target = null
+	target = value
+	_debug("strategic target changed to %s" % _target_name(target))
+
+
+func set_target(value: Node3D) -> void:
+	set_strategic_target(value)
+
+
+func get_strategic_target() -> Node3D:
+	return target if is_instance_valid(target) and not target.is_queued_for_deletion() else null
+
+
+func _ensure_strategic_target() -> void:
+	if is_instance_valid(target) and not target.is_queued_for_deletion():
+		if is_instance_valid(_fallback_strategic_target) and target != _fallback_strategic_target:
+			_fallback_strategic_target.queue_free()
+			_fallback_strategic_target = null
+		return
+
+	if is_instance_valid(_fallback_strategic_target):
+		_fallback_strategic_target.queue_free()
+		_fallback_strategic_target = null
+	target = null
+
+	var game_world: Node = GlobalVar.gameworld
+	if not is_instance_valid(game_world) or not game_world.has_method("get_random_enemy_spawn_position"):
+		return
+
+	var value: Variant = game_world.call(
+		"get_random_enemy_spawn_position",
+		team_id,
+		get_instance_id() + int(Time.get_ticks_msec() / 1000.0),
+		0,
+	)
+	if not value is Vector3 or (value as Vector3) == Vector3.INF:
+		return
+
+	var fallback := Node3D.new()
+	fallback.name = "%s_Target_EnemySpawn" % name
+	fallback.set_meta("future_warrior_target_source", "enemy_spawn")
+	fallback.set_meta("future_warrior_target_owner", get_instance_id())
+	game_world.add_child(fallback)
+	fallback.global_position = value as Vector3
+	_fallback_strategic_target = fallback
+	target = fallback
+	_debug(
+		"target fallback selected enemy_spawn position=%s"
+		% _format_position(fallback.global_position)
+	)
+
 func _refresh_target() -> void:
 	if target_refresh_timer > 0.0:
 		return
 
 	target_refresh_timer = target_refresh_interval
+	var previous_target := target_player
 	if retaliation_timer > 0.0 and _is_valid_target(retaliation_target):
 		target_player = retaliation_target
 	else:
@@ -1804,6 +2805,8 @@ func _refresh_target() -> void:
 	last_known_target_position = (
 		target_player.global_position
 	)
+	if target_player != previous_target:
+		_begin_target_engagement(target_player)
 
 	if state != AIState.FLEE:
 		state = AIState.CHASE
@@ -1812,6 +2815,36 @@ func _refresh_target() -> void:
 		"target=%s"
 		% target_player.name
 	)
+
+
+func _begin_target_engagement(candidate: CharacterBody3D) -> void:
+	if not _is_valid_target(candidate):
+		return
+	var candidate_id := int(candidate.get_instance_id())
+	if engagement_grenade_target_id == candidate_id:
+		return
+	engagement_grenade_target_id = candidate_id
+	engagement_grenade_pending = grenades_remaining > 0
+	_debug(
+		"engagement started target=%s grenade_pending=%s"
+		% [candidate.name, str(engagement_grenade_pending)]
+	)
+
+
+func _begin_combat_engagement_if_needed(candidate: CharacterBody3D) -> void:
+	if not _is_valid_target(candidate):
+		return
+	var candidate_id := int(candidate.get_instance_id())
+	if (
+		combat_engagement_target_id != candidate_id
+		or not combat_engagement_point.is_finite()
+	):
+		combat_engagement_target_id = candidate_id
+		combat_engagement_point = global_position
+		_debug(
+			"combat engagement point=%s target=%s"
+			% [_format_position(combat_engagement_point), candidate.name]
+		)
 
 
 func _find_best_enemy_player() -> CharacterBody3D:
@@ -1940,19 +2973,20 @@ func _update_search_state(delta: float) -> Vector3:
 
 
 func _resolve_enemy_farm_position() -> Vector3:
-	var game_world: Node = GlobalVar.gameworld
-	if not is_instance_valid(game_world):
-		return INVALID_POSITION
-	if game_world.has_method("get_random_enemy_spawn_position"):
-		var value: Variant = game_world.call(
-			"get_random_enemy_spawn_position",
-			team_id,
-			get_instance_id() + int(Time.get_ticks_msec() / 1000.0),
-			0
-		)
-		if value is Vector3 and value != Vector3.INF:
-			return value as Vector3
+	_ensure_strategic_target()
+	if is_instance_valid(target) and not target.is_queued_for_deletion():
+		if is_instance_valid(squad) and squad.has_method("get_member_navigation_goal"):
+			return squad.get_member_navigation_goal(squad_member_id, target.global_position)
+		return target.global_position
 	return INVALID_POSITION
+
+
+func _target_name(value: Node3D) -> String:
+	return value.name if is_instance_valid(value) else "none"
+
+
+func _format_position(value: Vector3) -> String:
+	return "(%.1f, %.1f, %.1f)" % [value.x, value.y, value.z]
 
 
 func _next_enemy_farm_patrol_position() -> Vector3:
@@ -2005,6 +3039,15 @@ func _update_chase_state() -> Vector3:
 		state = AIState.SEARCH
 		return Vector3.ZERO
 
+	if (
+		combat_engagement_point.is_finite()
+		and combat_engagement_target_id == int(target_player.get_instance_id())
+		and _horizontal_distance(global_position, combat_engagement_point)
+		>= chase_max_distance_from_engagement
+	):
+		_disengage_from_chase()
+		return Vector3.ZERO
+
 	var target_position := (
 		target_player.global_position
 	)
@@ -2037,11 +3080,29 @@ func _update_chase_state() -> Vector3:
 
 	## 追击过程中进入射程也允许开火。
 	if clear_line:
+		_try_throw_grenade(distance)
 		_try_fire_at_target(distance)
 
 	return _direction_to_goal(
 		target_position
 	)
+
+
+func _disengage_from_chase() -> void:
+	_debug(
+		"chase leash reached %.1fm; resume strategic target"
+		% chase_max_distance_from_engagement
+	)
+	state = AIState.SEARCH
+	target_player = null
+	retaliation_target = null
+	retaliation_timer = 0.0
+	last_known_target_position = INVALID_POSITION
+	combat_engagement_point = INVALID_POSITION
+	combat_engagement_target_id = 0
+	_squad_support_broadcast_active = false
+	_squad_support_pending_after_bullet = false
+	target_refresh_timer = 0.0
 
 
 func _update_combat_state() -> Vector3:
@@ -2081,11 +3142,16 @@ func _update_combat_state() -> Vector3:
 		> preferred_combat_range
 		+ combat_range_tolerance
 	):
+		_squad_support_broadcast_active = false
 		state = AIState.CHASE
 		return _direction_to_goal(
 			target_position
 		)
 
+	_begin_combat_engagement_if_needed(target_player)
+	if _squad_support_pending_after_bullet:
+		_activate_squad_support_broadcast()
+	_request_squad_support()
 	_try_throw_grenade(distance)
 	_try_fire_at_target(distance)
 
@@ -2131,7 +3197,7 @@ func _update_flee_state() -> Vector3:
 
 		return Vector3.ZERO
 
-	## 撤退过程中使用 SuppressedPistol 压制追击者。
+	## 撤退过程中也遵循主武器优先、主武器空仓才切副武器的规则。
 	if _is_valid_target(target_player):
 		var distance := _horizontal_distance(
 			global_position,
@@ -2148,9 +3214,7 @@ func _update_flee_state() -> Vector3:
 				)
 			)
 
-			_try_fire_weapon(
-				WeaponSlot.SUPPRESSED_PISTOL
-			)
+			_try_fire_at_target(distance)
 
 	if (
 		flee_target == INVALID_POSITION
@@ -2191,11 +3255,6 @@ func _begin_flee(
 	)
 
 	_refresh_flee_target()
-
-	## 撤退期间自动换成更灵活的消音手枪。
-	_equip_weapon(
-		WeaponSlot.SUPPRESSED_PISTOL
-	)
 
 	_debug(
 		"flee duration=%.2f"
@@ -2265,23 +3324,22 @@ func _try_fire_at_target(
 	if not _is_valid_target(target_player):
 		return
 
-	var desired_slot := WeaponSlot.AR15
-
-	if distance <= pistol_switch_distance:
-		desired_slot = (
-			WeaponSlot.SUPPRESSED_PISTOL
-		)
-
-	if desired_slot == WeaponSlot.AR15:
-		if (
-			distance < ar15_min_range
-			or distance > ar15_max_range
-		):
-			return
-
+	var desired_slot := -1
+	if _weapon_has_loaded_rounds(WeaponSlot.AR15):
+		desired_slot = WeaponSlot.AR15
+	elif _weapon_has_loaded_rounds(WeaponSlot.SUPPRESSED_PISTOL):
+		## 只有 FutureM4 当前弹匣已经打空并且仍处于交火时才使用手枪。
+		desired_slot = WeaponSlot.SUPPRESSED_PISTOL
 	else:
-		if distance > pistol_max_range:
-			return
+		## 两把武器都空仓：按要求切回 FutureM4 并优先为主武器换弹。
+		if not _start_weapon_reload(WeaponSlot.AR15):
+			_start_weapon_reload(WeaponSlot.SUPPRESSED_PISTOL)
+		return
+
+	if desired_slot == WeaponSlot.AR15 and distance > ar15_max_range:
+		return
+	if desired_slot == WeaponSlot.SUPPRESSED_PISTOL and distance > pistol_max_range:
+		return
 
 	_try_fire_weapon(desired_slot)
 
@@ -2294,6 +3352,15 @@ func _try_fire_weapon(slot: int) -> void:
 		return
 
 	if not _has_clear_line_to(target_player):
+		return
+
+	if reloading_weapon_slot >= 0:
+		if reloading_weapon_slot == slot:
+			return
+		## 交火时需要另一把已有弹药的武器，允许中断当前换弹动作。
+		_cancel_weapon_reload("firefight_weapon_switch")
+
+	if not _weapon_has_loaded_rounds(slot):
 		return
 
 	if slot == WeaponSlot.AR15:
@@ -2330,7 +3397,19 @@ func _try_fire_weapon(slot: int) -> void:
 		)
 		return
 
-	held_weapon.call("emit")
+	var fired := false
+	if _is_ai_hitscan_weapon(slot):
+		## FutureM4/FutureMPX gameplay is resolved once by the authority ray.
+		## The weapon scene only emits a non-gameplay tracer afterwards.
+		fired = _fire_ai_hitscan_weapon()
+	else:
+		## Keep compatibility for any custom weapon assigned to this slot. The
+		## built-in FutureM4/FutureMPX paths never reach this branch.
+		held_weapon.call("emit")
+		fired = true
+	if not fired:
+		return
+	_consume_weapon_round(slot)
 	_play_shoot_animation()
 
 	if slot == WeaponSlot.AR15:
@@ -2357,6 +3436,62 @@ func _try_fire_weapon(slot: int) -> void:
 			),
 			pistol_fire_interval
 		)
+
+
+func _is_ai_hitscan_weapon(slot: int) -> bool:
+	if slot != WeaponSlot.AR15 or not is_instance_valid(held_weapon):
+		return false
+	var weapon_id := str(weapon_data.get(slot, {}).get("id", ""))
+	if weapon_id.is_empty():
+		weapon_id = ar15_tool_id
+	return weapon_id in ["future_m4", "future_mpx"] \
+		and held_weapon.has_method("get_fire_origin") \
+		and held_weapon.has_method("get_fire_direction")
+
+
+func _fire_ai_hitscan_weapon() -> bool:
+	if not is_instance_valid(held_weapon):
+		return false
+	if not GameAuthority.has_method("server_ai_hitscan"):
+		push_warning("[FutureWarriorAI] GameAuthority has no AI hitscan endpoint")
+		return false
+	if not GameAuthority.is_server_authority() and not GameAuthority.is_local_authority():
+		return false
+	var weapon_id := str(weapon_data.get(current_weapon_slot, {}).get("id", ""))
+	if weapon_id.is_empty():
+		weapon_id = ar15_tool_id
+	var origin := held_weapon.call("get_fire_origin") as Vector3
+	var direction := held_weapon.call("get_fire_direction") as Vector3
+	if direction.length_squared() <= 0.001:
+		return false
+	var result: Dictionary = GameAuthority.server_ai_hitscan(
+		self,
+		team_id,
+		weapon_id,
+		origin,
+		direction
+	)
+	if not bool(result.get("ok", false)):
+		return false
+
+	## Local single-player has no network event loop to replay the tracer. In
+	## listen-server and dedicated-server modes GameAuthority broadcasts the
+	## same visual event to the host/clients, so emitting it here would duplicate
+	## the host's tracer.
+	if GameAuthority.is_local_authority():
+		var travel_distance := float(result.get(
+			"visual_distance",
+			CombatBalance.get_float(weapon_id, "range")
+		))
+		if held_weapon.has_method("emit_visual_only_tracer"):
+			held_weapon.call(
+				"emit_visual_only_tracer",
+				direction,
+				travel_distance
+			)
+		elif held_weapon.has_method("emit_visual_only"):
+			held_weapon.call("emit_visual_only")
+	return true
 
 
 func _get_weapon_cooldown(
@@ -2469,7 +3604,13 @@ func _aim_at(
 func _try_throw_grenade(
 	distance: float
 ) -> void:
+	## 手雷规避或安全等待期间不再发起新的投掷，但不影响主武器射击。
+	if _grenade_avoidance_active or _has_nearby_grenade_threat():
+		return
 	if grenades_remaining <= 0:
+		engagement_grenade_pending = false
+		return
+	if not engagement_grenade_pending:
 		return
 
 	if grenade_timer > 0.0:
@@ -2487,10 +3628,6 @@ func _try_throw_grenade(
 	if not _has_clear_line_to(target_player):
 		return
 
-	if rng.randf() > grenade_use_chance:
-		grenade_timer = 0.45
-		return
-
 	var target_position := (
 		target_player.global_position
 		+ target_player.velocity * 0.30
@@ -2501,12 +3638,22 @@ func _try_throw_grenade(
 	):
 		return
 
+	var previous_count := grenades_remaining
 	_throw_grenade(target_position)
+	if grenades_remaining < previous_count:
+		## 一次交火只安排一枚；锁定新的攻击目标时才会再次安排。
+		engagement_grenade_pending = false
 
 
 func _throw_grenade(
 	target_position: Vector3
 ) -> void:
+	## AI 手雷优先进入玩家使用的 GameAuthority 权威投射物系统；这样本地、ENet、
+	## Steam 都使用同一套飞行、爆炸伤害与视觉同步，而不是只生成一个本地模型。
+	if _throw_grenade_authoritatively(target_position):
+		_complete_grenade_throw()
+		return
+
 	var packed_scene := (
 		grenade_data.get("scene")
 		as PackedScene
@@ -2563,7 +3710,11 @@ func _throw_grenade(
 		grenade_timer = 0.8
 		return
 
-	grenades_remaining -= 1
+	_complete_grenade_throw()
+
+
+func _complete_grenade_throw() -> void:
+	grenades_remaining = maxi(0, grenades_remaining - 1)
 	grenade_timer = maxf(
 		grenade_cooldown,
 		float(
@@ -2581,6 +3732,31 @@ func _throw_grenade(
 		"grenade remaining=%d"
 		% grenades_remaining
 	)
+
+
+func _throw_grenade_authoritatively(target_position: Vector3) -> bool:
+	if not GameAuthority.has_method("spawn_ai_grenade"):
+		return false
+	if not GameAuthority.is_server_authority() and not GameAuthority.is_local_authority():
+		return false
+	var forward := -global_transform.basis.z
+	var spawn_position := (
+		global_position
+		+ Vector3.UP * grenade_spawn_height
+		+ forward * grenade_forward_offset
+	)
+	var initial_velocity := _calculate_grenade_velocity(
+		spawn_position,
+		target_position,
+		grenade_flight_time,
+		CombatBalance.get_float("grenade", "gravity")
+	)
+	return bool(GameAuthority.spawn_ai_grenade(
+		spawn_position,
+		initial_velocity,
+		team_id,
+		get_instance_id()
+	))
 
 
 func _looks_like_projectile_grenade(
@@ -2787,10 +3963,20 @@ func _throw_grenade_as_projectile(
 	return false
 
 
+func _has_nearby_grenade_threat() -> bool:
+	## 这是投掷前的即时安全闸门。正常物理帧已经在
+	## _update_grenade_avoidance() 中查询过一次；保留这里的独立检查，
+	## 也能覆盖测试脚本或其他角色直接调用 _try_throw_grenade() 的情况。
+	if not GameAuthority.has_method("get_grenade_threat_for_ai"):
+		return false
+	return not GameAuthority.get_grenade_threat_for_ai(self).is_empty()
+
+
 func _calculate_grenade_velocity(
 	origin: Vector3,
 	target: Vector3,
-	flight_time: float
+	flight_time: float,
+	gravity_override: float = -1.0
 ) -> Vector3:
 	var safe_time := maxf(
 		flight_time,
@@ -2799,7 +3985,7 @@ func _calculate_grenade_velocity(
 
 	var displacement := target - origin
 
-	var gravity := float(
+	var gravity := gravity_override if gravity_override >= 0.0 else float(
 		ProjectSettings.get_setting(
 			"physics/3d/default_gravity",
 			9.8
@@ -2823,6 +4009,10 @@ func _would_grenade_hurt_friend(
 	target_position: Vector3
 ) -> bool:
 	var checked: Dictionary = {}
+	var safety_radius := maxf(
+		grenade_friendly_safety_radius,
+		CombatBalance.get_float("grenade", "damage_radius")
+	)
 
 	for group_name in [
 		"human_players",
@@ -2836,13 +4026,7 @@ func _would_grenade_hurt_friend(
 				continue
 
 			var character := node as Node3D
-
-			if character == self:
-				continue
-
-			var instance_id := (
-				character.get_instance_id()
-			)
+			var instance_id := character.get_instance_id()
 
 			if checked.has(instance_id):
 				continue
@@ -2859,20 +4043,262 @@ func _would_grenade_hurt_friend(
 				character.global_position.distance_to(
 					target_position
 				)
-				< grenade_friendly_safety_radius
+				< safety_radius
 			):
 				return true
 
+	## 自身不一定会出现在所有地图测试场景的角色 group 中，单独检查一次。
+	if global_position.distance_to(target_position) < safety_radius:
+		return true
+
 	return false
+
+
+func _update_grenade_avoidance(delta: float) -> void:
+	var threat: Dictionary = {}
+	if GameAuthority.has_method("get_grenade_threat_for_ai"):
+		threat = GameAuthority.get_grenade_threat_for_ai(self)
+
+	if threat.is_empty():
+		if not _grenade_avoidance_active:
+			return
+		var distance_to_last_center := INF
+		if _grenade_avoidance_center.is_finite():
+			distance_to_last_center = global_position.distance_to(
+				_grenade_avoidance_center
+			)
+		var safe_distance := _grenade_avoidance_radius + grenade_avoidance_safe_margin
+		if distance_to_last_center < safe_distance:
+			_grenade_avoidance_safe_elapsed = 0.0
+		else:
+			_grenade_avoidance_safe_elapsed += delta
+		_grenade_avoidance_repath_timer = maxf(
+			0.0,
+			_grenade_avoidance_repath_timer - delta
+		)
+		if _grenade_avoidance_repath_timer <= 0.0 \
+				and distance_to_last_center < safe_distance:
+			_refresh_grenade_avoidance_direction()
+		if _grenade_avoidance_safe_elapsed >= grenade_avoidance_resume_delay:
+			_finish_grenade_avoidance()
+		return
+
+	var center_value: Variant = threat.get("explosion_position", threat.get("position", INVALID_POSITION))
+	if not center_value is Vector3:
+		return
+	var center := center_value as Vector3
+	var radius := maxf(0.1, float(threat.get("radius", 0.1)))
+	var distance_to_center := global_position.distance_to(center)
+	var safe_distance := radius + grenade_avoidance_safe_margin
+	## 已经完成 5 秒安全保持后，仍在触发缓冲区但已经离开安全距离时，
+	## 不重复进入规避；若手雷再次靠近安全距离，下一帧会重新触发。
+	if not _grenade_avoidance_active and distance_to_center >= safe_distance:
+		return
+
+	if not _grenade_avoidance_active:
+		_grenade_avoidance_active = true
+		_grenade_avoidance_safe_elapsed = 0.0
+		_grenade_avoidance_repath_timer = 0.0
+		_debug(
+			"grenade evade start position=%s radius=%.1fm"
+			% [
+				_format_position(center),
+				radius,
+			]
+		)
+
+	_grenade_avoidance_center = center
+	_grenade_avoidance_radius = radius
+	if distance_to_center < safe_distance:
+		_grenade_avoidance_safe_elapsed = 0.0
+	else:
+		_grenade_avoidance_safe_elapsed += delta
+	_grenade_avoidance_repath_timer = maxf(
+		0.0,
+		_grenade_avoidance_repath_timer - delta
+	)
+	if _grenade_avoidance_repath_timer <= 0.0 \
+			or _grenade_avoidance_direction.length_squared() <= 0.001:
+		_refresh_grenade_avoidance_direction()
+	if _grenade_avoidance_safe_elapsed >= grenade_avoidance_resume_delay:
+		_finish_grenade_avoidance()
+
+
+func _finish_grenade_avoidance() -> void:
+	if _grenade_avoidance_active:
+		_debug(
+			"grenade evade end position=%s safe_hold=%.1fs"
+			% [
+				_format_position(global_position),
+				_grenade_avoidance_safe_elapsed,
+			]
+		)
+	_grenade_avoidance_active = false
+	_grenade_avoidance_safe_elapsed = 0.0
+	_grenade_avoidance_repath_timer = 0.0
+	_grenade_avoidance_center = INVALID_POSITION
+	_grenade_avoidance_radius = 0.0
+	_grenade_avoidance_direction = Vector3.ZERO
+	_reset_navigation_path()
+
+
+func _is_grenade_avoidance_active() -> bool:
+	return _grenade_avoidance_active
+
+
+func _maintain_combat_during_grenade_avoidance() -> void:
+	## 规避和安全保持都不能让 AI 进入“只等待、不攻击”的状态。
+	## 这里不投掷手雷，但继续沿用子类可能覆盖的开火/换弹逻辑。
+	if not _is_valid_target(target_player):
+		return
+	var distance := _horizontal_distance(global_position, target_player.global_position)
+	if not _has_clear_line_to(target_player):
+		return
+	_aim_at(_get_predicted_aim_position(target_player))
+	_try_fire_at_target(distance)
+
+
+func _refresh_grenade_avoidance_direction() -> void:
+	if not _grenade_avoidance_center.is_finite():
+		return
+	var away := _horizontal_direction(
+		_grenade_avoidance_center,
+		global_position
+	)
+	if away.length_squared() <= 0.001:
+		away = -global_transform.basis.z
+	if away.length_squared() <= 0.001:
+		away = Vector3.FORWARD
+	away = away.normalized()
+
+	var side_sign := 1.0 if get_instance_id() % 2 == 0 else -1.0
+	var candidates: Array[Vector3] = [
+		away,
+		away.rotated(Vector3.UP, side_sign * PI * 0.25),
+		away.rotated(Vector3.UP, -side_sign * PI * 0.25),
+		away.rotated(Vector3.UP, side_sign * PI * 0.5),
+		away.rotated(Vector3.UP, -side_sign * PI * 0.5),
+		away.rotated(Vector3.UP, PI),
+	]
+	var best_direction := away
+	var best_score := -INF
+	var escape_distance := maxf(
+		3.0,
+		_grenade_avoidance_radius + grenade_avoidance_safe_margin
+	)
+	for candidate in candidates:
+		var open_direction := _find_open_movement_direction(candidate, 1.15)
+		if _movement_direction_is_blocked(open_direction, 0.9):
+			continue
+		var route_direction := open_direction
+		if _navigation_map_is_ready() and navigation_agent != null:
+			var escape_goal := global_position + open_direction * escape_distance
+			navigation_agent.target_position = escape_goal
+			navigation_refresh_timer = navigation_refresh_interval
+			var next_position := navigation_agent.get_next_path_position()
+			var navigation_direction := _horizontal_direction(
+				global_position,
+				next_position
+			)
+			if navigation_direction.length_squared() > 0.001:
+				route_direction = _find_open_movement_direction(
+					navigation_direction,
+					1.15
+				)
+		var score := route_direction.dot(away)
+		if not WaterBody3D.is_navigation_blocked(
+			global_position + route_direction * 1.5
+		):
+			score += 0.25
+		if score > best_score:
+			best_score = score
+			best_direction = route_direction.normalized()
+
+	_grenade_avoidance_direction = best_direction.normalized()
+	_grenade_avoidance_repath_timer = maxf(
+		0.05,
+		grenade_avoidance_repath_interval
+	)
+
+
+func _apply_grenade_avoidance_direction(direction: Vector3) -> Vector3:
+	if not _grenade_avoidance_active \
+			or _grenade_avoidance_direction.length_squared() <= 0.001:
+		return direction
+	var hazard_direction := _grenade_avoidance_direction.normalized()
+	var additional_hazard_direction := _get_additional_movement_hazard_direction()
+	if additional_hazard_direction.length_squared() > 0.001:
+		## FutureEngineer 在已放置炸弹的撤退阶段会通过这个虚拟接口
+		## 提供第二个“远离中心”，因此规避手雷时不会反向走回自己的炸弹。
+		var combined_hazard := (
+			hazard_direction + additional_hazard_direction.normalized()
+		)
+		if combined_hazard.length_squared() > 0.001:
+			hazard_direction = combined_hazard.normalized()
+		else:
+			## 两个危险源正好位于相反方向时，选择切向方向，
+			## 避免把其中一个危险源重新作为前进方向。
+			hazard_direction = hazard_direction.cross(Vector3.UP).normalized()
+			if hazard_direction.length_squared() <= 0.001:
+				hazard_direction = Vector3.RIGHT
+	var requested := direction
+	requested.y = 0.0
+	if requested.length_squared() <= 0.001:
+		return hazard_direction
+	requested = requested.normalized()
+
+	## 如果原行为方向正朝向手雷，先去掉朝向爆炸中心的分量，再叠加规避方向。
+	if _grenade_avoidance_center.is_finite():
+		var toward_center := _horizontal_direction(
+			global_position,
+			_grenade_avoidance_center
+		)
+		var toward_amount := requested.dot(toward_center)
+		if toward_amount > 0.0:
+			requested = (requested - toward_center * toward_amount).normalized()
+			if requested.length_squared() <= 0.001:
+				requested = hazard_direction
+
+	var hazard_weight := 0.78 if _grenade_avoidance_safe_elapsed <= 0.0 else 0.35
+	var combined := (
+		requested * (1.0 - hazard_weight)
+		+ hazard_direction * hazard_weight
+	).normalized()
+	if combined.length_squared() <= 0.001:
+		combined = hazard_direction
+	return _find_open_movement_direction(combined, 1.0)
+
+
+## 子类可以提供额外的移动危险源方向。普通 FutureWarrior 没有第二个危险源。
+func _get_additional_movement_hazard_direction() -> Vector3:
+	return Vector3.ZERO
 
 
 # ------------------------------------------------------------------
 # Navigation and movement
 # ------------------------------------------------------------------
 
+func _on_navigation_velocity_computed(safe_velocity: Vector3) -> void:
+	## NavigationServer 在物理步之间返回 RVO 安全速度；下一次移动时消费。
+	_avoidance_safe_velocity = safe_velocity
+	_avoidance_safe_velocity_valid = true
+
+
+func _reset_navigation_path() -> void:
+	navigation_refresh_timer = 0.0
+	_avoidance_safe_velocity = Vector3.ZERO
+	_avoidance_safe_velocity_valid = false
+	if navigation_agent == null:
+		return
+	## target_position 的 setter 会清除当前内部路径；下一次 _direction_to_goal
+	## 会用真实 target/入口重新设置目标。
+	navigation_agent.target_position = global_position
+
+
 func _direction_to_goal(
 	goal: Vector3
 ) -> Vector3:
+	_navigation_using_direct_fallback = false
 	if goal == INVALID_POSITION:
 		return Vector3.ZERO
 
@@ -2886,9 +4312,17 @@ func _direction_to_goal(
 	if (
 		not use_navigation_agent
 		or navigation_agent == null
-		or not _navigation_map_is_ready()
 	):
+		_navigation_using_direct_fallback = true
 		return direct_direction
+
+	## 已配置导航但地图还没有 ready 时，Squad AI 先等待导航，不直接穿过
+	## 墙体。没有 Squad 的旧式 AI 才保留直线兜底，避免影响未接入小队的角色。
+	if not _navigation_map_is_ready():
+		if not is_instance_valid(squad):
+			_navigation_using_direct_fallback = true
+			return direct_direction
+		return Vector3.ZERO
 
 	if navigation_refresh_timer <= 0.0:
 		navigation_agent.target_position = goal
@@ -2907,10 +4341,17 @@ func _direction_to_goal(
 		)
 	)
 
-	if navigation_direction == Vector3.ZERO:
-		return direct_direction
+	if navigation_direction.length_squared() > 0.001:
+		return navigation_direction
 
-	return navigation_direction
+	## 导航地图有效但当前路径没有下一点：普通 Squad AI 先保持原地，
+	## 让卡住检测确认并刷新路径；只有确认卡住、且给导航一次重试窗口
+	## 仍然没有路径后，才允许直线兜底。
+	if is_instance_valid(squad) \
+			and (not _squad_stuck or _squad_navigation_retry_timer > 0.0):
+		return Vector3.ZERO
+	_navigation_using_direct_fallback = true
+	return direct_direction
 
 
 func _navigation_map_is_ready() -> bool:
@@ -2929,6 +4370,38 @@ func _navigation_map_is_ready() -> bool:
 			navigation_map
 		) > 0
 	)
+
+
+func is_squad_navigation_stuck() -> bool:
+	return _squad_stuck
+
+
+func notify_navigation_chunks_rebuilt(_chunk_ids: Array) -> void:
+	## DynamicNavigationChunkGrid 在权威端替换局部导航网格后调用。
+	## 先清除旧路径；已经卡住的 AI 保留卡住标记，但重新获得一次导航
+	## 尝试，仍无位移时再执行固定方向脱困。
+	if state == AIState.DEAD:
+		return
+	var was_stuck := _squad_stuck
+	_reset_navigation_path()
+	if _squad_stuck:
+		_squad_stuck_elapsed = 0.0
+		_squad_progress_window_elapsed = 0.0
+		_squad_progress_anchor = global_position
+		_squad_navigation_retry_timer = maxf(
+			0.75,
+			navigation_refresh_interval * 3.0
+		)
+		_debug(
+			"navigation chunks rebuilt while stuck; retry target navigation chunks=%s"
+			% [_chunk_ids]
+		)
+	else:
+		_debug("navigation chunks rebuilt; target path refreshed chunks=%s" % [_chunk_ids])
+	_update_health_label()
+	## 测试场景可订阅这个本地信号，把实际路径刷新显示到调试面板；
+	## 不通过 SquadCommunicationChannel，避免把导航内部事件伪装成通信消息。
+	navigation_path_refreshed.emit(_chunk_ids.duplicate(), was_stuck)
 
 
 func _avoid_immediate_obstacle(
@@ -2962,6 +4435,41 @@ func _avoid_immediate_obstacle(
 	).normalized()
 
 
+## 对脱困/爆炸撤退方向做一次实际碰撞预检。RayCast 的朝向可能还停留在
+## 上一帧，test_move 能直接验证 CharacterBody3D 当前变换前方是否可走。
+func _movement_direction_is_blocked(direction: Vector3, distance := 1.25) -> bool:
+	var horizontal := direction
+	horizontal.y = 0.0
+	if horizontal.length_squared() <= 0.001:
+		return true
+	return test_move(
+		global_transform,
+		horizontal.normalized() * maxf(0.25, distance)
+	)
+
+
+func _find_open_movement_direction(preferred: Vector3, distance := 1.25) -> Vector3:
+	var base := preferred
+	base.y = 0.0
+	if base.length_squared() <= 0.001:
+		base = -global_transform.basis.z
+	if base.length_squared() <= 0.001:
+		base = Vector3.FORWARD
+	base = base.normalized()
+	var candidates: Array[Vector3] = [
+		base,
+		base.rotated(Vector3.UP, PI * 0.5),
+		base.rotated(Vector3.UP, -PI * 0.5),
+		base.rotated(Vector3.UP, PI * 0.25),
+		base.rotated(Vector3.UP, -PI * 0.25),
+		base.rotated(Vector3.UP, PI),
+	]
+	for candidate in candidates:
+		if not _movement_direction_is_blocked(candidate, distance):
+			return candidate.normalized()
+	return base
+
+
 func _try_jump_over_obstacle() -> void:
 	if not is_on_floor():
 		return
@@ -2981,8 +4489,24 @@ func _try_jump_over_obstacle() -> void:
 func _apply_character_movement(
 	direction: Vector3,
 	speed: float,
-	delta: float
+	delta: float,
+	use_navigation_avoidance: bool = true,
+	preserve_direction: bool = false
 ) -> void:
+	var previous_position := global_position
+	if _grenade_avoidance_active:
+		direction = _apply_grenade_avoidance_direction(direction)
+		## 安全保持阶段也必须实际离开危险区；即使原状态本帧要求
+		## 悬停/等待，也使用现有的逃离速度移动，而不是把 velocity 清零。
+		if direction.length_squared() > 0.001:
+			speed = maxf(speed, flee_speed)
+	if not preserve_direction:
+		direction = _apply_squad_soft_separation(direction)
+	speed *= GameAuthority.get_chain_link_fence_speed_multiplier(
+		global_position,
+		team_id,
+		"ai"
+	)
 	var horizontal_step := direction * speed + rubber_knockback
 	var proposed := global_position + Vector3(horizontal_step.x, 0.0, horizontal_step.z) * delta
 	if WaterBody3D.is_navigation_blocked(proposed):
@@ -2994,6 +4518,22 @@ func _apply_character_movement(
 		direction * speed
 		+ rubber_knockback
 	)
+	var movement_velocity := desired_velocity
+	## 手雷规避期间即使原状态为了炸弹撤退而请求 bypass，也不能关闭
+	## NavigationAgent3D 的 avoidance_enabled；RVO 和下方的 test_move/RayCast
+	## 共同选择可行的离开方向。
+	if (use_navigation_avoidance or _grenade_avoidance_active) \
+			and _navigation_avoidance_is_active():
+		## RVO 只计算期望速度；实际安全速度由 velocity_computed 回调返回。
+		navigation_agent.set_velocity(
+			Vector3(desired_velocity.x, 0.0, desired_velocity.z)
+		)
+		if _avoidance_safe_velocity_valid:
+			movement_velocity.x = _avoidance_safe_velocity.x
+			movement_velocity.z = _avoidance_safe_velocity.z
+		_avoidance_safe_velocity_valid = false
+	else:
+		_avoidance_safe_velocity_valid = false
 
 	rubber_knockback = (
 		rubber_knockback.move_toward(
@@ -3004,13 +4544,13 @@ func _apply_character_movement(
 
 	velocity.x = move_toward(
 		velocity.x,
-		desired_velocity.x,
+		movement_velocity.x,
 		acceleration * delta
 	)
 
 	velocity.z = move_toward(
 		velocity.z,
-		desired_velocity.z,
+		movement_velocity.z,
 		acceleration * delta
 	)
 
@@ -3051,6 +4591,387 @@ func _apply_character_movement(
 	_update_character_animation(
 		direction
 	)
+	_update_squad_stuck_tracking(previous_position, direction, speed, delta)
+
+
+func _navigation_avoidance_is_active() -> bool:
+	return (
+		navigation_avoidance_enabled
+		and use_navigation_agent
+		and navigation_agent != null
+		and navigation_agent.avoidance_enabled
+		and _navigation_map_is_ready()
+	)
+
+
+## Engineer 可以覆盖此钩子，在安装/撤退炸药等关键阶段不进入普通卡住计时。
+func _squad_stuck_tracking_allowed() -> bool:
+	return true
+
+
+## FutureEngineer 在自己已放置 RemoteBomb 后必须优先完成自身安全撤退；
+## 其他成员的爆破警告会暂存，不能打断这条最高优先级状态。
+func _squad_warning_can_override_role_behavior() -> bool:
+	return true
+
+
+func _squad_stuck_goal_for_state() -> Vector3:
+	match state:
+		AIState.SEARCH:
+			if farm_patrol_position.is_finite():
+				return farm_patrol_position
+			if enemy_farm_position.is_finite():
+				return enemy_farm_position
+			if is_instance_valid(target):
+				return target.global_position
+		AIState.CHASE:
+			if _is_valid_target(target_player):
+				return target_player.global_position
+			if last_known_target_position.is_finite():
+				return last_known_target_position
+		AIState.FLEE:
+			return flee_target
+	return INVALID_POSITION
+
+
+func _reset_squad_progress_window(goal: Vector3 = INVALID_POSITION) -> void:
+	_squad_progress_window_elapsed = 0.0
+	_squad_progress_anchor = global_position
+	_squad_tracking_goal = goal
+	_squad_window_travel_distance = 0.0
+	_squad_blocked_elapsed = 0.0
+
+
+func _squad_frame_has_blocking_collision(
+	previous_position: Vector3,
+	direction: Vector3,
+	speed: float,
+	delta: float
+) -> bool:
+	var intended_direction := direction
+	intended_direction.y = 0.0
+	var actual_motion := global_position - previous_position
+	actual_motion.y = 0.0
+	var actual_distance := actual_motion.length()
+	var expected_distance := maxf(0.0, speed) * maxf(0.0, delta)
+
+	## 没有明显实际位移时先记为本帧疑似阻挡；完整窗口会过滤单帧抖动。
+	if intended_direction.length_squared() > 0.001 \
+			and expected_distance > 0.12 \
+			and actual_distance < maxf(0.025, expected_distance * 0.18):
+		return true
+
+	## 通过 move_and_slide 的碰撞法线区分“沿墙移动”和“命令方向撞墙”。
+	## 地面法线被忽略，只检查水平墙体、空气墙和建筑碰撞。
+	if intended_direction.length_squared() > 0.001:
+		intended_direction = intended_direction.normalized()
+		for collision_index in range(get_slide_collision_count()):
+			var collision := get_slide_collision(collision_index)
+			if collision == null:
+				continue
+			var normal := collision.get_normal()
+			normal.y = 0.0
+			if normal.length_squared() <= 0.01:
+				continue
+			if intended_direction.dot(normal.normalized()) < -0.25:
+				return true
+
+	return false
+
+
+func _update_squad_stuck_tracking(
+	previous_position: Vector3,
+	direction: Vector3,
+	speed: float,
+	delta: float
+) -> void:
+	var trackable_state := state in [
+		AIState.SEARCH,
+		AIState.CHASE,
+		AIState.FLEE,
+	]
+	if (
+		not is_instance_valid(squad)
+		or not _squad_stuck_tracking_allowed()
+		or not trackable_state
+		or _squad_entry_waypoint != INVALID_POSITION
+		or _squad_escape_waypoint != INVALID_POSITION
+	):
+		_reset_squad_stuck_tracking()
+		return
+	## 导航网格仍在初始化时是“等待导航”，不是被障碍卡住；避免把
+	## 初始 bake 的等待错误显示成困住。
+	if use_navigation_agent and navigation_agent != null \
+			and not _navigation_map_is_ready():
+		_reset_squad_stuck_tracking()
+		return
+
+	var goal := _squad_stuck_goal_for_state()
+	if not goal.is_finite():
+		_reset_squad_stuck_tracking()
+		return
+
+	## SEARCH 在战略 target 附近本来就可能没有移动意图。到达战略
+	## target 或当前 patrol waypoint 时，不把正常停留误判成卡住。
+	if state == AIState.SEARCH:
+		if not is_instance_valid(target) \
+				or _horizontal_distance(global_position, target.global_position) <= 2.5:
+			_reset_squad_stuck_tracking()
+			return
+
+	if _horizontal_distance(global_position, goal) <= 1.2:
+		_reset_squad_stuck_tracking()
+		return
+
+	## patrol 点、追击目标或 FLEE 目标改变时开启新的窗口。
+	if not _squad_tracking_goal.is_finite() \
+			or _horizontal_distance(_squad_tracking_goal, goal) > 1.25:
+		_reset_squad_progress_window(goal)
+
+	_squad_progress_window_elapsed += delta
+	_squad_window_travel_distance += _horizontal_distance(
+		previous_position,
+		global_position
+	)
+	var start_goal_distance := _horizontal_distance(
+		_squad_progress_anchor,
+		_squad_tracking_goal
+	)
+	var current_goal_distance := _horizontal_distance(
+		global_position,
+		goal
+	)
+	var goal_progress := start_goal_distance - current_goal_distance
+	var net_window_displacement := _horizontal_distance(
+		_squad_progress_anchor,
+		global_position
+	)
+	var blocked_this_frame := _squad_frame_has_blocking_collision(
+		previous_position,
+		direction,
+		speed,
+		delta
+	)
+	if blocked_this_frame:
+		_squad_blocked_elapsed += delta
+	else:
+		## 轻微衰减而不是立即清零，避免碰撞法线在相邻帧抖动时漏掉墙边卡住。
+		_squad_blocked_elapsed = maxf(
+			0.0,
+			_squad_blocked_elapsed - delta * 0.5
+		)
+
+	var effective_goal_progress := squad_stuck_min_goal_progress
+	if effective_goal_progress <= 0.05:
+		effective_goal_progress = squad_stuck_min_progress
+	effective_goal_progress = maxf(0.05, effective_goal_progress)
+	var navigation_is_making_progress := (
+		not _squad_stuck
+		or not _navigation_using_direct_fallback
+	)
+	if goal_progress >= effective_goal_progress and navigation_is_making_progress:
+		_reset_squad_progress_window(goal)
+		if _squad_stuck:
+			_squad_stuck = false
+			_squad_stuck_elapsed = 0.0
+			_debug("squad stuck state cleared by goal progress=%.1fm" % goal_progress)
+		return
+
+	var elapsed := _squad_progress_window_elapsed
+	var expected_motion := maxf(0.0, speed) * elapsed
+	var minimum_motion := maxf(
+		squad_stuck_min_actual_motion,
+		expected_motion * 0.2
+	)
+	var insufficient_motion := _squad_window_travel_distance < minimum_motion
+	var oscillating := (
+		_squad_window_travel_distance >= maxf(1.0, minimum_motion * 2.0)
+		and net_window_displacement
+			<= maxf(0.8, _squad_window_travel_distance * squad_stuck_oscillation_ratio)
+		and goal_progress < effective_goal_progress
+	)
+	var command_direction := direction
+	command_direction.y = 0.0
+	var actual_direction := global_position - previous_position
+	actual_direction.y = 0.0
+	var command_alignment := 0.0
+	if command_direction.length_squared() > 0.001 \
+			and actual_direction.length_squared() > 0.001:
+		command_alignment = command_direction.normalized().dot(
+			actual_direction.normalized()
+		)
+	var goal_alignment := 0.0
+	var goal_direction := _horizontal_direction(global_position, goal)
+	if goal_direction.length_squared() > 0.001 \
+			and actual_direction.length_squared() > 0.001:
+		goal_alignment = goal_direction.dot(actual_direction.normalized())
+	var moving_sideways_without_goal_progress := (
+		_squad_window_travel_distance >= minimum_motion
+		and command_alignment < 0.1
+		and goal_progress < effective_goal_progress
+	)
+	var moving_without_goal_alignment := (
+		_squad_window_travel_distance >= minimum_motion
+		and goal_alignment < 0.15
+		and goal_progress < effective_goal_progress
+	)
+	var progress_efficiency := goal_progress / maxf(
+		0.05,
+		_squad_window_travel_distance
+	)
+	var inefficient_goal_progress := (
+		_squad_window_travel_distance >= minimum_motion
+		and progress_efficiency < 0.15
+		and goal_progress < effective_goal_progress
+	)
+	var no_goal_progress := goal_progress < effective_goal_progress
+	var collision_confirmed := _squad_blocked_elapsed >= maxf(
+		0.05,
+		squad_stuck_blocked_seconds
+	)
+	var confirmation_window := squad_stuck_detection_seconds
+	if collision_confirmed:
+		## 持续撞墙时不必完整等待 2 秒，但保留至少 0.75 秒的抗抖窗口。
+		confirmation_window = minf(confirmation_window, 0.75)
+
+	if not _squad_stuck:
+		if elapsed < confirmation_window:
+			return
+		var stuck_evidence := (
+			collision_confirmed
+			or insufficient_motion
+			or oscillating
+			or moving_sideways_without_goal_progress
+			or moving_without_goal_alignment
+			or inefficient_goal_progress
+		)
+		if not no_goal_progress or not stuck_evidence:
+			return
+		_squad_stuck = true
+		_squad_stuck_elapsed = 0.0
+		var detected_travel := _squad_window_travel_distance
+		var detected_blocked := _squad_blocked_elapsed
+		_reset_squad_progress_window(goal)
+		## 卡住的第一步是重新请求当前行为目标的导航路径；只有这次
+		## 导航重试仍无有效下一点，才会在 _direction_to_goal 中使用直线兜底。
+		_reset_navigation_path()
+		_squad_navigation_retry_timer = maxf(
+			0.75,
+			navigation_refresh_interval * 3.0
+		)
+		## 这是 AI 因“困住”主动重试导航的本地诊断事件，不是 Squad 通信。
+		navigation_path_refreshed.emit([], true)
+		_debug(
+			(
+				"squad stuck detected state=%s elapsed=%.1fs goal_progress=%.2fm "
+				+ "travel=%.2fm blocked=%.2fs oscillating=%s alignment=%.2f "
+				+ "goal_alignment=%.2f goal=%s"
+			)
+			% [
+				_status_label_text(),
+				elapsed,
+				goal_progress,
+				detected_travel,
+				detected_blocked,
+				str(oscillating),
+				command_alignment,
+				goal_alignment,
+				_format_position(goal),
+			]
+		)
+		## 入口消息可能早于本次卡住判定到达；卡住成立后立即消费最近入口。
+		_activate_pending_squad_entry()
+		return
+
+	_squad_stuck_elapsed += delta
+	if _squad_stuck_elapsed >= squad_stuck_escape_after_seconds:
+		_start_squad_escape()
+
+
+func _reset_squad_stuck_tracking() -> void:
+	_squad_stuck = false
+	_squad_stuck_elapsed = 0.0
+	_squad_navigation_retry_timer = 0.0
+	_reset_squad_progress_window()
+
+
+func _start_squad_escape() -> void:
+	var direction := Vector3.ZERO
+	var escape_position := global_position
+	var escape_distance := maxf(1.0, squad_escape_distance)
+	for _attempt in range(8):
+		var candidate := Vector3(
+			rng.randf_range(-1.0, 1.0),
+			0.0,
+			rng.randf_range(-1.0, 1.0)
+		)
+		if candidate.length_squared() <= 0.01:
+			continue
+		candidate = candidate.normalized()
+		var candidate_position := _clamp_to_map_interior(
+			global_position + candidate * escape_distance
+		)
+		if (
+			_horizontal_distance(global_position, candidate_position) >= escape_distance * 0.45
+			and not _movement_direction_is_blocked(candidate, minf(1.5, escape_distance))
+		):
+			direction = candidate
+			escape_position = candidate_position
+			break
+	if direction.length_squared() <= 0.01:
+		direction = -global_transform.basis.z
+		direction.y = 0.0
+		if direction.length_squared() <= 0.01:
+			direction = Vector3.FORWARD
+		direction = direction.normalized()
+		escape_position = _clamp_to_map_interior(
+			global_position + direction * escape_distance
+		)
+	direction = _find_open_movement_direction(direction, minf(1.5, escape_distance))
+	escape_position = _clamp_to_map_interior(
+		global_position + direction * escape_distance
+	)
+	_squad_escape_waypoint = escape_position
+	_squad_escape_direction = direction
+	_squad_escape_timer = maxf(0.5, squad_escape_duration)
+	_squad_stuck = false
+	_squad_stuck_elapsed = 0.0
+	_squad_progress_window_elapsed = 0.0
+	_squad_progress_anchor = global_position
+	_reset_navigation_path()
+	_debug(
+		"squad escape started direction=%s waypoint=%s"
+		% [_format_position(direction), _format_position(escape_position)]
+	)
+
+
+func _apply_squad_soft_separation(route_direction: Vector3) -> Vector3:
+	if route_direction.length_squared() < 0.001 or not is_instance_valid(squad):
+		return route_direction
+	if not squad.has_method("get_member_nodes"):
+		return route_direction
+	var minimum_distance := squad_minimum_member_distance
+	var weight := squad_separation_weight
+	var squad_minimum = squad.get("minimum_member_distance")
+	var squad_weight = squad.get("separation_weight")
+	if squad_minimum != null:
+		minimum_distance = float(squad_minimum)
+	if squad_weight != null:
+		weight = float(squad_weight)
+	var separation := Vector3.ZERO
+	for member in squad.get_member_nodes():
+		if member == self or not is_instance_valid(member) or not member is Node3D:
+			continue
+		var member_3d := member as Node3D
+		var away: Vector3 = global_position - member_3d.global_position
+		away.y = 0.0
+		var distance: float = away.length()
+		if distance > 0.001 and distance < minimum_distance:
+			separation += away.normalized() * (1.0 - distance / minimum_distance)
+	if separation.length_squared() < 0.001:
+		return route_direction
+	## 仅做软修正：在狭窄入口中导航方向继续占主导，不强行把队员分开。
+	return (route_direction.normalized() + separation.normalized() * clampf(weight, 0.0, 0.6)).normalized()
 
 
 func _rotate_toward_direction(
@@ -3155,6 +5076,7 @@ func get_network_state() -> Dictionary:
 		"dead": state == AIState.DEAD,
 		"respawn_left": 0.0,
 		"state": int(state),
+		"squad_stuck": _squad_stuck,
 	}
 
 
@@ -3164,6 +5086,8 @@ func apply_network_state(data: Dictionary) -> void:
 	current_hp = float(data.get("hp", current_hp))
 	if data.has("state"):
 		state = int(data.get("state", state))
+	if data.has("squad_stuck"):
+		_squad_stuck = bool(data.get("squad_stuck", _squad_stuck))
 	_update_team_marker_visibility()
 	if health_label != null:
 		health_label.visible = not bool(data.get("dead", false))
@@ -3372,11 +5296,16 @@ func _handle_hit3d_contact(
 			)
 		)
 
+	var attacker_node: CharacterBody3D
+	if bullet.has_method("get_bullet_shooter"):
+		attacker_node = bullet.call("get_bullet_shooter") as CharacterBody3D
+
 	impact(
 		effect,
 		damage,
 		shooter_team,
-		hit_direction
+		hit_direction,
+		attacker_node
 	)
 
 	if knockback_force > 0.0:
@@ -3415,7 +5344,8 @@ func impact(
 	effect: String,
 	strength: float,
 	attacker_team: String = "",
-	hit_direction: Vector3 = Vector3.ZERO
+	hit_direction: Vector3 = Vector3.ZERO,
+	attacker_node: CharacterBody3D = null
 ) -> bool:
 	if state == AIState.DEAD:
 		return false
@@ -3438,10 +5368,24 @@ func impact(
 		damage,
 		effect,
 		attacker_team,
-		hit_direction
+		hit_direction,
+		attacker_node
 	)
 
 	return true
+
+
+func impact_from_peer(
+	effect: String,
+	strength: float,
+	attacker_team: String,
+	attacker_peer_id: int
+) -> bool:
+	var attacker_node := _find_human_attacker_by_peer_id(attacker_peer_id)
+	var hit_direction := Vector3.ZERO
+	if is_instance_valid(attacker_node):
+		hit_direction = global_position - attacker_node.global_position
+	return impact(effect, strength, attacker_team, hit_direction, attacker_node)
 
 
 func receive_bullet_hit(
@@ -3469,7 +5413,8 @@ func _apply_damage(
 	damage: float,
 	effect: String,
 	attacker_team: String,
-	hit_direction: Vector3
+	hit_direction: Vector3,
+	attacker_node: CharacterBody3D = null
 ) -> void:
 	current_hp = maxf(
 		0.0,
@@ -3481,7 +5426,10 @@ func _apply_damage(
 		damage_memory_seconds
 	)
 
-	if hit_direction.length_squared() > 0.001:
+	if is_instance_valid(attacker_node):
+		last_damage_source_position = attacker_node.global_position
+
+	elif hit_direction.length_squared() > 0.001:
 		last_damage_source_position = (
 			global_position
 			- hit_direction.normalized()
@@ -3493,7 +5441,11 @@ func _apply_damage(
 			target_player.global_position
 		)
 
-	_remember_retaliation_target(attacker_team, hit_direction)
+	var retaliation_started := _remember_retaliation_target(
+		attacker_team,
+		hit_direction,
+		attacker_node
+	)
 
 	_update_health_label()
 
@@ -3512,6 +5464,18 @@ func _apply_damage(
 			attacker_team,
 			effect
 		)
+		return
+
+	## 只有子弹命中、并且受击者已经进入 COMBAT，才开启 Squad 支援广播。
+	## 如果攻击距离较远导致先进入 CHASE，则等真正进入 COMBAT 后再发送。
+	if _is_bullet_damage_effect(effect) and retaliation_started:
+		_squad_support_pending_after_bullet = true
+		if state == AIState.COMBAT:
+			_activate_squad_support_broadcast()
+
+	## 已经找到实际攻击者时，受击反击优先于旧的自动撤退逻辑。
+	## 这样不会再先切手枪逃跑 1.8 秒后才回头攻击。
+	if retaliation_started:
 		return
 
 	var health_ratio := (
@@ -3547,30 +5511,100 @@ func _apply_damage(
 		)
 
 
-func _remember_retaliation_target(attacker_team: String, hit_direction: Vector3) -> void:
-	var expected_position := global_position
-	if hit_direction.length_squared() > 0.001:
-		expected_position -= hit_direction.normalized() * vision_range
+func _is_bullet_damage_effect(effect: String) -> bool:
+	var effect_key := effect.to_lower()
+	return effect_key in [
+		"bullet",
+		"nail",
+		"nail_bullet",
+		"rubber",
+		"rubber_bullet",
+		"flame",
+		"freeze",
+		"color",
+		"color_bullet",
+	]
 
+
+func _remember_retaliation_target(
+	attacker_team: String,
+	hit_direction: Vector3,
+	attacker_node: CharacterBody3D = null
+) -> bool:
+	if _is_valid_target(attacker_node):
+		_activate_retaliation_target(attacker_node)
+		return true
+
+	## 旧投射物和部分爆炸只携带队伍与方向。此时沿受击反方向寻找最匹配的
+	## 敌方角色，并把 combat_characters 纳入候选，避免 Warrior 互射时找不到攻击者。
+	var attack_direction := Vector3.ZERO
+	if hit_direction.length_squared() > 0.001:
+		attack_direction = -hit_direction.normalized()
 	var closest: CharacterBody3D
-	var closest_distance := INF
-	for group_name in [&"human_players", &"wild_animals"]:
+	var best_score := INF
+	var visited := {}
+	for group_name in [&"human_players", &"wild_animals", &"combat_characters"]:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if not node is CharacterBody3D:
 				continue
 			var candidate := node as CharacterBody3D
+			var candidate_id := int(candidate.get_instance_id())
+			if visited.has(candidate_id):
+				continue
+			visited[candidate_id] = true
 			if not _is_active_hostile_candidate(candidate):
 				continue
 			if not attacker_team.is_empty() and _get_combat_team(candidate) != attacker_team:
 				continue
-			var distance := candidate.global_position.distance_to(expected_position)
-			if distance < closest_distance:
+			var offset := candidate.global_position - global_position
+			offset.y = 0.0
+			var distance := offset.length()
+			var score := distance
+			if attack_direction != Vector3.ZERO and distance > 0.001:
+				var alignment := attack_direction.dot(offset / distance)
+				if alignment <= 0.05:
+					continue
+				var lateral_error := distance * sqrt(maxf(0.0, 1.0 - alignment * alignment))
+				score = lateral_error * 4.0 + distance * 0.08
+			if score < best_score:
 				closest = candidate
-				closest_distance = distance
+				best_score = score
 
-	if closest != null:
-		retaliation_target = closest
-		retaliation_timer = 5.0
+	if closest == null:
+		return false
+	_activate_retaliation_target(closest)
+	return true
+
+
+func _activate_retaliation_target(attacker: CharacterBody3D) -> void:
+	retaliation_target = attacker
+	retaliation_timer = 5.0
+	target_player = attacker
+	target_refresh_timer = target_refresh_interval
+	last_known_target_position = attacker.global_position
+	_begin_target_engagement(attacker)
+	var direction := _horizontal_direction(global_position, attacker.global_position)
+	if direction.length_squared() > 0.001:
+		## 受击帧直接完成水平转向；后续帧继续由正常瞄准与移动逻辑接管。
+		rotation.y = atan2(-direction.x, -direction.z)
+	_aim_at(_get_predicted_aim_position(attacker))
+	fire_timer = 0.0
+	ar15_burst_pause_timer = 0.0
+	var distance := _horizontal_distance(global_position, attacker.global_position)
+	state = AIState.COMBAT if _has_clear_line_to(attacker) \
+		and distance <= preferred_combat_range + combat_range_tolerance else AIState.CHASE
+	_debug("immediate retaliation target=%s distance=%.1f" % [attacker.name, distance])
+
+
+func _find_human_attacker_by_peer_id(peer_id: int) -> CharacterBody3D:
+	if peer_id <= 0:
+		return null
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is CharacterBody3D or not _has_property(node, "authority_peer_id"):
+			continue
+		if int(node.get("authority_peer_id")) == peer_id:
+			return node as CharacterBody3D
+	return null
 
 
 func _update_health_label() -> void:
@@ -3581,11 +5615,21 @@ func _update_health_label() -> void:
 
 	health_label.text = (
 		"Future Warrior  %d / %d\n"
-		+ "AR15 · Pistol · Grenade x%d"
+		+ "FutureM4 %d/%d · Pistol %d/%d · Grenade x%d\n"
+		+ "状态: %s\n"
+		+ "困住状态: %s\n"
+		+ "最近消息: %s"
 	) % [
 		roundi(current_hp),
 		roundi(max_hp),
+		_weapon_ammo_in_mag(WeaponSlot.AR15),
+		_weapon_reserve_ammo(WeaponSlot.AR15),
+		_weapon_ammo_in_mag(WeaponSlot.SUPPRESSED_PISTOL),
+		_weapon_reserve_ammo(WeaponSlot.SUPPRESSED_PISTOL),
 		grenades_remaining,
+		_status_label_text(),
+		_squad_stuck_label_text(),
+		_last_squad_message_label(),
 	]
 
 	var ratio := clampf(
@@ -3610,8 +5654,25 @@ func _die(
 		return
 
 	state = AIState.DEAD
+	_finish_grenade_avoidance()
+	_clear_squad_support()
+	_squad_support_broadcast_active = false
+	_squad_support_pending_after_bullet = false
+	_clear_squad_warning_state()
+	combat_engagement_point = INVALID_POSITION
+	combat_engagement_target_id = 0
+	_squad_entry_waypoint = INVALID_POSITION
+	_squad_entry_request_id = ""
+	_clear_pending_squad_entry()
+	_squad_escape_waypoint = INVALID_POSITION
+	_squad_escape_direction = Vector3.ZERO
+	_squad_escape_timer = 0.0
+	_reset_squad_stuck_tracking()
+	_avoidance_safe_velocity = Vector3.ZERO
+	_avoidance_safe_velocity_valid = false
 	if not attacker_team.is_empty() and (GameAuthority.is_local_authority() or GameAuthority.is_server_authority()):
 		GameAuthority.award_future_warrior_defeat(attacker_team, team_id)
+	_try_spawn_cash_drop_on_death()
 	velocity = Vector3.ZERO
 	rubber_knockback = Vector3.ZERO
 	action_animation_locked = true
@@ -3621,10 +5682,13 @@ func _die(
 	collision_mask = 0
 
 	if hit_3d != null:
-		hit_3d.monitoring = false
-		hit_3d.monitorable = false
-		hit_3d.collision_layer = 0
-		hit_3d.collision_mask = 0
+		## _die() 可能由 Hit3D.body_entered 直接调用；此时物理服务器正在
+		## flush 查询，Area3D 的监控属性不能同步修改，否则会报
+		## "Function blocked during in/out signal"。
+		hit_3d.set_deferred("monitoring", false)
+		hit_3d.set_deferred("monitorable", false)
+		hit_3d.set_deferred("collision_layer", 0)
+		hit_3d.set_deferred("collision_mask", 0)
 
 	if body_collision_shape != null:
 		body_collision_shape.set_deferred(
@@ -3645,16 +5709,52 @@ func _die(
 	if health_label != null:
 		health_label.visible = false
 
-	_debug("killed by=%s effect=%s; respawning in %.1f seconds" % [
-		attacker_team, effect, respawn_seconds,
-	])
+	if is_instance_valid(external_respawn_controller):
+		_debug("killed by=%s effect=%s; waiting for squad spawner batch replacement" % [attacker_team, effect])
+	else:
+		_debug("killed by=%s effect=%s; respawning in %.1f seconds" % [
+			attacker_team, effect, respawn_seconds,
+		])
+	if is_instance_valid(external_respawn_controller) and external_respawn_controller.has_method("notify_squad_member_dead"):
+		external_respawn_controller.notify_squad_member_dead(self)
 
 	call_deferred(
 		"_finish_death"
 	)
 
 
+func _try_spawn_cash_drop_on_death() -> void:
+	if not (GameAuthority.is_local_authority() or GameAuthority.is_server_authority()):
+		return
+	if cash_drop_chance <= 0.0 or rng.randf() >= cash_drop_chance:
+		return
+	var minimum := mini(cash_drop_minimum, cash_drop_maximum)
+	var maximum := maxi(cash_drop_minimum, cash_drop_maximum)
+	var amount := rng.randi_range(minimum, maximum)
+	var direction := Vector3(
+		rng.randf_range(-1.0, 1.0),
+		0.35,
+		rng.randf_range(-1.0, 1.0)
+	).normalized()
+	var authority := get_node_or_null("/root/GameAuthority")
+	if authority == null or not authority.has_method("spawn_cash_drop"):
+		_debug("cash drop skipped: GameAuthority.spawn_cash_drop unavailable")
+		return
+	var spawned := bool(authority.call(
+		"spawn_cash_drop",
+		global_position,
+		amount,
+		team_id,
+		direction
+	))
+	if spawned:
+		_debug("cash drop spawned amount=%d position=%s" % [amount, global_position])
+
+
 func _finish_death() -> void:
+	## 生成器管理的是整批替换：旧成员保持死亡，不能走单体复活链路。
+	if is_instance_valid(external_respawn_controller):
+		return
 	await get_tree().create_timer(
 		respawn_seconds
 	).timeout
@@ -3664,13 +5764,18 @@ func _finish_death() -> void:
 
 
 func _respawn_at_team_spawn() -> void:
+	_finish_grenade_avoidance()
 	var spawn_position := _get_team_respawn_position()
 	global_position = spawn_position
 	velocity = Vector3.ZERO
 	rubber_knockback = Vector3.ZERO
 	current_hp = max_hp
 	grenades_remaining = starting_grenade_count
+	engagement_grenade_target_id = 0
+	engagement_grenade_pending = false
 	target_player = null
+	retaliation_target = null
+	retaliation_timer = 0.0
 	last_known_target_position = INVALID_POSITION
 	flee_target = INVALID_POSITION
 	flee_timer = 0.0
@@ -3687,6 +5792,24 @@ func _respawn_at_team_spawn() -> void:
 	landing_animation = false
 	was_on_floor = true
 	state = AIState.SEARCH
+	_clear_squad_support()
+	_squad_support_broadcast_active = false
+	_squad_support_pending_after_bullet = false
+	_clear_squad_warning_state()
+	_squad_support_request_timer = 0.0
+	combat_engagement_point = INVALID_POSITION
+	combat_engagement_target_id = 0
+	_squad_entry_waypoint = INVALID_POSITION
+	_squad_entry_request_id = ""
+	_clear_pending_squad_entry()
+	_squad_escape_waypoint = INVALID_POSITION
+	_squad_escape_direction = Vector3.ZERO
+	_squad_escape_timer = 0.0
+	_reset_squad_stuck_tracking()
+	_avoidance_safe_velocity = Vector3.ZERO
+	_avoidance_safe_velocity_valid = false
+	if navigation_agent != null:
+		navigation_agent.set_velocity(Vector3.ZERO)
 	collision_layer = body_collision_layer
 	collision_mask = body_collision_mask
 	if body_collision_shape != null:
@@ -3698,6 +5821,7 @@ func _respawn_at_team_spawn() -> void:
 		hit_3d.collision_mask = hit_area_collision_mask
 		hit_3d.monitoring = true
 		hit_3d.monitorable = true
+	_initialize_weapon_ammo()
 	_equip_weapon(WeaponSlot.AR15)
 	_play_body_animation(&"Idle", 0.05)
 	_update_health_label()

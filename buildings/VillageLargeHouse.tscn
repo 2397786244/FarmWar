@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://8sgtnjjjmg40" path="res://tools/generated_farmtown_houses/FTF_House_Large_PorchTerrace_BrownRed_v4.glb" id="1_dwlf1"]
 
 [node name="VillageLargeHouse" type="StaticBody3D" unique_id=2014752235]
+metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 

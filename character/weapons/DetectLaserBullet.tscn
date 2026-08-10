@@ -24,8 +24,8 @@ rings = 4
 collision_layer = 32
 collision_mask = 4099
 script = ExtResource("1_oui55")
-speed = 50
-max_distance = 50
+speed = 60
+max_distance = 60
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1955632818]
 shape = SubResource("SphereShape3D_81k67")
