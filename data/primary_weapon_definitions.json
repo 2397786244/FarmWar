@@ -57,10 +57,10 @@
 	  "name": "双管猎枪",
 	  "tool_scene": "res://character/weapons/Shotgun.tscn",
 	  "icon": "",
-	  "power": 120,
+	  "power": 360,
 	  "fire_rate": 1.25,
 	  "cooldown": 0.8,
-	  "description": "双手持握，每次以小夹角同时发射两颗弹丸，每颗伤害60。"
+	  "description": "双手持握，每次以更小夹角同时发射6颗弹丸，每颗伤害60，全部命中时总伤害360。"
 	},
 	{
 	  "id": "hunting_rifle",
@@ -71,6 +71,36 @@
 	  "fire_rate": 0.5,
 	  "cooldown": 2.0,
 	  "description": "双手持握的远距离栓动步枪，射程120米，单发伤害80。"
+	},
+	{
+	  "id": "crossbow",
+	  "name": "弩",
+	  "tool_scene": "res://character/weapons/Crossbow.tscn",
+	  "icon": "",
+	  "power": 80,
+	  "fire_rate": 0.333,
+	  "cooldown": 3.0,
+	  "description": "双手持握的弩，射程120米，箭速90米/秒，单发伤害80；每次射击后装填3秒。"
+	},
+	{
+	  "id": "long_spear",
+	  "name": "长枪",
+	  "tool_scene": "res://character/weapons/LongSpear.tscn",
+	  "icon": "",
+	  "power": 20,
+	  "fire_rate": 1.0,
+	  "cooldown": 1.0,
+	  "description": "单手持握的长枪，枪尖范围内的每个合法目标受到20点近战伤害。"
+	},
+	{
+	  "id": "medieval_shield",
+	  "name": "中世纪盾牌",
+	  "tool_scene": "res://character/weapons/MedievalShield.tscn",
+	  "icon": "",
+	  "power": 1000,
+	  "fire_rate": 0,
+	  "cooldown": 0,
+	  "description": "手持后自动阻挡子弹和近战攻击；正面可吸收炮弹爆炸伤害的80%。"
 	},
 	{
 	  "id": "m4",

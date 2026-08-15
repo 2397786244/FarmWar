@@ -21,6 +21,7 @@ signal team_chat_message_received(message: Dictionary)
 const STATUS_DISCONNECTED := "disconnected"
 const STATUS_CONNECTING := "connecting"
 const STATUS_CONNECTED := "connected"
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 
 var status := STATUS_DISCONNECTED
 var server_address := ""
@@ -137,6 +138,11 @@ func submit_farm_action(action: Dictionary) -> void:
 
 
 func submit_ingredient_pickup_action(action: Dictionary) -> void:
+	if str(action.get("station_kind", "")) == "cargo_car":
+		CARGO_CAR_DEBUG.log(
+			"network submit ingredient_action cargo action=%s vehicle_id=%s peer=%d"
+			% [str(action.get("action", "")), str(action.get("vehicle_id", "")), get_unique_peer_id()]
+		)
 	NetworkSession.submit_action("ingredient_action", action)
 
 
@@ -158,6 +164,10 @@ func submit_vehicle_input(input_frame: Dictionary) -> void:
 
 func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1) -> void:
 	NetworkSession.submit_action("vehicle_session", {"vehicle_id": vehicle_id, "connected": connected, "seat_index": seat_index})
+
+
+func submit_vehicle_action(action: Dictionary) -> void:
+	NetworkSession.submit_action("vehicle_action", action)
 
 
 func submit_team_chat(message: String, scope := "team") -> void:
@@ -189,6 +199,7 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 		"remote_action": rpc_endpoint.submit_remote_action(payload)
 		"vehicle_input": rpc_endpoint.submit_vehicle_input(payload)
 		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+		"vehicle_action": rpc_endpoint.submit_vehicle_action(payload)
 		"gate_action": rpc_endpoint.submit_gate_action(payload)
 		"ladder_action": rpc_endpoint.submit_ladder_action(payload)
 		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))

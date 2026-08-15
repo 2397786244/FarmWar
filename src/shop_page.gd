@@ -284,8 +284,9 @@ func _on_trade_pressed(
 		status_label.text = "交易请求已发送，等待服务器确认：%s × %s" % [display_name, _format_quantity(amount, unit)]
 		status_label.add_theme_color_override("font_color", COLOR_MUTED)
 		return
-	elif GameAuthority.is_local_authority():
-		var result: Dictionary = GameAuthority.local_shop_transaction(GameAuthority.LOCAL_PLAYER_ID, request)
+	elif GameAuthority.is_local_interaction_authority():
+		var peer_id := current_player.authority_peer_id if is_instance_valid(current_player) else GameAuthority.LOCAL_PLAYER_ID
+		var result: Dictionary = GameAuthority.local_shop_transaction(peer_id, request)
 		apply_transaction_result(result)
 		return
 	else:
@@ -345,8 +346,9 @@ func _submit_market_session_action(action: String) -> void:
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_shop_transaction(request)
-	elif GameAuthority.is_local_authority():
-		var result := GameAuthority.local_shop_transaction(GameAuthority.LOCAL_PLAYER_ID, request)
+	elif GameAuthority.is_local_interaction_authority():
+		var peer_id := current_player.authority_peer_id if is_instance_valid(current_player) else GameAuthority.LOCAL_PLAYER_ID
+		var result := GameAuthority.local_shop_transaction(peer_id, request)
 		apply_transaction_result(result)
 
 

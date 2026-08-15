@@ -152,6 +152,9 @@ func _ready() -> void:
 
 
 func place_ready_setting() -> void:
+	# Only deployed drones are valid AI combat targets.  This deliberately stays
+	# out of _ready() so an inventory/handheld preview cannot be targeted.
+	add_to_group("ai_combat_targets")
 	# 无人机采用自由飞行模式。
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 	floor_snap_length = 0.0
@@ -203,6 +206,10 @@ func place_ready_setting() -> void:
 
 func _process(delta: float) -> void:
 	_tick_electronic_status(delta)
+	# 服务器权威模式会关闭 _physics_process()，但房主仍然需要让放置后的
+	# 启动投弹锁和投弹冷却正常倒计时。把计时放在始终运行的 _process()，
+	# 也避免房主与客户端使用不同的冷却行为。
+	_bomb_cooldown_left = maxf(0.0, _bomb_cooldown_left - delta)
 	if _network_visual_mode and power_on:
 		_update_rotors(delta)
 	# 切换到无人机后的几帧持续确认：
@@ -261,9 +268,6 @@ func _physics_process(delta: float) -> void:
 		return
 	if not _placed:
 		return
-	# 启动投弹锁从放置时开始计时，电子禁用和是否进入遥控都不会暂停它。
-	if _bomb_cooldown_left > 0.0:
-		_bomb_cooldown_left = maxf(0.0, _bomb_cooldown_left - delta)
 	if is_electronics_disabled():
 		velocity = velocity.move_toward(Vector3.ZERO, braking_acceleration * delta)
 		move_and_slide()
@@ -512,6 +516,10 @@ func begin_remote_control() -> void:
 
 	power_on = true
 	_remote_control_active = true
+	# 网络复制视觉节点可能曾经被统一的 presentation runtime 关闭过输入；
+	# 成为本地遥控设备后必须重新打开本节点的输入和相机维护过程。
+	set_process(true)
+	set_process_input(true)
 
 	_start_control_mode()
 
@@ -636,6 +644,10 @@ func _on_remote_primary_action() -> void:
 	if _submit_remote_authority_action("primary"):
 		_bomb_cooldown_left = maxf(_bomb_cooldown_left, bomb_cooldown)
 		return
+	# 本地权威已经把请求交给 GameAuthority；请求被拒绝时不能再回退到
+	# 旧的本地投射物，否则会绕过服务端的控制权、信号和冷却校验。
+	if GameAuthority.is_local_interaction_authority():
+		return
 	_drop_bomb()
 
 
@@ -728,11 +740,14 @@ func _submit_remote_authority_action(action_name: String) -> bool:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_remote_action(action)
 		return true
-	if GameAuthority.is_local_authority():
-		GameAuthority.local_remote_action(GameAuthority.LOCAL_PLAYER_ID, action)
+	if GameAuthority.is_local_interaction_authority():
+		var peer_id := GameAuthority.get_local_interaction_peer_id()
+		if peer_id <= 0:
+			return false
+		var result: Dictionary = GameAuthority.local_remote_action(peer_id, action)
 		# Local authority owns both simulation and visuals for this bomb.
 		# Returning true prevents the legacy BoomBullet from being launched too.
-		return true
+		return bool(result.get("ok", false))
 	return false
 
 

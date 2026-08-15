@@ -5,8 +5,9 @@ const FAR_TREE_SCENE := preload("res://assets/environment/FarTreeCluster.glb")
 const FAR_ROCK_SCENE := preload("res://assets/environment/FarRockMass.glb")
 const FAR_FARM_PATCH_SCENE := preload("res://assets/environment/FarFarmPatch.glb")
 const FAR_FARM_BUILDINGS_SCENE := preload("res://assets/environment/FarFarmBuildings.glb")
-const SMALL_GRASS_SCENE := preload("res://assets/environment/Grass_small.glb")
-const TALL_GRASS_SCENE := preload("res://assets/environment/Grass_tall.glb")
+const LOW_GRASS_SCENE := preload("res://assets/nature/GrassLow.glb")
+const TALL_GRASS_SCENE := preload("res://assets/nature/GrassTall.glb")
+const DRY_GRASS_SCENE := preload("res://assets/nature/GrassDry.glb")
 const FAR_GRASS_SHADER: Shader = preload("res://src/environment/far_grass_surface.gdshader")
 const LOCAL_BOUNDARY_WARNING_SHADER: Shader = preload(
 	"res://src/environment/local_boundary_warning.gdshader"
@@ -45,6 +46,7 @@ const FAR_GRASS_SURFACE_Y := 0.51
 @export var far_grass_outer_half_extent := 250.0
 @export var far_small_grass_count := 120
 @export var far_tall_grass_count := 24
+@export var far_dry_grass_count := 24
 @export var far_grass_visibility_distance := 180.0
 @export_group("Local Boundary Warning")
 @export var boundary_warning_distance := 3.0
@@ -77,15 +79,21 @@ func _ready() -> void:
 	_create_scene_multimeshes(FAR_FARM_PATCH_SCENE, _make_farm_patches(farm_groups), "FarFarmPatches")
 	_create_scene_multimeshes(FAR_FARM_BUILDINGS_SCENE, _make_farm_buildings(farm_groups), "FarFarmBuildings")
 	_create_scene_multimeshes(
-		SMALL_GRASS_SCENE,
+		LOW_GRASS_SCENE,
 		_make_sparse_far_grass(far_small_grass_count, Vector2(0.8, 1.1)),
-		"SparseFarSmallGrass",
+		"SparseFarLowGrass",
 		far_grass_visibility_distance
 	)
 	_create_scene_multimeshes(
 		TALL_GRASS_SCENE,
 		_make_sparse_far_grass(far_tall_grass_count, Vector2(0.75, 1.0)),
 		"SparseFarTallGrass",
+		far_grass_visibility_distance
+	)
+	_create_scene_multimeshes(
+		DRY_GRASS_SCENE,
+		_make_sparse_far_grass(far_dry_grass_count, Vector2(0.8, 1.1)),
+		"SparseFarDryGrass",
 		far_grass_visibility_distance
 	)
 

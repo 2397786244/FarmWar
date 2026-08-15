@@ -31,6 +31,12 @@ const REMOTE_CONTROL_LOST_EFFECTIVE_SIGNAL := 0.20
 const MEDICINE_HEAL_AMOUNT := 50.0
 const PLAYER_COLLISION_LAYER := 8
 const PLAYER_COLLISION_MASK := 12943
+## The mounted gunner is locked to StandPos every physics frame. Keep static
+## ground collision available as a safety net, but exclude the vehicle layer so
+## the character capsule cannot push the vehicle that carries it.
+const MOUNTED_MACHINE_GUN_COLLISION_MASK := 1
+## 重生倒计时中的尸体只碰撞静态世界。自身 layer 仍会置为 0，不阻挡存活角色。
+const CORPSE_COLLISION_MASK := 1 | 2 | 64 | 128 | 4096 | 8192 | 16384
 const BASE_PLAYER_BAG_SLOTS := 12
 const BAG_SLOT_ROWS := 2
 const BAG_SLOTS_PER_ROW := 6
@@ -47,6 +53,7 @@ const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const CooldownRingScene := preload("res://src/cooldown_ring.gd")
 const PlacementPreviewControllerScript := preload("res://src/placement_preview_controller.gd")
 const CombatBalance = preload("res://src/combat_balance.gd")
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const HANDHELD_WEAPON_TOOL_IDS := {
 	"sprout_blaster": true,
 	"wreck": true,
@@ -181,7 +188,8 @@ var gameplay_notice_tween: Tween
 var message_area_notice: Label
 var action_reward_feed: VBoxContainer
 var action_reward_tweens: Dictionary = {}
-var team_money_delta_feeds: Dictionary = {}
+var cooperative_team_money_label: Label
+var cooperative_money_delta_feed: VBoxContainer
 var team_money_delta_tweens: Dictionary = {}
 var _cargo_crate_hold_target: CargoCrateGround
 var _cargo_crate_hold_started_msec := 0
@@ -259,6 +267,13 @@ var active_vehicle: VehicleBase
 var active_vehicle_id := ""
 var active_vehicle_seat_index := -1
 var vehicle_is_active := false
+var mounted_machine_gun_is_active := false
+var mounted_machine_gun_vehicle_id := ""
+var mounted_machine_gun: VehicleBaseMachineGun
+var mounted_machine_gun_input_sequence := 0
+var mounted_machine_gun_yaw := 0.0
+var mounted_machine_gun_elevation := 0.0
+var _mounted_machine_gun_collision_vehicle: VehicleBase
 
 @onready var remote_device_panel: PanelContainer = $SubViewport/RemoteDevicePanel
 @onready var remote_device_list: VBoxContainer = $SubViewport/RemoteDevicePanel/MarginContainer/VBoxContainer/ScrollContainer/DeviceList
@@ -735,7 +750,12 @@ func get_backpack_item(index: int) -> Dictionary:
 	if str(result.get("kind", "")) == "tool":
 		var definition: Variant = all_tool_definitions_by_id.get(str(result.get("tool_id", "")), {})
 		result["display_name"] = str((definition as Dictionary).get("short", "工具")) if definition is Dictionary else "工具"
-		if str(result.get("tool_id", "")).begins_with("animal_"):
+		if str(result.get("tool_id", "")) == "medieval_shield":
+			result["detail"] = "%d / %d HP" % [
+				roundi(float(result.get("current_hp", result.get("max_hp", 1000.0)))),
+				roundi(float(result.get("max_hp", 1000.0))),
+			]
+		elif str(result.get("tool_id", "")).begins_with("animal_"):
 			result["detail"] = "%d%% | %d/%d HP | %.1f kg" % [
 				roundi(float(result.get("growth_progress", 0.0))),
 				roundi(float(result.get("current_hp", result.get("max_hp", 0.0)))),
@@ -865,6 +885,16 @@ func _make_tool_backpack_item(tool_id: String, source: Dictionary = {}) -> Dicti
 	item["tool_id"] = tool_id
 	var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 	item["weight_kg"] = float(item.get("weight_kg", definition.get("weight_kg", 0.0)))
+	if tool_id == "medieval_shield":
+		var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
+		item["max_hp"] = maxf(1.0, float(item.get("max_hp", max_hp)))
+		item["current_hp"] = clampf(
+			float(item.get("current_hp", item["max_hp"])),
+			0.0,
+			float(item["max_hp"])
+		)
+		if str(item.get("shield_instance_id", "")).is_empty():
+			item["shield_instance_id"] = "shield:%d:%d" % [authority_peer_id, Time.get_ticks_usec()]
 	if definition.has("magazine_size"):
 		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
 		item["ammo_in_mag"] = clampi(int(item.get("ammo_in_mag", capacity)), 0, capacity)
@@ -1481,7 +1511,7 @@ func _ready() -> void:
 		_create_message_area_notice()
 		_create_damage_feedback_ui()
 		_create_action_reward_feed()
-		_create_team_money_delta_feeds()
+		_create_cooperative_team_hud()
 		cargo_car_storage_page = CargoCarStoragePage.new()
 		cargo_car_storage_page.name = "CargoCarStoragePage"
 		$SubViewport.add_child(cargo_car_storage_page)
@@ -1511,6 +1541,48 @@ func _ready() -> void:
 		$SubViewport/ShopPage.closed.connect(_on_shop_page_closed)
 		if _has_any_equipped_tool():
 			_select_tool(0, true)
+
+
+func activate_local_runtime() -> void:
+	# Enable the complete local-player runtime after cooperative bootstrap. The
+	# host creates the player while the map is still loading and deliberately
+	# disables its process mode. Re-enabling only the Node process is not enough
+	# when a previous snapshot/death transition queued collision changes, so make
+	# the interaction and hit runtime explicit here.
+	if is_remote_proxy:
+		return
+	process_mode = Node.PROCESS_MODE_INHERIT
+	set_process(true)
+	set_physics_process(true)
+	set_process_input(true)
+	if is_respawning or vehicle_is_active:
+		return
+	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if body_shape != null:
+		body_shape.set_deferred("disabled", false)
+	collision_layer = PLAYER_COLLISION_LAYER
+	collision_mask = PLAYER_COLLISION_MASK
+	_set_interaction_detectors_enabled(true)
+	var hit_area := get_node_or_null("Hit3D") as Area3D
+	if hit_area != null:
+		hit_area.set_deferred("monitoring", true)
+		hit_area.set_deferred("monitorable", true)
+	# Bootstrap and respawn both change collision objects through deferred physics
+	# updates. Run one post-frame restore so the next E press never observes an
+	# enabled player node with stale ShapeCast/Area state.
+	call_deferred("_restore_post_respawn_interaction_state")
+
+
+func _interaction_runtime_needs_restore() -> bool:
+	if is_remote_proxy or is_respawning or vehicle_is_active or mounted_machine_gun_is_active:
+		return false
+	if collision_layer != PLAYER_COLLISION_LAYER or collision_mask != PLAYER_COLLISION_MASK:
+		return true
+	for detector: ShapeCast3D in _get_interaction_detectors():
+		if not detector.enabled:
+			return true
+	var hit_area := get_node_or_null("Hit3D") as Area3D
+	return hit_area != null and (not hit_area.monitoring or not hit_area.monitorable)
 
 
 func _ensure_placement_preview_controller() -> void:
@@ -1600,6 +1672,8 @@ func _update_remote_interpolation() -> void:
 	if blend >= 0.5:
 		blended["current_tool_index"] = following.get("current_tool_index", current_tool_index)
 		blended["current_tool_id"] = following.get("current_tool_id", "")
+		blended["selected_weapon_ammo"] = following.get("selected_weapon_ammo", {})
+		blended["selected_shield_hp"] = following.get("selected_shield_hp", {})
 	_apply_remote_render_state(blended)
 
 
@@ -1610,6 +1684,7 @@ func _apply_remote_render_state(snapshot: Dictionary) -> void:
 		str(snapshot.get("vehicle_id", "")),
 		int(snapshot.get("vehicle_seat_index", -1))
 	)
+	apply_mounted_machine_gun_snapshot(str(snapshot.get("mounted_machine_gun_vehicle_id", "")))
 	var target_position: Variant = snapshot.get("position", global_position)
 	if target_position is Vector3:
 		global_position = target_position
@@ -1626,6 +1701,24 @@ func _apply_remote_render_state(snapshot: Dictionary) -> void:
 	var next_tool_id := str(snapshot.get("current_tool_id", _selected_tool_id()))
 	if next_tool_index != current_tool_index or next_tool_id != _selected_tool_id():
 		apply_remote_tool_selection(next_tool_index, next_tool_id)
+	var selected_ammo_value: Variant = snapshot.get("selected_weapon_ammo", {})
+	if selected_ammo_value is Dictionary and not (selected_ammo_value as Dictionary).is_empty() \
+			and is_instance_valid(tool_node) and tool_node.has_method("set_ammo_loaded"):
+		var selected_ammo := selected_ammo_value as Dictionary
+		tool_node.call(
+			"set_ammo_loaded",
+			int(selected_ammo.get("ammo_in_mag", 0)) > 0 \
+				and float(selected_ammo.get("reload_remaining", 0.0)) <= 0.0
+		)
+	var selected_shield_value: Variant = snapshot.get("selected_shield_hp", {})
+	if selected_shield_value is Dictionary and not (selected_shield_value as Dictionary).is_empty() \
+			and is_instance_valid(tool_node) and tool_node.has_method("set_shield_state"):
+		var shield_state := selected_shield_value as Dictionary
+		tool_node.call(
+			"set_shield_state",
+			float(shield_state.get("current_hp", 0.0)),
+			float(shield_state.get("max_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)))
+		)
 	var previous_locomotion_state := remote_locomotion_state
 	remote_grounded = bool(snapshot.get("grounded", remote_grounded))
 	remote_locomotion_state = str(snapshot.get("locomotion_state", remote_locomotion_state))
@@ -1868,6 +1961,9 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("esc", false):
 		if _close_active_ui_for_escape():
 			_suppress_esc_mouse_release = true
+		elif mounted_machine_gun_is_active:
+			_request_mounted_machine_gun_exit()
+			_suppress_esc_mouse_release = true
 		elif remote_is_active:
 			remote_device_close()
 			_suppress_esc_mouse_release = true
@@ -1901,14 +1997,14 @@ func _input(event: InputEvent) -> void:
 			_update_crosshair_visibility()
 			get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("bag", false) and not vehicle_is_active and not remote_is_active:
+	if event.is_action_pressed("bag", false) and not vehicle_is_active and not remote_is_active and not mounted_machine_gun_is_active:
 		player_backpack.toggle_personal()
 		_update_crosshair_visibility()
 		get_viewport().set_input_as_handled()
 		return
 	if not _chat_input_captures_gameplay() \
 			and event.is_action_pressed("team_storage", false) \
-			and not vehicle_is_active and not remote_is_active:
+			and not vehicle_is_active and not remote_is_active and not mounted_machine_gun_is_active:
 		player_backpack.toggle_team_storage()
 		_update_crosshair_visibility()
 		get_viewport().set_input_as_handled()
@@ -2008,7 +2104,37 @@ func _input(event: InputEvent) -> void:
 		_set_weapon_aiming(false)
 		return
 	
+	if mounted_machine_gun_is_active:
+		if event.is_action_pressed("interact", false):
+			_request_mounted_machine_gun_exit()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			mounted_machine_gun_yaw = clampf(
+				mounted_machine_gun_yaw - event.relative.x * mouse_sensitivity * 55.0,
+				-VehicleBaseMachineGun.MAX_YAW_DEGREES,
+				VehicleBaseMachineGun.MAX_YAW_DEGREES
+			)
+			mounted_machine_gun_elevation = clampf(
+				mounted_machine_gun_elevation - event.relative.y * mouse_sensitivity * 55.0,
+				VehicleBaseMachineGun.MIN_ELEVATION_DEGREES,
+				VehicleBaseMachineGun.MAX_ELEVATION_DEGREES
+			)
+			if is_instance_valid(mounted_machine_gun):
+				mounted_machine_gun.set_aim(mounted_machine_gun_yaw, mounted_machine_gun_elevation)
+			Head.rotation.x = deg_to_rad(mounted_machine_gun_elevation)
+			return
+		if event is InputEventMouseButton:
+			var gun_mouse_event := event as InputEventMouseButton
+			if gun_mouse_event.button_index == MOUSE_BUTTON_LEFT and gun_mouse_event.pressed:
+				_request_mounted_machine_gun_fire()
+				get_viewport().set_input_as_handled()
+		return
 	if vehicle_is_active:
+		if event.is_action_pressed("second_action", false):
+			_request_vehicle_headlights_toggle()
+			get_viewport().set_input_as_handled()
+			return
 		if event.is_action_pressed("interact", false):
 			_request_vehicle_exit()
 			get_viewport().set_input_as_handled()
@@ -2185,6 +2311,13 @@ func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 		muzzle = tool_node.get_node_or_null("Muzzle") as Node3D
 	if muzzle != null:
 		origin = muzzle.global_position
+	var melee_center: Variant = null
+	if tool_id == "long_spear" and is_instance_valid(tool_node):
+		# AttackArea is authored beneath the weapon scene and may become nested in
+		# future model revisions, so always resolve it recursively.
+		var attack_area := tool_node.find_child("AttackArea", true, false) as Area3D
+		if attack_area != null:
+			melee_center = attack_area.global_position
 	var target_tile_path := ""
 	var target_position := Vector3.ZERO
 	var look_raycast := find_child("LookAtTarget", true, false) as RayCast3D
@@ -2216,6 +2349,8 @@ func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 		"yaw": rotation.y,
 		"pitch": Head.rotation.x,
 	}
+	if melee_center is Vector3:
+		request["melee_center"] = melee_center
 	if use_cached_wall_snap and is_instance_valid(placement_preview_controller) \
 			and placement_preview_controller.has_method("has_active_wall_snap") \
 			and bool(placement_preview_controller.call("has_active_wall_snap")):
@@ -2303,7 +2438,8 @@ func _submit_remote_control_frame() -> void:
 
 
 func _submit_vehicle_control_frame() -> void:
-	if not is_instance_valid(active_vehicle) or active_vehicle_id.is_empty():
+	if not is_instance_valid(active_vehicle) or active_vehicle_id.is_empty() \
+			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
 		return
 	vehicle_input_sequence += 1
 	var ui_blocks_drive := is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open()
@@ -2320,17 +2456,23 @@ func _submit_vehicle_control_frame() -> void:
 		GameAuthority.local_vehicle_input(authority_peer_id, frame)
 
 
-func _request_vehicle_enter(vehicle: VehicleBase) -> void:
-	if vehicle_is_active or vehicle == null or vehicle.is_full() or not vehicle.can_team_enter(team):
+func _request_vehicle_enter(vehicle: VehicleBase, requested_seat_index := -1) -> void:
+	if vehicle_is_active or mounted_machine_gun_is_active or vehicle == null or not vehicle.can_team_enter(team):
+		return
+	if requested_seat_index >= 0:
+		if not vehicle.has_method("can_enter_platform_passenger") \
+				or not bool(vehicle.call("can_enter_platform_passenger", authority_peer_id, requested_seat_index)):
+			return
+	elif vehicle.is_full():
 		return
 	_set_prone_state(false)
 	var vehicle_id := vehicle.get_vehicle_id()
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_vehicle_session(vehicle_id, true)
+		MultiplayerNetwork.submit_vehicle_session(vehicle_id, true, requested_seat_index)
 	elif _is_authority_local_player():
-		GameAuthority.local_vehicle_session(authority_peer_id, vehicle_id, true)
+		GameAuthority.local_vehicle_session(authority_peer_id, vehicle_id, true, requested_seat_index)
 	else:
-		var seat_index := vehicle.get_available_seat_index(true)
+		var seat_index := requested_seat_index if requested_seat_index >= 0 else vehicle.get_available_seat_index(true)
 		if vehicle.enter_seat(authority_peer_id, seat_index):
 			apply_vehicle_session_result({
 				"ok": true,
@@ -2338,6 +2480,233 @@ func _request_vehicle_enter(vehicle: VehicleBase) -> void:
 				"vehicle_id": vehicle_id,
 				"seat_index": seat_index,
 			}, vehicle)
+
+
+func _request_mounted_machine_gun_enter(vehicle: FarmBaseVehicle) -> void:
+	if mounted_machine_gun_is_active or vehicle_is_active or remote_is_active or vehicle == null:
+		return
+	var machine_gun := vehicle.get_platform_machine_gun()
+	if machine_gun == null or machine_gun.destroyed_state or not vehicle.can_team_enter(team):
+		return
+	var action := {"vehicle_id": vehicle.get_vehicle_id(), "action": "mounted_machine_gun_enter"}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
+
+
+func _request_platform_passenger_enter(vehicle: VehicleBase, seat_index: int) -> void:
+	if seat_index < 0:
+		return
+	_request_vehicle_enter(vehicle, seat_index)
+
+
+func _request_mounted_machine_gun_exit() -> void:
+	if not mounted_machine_gun_is_active or mounted_machine_gun_vehicle_id.is_empty():
+		return
+	var action := {"vehicle_id": mounted_machine_gun_vehicle_id, "action": "mounted_machine_gun_exit"}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
+
+
+func _request_mounted_machine_gun_fire() -> void:
+	if not mounted_machine_gun_is_active or mounted_machine_gun_vehicle_id.is_empty():
+		return
+	var action := {
+		"vehicle_id": mounted_machine_gun_vehicle_id,
+		"action": "mounted_machine_gun_fire",
+		"aim_point": _get_mounted_machine_gun_aim_point(),
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
+
+
+func _get_mounted_machine_gun_aim_point() -> Vector3:
+	var max_distance := VehicleBaseMachineGun.RANGE_METERS
+	var ray_origin := global_position + Vector3.UP
+	var ray_direction := -global_transform.basis.z.normalized()
+	if is_instance_valid(camera):
+		var screen_center := camera.get_viewport().get_visible_rect().size * 0.5
+		ray_origin = camera.project_ray_origin(screen_center)
+		ray_direction = camera.project_ray_normal(screen_center).normalized()
+	var aim_point := ray_origin + ray_direction * max_distance
+	var world := get_world_3d()
+	if world == null or ray_direction.length_squared() <= 0.001:
+		return aim_point
+	# Match the existing handheld NailFirearm center-screen targeting path:
+	# resolve the point under the crosshair first, then aim from the muzzle to it.
+	var query := PhysicsRayQueryParameters3D.create(
+		ray_origin,
+		aim_point,
+		139
+	)
+	query.collide_with_bodies = true
+	query.collide_with_areas = true
+	query.exclude = [get_rid()]
+	var hit := world.direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		var hit_position: Variant = hit.get("position", aim_point)
+		if hit_position is Vector3:
+			return hit_position as Vector3
+	return aim_point
+
+
+func _submit_mounted_machine_gun_control_frame() -> void:
+	if not is_instance_valid(mounted_machine_gun) or mounted_machine_gun_vehicle_id.is_empty():
+		return
+	mounted_machine_gun_input_sequence += 1
+	var frame := {
+		"control_mode": "mounted_machine_gun",
+		"vehicle_id": mounted_machine_gun_vehicle_id,
+		"input_seq": mounted_machine_gun_input_sequence,
+		"yaw": mounted_machine_gun_yaw,
+		"elevation": mounted_machine_gun_elevation,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_input(frame)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_input(authority_peer_id, frame)
+
+
+func apply_mounted_machine_gun_session_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", authority_peer_id)) != authority_peer_id or not bool(result.get("ok", false)):
+		return
+	if bool(result.get("connected", false)):
+		mounted_machine_gun_vehicle_id = str(result.get("vehicle_id", ""))
+		var vehicle := _find_vehicle_by_id(mounted_machine_gun_vehicle_id) as FarmBaseVehicle
+		mounted_machine_gun = vehicle.get_platform_machine_gun() if vehicle != null else null
+		if mounted_machine_gun == null or mounted_machine_gun.destroyed_state:
+			# A destruction snapshot can race the reliable enter/session event. Never
+			# leave a player in the mounted state when the module is already broken.
+			_restore_mounted_machine_gun_player_state(global_position)
+			return
+		mounted_machine_gun_is_active = true
+		mounted_machine_gun_yaw = mounted_machine_gun.yaw_degrees
+		mounted_machine_gun_elevation = mounted_machine_gun.elevation_degrees
+		_set_mounted_machine_gun_runtime(true)
+		_update_mounted_machine_gun_presentation()
+	else:
+		var exit_position: Variant = result.get("exit_position", global_position)
+		_restore_mounted_machine_gun_player_state(
+			exit_position as Vector3 if exit_position is Vector3 else global_position
+		)
+
+
+func _restore_mounted_machine_gun_player_state(exit_position: Vector3) -> void:
+	# This is the single cleanup path for manual exit, destruction, disconnect,
+	# and a snapshot that arrives after the gun has already been destroyed.
+	mounted_machine_gun_is_active = false
+	mounted_machine_gun_vehicle_id = ""
+	mounted_machine_gun = null
+	_set_mounted_machine_gun_runtime(false)
+	if is_inside_tree():
+		_clear_fall_damage_tracking()
+		global_position = exit_position
+	else:
+		# Keep the helper safe for scene/bootstrap validation before the player is
+		# attached to the world tree.
+		fall_tracking_active = false
+		fall_peak_y = exit_position.y
+	velocity = Vector3.ZERO
+
+
+func apply_mounted_machine_gun_snapshot(vehicle_id: String) -> void:
+	if vehicle_id.is_empty():
+		if mounted_machine_gun_is_active:
+			apply_mounted_machine_gun_session_result({
+				"ok": true, "peer_id": authority_peer_id, "connected": false,
+				"exit_position": global_position,
+			})
+		return
+	var vehicle := _find_vehicle_by_id(vehicle_id) as FarmBaseVehicle
+	var machine_gun := vehicle.get_platform_machine_gun() if vehicle != null else null
+	if machine_gun == null or machine_gun.destroyed_state:
+		if mounted_machine_gun_is_active:
+			var exit_position := global_position
+			if machine_gun != null:
+				exit_position = machine_gun.get_stand_transform().origin
+			_restore_mounted_machine_gun_player_state(exit_position)
+		return
+	mounted_machine_gun_vehicle_id = vehicle_id
+	mounted_machine_gun = machine_gun
+	mounted_machine_gun_is_active = true
+	mounted_machine_gun_yaw = machine_gun.yaw_degrees
+	mounted_machine_gun_elevation = machine_gun.elevation_degrees
+	_set_mounted_machine_gun_runtime(true)
+	_update_mounted_machine_gun_presentation()
+
+
+func _update_mounted_machine_gun_presentation() -> void:
+	if not mounted_machine_gun_is_active or not is_instance_valid(mounted_machine_gun):
+		return
+	global_position = mounted_machine_gun.get_stand_transform().origin
+	var direction := mounted_machine_gun.get_fire_direction()
+	rotation.y = atan2(-direction.x, -direction.z)
+	Head.rotation.x = deg_to_rad(mounted_machine_gun.elevation_degrees)
+	if is_instance_valid(tool_node):
+		tool_node.visible = false
+	if is_instance_valid(held_item_node):
+		held_item_node.visible = false
+	if is_instance_valid(appearance_player) and not appearance_player.is_playing():
+		appearance_player.play(&"Idle")
+
+
+func _set_mounted_machine_gun_runtime(active: bool) -> void:
+	_set_weapon_aiming(false)
+	_clear_mounted_machine_gun_collision_exception()
+	if active and is_instance_valid(mounted_machine_gun):
+		var carrier := mounted_machine_gun.get_parent_vehicle()
+		if carrier != null and is_inside_tree() and carrier.is_inside_tree():
+			# Keep the gunner on the CHARACTER layer so enemies can still hit them,
+			# but do not let the carrier's body push against its own gunner.
+			add_collision_exception_with(carrier)
+			carrier.add_collision_exception_with(self)
+			_mounted_machine_gun_collision_vehicle = carrier
+	if is_instance_valid(tool_node):
+		tool_node.visible = not active and not is_respawning and not is_prone
+	if is_instance_valid(held_item_node):
+		held_item_node.visible = not active and not is_respawning and not is_prone
+	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if body_shape != null:
+		body_shape.set_deferred("disabled", is_respawning or is_remote_proxy)
+	collision_layer = 0 if is_respawning or is_remote_proxy else PLAYER_COLLISION_LAYER
+	collision_mask = 0 if is_respawning or is_remote_proxy \
+			else MOUNTED_MACHINE_GUN_COLLISION_MASK if active else PLAYER_COLLISION_MASK
+	_set_interaction_detectors_enabled(not active and not is_respawning and not is_remote_proxy)
+	var hit_area := get_node_or_null("Hit3D") as Area3D
+	if hit_area != null:
+		hit_area.set_deferred("monitoring", not is_respawning and not is_remote_proxy)
+		hit_area.set_deferred("monitorable", not is_respawning and not is_remote_proxy)
+	_update_crosshair_visibility()
+
+
+func _clear_mounted_machine_gun_collision_exception() -> void:
+	var carrier := _mounted_machine_gun_collision_vehicle
+	if carrier != null and is_instance_valid(carrier):
+		remove_collision_exception_with(carrier)
+		if carrier.is_inside_tree() and is_inside_tree():
+			carrier.remove_collision_exception_with(self)
+	_mounted_machine_gun_collision_vehicle = null
+
+
+func _request_vehicle_headlights_toggle() -> void:
+	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
+			or active_vehicle_id.is_empty() or not active_vehicle.has_method("toggle_headlights"):
+		return
+	var action := {
+		"vehicle_id": active_vehicle_id,
+		"action": "toggle_headlights",
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
+	else:
+		active_vehicle.call("toggle_headlights")
 
 
 func _request_vehicle_exit() -> void:
@@ -2857,6 +3226,18 @@ func _clear_fall_damage_tracking() -> void:
 	fall_peak_y = global_position.y
 
 
+func _simulate_respawning_corpse_gravity(delta: float) -> void:
+	## 远端玩家由权威快照带动；本地角色在黑屏/重生倒计时期间仍保留身体
+	## 与地面的接触，因此从梯子或空中死亡时会自然落下。
+	if is_remote_proxy:
+		return
+	if not is_on_floor():
+		velocity += get_gravity() * delta
+	elif velocity.y < 0.0:
+		velocity.y = 0.0
+	move_and_slide()
+
+
 func _update_local_fall_damage_tracking(was_grounded: bool, was_swimming: bool) -> void:
 	if not GameAuthority.is_local_authority() or is_remote_proxy:
 		return
@@ -2948,6 +3329,12 @@ func _select_tool(new_index: int, force := false) -> void:
 		(tool_node as VehicleBase).vehicle_deployed = false
 	tool_pivot.add_child(tool_node)
 	_set_tool_owner_if_supported(tool_node, team)
+	if tool_node.has_method("set_shield_state") and str(definition.get("id", "")) == "medieval_shield":
+		tool_node.call(
+			"set_shield_state",
+			float(selected_item.get("current_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0))),
+			float(selected_item.get("max_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)))
+		)
 	if bool(definition.get("free_placement", false)) and not tool_node.has_method("activate_tool"):
 		_disable_handheld_item_collision(tool_node)
 	if str(definition.get("id", "")) == "sprout_blaster":
@@ -2959,8 +3346,11 @@ func _select_tool(new_index: int, force := false) -> void:
 	tool_node.visible = not is_prone and not vehicle_is_active and not is_respawning
 	
 	var is_shooting_tool := _definition_uses_weapon_orientation(definition)
-	# Non-weapon tools use the hand socket's neutral transform. Their imported
-	# model is corrected upright below; only scale remains data-driven.
+	var is_passive_shield := str(definition.get("category", "utility")) == "shield"
+	# Non-weapon tools use the hand socket's neutral transform. Passive shields
+	# keep their configured grip transform because their authored face still
+	# needs to point away from the player, but they use the same upright
+	# correction path as other passive hand-held models.
 	tool_node.position = definition.get("grip_position", Vector3.ZERO) if is_shooting_tool else Vector3.ZERO
 	tool_node.rotation_degrees = definition.get("grip_rotation", Vector3.ZERO) if is_shooting_tool else Vector3.ZERO
 	tool_node.scale = definition.get(
@@ -2976,8 +3366,9 @@ func _select_tool(new_index: int, force := false) -> void:
 	# Utility tools are displayed as held objects rather than aimed weapons.
 	# Normalize their model's local Y axis so imported GLB axis differences do
 	# not make the object appear upside down or lying on its side.
-	if not is_shooting_tool:
+	if not is_shooting_tool or is_passive_shield:
 		_schedule_held_model_upright(tool_node)
+	_sync_selected_weapon_ammo_visual()
 	if is_instance_valid(placement_preview_controller):
 		placement_preview_controller.set_selection(definition, selected_item)
 
@@ -3289,9 +3680,21 @@ func _use_current_tool() -> void:
 	match tool_category:
 		"remote":
 			if ret is Dictionary:
-				var node = ret.get("remote_node",null)
-				remote_device_reset(node)
-				remote_device_start()
+				var node: Node3D = ret.get("remote_node", null) as Node3D
+				# Listen-server 房主的权威放置结果可能先经过本地可靠事件，
+				# 因此这里也用 device_id 从 GameAuthority 找回同进程内的真实
+				# 设备，避免只依赖结果字典里的 Node 引用。
+				if node == null and GameAuthority.is_local_interaction_authority():
+					var device_id := str(ret.get("device_id", ""))
+					if not device_id.is_empty() and GameAuthority.has_method("_node_for_tool_ref"):
+						var resolved: Variant = GameAuthority.call("_node_for_tool_ref", {
+							"kind": "remote",
+							"id": device_id,
+						})
+						node = resolved as Node3D
+				if node != null:
+					remote_device_reset(node)
+					remote_device_start()
 		_:
 			pass
 	## END
@@ -3327,6 +3730,7 @@ func _consume_predicted_ammo() -> void:
 	var item := backpack_items[current_tool_index]
 	item["ammo_in_mag"] = maxi(0, int(item.get("ammo_in_mag", 0)) - 1)
 	backpack_items[current_tool_index] = item
+	_sync_selected_weapon_ammo_visual()
 
 
 func _request_reload_current_weapon() -> void:
@@ -3348,6 +3752,7 @@ func _request_reload_current_weapon() -> void:
 		item["reload_duration"] = reload_time
 		backpack_items[current_tool_index] = item
 		MultiplayerNetwork.submit_reload_weapon(tool_id)
+		_sync_selected_weapon_ammo_visual()
 	elif _is_authority_local_player():
 		GameAuthority.local_reload_weapon(authority_peer_id, tool_id)
 	else:
@@ -3449,6 +3854,11 @@ func _open_game_exit_dialog() -> void:
 	if remote_is_active:
 		remote_device_close()
 		_suppress_esc_mouse_release = true
+		return
+	if mounted_machine_gun_is_active:
+		_clear_fall_damage_tracking()
+		_submit_mounted_machine_gun_control_frame()
+		_update_mounted_machine_gun_presentation()
 		return
 	if vehicle_is_active:
 		_request_vehicle_exit()
@@ -3555,6 +3965,11 @@ func _process(delta: float) -> void:
 		_update_upper_body_aim(delta)
 		_update_remote_held_model_alignment()
 		return
+	# Self-heal the host's interaction runtime after scene bootstrap and deferred
+	# physics transitions. This is idempotent and does not re-enable a dead,
+	# seated, or respawning player.
+	if CooperativeSession.is_host() and _interaction_runtime_needs_restore():
+		activate_local_runtime()
 	_ensure_local_camera_ownership()
 	_update_prone_presentation(delta)
 	_tick_status_effects(delta)
@@ -3600,11 +4015,20 @@ func _process(delta: float) -> void:
 		return
 	if is_respawning:
 		_cancel_gate_lockpick(true)
-		if GameAuthority.is_local_authority():
+		# A cooperative host owns the local presentation too.  Keep its overlay
+		# clock progressing locally while the server independently owns respawn.
+		if GameAuthority.is_local_interaction_authority():
 			respawn_left = maxf(0.0, respawn_left - delta)
 		_update_death_appearance_visibility()
 		_update_cooldown_ring()
 		_update_respawn_overlay()
+		return
+	if mounted_machine_gun_is_active:
+		_update_mounted_machine_gun_presentation()
+		_update_upper_body_aim(delta)
+		_update_camera_shake(delta)
+		_update_cooldown_ring()
+		_update_crosshair_visibility()
 		return
 	if remote_is_active:
 		_ensure_remote_device_camera()
@@ -3664,7 +4088,7 @@ func _process(delta: float) -> void:
 func _update_placement_preview() -> void:
 	if not is_instance_valid(placement_preview_controller):
 		return
-	var blocked: bool = is_prone or is_respawning or vehicle_is_active or remote_is_active \
+	var blocked: bool = is_prone or is_respawning or vehicle_is_active or remote_is_active or mounted_machine_gun_is_active \
 			or _inventory_ui_blocks_gameplay_actions() \
 			or game_exit_dialog.is_open() \
 			or (is_instance_valid(match_end_page) and match_end_page.visible) \
@@ -3714,17 +4138,16 @@ func _use_fist() -> void:
 func _update_global_score_ui() -> void:
 	var title := $SubViewport/GlobalStats as Label
 	var value := $SubViewport/GlobalStatsValue as RichTextLabel
-	var show_pvp_scores := not CooperativeSession.is_active()
 	if title != null:
 		title.visible = false
 	if value != null:
-		value.visible = show_pvp_scores
-		if not show_pvp_scores:
-			return
-		value.text = "[center][color=#FF5656]%d[/color]             [color=#69A7FF]%d[/color][/center]" % [
-			GlobalVar.get_team_score("red"),
-			GlobalVar.get_team_score("blue"),
-		]
+		value.visible = false
+
+
+func _is_team_multiplayer_hud() -> bool:
+	return CooperativeSession.is_active() \
+		or GameAuthority.is_server_authority() \
+		or GameAuthority.is_client_proxy()
 
 
 func _update_team_money_ui() -> void:
@@ -3732,8 +4155,15 @@ func _update_team_money_ui() -> void:
 	var text := "队伍金钱  %d" % amount
 	if is_instance_valid(team_money_label):
 		team_money_label.text = text
+		team_money_label.visible = not _is_team_multiplayer_hud()
 	if is_instance_valid(control_status_team_money_label):
 		control_status_team_money_label.text = text
+		control_status_team_money_label.visible = not _is_team_multiplayer_hud()
+	if is_instance_valid(cooperative_team_money_label):
+		cooperative_team_money_label.visible = _is_team_multiplayer_hud()
+		cooperative_team_money_label.text = text
+	if is_instance_valid(cooperative_money_delta_feed):
+		cooperative_money_delta_feed.visible = _is_team_multiplayer_hud()
 
 
 func _physics_process(delta: float) -> void:
@@ -3745,7 +4175,15 @@ func _physics_process(delta: float) -> void:
 		GameAuthority.check_local_player_void_fall(authority_peer_id, global_position)
 	if is_respawning:
 		_clear_fall_damage_tracking()
+		_simulate_respawning_corpse_gravity(delta)
+		return
+	if mounted_machine_gun_is_active:
+		# A gunner is not reparented to the vehicle. Follow the world-space StandPos
+		# explicitly and never run normal gravity/move_and_slide while mounted.
+		_clear_fall_damage_tracking()
 		velocity = Vector3.ZERO
+		_submit_mounted_machine_gun_control_frame()
+		_update_mounted_machine_gun_presentation()
 		return
 	if game_exit_dialog.is_open():
 		_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, Vector2.ZERO, false)
@@ -3790,8 +4228,13 @@ func _physics_process(delta: float) -> void:
 		_clear_fall_damage_tracking()
 		_submit_remote_control_frame()
 		# One shared input owner keeps armed remote devices from double-submitting.
-		if (remote_tool_node is SmallMouse or remote_tool_node is NormalDrone or remote_tool_node is TechDrone) and Input.is_action_just_pressed("remote_primary_action") and remote_tool_node.has_method("request_primary_action"):
+		if (remote_tool_node is SmallMouse or remote_tool_node is NormalDrone or remote_tool_node is TechDrone or remote_tool_node is ActionDrone) and Input.is_action_just_pressed("remote_primary_action") and remote_tool_node.has_method("request_primary_action"):
 			remote_tool_node.call("request_primary_action")
+		# The authoritative BoomBuggy does not run its local input loop on a
+		# listen server.  Feed it the host's held input here so its original
+		# hold-to-detonate timing is preserved without double-submitting clients.
+		if remote_tool_node is BoomBuggy and CooperativeSession.is_host() and remote_tool_node.has_method("request_primary_action"):
+			remote_tool_node.call("request_primary_action", Input.is_action_pressed("remote_primary_action"), delta)
 		if remote_tool_node is ActionDrone and Input.is_action_just_pressed("remote_second_action") and remote_tool_node.has_method("request_secondary_action"):
 			remote_tool_node.call("request_secondary_action")
 		return
@@ -4134,71 +4577,105 @@ func _fade_action_reward_entry(entry: Label, fade_seconds: float, delay_seconds:
 	)
 
 
-func _create_team_money_delta_feeds() -> void:
-	if not team_money_delta_feeds.is_empty():
-		return
-	var root := Control.new()
-	root.name = "TeamMoneyDeltaFeeds"
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.anchor_left = 0.5
-	root.anchor_right = 0.5
-	root.offset_left = -220.0
-	root.offset_top = 56.0
-	root.offset_right = 220.0
-	root.offset_bottom = 170.0
-	$SubViewport.add_child(root)
-	for team_id in ["red", "blue"]:
-		var feed := VBoxContainer.new()
-		feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		feed.position = Vector2(0.0 if team_id == "red" else 240.0, 0.0)
-		feed.size = Vector2(200.0, 110.0)
-		feed.alignment = BoxContainer.ALIGNMENT_BEGIN
-		feed.add_theme_constant_override("separation", 2)
-		root.add_child(feed)
-		team_money_delta_feeds[team_id] = feed
+func _create_cooperative_team_hud() -> void:
+	if not is_instance_valid(cooperative_team_money_label):
+		cooperative_team_money_label = Label.new()
+		cooperative_team_money_label.name = "CooperativeTeamMoney"
+		cooperative_team_money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cooperative_team_money_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		cooperative_team_money_label.offset_left = -320.0
+		cooperative_team_money_label.offset_top = 12.0
+		cooperative_team_money_label.offset_right = -24.0
+		cooperative_team_money_label.offset_bottom = 48.0
+		cooperative_team_money_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		cooperative_team_money_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cooperative_team_money_label.add_theme_color_override("font_color", Color("#63D487"))
+		cooperative_team_money_label.add_theme_color_override("font_outline_color", Color(0.01, 0.06, 0.02, 0.98))
+		cooperative_team_money_label.add_theme_constant_override("outline_size", 6)
+		cooperative_team_money_label.add_theme_font_size_override("font_size", 24)
+		cooperative_team_money_label.visible = _is_team_multiplayer_hud()
+		$SubViewport.add_child(cooperative_team_money_label)
+	if not is_instance_valid(cooperative_money_delta_feed):
+		cooperative_money_delta_feed = VBoxContainer.new()
+		cooperative_money_delta_feed.name = "CooperativeMoneyDeltaFeed"
+		cooperative_money_delta_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cooperative_money_delta_feed.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		cooperative_money_delta_feed.offset_left = -320.0
+		cooperative_money_delta_feed.offset_top = 52.0
+		cooperative_money_delta_feed.offset_right = -24.0
+		cooperative_money_delta_feed.offset_bottom = 168.0
+		cooperative_money_delta_feed.alignment = BoxContainer.ALIGNMENT_BEGIN
+		cooperative_money_delta_feed.add_theme_constant_override("separation", 1)
+		cooperative_money_delta_feed.visible = _is_team_multiplayer_hud()
+		$SubViewport.add_child(cooperative_money_delta_feed)
 
 
-func show_team_money_delta(changed_team: String, delta: float) -> void:
-	if changed_team != team or delta <= 0.0:
-		return
-	if team_money_delta_feeds.is_empty():
-		_create_team_money_delta_feeds()
-	var feed := team_money_delta_feeds.get(changed_team, null) as VBoxContainer
+func _show_cooperative_delta(
+		feed: VBoxContainer,
+		text: String,
+		color: Color,
+		tween_store: Dictionary,
+		alignment: int
+) -> void:
 	if not is_instance_valid(feed):
 		return
 	for child in feed.get_children():
 		if child is Label:
-			_fade_team_money_delta_entry(child as Label, 0.18, 0.0)
+			_fade_cooperative_delta_entry(child as Label, tween_store, 0.18, 0.0)
 	var entry := Label.new()
 	entry.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	entry.custom_minimum_size = Vector2(200.0, 30.0)
-	entry.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	entry.text = "%s%d" % ["+" if delta > 0.0 else "-", int(round(absf(delta)))]
-	var color := Color("#42D67A") if delta < 0.0 else (
-		Color("#FF5656") if changed_team == "red" else Color("#69A7FF")
-	)
+	entry.custom_minimum_size = Vector2(296.0, 25.0)
+	entry.horizontal_alignment = alignment
+	entry.text = text
 	entry.add_theme_color_override("font_color", color)
 	entry.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.02, 0.96))
-	entry.add_theme_constant_override("outline_size", 5)
-	entry.add_theme_font_size_override("font_size", 22)
+	entry.add_theme_constant_override("outline_size", 4)
+	entry.add_theme_font_size_override("font_size", 17)
 	feed.add_child(entry)
-	_fade_team_money_delta_entry(entry, 0.3, 1.15)
+	_fade_cooperative_delta_entry(entry, tween_store, 0.3, 1.15)
 
 
-func _fade_team_money_delta_entry(entry: Label, fade_seconds: float, delay_seconds: float) -> void:
+func show_cooperative_team_money_delta(changed_team: String, delta: float) -> void:
+	if not _is_team_multiplayer_hud() or changed_team != team or is_zero_approx(delta):
+		return
+	if not is_instance_valid(cooperative_money_delta_feed):
+		_create_cooperative_team_hud()
+	var sign := "+" if delta > 0.0 else "-"
+	var color := Color("#63D487") if delta > 0.0 else Color("#FF746B")
+	_show_cooperative_delta(
+		cooperative_money_delta_feed,
+		"队伍金钱 %s%d" % [sign, int(round(absf(delta)))],
+		color,
+		team_money_delta_tweens,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+
+func show_team_money_delta(changed_team: String, delta: float) -> void:
+	# Keep the existing public helper as a compatibility wrapper for callers
+	# outside this script; money changes now appear in the cooperative HUD.
+	show_cooperative_team_money_delta(changed_team, delta)
+
+
+func _fade_cooperative_delta_entry(
+		entry: Label,
+		tween_store: Dictionary,
+		fade_seconds: float,
+		delay_seconds: float
+) -> void:
 	if not is_instance_valid(entry):
 		return
 	var entry_id := entry.get_instance_id()
-	var existing: Tween = team_money_delta_tweens.get(entry_id, null)
+	var existing: Tween = tween_store.get(entry_id, null)
 	if is_instance_valid(existing):
 		existing.kill()
 	var tween := create_tween()
-	team_money_delta_tweens[entry_id] = tween
+	tween_store[entry_id] = tween
 	if delay_seconds > 0.0:
 		tween.tween_interval(delay_seconds)
 	tween.tween_property(entry, "modulate:a", 0.0, maxf(0.05, fade_seconds))
 	tween.tween_callback(func() -> void:
-		team_money_delta_tweens.erase(entry_id)
+		tween_store.erase(entry_id)
 		if is_instance_valid(entry):
 			entry.queue_free()
 	)
@@ -4314,12 +4791,14 @@ func _on_authority_world_event(event: Dictionary) -> void:
 			)
 		return
 	if event_type == "team_money_changed":
-		return
-	if event_type == "team_score_changed":
-		show_team_money_delta(
+		show_cooperative_team_money_delta(
 			str(event.get("team", "")),
 			float(event.get("delta", 0.0))
 		)
+		return
+	if event_type == "team_score_changed":
+		# Team scores remain authoritative state for settlement/network sync, but
+		# are intentionally not shown in the single-player or team HUD.
 		return
 	if event_type == "shop_transaction":
 		var shop_result: Variant = event.get("data", {})
@@ -4351,12 +4830,19 @@ func _on_authority_world_event(event: Dictionary) -> void:
 				float(event.get("shake_radius", 0.0))
 			)
 		return
-	if event_type == "player_died" and CooperativeSession.is_host() \
+	# In networked games the authoritative event is delivered through
+	# GameAuthority.reliable_world_event_ready on both the listen-server host and
+	# every client. Apply it to this process's local player here. Single-player
+	# authority already applies the state directly in GameAuthority, so skipping
+	# that mode avoids removing the same death-drop inventory twice.
+	if event_type == "player_died" \
+			and not GameAuthority.is_local_authority() \
 			and int(event.get("peer_id", 0)) == authority_peer_id:
 		apply_death_inventory_drop(event.get("dropped_inventory_items", []))
 		apply_respawn_state(float(event.get("respawn_seconds", 0.0)))
 		return
-	if event_type == "player_respawned" and CooperativeSession.is_host() \
+	if event_type == "player_respawned" \
+			and not GameAuthority.is_local_authority() \
 			and int(event.get("peer_id", 0)) == authority_peer_id:
 		var respawn_position: Variant = event.get("position", null)
 		apply_respawn_state(
@@ -4369,6 +4855,24 @@ func _on_authority_world_event(event: Dictionary) -> void:
 			var ammo_value: Variant = event.get("ammo_state", {})
 			if ammo_value is Dictionary:
 				apply_weapon_ammo_state(str(event.get("tool_id", "")), ammo_value as Dictionary)
+		return
+	if event_type == "shield_state":
+		if int(event.get("peer_id", 0)) == authority_peer_id:
+			apply_authoritative_shield_state(event)
+		return
+	if event_type == "shield_broken":
+		# Single-player has no network replicator event; the local player is the
+		# presentation endpoint for the same reliable authority signal. In a
+		# listen server or client, MultiplayerWorldReplicator owns this visual so
+		# remote players and the host each receive it exactly once.
+		if GameAuthority.is_local_authority() \
+				and int(event.get("peer_id", authority_peer_id)) == authority_peer_id:
+			var break_position: Variant = event.get("position", null)
+			if break_position is Vector3:
+				GameAuthority.spawn_shield_break_effect(
+					break_position as Vector3,
+					float(event.get("particle_scale", 1.8))
+				)
 		return
 	if event_type == "player_damaged":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
@@ -4507,6 +5011,14 @@ func _update_cooldown_ring() -> void:
 		remaining = float(item.get("reload_remaining", 0.0))
 		duration = float(item.get("reload_duration", 0.0))
 	elif remote_is_active and is_instance_valid(remote_tool_node):
+		if remote_tool_node is BoomBuggy \
+				and remote_tool_node.has_method("get_primary_action_hold_elapsed") \
+				and remote_tool_node.has_method("get_primary_action_hold_duration"):
+			var held_elapsed := float(remote_tool_node.call("get_primary_action_hold_elapsed"))
+			var held_duration := float(remote_tool_node.call("get_primary_action_hold_duration"))
+			if held_elapsed > 0.0 and held_duration > 0.0:
+				cooldown_ring.call("set_progress", held_elapsed, held_duration)
+				return
 		if remote_tool_node.has_method("get_primary_action_cooldown_remaining"):
 			remaining = float(remote_tool_node.call("get_primary_action_cooldown_remaining"))
 		if remote_tool_node.has_method("get_primary_action_cooldown_duration"):
@@ -4759,6 +5271,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		if started_respawning:
 			death_respawn_duration = respawn_left
 			_reset_all_camera_shake()
+			_close_gameplay_ui_for_respawn()
 			_play_death_animation()
 		else:
 			# The reliable death event can arrive after an earlier snapshot. Keep the
@@ -4767,6 +5280,13 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		_update_death_appearance_visibility()
 	if is_respawning == next_is_respawning:
 		if next_is_respawning:
+			# A snapshot may arrive before the reliable death event. Keep the local
+			# presentation self-healing in that ordering as well, so a missing
+			# overlay/camera cannot leave the player permanently without the death UI.
+			if _owns_local_death_camera():
+				_ensure_respawn_overlay()
+				if not is_instance_valid(death_camera):
+					_start_death_camera()
 			_update_respawn_overlay()
 		return
 	is_respawning = next_is_respawning
@@ -4779,11 +5299,11 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		held_item_node.visible = not is_respawning and not is_prone
 	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if body_shape != null:
-		body_shape.set_deferred("disabled", is_respawning or is_remote_proxy)
+		body_shape.set_deferred("disabled", is_remote_proxy)
 	# The body, interaction ShapeCasts, and legacy local hit trigger must all leave
 	# the physics world together. Remote proxies use the same presentation state.
 	collision_layer = 0 if is_respawning or is_remote_proxy else PLAYER_COLLISION_LAYER
-	collision_mask = 0 if is_respawning or is_remote_proxy else PLAYER_COLLISION_MASK
+	collision_mask = 0 if is_remote_proxy else CORPSE_COLLISION_MASK if is_respawning else PLAYER_COLLISION_MASK
 	_set_interaction_detectors_enabled(not is_respawning and not is_remote_proxy)
 	var hit_area := get_node_or_null("Hit3D") as Area3D
 	if hit_area != null:
@@ -4801,6 +5321,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		_reset_all_camera_shake()
 		_stop_death_camera()
 		death_respawn_duration = 0.0
+		authoritative_grounded = true
 		action_anim_locked = false
 		landing_animation = false
 		if is_instance_valid(appearance_player):
@@ -4810,6 +5331,59 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 			fade.tween_property(respawn_overlay, "color:a", 0.0, 0.35)
 		if is_instance_valid(respawn_label):
 			respawn_label.visible = false
+		# CollisionShape3D and Hit3D use deferred physics changes while entering or
+		# leaving respawn. Re-apply the interaction runtime after that transition so
+		# the host's local player can use E immediately after returning.
+		call_deferred("_restore_post_respawn_interaction_state")
+
+
+func _restore_post_respawn_interaction_state() -> void:
+	if is_remote_proxy or is_respawning:
+		return
+	process_mode = Node.PROCESS_MODE_INHERIT
+	set_process(true)
+	set_physics_process(true)
+	set_process_input(true)
+	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if body_shape != null:
+		body_shape.disabled = false
+	collision_layer = PLAYER_COLLISION_LAYER
+	collision_mask = PLAYER_COLLISION_MASK
+	_set_interaction_detectors_enabled(true)
+	var hit_area := get_node_or_null("Hit3D") as Area3D
+	if hit_area != null:
+		hit_area.monitoring = true
+		hit_area.monitorable = true
+	if is_instance_valid(interact_hint):
+		_refresh_interact_hint()
+
+
+func _close_gameplay_ui_for_respawn() -> void:
+	# A player can die while a station, backpack, cargo or shop page is open. If
+	# that page survives death, _process() keeps returning before _update_interaction
+	# and E appears permanently broken after the respawn.
+	if is_instance_valid(team_chat_panel) and team_chat_panel.is_chat_open():
+		team_chat_panel.close_chat()
+	if is_instance_valid(player_backpack) and player_backpack.is_open() \
+			and not player_backpack.is_companion_display():
+		player_backpack.close()
+	if is_instance_valid($SubViewport/ShopPage) and $SubViewport/ShopPage.visible:
+		$SubViewport/ShopPage.close_shop()
+	var pages: Array[Node] = [
+			vehicle_upgrade_page, ingredient_pickup_page, plating_station_page,
+			oven_page, griddle_station_page, induction_counter_page,
+			farm_smoker_page, freezer_page, stand_mixer_page,
+			ingredient_extractor_page, auto_cooker_page, livestock_chop_page,
+			government_notice_page, cargo_delivery_page, cargo_car_storage_page,
+			cargo_crate_storage_page,
+	]
+	for page: Node in pages:
+		if is_instance_valid(page) and page.has_method("is_open") and bool(page.call("is_open")):
+			page.call("close")
+	_cargo_crate_hold_target = null
+	_cancel_gate_lockpick(false)
+	_set_weapon_aiming(false)
+	_update_crosshair_visibility()
 
 
 func _play_death_animation() -> void:
@@ -5106,6 +5680,20 @@ func _tick_local_reload_displays(delta: float) -> void:
 			continue
 		item["reload_remaining"] = maxf(0.0, remaining - delta)
 		backpack_items[index] = item
+	_sync_selected_weapon_ammo_visual()
+
+
+func _sync_selected_weapon_ammo_visual() -> void:
+	if not is_instance_valid(tool_node) or not tool_node.has_method("set_ammo_loaded"):
+		return
+	if current_tool_index < 0 or current_tool_index >= backpack_items.size():
+		tool_node.call("set_ammo_loaded", false)
+		return
+	var item := backpack_items[current_tool_index]
+	var loaded := str(item.get("kind", "")) == "tool" \
+			and int(item.get("ammo_in_mag", 0)) > 0 \
+			and float(item.get("reload_remaining", 0.0)) <= 0.0
+	tool_node.call("set_ammo_loaded", loaded)
 
 
 func apply_weapon_ammo_state(tool_id: String, ammo_state: Dictionary) -> void:
@@ -5119,12 +5707,33 @@ func apply_weapon_ammo_state(tool_id: String, ammo_state: Dictionary) -> void:
 		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
 		backpack_items[index] = item
 		break
+	_sync_selected_weapon_ammo_visual()
 	_update_ammo_ui()
 	_update_cooldown_ring()
 
 
 func _update_control_status_ui() -> void:
 	if not is_instance_valid(control_status_root):
+		return
+	if mounted_machine_gun_is_active and is_instance_valid(mounted_machine_gun):
+		if is_instance_valid(health_root):
+			health_root.visible = true
+		control_status_title.text = "MOUNTED MACHINE GUN"
+		control_status_primary_label.text = "Machine Gun HP  %d / %d" % [
+			roundi(mounted_machine_gun.current_hp), roundi(VehicleBaseMachineGun.MAX_HP)
+		]
+		control_status_primary_bar.max_value = VehicleBaseMachineGun.MAX_HP
+		control_status_primary_bar.value = mounted_machine_gun.current_hp
+		control_status_primary_bar.add_theme_stylebox_override(
+			"fill", _make_bar_style(_status_health_color(mounted_machine_gun.current_hp, VehicleBaseMachineGun.MAX_HP))
+		)
+		control_status_secondary_label.visible = false
+		control_status_secondary_bar.visible = false
+		control_status_detail_label.visible = true
+		control_status_detail_label.text = "Yaw %.0f°    Elevation %.0f°" % [
+			mounted_machine_gun.yaw_degrees, mounted_machine_gun.elevation_degrees
+		]
+		control_status_root.visible = true
 		return
 	if remote_is_active and is_instance_valid(remote_tool_node):
 		if is_instance_valid(health_root):
@@ -5292,10 +5901,16 @@ func _update_crosshair_visibility() -> void:
 		and government_notice_page.is_open()
 	var livestock_chop_open := is_instance_valid(livestock_chop_page) \
 		and livestock_chop_page.is_open()
-	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
+	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (mounted_machine_gun_is_active or bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
 		bool(definition.get("show_crosshair", false))) and \
 		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open
-	if not crosshair.visible:
+	# A hit marker is an attack confirmation, not a part of the aiming reticle.
+	# LongSpear (and other valid non-aimable tools) deliberately has no
+	# crosshair, so hiding the marker whenever the crosshair is hidden would
+	# erase a freshly confirmed melee hit on the next frame. Keep the old
+	# cleanup behavior for tools that do have a crosshair but have temporarily
+	# hidden it because an inventory/UI page is open.
+	if not crosshair.visible and bool(definition.get("show_crosshair", false)):
 		_hide_hit_marker()
 
 
@@ -5346,7 +5961,7 @@ func _disable_legacy_tool_ui() -> void:
 
 
 func _update_interaction() -> void:
-	if _chat_input_captures_gameplay() or remote_is_active or vehicle_is_active:
+	if _chat_input_captures_gameplay() or remote_is_active or vehicle_is_active or mounted_machine_gun_is_active:
 		return
 	if _update_ladder_interaction():
 		return
@@ -5466,6 +6081,17 @@ func _update_interaction() -> void:
 		_update_crosshair_visibility()
 		return
 	var target := _get_best_interaction_target(true)
+	if target.is_empty():
+		CARGO_CAR_DEBUG.log(
+			"E pressed player=%s peer=%d position=%s -> no target; cargo_group_count=%d"
+			% [name, authority_peer_id, str(global_position), get_tree().get_nodes_in_group("cargo_car_interaction_areas").size()]
+		)
+	else:
+		var target_body := target.get("body") as Node3D
+		CARGO_CAR_DEBUG.log(
+			"E pressed player=%s peer=%d -> kind=%s body=%s"
+			% [name, authority_peer_id, str(target.get("kind", "")), target_body.get_path() if target_body != null else "<null>"]
+		)
 	match str(target.get("kind", "")):
 		"wire_mesh_gate":
 			# Gate interaction is handled before the normal one-shot interaction
@@ -5480,9 +6106,20 @@ func _update_interaction() -> void:
 			_update_crosshair_visibility()
 		"vehicle":
 			_request_vehicle_enter(target.get("vehicle", target.get("body")) as VehicleBase)
+		"vehicle_platform_passenger":
+			_request_platform_passenger_enter(
+				target.get("vehicle") as VehicleBase,
+				int(target.get("seat_index", -1))
+			)
+		"mounted_machine_gun":
+			_request_mounted_machine_gun_enter(target.get("vehicle") as FarmBaseVehicle)
 		"cargo_car_storage":
 			var cargo_vehicle := target.get("vehicle") as VehicleBase
 			if is_instance_valid(cargo_vehicle):
+				CARGO_CAR_DEBUG.log(
+					"open cargo UI player=%s peer=%d vehicle=%s id=%s capacity=%.1f in_range=%s"
+					% [name, authority_peer_id, cargo_vehicle.name, cargo_vehicle.get_vehicle_id(), cargo_vehicle.get_cargo_capacity_kg(), cargo_vehicle.is_cargo_storage_interaction_available_to(global_position)]
+				)
 				cargo_car_storage_page.open_for(cargo_vehicle, self)
 				_update_crosshair_visibility()
 		"cargo_crate":
@@ -5563,6 +6200,25 @@ func apply_cargo_backpack_slots(slots_value: Array) -> void:
 	backpack_items.clear()
 	for value: Variant in slots_value:
 		backpack_items.append((value as Dictionary).duplicate(true) if value is Dictionary else {})
+	_sync_equipped_tools_from_backpack()
+	suppress_backpack_layout_sync = false
+	_refresh_hotbar()
+
+
+func apply_authoritative_shield_state(event: Dictionary) -> void:
+	var slots_value: Variant = event.get("player_slots", null)
+	var slot_index := int(event.get("slot_index", -1))
+	var broken := bool(event.get("broken", false))
+	suppress_backpack_layout_sync = true
+	if slots_value is Array:
+		backpack_items.clear()
+		for value: Variant in slots_value as Array:
+			backpack_items.append((value as Dictionary).duplicate(true) if value is Dictionary else {})
+	elif broken and slot_index >= 0 and slot_index < backpack_items.size():
+		if str(backpack_items[slot_index].get("tool_id", "")) == "medieval_shield":
+			backpack_items[slot_index] = {}
+	if event.has("current_tool_index"):
+		current_tool_index = int(event.get("current_tool_index", current_tool_index))
 	_sync_equipped_tools_from_backpack()
 	suppress_backpack_layout_sync = false
 	_refresh_hotbar()
@@ -5830,8 +6486,20 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 	for area_value: Variant in get_tree().get_nodes_in_group("cargo_car_interaction_areas"):
 		if area_value is Area3D:
 			var cargo_area := area_value as Area3D
-			if is_instance_valid(cargo_area) and cargo_area.overlaps_body(self):
+			var overlaps := is_instance_valid(cargo_area) and cargo_area.overlaps_body(self)
+			if print_shape_cast_debug and is_instance_valid(cargo_area):
+				var cargo_owner := (cargo_area as CargoCarInteractionArea).get_cargo_car()
+				CARGO_CAR_DEBUG.log(
+					"E scan player=%s peer=%d area=%s kind=%s overlap=%s vehicle=%s"
+					% [name, authority_peer_id, cargo_area.get_path(), (cargo_area as CargoCarInteractionArea).interaction_kind, overlaps, cargo_owner.name if cargo_owner != null else "<null>"]
+				)
+			if overlaps:
 				candidate_bodies[cargo_area.get_instance_id()] = cargo_area
+	for area_value: Variant in get_tree().get_nodes_in_group("vehicle_platform_interaction_areas"):
+		if area_value is VehiclePlatformInteractionArea:
+			var platform_area := area_value as VehiclePlatformInteractionArea
+			if is_instance_valid(platform_area) and platform_area.overlaps_body(self):
+				candidate_bodies[platform_area.get_instance_id()] = platform_area
 	for area_value: Variant in get_tree().get_nodes_in_group("wire_mesh_gate_interaction_areas"):
 		if area_value is Area3D:
 			var gate_area := area_value as Area3D
@@ -5870,13 +6538,16 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 		var inside_cargo_area := body is Area3D \
 				and body.is_in_group("cargo_car_interaction_areas") \
 				and (body as Area3D).overlaps_body(self)
+		var inside_platform_area := body is Area3D \
+				and body.is_in_group("vehicle_platform_interaction_areas") \
+				and (body as Area3D).overlaps_body(self)
 		var inside_board_area := body is Area3D \
 				and body.is_in_group("government_board_interaction_areas") \
 				and (body as Area3D).overlaps_body(self)
 		var inside_gate_area := str(target.get("kind", "")) == "wire_mesh_gate" \
 				and body is WireMeshGate \
 				and (body as WireMeshGate).is_actor_inside_interaction_area(self)
-		var inside_interaction_area := inside_shop_area or inside_cargo_area \
+		var inside_interaction_area := inside_shop_area or inside_cargo_area or inside_platform_area \
 				or inside_board_area or inside_gate_area
 		var interaction_position: Vector3 = global_position if inside_interaction_area \
 				else target.get("interaction_position", body.global_position)
@@ -5911,6 +6582,35 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 
 
 func _build_interaction_target(body: Node3D) -> Dictionary:
+	if body is VehiclePlatformInteractionArea:
+		var platform_area := body as VehiclePlatformInteractionArea
+		var platform_vehicle := platform_area.get_vehicle()
+		if platform_vehicle == null:
+			return {}
+		if not platform_vehicle.can_team_enter(team):
+			return {"kind": "vehicle_locked", "body": platform_area, "hint": "敌方载具，无法登车"}
+		if platform_area.get_interaction_kind() == "passenger":
+			if not platform_vehicle.has_method("get_available_platform_passenger_seat_index"):
+				return {}
+			var passenger_seat_index := int(platform_vehicle.call("get_available_platform_passenger_seat_index"))
+			return {
+				"kind": "vehicle_platform_passenger",
+				"body": platform_area,
+				"vehicle": platform_vehicle,
+				"seat_index": passenger_seat_index,
+				"interaction_position": platform_area.global_position,
+				"hint": "平台乘客座椅已满" if passenger_seat_index < 0 else "[E] 登上乘客座椅",
+			}
+		var machine_gun := platform_area.get_platform_module()
+		if machine_gun == null or machine_gun.destroyed_state:
+			return {}
+		return {
+			"kind": "mounted_machine_gun",
+			"body": platform_area,
+			"vehicle": platform_vehicle,
+			"interaction_position": platform_area.global_position,
+			"hint": "机枪正在使用" if machine_gun.operator_peer_id > 0 else "[E] 操控车载机枪",
+		}
 	var chop := body as LivestockChop
 	var chop_parent := body.get_parent()
 	while chop == null and chop_parent is Node3D:
@@ -6130,7 +6830,9 @@ func _request_livestock_pickup(livestock: FarmLivestock) -> void:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 	elif _is_authority_local_player():
-		var result := GameAuthority.server_ingredient_pickup_action(authority_peer_id, action)
+		# Listen-server host must use the same local gateway as every other E
+		# interaction, otherwise range validation can read an older player state.
+		var result := GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 		if not bool(result.get("ok", false)):
 			show_gameplay_notice(str(result.get("message", "无法抱起这只动物")))
 
@@ -6285,9 +6987,16 @@ func _update_tool_camera_alignment() -> void:
 			or not is_instance_valid(tool_pivot) \
 			or (not is_instance_valid(tool_node) and not is_instance_valid(held_item_node)):
 		return
-	# Weapon aiming owns the pivot orientation. Utility tools and held items do
-	# not need camera alignment; keep the pivot neutral and continuously enforce
-	# the model's world-up correction, including immediately after a weapon swap.
+	# The shield is passive, but its authored -Z face still needs the same
+	# forward alignment as a firearm. Correct its model's Y axis first, then
+	# align that corrected model to the camera frame.
+	if _current_tool_is_shield():
+		_upright_held_model(tool_node)
+		_align_held_model_to_basis(tool_node, camera.global_transform.basis)
+		return
+	# Utility tools and held items do not need camera alignment; keep the pivot
+	# neutral and continuously enforce the model's world-up correction,
+	# including immediately after a weapon swap.
 	if not _current_tool_is_shooting():
 		tool_pivot.transform = Transform3D.IDENTITY
 		_upright_held_model(tool_node)
@@ -6295,7 +7004,7 @@ func _update_tool_camera_alignment() -> void:
 			_upright_held_model(held_item_node)
 		return
 
-	# A Muzzle or RayCast3D is the authoritative forward frame. The arm IK
+	# A Muzzle, RayCast3D, or melee AttackArea is the authoritative forward frame. The arm IK
 	# controls where the hand is, while this compensation keeps the visible
 	# tool and its gameplay ray aligned with the camera despite the imported
 	# hand bone's changing orientation.
@@ -6309,14 +7018,19 @@ func _update_tool_camera_alignment() -> void:
 			true,
 			false
 		) as RayCast3D
-		if aim_ray == null or aim_ray.target_position.is_zero_approx():
+		var ray_direction := Vector3.ZERO
+		if aim_ray != null and not aim_ray.target_position.is_zero_approx():
+			ray_direction = (
+				aim_ray.to_global(aim_ray.target_position)
+				- aim_ray.global_position
+			).normalized()
+		else:
+			var attack_area := tool_node.find_child("AttackArea", true, false) as Area3D
+			if attack_area != null:
+				ray_direction = (attack_area.global_position - tool_node.global_position).normalized()
+		if ray_direction.length_squared() <= 0.001:
 			tool_pivot.transform = Transform3D.IDENTITY
 			return
-
-		var ray_direction := (
-			aim_ray.to_global(aim_ray.target_position)
-			- aim_ray.global_position
-		).normalized()
 		var preferred_up := \
 			tool_node.global_transform.basis.y.normalized()
 		if absf(ray_direction.dot(preferred_up)) > 0.98:
@@ -6345,6 +7059,22 @@ func _update_tool_camera_alignment() -> void:
 	)
 
 
+func _align_held_model_to_basis(node: Node3D, target_basis: Basis) -> void:
+	if not is_instance_valid(node) or not is_instance_valid(tool_pivot):
+		return
+	var normalized_target_basis := target_basis.orthonormalized()
+	var pivot_basis := tool_pivot.global_transform.basis.orthonormalized()
+	var model_basis := node.global_transform.basis.orthonormalized()
+	var model_from_pivot := (pivot_basis.inverse() * model_basis).orthonormalized()
+	var desired_pivot_basis := (
+		normalized_target_basis * model_from_pivot.inverse()
+	).orthonormalized()
+	tool_pivot.global_transform = Transform3D(
+		desired_pivot_basis,
+		tool_pivot.global_position
+	)
+
+
 func _update_remote_held_model_alignment() -> void:
 	# Remote proxies do not own a Camera3D. Use the replicated Head transform as
 	# the camera frame, then run the same ToolPivot compensation as the local
@@ -6353,6 +7083,10 @@ func _update_remote_held_model_alignment() -> void:
 	if not is_remote_proxy:
 		return
 	if is_instance_valid(tool_node) and tool_node.visible:
+		if _current_tool_is_shield():
+			_upright_held_model(tool_node)
+			_align_held_model_to_basis(tool_node, Head.global_transform.basis)
+			return
 		if _tool_has_remote_aim_frame(tool_node):
 			_align_remote_tool_to_head()
 		else:
@@ -6366,6 +7100,8 @@ func _update_remote_held_model_alignment() -> void:
 
 func _tool_has_remote_aim_frame(node: Node3D) -> bool:
 	if not is_instance_valid(node):
+		return false
+	if _current_tool_is_shield():
 		return false
 	if _current_tool_is_shooting():
 		return true
@@ -6416,12 +7152,18 @@ func _align_remote_tool_to_head() -> void:
 		aim_basis = muzzle.global_transform.basis.orthonormalized()
 	else:
 		var aim_ray := tool_node.find_child("RayCast3D", true, false) as RayCast3D
-		if aim_ray == null or aim_ray.target_position.is_zero_approx():
+		var ray_direction := Vector3.ZERO
+		if aim_ray != null and not aim_ray.target_position.is_zero_approx():
+			ray_direction = (
+				aim_ray.to_global(aim_ray.target_position) - aim_ray.global_position
+			).normalized()
+		else:
+			var attack_area := tool_node.find_child("AttackArea", true, false) as Area3D
+			if attack_area != null:
+				ray_direction = (attack_area.global_position - tool_node.global_position).normalized()
+		if ray_direction.length_squared() <= 0.001:
 			_align_remote_prop_to_head(tool_node)
 			return
-		var ray_direction := (
-			aim_ray.to_global(aim_ray.target_position) - aim_ray.global_position
-		).normalized()
 		var preferred_up := tool_node.global_transform.basis.y.normalized()
 		if absf(ray_direction.dot(preferred_up)) > 0.98:
 			preferred_up = Head.global_transform.basis.x.normalized()
@@ -6441,10 +7183,18 @@ func _current_tool_is_shooting() -> bool:
 	return _definition_uses_weapon_orientation(tool_definitions[current_tool_index])
 
 
+func _current_tool_is_shield() -> bool:
+	if not _has_equipped_tool(current_tool_index):
+		return false
+	return str(tool_definitions[current_tool_index].get("category", "utility")) == "shield"
+
+
 func _definition_uses_weapon_orientation(definition: Dictionary) -> bool:
 	var tool_id := str(definition.get("id", ""))
 	return str(definition.get("category", "utility")) == "shooting" \
+			or str(definition.get("category", "utility")) == "melee" \
 			or str(definition.get("category", "utility")) == "throwable" \
+			or str(definition.get("category", "utility")) == "shield" \
 			or HANDHELD_WEAPON_TOOL_IDS.has(tool_id)
 
 
@@ -6493,6 +7243,23 @@ func apply_explosion_camera_shake(explosion_position: Vector3, radius: float) ->
 		camera_shake_duration = 0.72
 		camera_shake_time = maxf(camera_shake_time, camera_shake_duration)
 		camera_shake_strength = maxf(camera_shake_strength, lerpf(0.035, 0.26, ratio))
+
+
+func trigger_mounted_machine_gun_recoil() -> void:
+	if is_remote_proxy or not mounted_machine_gun_is_active:
+		return
+	# The shake is applied as a positional offset in _update_camera_shake().
+	# Doubling this amplitude therefore doubles both the perceived intensity and
+	# the maximum camera offset for each mounted-gun shot. Use maxf so a
+	# simultaneous explosion or hit reaction is never weakened.
+	const recoil_duration := 0.13
+	const recoil_strength := 0.06
+	if camera_shake_time <= 0.0:
+		camera_shake_duration = recoil_duration
+	else:
+		camera_shake_duration = maxf(camera_shake_duration, recoil_duration)
+	camera_shake_time = maxf(camera_shake_time, recoil_duration)
+	camera_shake_strength = maxf(camera_shake_strength, recoil_strength)
 
 
 func _create_damage_feedback_ui() -> void:
@@ -7183,12 +7950,16 @@ func _update_upper_body_aim(delta:float) -> void:
 			is_instance_valid(tool_node) and tool_node.visible
 		) or (
 			is_instance_valid(held_item_node) and held_item_node.visible
-		)
+		) or mounted_machine_gun_is_active
 	# All held objects use the same camera-space hand position reached by the
 	# punch pose, so the complete model stays clearly visible in first person.
 	var hand_in_camera_space := is_punching or is_holding_any_item
 	var hand_target := punch_hand_camera_offset if hand_in_camera_space \
 		else right_hand_ik_rest_position
+	if mounted_machine_gun_is_active and is_instance_valid(mounted_machine_gun):
+		var mounted_grip := mounted_machine_gun.get_right_hand_grip()
+		if mounted_grip != null:
+			hand_target = Head.to_local(mounted_grip.global_position)
 	if hand_in_camera_space:
 		# Held tools, food, dishes and the punch all use this visible hand target.
 		right_hand_ik_target.position = hand_target
@@ -7395,6 +8166,17 @@ func impact(effect: String, strength: float, shooter: String) -> bool:
 		return true
 	if GameAuthority.is_local_authority() and GameAuthority.player_states.has(authority_peer_id):
 		var attacker_peer_id := GameAuthority.resolve_attacker_peer_id(shooter)
+		var shield_result := GameAuthority.apply_held_shield_damage(
+			authority_peer_id,
+			damage,
+			attacker_peer_id,
+			effect,
+			1.0,
+			shooter,
+			true
+		)
+		if bool(shield_result.get("blocked", false)):
+			return true
 		var applied := GameAuthority._damage_player(
 			authority_peer_id, damage, 0.0, Vector3.ZERO, shooter, effect, attacker_peer_id
 		)

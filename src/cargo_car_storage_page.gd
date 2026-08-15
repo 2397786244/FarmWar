@@ -2,6 +2,7 @@ extends Control
 class_name CargoCarStoragePage
 
 const SLOT_SCENE_SCRIPT := preload("res://src/cargo_inventory_slot.gd")
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 
 var player: GamePlayer
 var vehicle: VehicleBase
@@ -23,8 +24,15 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if not visible:
 		return
-	if not is_instance_valid(vehicle) or not is_instance_valid(player) \
-			or not vehicle.is_cargo_storage_interaction_available_to(player.global_position):
+	if not is_instance_valid(vehicle) or not is_instance_valid(player):
+		CARGO_CAR_DEBUG.log("UI auto-close: vehicle or player became invalid vehicle_id=%s" % vehicle_id)
+		close()
+		return
+	if not vehicle.is_cargo_storage_interaction_available_to(player.global_position):
+		CARGO_CAR_DEBUG.log(
+			"UI auto-close: out of cargo range player=%s peer=%d vehicle=%s id=%s position=%s"
+			% [player.name, player.authority_peer_id, vehicle.name, vehicle_id, str(player.global_position)]
+		)
 		close()
 
 
@@ -107,10 +115,15 @@ func _build_ui() -> void:
 
 func open_for(next_vehicle: VehicleBase, next_player: GamePlayer) -> void:
 	if not is_instance_valid(next_vehicle) or not is_instance_valid(next_player):
+		CARGO_CAR_DEBUG.log("open UI rejected: invalid vehicle or player")
 		return
 	player = next_player
 	vehicle = next_vehicle
 	vehicle_id = vehicle.get_vehicle_id()
+	CARGO_CAR_DEBUG.log(
+		"UI open_for player=%s peer=%d vehicle=%s id=%s capacity=%.1f"
+		% [player.name, player.authority_peer_id, vehicle.name, vehicle_id, vehicle.get_cargo_capacity_kg()]
+	)
 	visible = true
 	player.player_backpack.show_companion(self)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -151,7 +164,15 @@ func drop_dragged_item_outside(data: Dictionary, direction: Vector3) -> void:
 
 func apply_authoritative_result(result: Dictionary) -> void:
 	if int(result.get("peer_id", 0)) != player.authority_peer_id:
+		CARGO_CAR_DEBUG.log(
+			"UI result ignored peer=%d expected=%d action=%s"
+			% [int(result.get("peer_id", 0)), player.authority_peer_id, str(result.get("action", ""))]
+		)
 		return
+	CARGO_CAR_DEBUG.log(
+		"UI result player=%s peer=%d vehicle=%s action=%s ok=%s reason=%s"
+		% [player.name, player.authority_peer_id, vehicle_id, str(result.get("action", "")), bool(result.get("ok", false)), str(result.get("reason", ""))]
+	)
 	if not bool(result.get("ok", false)):
 		_notice.text = _reason_text(str(result.get("reason", "rejected")))
 		if str(result.get("action", "")) == "open":
@@ -198,12 +219,21 @@ func drop_item(target_kind: String, target_index: int, data: Dictionary) -> void
 
 func _submit(extra: Dictionary) -> void:
 	if not is_instance_valid(player):
+		CARGO_CAR_DEBUG.log("submit ignored: player is invalid action=%s" % str(extra.get("action", "")))
 		return
 	var action := {"station_kind": "cargo_car", "vehicle_id": vehicle_id}
 	action.merge(extra, true)
 	if GameAuthority.should_send_network_requests():
+		CARGO_CAR_DEBUG.log(
+			"submit network player=%s peer=%d action=%s vehicle_id=%s"
+			% [player.name, player.authority_peer_id, str(action.get("action", "")), vehicle_id]
+		)
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
 	else:
+		CARGO_CAR_DEBUG.log(
+			"submit local player=%s peer=%d action=%s vehicle_id=%s"
+			% [player.name, player.authority_peer_id, str(action.get("action", "")), vehicle_id]
+		)
 		apply_authoritative_result(GameAuthority.local_ingredient_pickup_action(player.authority_peer_id, action))
 
 

@@ -8,8 +8,8 @@
 [ext_resource type="Texture2D" path="res://worlds/redpine_county/redpine_county_surface_palette_lookup.res" id="6_lookup"]
 [ext_resource type="Script" uid="uid://dn8o1sjdmg6re" path="res://src/terrain/terrain_surface_baker.gd" id="7_baker"]
 [ext_resource type="Script" uid="uid://ds7s0htg58tpd" path="res://src/terrain/grass_scatter_3d.gd" id="8_grass_scatter"]
-[ext_resource type="PackedScene" uid="uid://b3uurwo4gfuai" path="res://assets/environment/Grass_small.glb" id="9_grass_small"]
-[ext_resource type="PackedScene" uid="uid://jvc2pomu8b0q" path="res://assets/environment/Grass_tall.glb" id="10_grass_tall"]
+[ext_resource type="PackedScene" uid="uid://dg508bged6igp" path="res://assets/nature/GrassLow.glb" id="9_grass_low"]
+[ext_resource type="PackedScene" uid="uid://ill5qie84qh8" path="res://assets/nature/GrassTall.glb" id="10_grass_tall"]
 [ext_resource type="Script" uid="uid://by56w567ih6jo" path="res://src/far_scenery_ring_3d.gd" id="11_far_scenery"]
 [ext_resource type="Script" uid="uid://bstpn1061kmtl" path="res://src/farm_field_generator.gd" id="12_farm_field"]
 [ext_resource type="PackedScene" path="res://worlds/shared/weather_system.tscn" id="13_weather"]
@@ -21,6 +21,7 @@
 [ext_resource type="PackedScene" path="res://buildings/SpawnRedBus.tscn" id="19_red_bus"]
 [ext_resource type="PackedScene" uid="uid://dx05fdwc8bbfm" path="res://buildings/SpawnBlueBus.tscn" id="20_blue_bus"]
 [ext_resource type="PackedScene" path="res://buildings/TeamSpawnPoint.tscn" id="21_team_spawn"]
+[ext_resource type="PackedScene" uid="uid://bmdvlt0vay3fb" path="res://assets/nature/GrassDry.glb" id="22_grass_dry"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_mxl0g"]
 sky_top_color = Color(0.45882353, 0.7411765, 0.92156863, 1)
@@ -167,6 +168,7 @@ visibility_distance = 1600.0
 surface_palette_lookup = ExtResource("6_lookup")
 far_grass_inner_half_extent = 512.0
 far_grass_outer_half_extent = 720.0
+far_dry_grass_count = 48
 
 [node name="SurfaceAreas" type="Node3D" parent="." unique_id=358613233]
 
@@ -181,8 +183,9 @@ palette_output_path = "res://worlds/redpine_county/redpine_county_surface_palett
 
 [node name="GrassScatter" type="Node3D" parent="." unique_id=1580321225]
 script = ExtResource("8_grass_scatter")
-small_grass_scene = ExtResource("9_grass_small")
+small_grass_scene = ExtResource("9_grass_low")
 tall_grass_scene = ExtResource("10_grass_tall")
+dry_grass_scene = ExtResource("22_grass_dry")
 black_eyed_susan_scene = ExtResource("14_black_eyed_susan")
 coneflower_scene = ExtResource("15_coneflower")
 fern_scene = ExtResource("16_fern")
@@ -190,6 +193,7 @@ surface_mask = ExtResource("5_mask")
 terrain_size = Vector2(1024, 1024)
 small_density = 0.0
 tall_density = 0.0
+dry_density = 0.001
 black_eyed_susan_density = 0.001
 coneflower_density = 0.001
 fern_density = 0.002

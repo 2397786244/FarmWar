@@ -591,13 +591,13 @@ func _try_primary_action() -> void:
 		# Local authority has no client replicator to receive the server's visual
 		# event, so it renders one collision-free LaserBullet locally. Multiplayer
 		# clients wait for the server-confirmed visual instead.
-		if GameAuthority.is_local_authority():
+		if GameAuthority.is_local_interaction_authority():
 			_perform_primary_action(true)
 		return
 
 	# A local authority can reject the action (for example, weak signal). Do not
 	# fall back to the legacy damaging projectile in that case.
-	if GameAuthority.is_local_authority():
+	if GameAuthority.is_local_interaction_authority():
 		_primary_action_cooldown_left = 0.0
 		return
 	_perform_primary_action(false)
@@ -758,9 +758,12 @@ func _submit_remote_authority_action(action_name: String) -> bool:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_remote_action(action)
 		return true
-	if GameAuthority.is_local_authority():
+	if GameAuthority.is_local_interaction_authority():
+		var peer_id := GameAuthority.get_local_interaction_peer_id()
+		if peer_id <= 0:
+			return false
 		var result: Dictionary = GameAuthority.local_remote_action(
-			GameAuthority.LOCAL_PLAYER_ID,
+			peer_id,
 			action
 		)
 		return bool(result.get("ok", false))
@@ -791,6 +794,8 @@ func apply_network_health(hp: float) -> void:
 
 
 func place_ready_setting() -> void:
+	# A stored/handheld mouse is not a combat target; it joins after deployment.
+	add_to_group("ai_combat_targets")
 	# SmallMouse 是地面 CharacterBody3D。
 	motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
 	floor_snap_length = 0.18

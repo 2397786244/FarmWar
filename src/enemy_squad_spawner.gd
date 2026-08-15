@@ -126,7 +126,7 @@ func _build_member_configs() -> Array[EnemySquadMemberConfig]:
 	var result: Array[EnemySquadMemberConfig] = []
 	for role_value in member_roles:
 		var role := _normalize_role(str(role_value))
-		if role not in ["future_warrior", "future_engineer"]:
+		if role not in ["future_warrior", "future_engineer", "assistant", "bandit"]:
 			continue
 		var config := MemberConfigScript.new() as EnemySquadMemberConfig
 		config.ai_type = role
@@ -164,6 +164,10 @@ func _normalize_role(value: String) -> String:
 		return "future_warrior"
 	if normalized in ["futureengineer", "future_engineer_ai"]:
 		return "future_engineer"
+	if normalized in ["assistantai", "ai_assistant"]:
+		return "assistant"
+	if normalized in ["banditai", "bandit_ai"]:
+		return "bandit"
 	return normalized
 
 

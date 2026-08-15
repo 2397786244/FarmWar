@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://b3uurwo4gfuai"
-path="res://.godot/imported/Grass_small.glb-df257d6a6712ce4e0952506510b0ea53.scn"
+uid="uid://m6b8jcmywmfr"
+path="res://.godot/imported/PlatformSeat.glb-96e7ff3f0785aa40705bad5561ca3fed.scn"
 
 [deps]
 
-source_file="res://assets/environment/Grass_small.glb"
-dest_files=["res://.godot/imported/Grass_small.glb-df257d6a6712ce4e0952506510b0ea53.scn"]
+source_file="res://assets/vehicles/PlatformSeat.glb"
+dest_files=["res://.godot/imported/PlatformSeat.glb-96e7ff3f0785aa40705bad5561ca3fed.scn"]
 
 [params]
 

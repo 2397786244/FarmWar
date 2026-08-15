@@ -19,6 +19,8 @@
 ##   - Manual grass brush using chunked MultiMesh (independent of surface color).
 ##   - Place existing FarmWar tree scenes.
 ##   - Place existing FarmWar ore scenes.
+##   - Place collision-free roadside rock decoration scenes.
+##   - Place drivable vehicle scenes from the Vehicles asset category.
 ##   - Place giant-crop and wild-animal spawn points.
 ##   - Visual building asset browser for all res://buildings scenes except nature/.
 ##   - Building placement with slope validation and live scene preview.
@@ -51,8 +53,10 @@ enum ToolMode {
 	GRASS,
 	TREE,
 	ORE,
+	GROUND_ROCK,
 	SPAWN,
 	BUILDING,
+	VEHICLE,
 	FACILITY,
 	AUXILIARY,
 	AI,
@@ -126,14 +130,18 @@ const FAR_SCENERY_GROUND_MARGIN = 768.0
 const EDITOR_FAR_GROUND_ROOT_NAME = "_EditorGuaranteedFarGround"
 const WILD_ANIMAL_GENERATOR_PATH = "res://src/wild_animal_generator.gd"
 const RARE_RESOURCE_SPAWN_PATH = "res://buildings/nature/RareResourceSpawnPoint.tscn"
-const SMALL_GRASS_PATH = "res://assets/environment/Grass_small.glb"
-const TALL_GRASS_PATH = "res://assets/environment/Grass_tall.glb"
+const LOW_GRASS_PATH = "res://assets/nature/GrassLow.glb"
+const TALL_GRASS_PATH = "res://assets/nature/GrassTall.glb"
+const DRY_GRASS_PATH = "res://assets/nature/GrassDry.glb"
 const BLACK_EYED_SUSAN_PATH = "res://assets/nature/Wildflower_BlackEyedSusan.glb"
 const CONEFLOWER_PATH = "res://assets/nature/Wildflower_Coneflower.glb"
 const FERN_CLUMP_PATH = "res://assets/nature/Fern_Clump.glb"
 const MANUAL_GRASS_SPECIES := {
-	"small": {"label": "Small Grass", "path": SMALL_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
+	# Keep the legacy "small" key so existing map packages continue to load;
+	# its source model is now the new low grass asset.
+	"small": {"label": "Low Grass", "path": LOW_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
 	"tall": {"label": "Tall Grass", "path": TALL_GRASS_PATH, "scale": Vector2(0.85, 1.20), "visibility": 120.0},
+	"dry": {"label": "Dry Grass", "path": DRY_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
 	"black_eyed_susan": {"label": "Black-Eyed Susan", "path": BLACK_EYED_SUSAN_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
 	"coneflower": {"label": "Coneflower", "path": CONEFLOWER_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
 	"fern": {"label": "Fern Clump", "path": FERN_CLUMP_PATH, "scale": Vector2(0.80, 1.20), "visibility": 100.0},
@@ -163,9 +171,18 @@ const MAP_CAN_OVERLAP_WATER_META = &"map_can_overlap_water"
 
 const TREE_ASSETS = [
 	{"label": "CottonWood", "path": "res://buildings/nature/CottonWood.tscn", "id": "cottonwood"},
+	{"label": "CottonWood (Yellow)", "path": "res://buildings/nature/CottonWood_Yellow.tscn", "id": "cottonwood_yellow"},
+	{"label": "Cypress", "path": "res://buildings/nature/Cypress.tscn", "id": "cypress"},
+	{"label": "Cypress (Yellow)", "path": "res://buildings/nature/Cypress_Yellow.tscn", "id": "cypress_yellow"},
 	{"label": "Oak", "path": "res://buildings/nature/Oak.tscn", "id": "oak"},
+	{"label": "Pine", "path": "res://buildings/nature/Pine.tscn", "id": "pine"},
+	{"label": "Pine (Yellow)", "path": "res://buildings/nature/Pine_Yellow.tscn", "id": "pine_yellow"},
+	{"label": "Pink Leaf Tree", "path": "res://buildings/nature/PinkLeafTree.tscn", "id": "pink_leaf_tree"},
 	{"label": "Redcedar", "path": "res://buildings/nature/Redcedar.tscn", "id": "redcedar"},
 	{"label": "RedMaple", "path": "res://buildings/nature/RedMaple.tscn", "id": "redmaple"},
+	{"label": "RedMaple (Yellow)", "path": "res://buildings/nature/RedMaple_Yellow.tscn", "id": "redmaple_yellow"},
+	{"label": "RedWood", "path": "res://buildings/nature/RedWood.tscn", "id": "redwood"},
+	{"label": "RedWood (Yellow)", "path": "res://buildings/nature/RedWood_Yellow.tscn", "id": "redwood_yellow"},
 	{"label": "Stump Fresh", "path": "res://buildings/nature/StumpFresh.tscn", "id": "stump_fresh"},
 	{"label": "Stump Mossy", "path": "res://buildings/nature/StumpMossy.tscn", "id": "stump_mossy"},
 	{"label": "Stump Rotten", "path": "res://buildings/nature/StumpRotten.tscn", "id": "stump_rotten"},
@@ -184,16 +201,61 @@ const ORE_ASSETS = [
 	{"label": "Truffle", "path": "res://items/Truffle.tscn", "id": "truffle"},
 ]
 
+# Collision-free roadside decoration. Keep these separate from ORE_ASSETS so
+# they are never treated as harvestable resources.
+const ROADSIDE_ROCK_ASSETS = [
+	{"label": "Roadside Rock 1", "path": "res://assets/environment/RoadsideRock1.glb", "id": "roadside_rock_1"},
+	{"label": "Roadside Rock 2", "path": "res://assets/environment/RoadsideRock2.glb", "id": "roadside_rock_2"},
+]
+
+# Drivable map objects are kept separate from buildings. They are saved in the
+# map's Buildings root so the normal map package/scene ownership and runtime
+# vehicle registration continue to work.
+const VEHICLE_ASSETS = [
+	{
+		"label": "CargoCar",
+		"path": "res://vehicles/cargo_car.tscn",
+		"id": "cargo_car",
+		"placement_category": "vehicle",
+		"team_scene_paths": {
+			"red": "res://vehicles/red_cargo_car.tscn",
+			"blue": "res://vehicles/blue_cargo_car.tscn",
+		},
+	},
+	{
+		"label": "Farm Base Vehicle",
+		"path": "res://vehicles/farm_base_vehicle.tscn",
+		"id": "farm_base_vehicle",
+		"placement_category": "vehicle",
+	},
+]
+
+const FARM_BASE_VEHICLE_PATH := "res://vehicles/farm_base_vehicle.tscn"
+const VEHICLE_COLOR_OPTIONS = [
+	{"id": "black", "label": "黑色", "color": Color("000000")},
+	{"id": "white", "label": "白色", "color": Color("ffffff")},
+	{"id": "red", "label": "红色", "color": Color("d62828")},
+	{"id": "orange", "label": "橙色", "color": Color("f28c28")},
+	{"id": "gold", "label": "金黄色", "color": Color("d4a017")},
+	{"id": "dark_green", "label": "深绿色", "color": Color("1f6b3a")},
+	{"id": "sky_blue", "label": "天蓝色", "color": Color("4db8ff")},
+	{"id": "dark_purple", "label": "深紫色", "color": Color("4b1f6f")},
+	{"id": "pink", "label": "粉色", "color": Color("ec6fa9")},
+]
+
 const AI_TYPES := [
 	{"id": "farmer", "label": "FarmerAI", "scene": "res://character/FarmerAI.tscn"},
 	{"id": "futurewarrior", "label": "FutureWarriorAI", "scene": "res://character/FutureWarriorAI.tscn"},
 	{"id": "futureengineer", "label": "FutureEngineerAI", "scene": "res://character/FutureEngineerAI.tscn"},
 	{"id": "assistant", "label": "AssistantAI", "scene": "res://character/AssistantAI.tscn"},
+	{"id": "bandit", "label": "BanditAI", "scene": "res://character/BanditAI.tscn"},
 ]
 
 const SQUAD_MEMBER_TYPES := [
 	{"id": "future_warrior", "label": "FutureWarrior"},
 	{"id": "future_engineer", "label": "FutureEngineer"},
+	{"id": "assistant", "label": "AssistantAI"},
+	{"id": "bandit", "label": "BanditAI"},
 ]
 
 const FALLBACK_SURFACES = [
@@ -294,6 +356,7 @@ var _water_root: Node3D
 var _manual_grass_root: Node3D
 var _trees_root: Node3D
 var _ores_root: Node3D
+var _ground_rocks_root: Node3D
 var _spawns_root: Node3D
 var _buildings_root: Node3D
 var _farmlands_root: Node3D
@@ -320,6 +383,7 @@ var _collision_dirty_chunks: Dictionary = {}
 var _manual_grass = {
 	"small": {},
 	"tall": {},
+	"dry": {},
 	"black_eyed_susan": {},
 	"coneflower": {},
 	"fern": {},
@@ -370,6 +434,14 @@ var _building_assets: Array[Dictionary] = []
 var _filtered_building_assets: Array[Dictionary] = []
 var _building_categories: PackedStringArray = PackedStringArray(["All"])
 var _selected_building_asset: Dictionary = {}
+var _selected_vehicle_team := ""
+var _selected_vehicle_body_color := Color("000000")
+var _selected_vehicle_wheel_color := Color("000000")
+var _selected_vehicle_machine_gun_installed := false
+var _selected_vehicle_platform_seat_count := 0
+var _selected_vehicle_reinforced_variant := false
+var _selected_vehicle_nitro_boost_installed := false
+var _selected_vehicle_harvest_reel_installed := false
 var _facility_assets: Array[Dictionary] = []
 var _selected_facility_category := "kitchen"
 var _selected_facility_team := "red"
@@ -815,8 +887,10 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.GRASS, "Grass", "Manual MultiMesh grass brush")
 	_add_tool_button(column, group, ToolMode.TREE, "Trees", "Place complete harvestable tree scenes")
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
+	_add_tool_button(column, group, ToolMode.GROUND_ROCK, "Ground Rocks", "Place collision-free roadside rock decoration")
 	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
 	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
+	_add_tool_button(column, group, ToolMode.VEHICLE, "Vehicles", "Place team-owned or neutral CargoCar and FarmBaseVehicle scenes")
 	_add_tool_button(column, group, ToolMode.FACILITY, "Facilities", "Place map kitchens and defensive facilities")
 	_add_tool_button(column, group, ToolMode.FARMLAND, "Farmland", "Place configurable FarmFieldGenerator regions")
 	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
@@ -950,7 +1024,7 @@ func _build_bottom_dock() -> void:
 	panel.add_child(layout)
 
 	var title = Label.new()
-	title.text = "BUILDING ASSET BROWSER"
+	title.text = "SCENE ASSET BROWSER"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	layout.add_child(title)
 
@@ -992,6 +1066,9 @@ func _refresh_bottom_dock() -> void:
 		ToolMode.ORE:
 			_tool_title_label.text = "Ores"
 			_add_asset_buttons(ORE_ASSETS)
+		ToolMode.GROUND_ROCK:
+			_tool_title_label.text = "Ground Rocks"
+			_add_asset_buttons(ROADSIDE_ROCK_ASSETS)
 		ToolMode.SPAWN:
 			_tool_title_label.text = "Spawn Points"
 			_add_spawn_buttons()
@@ -1000,6 +1077,11 @@ func _refresh_bottom_dock() -> void:
 			_add_building_placement_controls()
 			_bottom_content = _building_browser_content
 			_add_building_browser()
+		ToolMode.VEHICLE:
+			_tool_title_label.text = "Vehicle Placement"
+			_add_vehicle_placement_controls()
+			_bottom_content = _building_browser_content
+			_add_vehicle_browser()
 		ToolMode.FACILITY:
 			_tool_title_label.text = "设施放置"
 			_add_facility_inspector_controls()
@@ -1027,9 +1109,9 @@ func _refresh_bottom_dock() -> void:
 			_tool_title_label.text = "Unavailable"
 
 func _configure_bottom_dock_for_tool() -> void:
-	var building_mode = _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]
+	var building_mode = _tool_mode in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY]
 	if _brush_settings_grid != null:
-		_brush_settings_grid.visible = _tool_mode in [ToolMode.TERRAIN, ToolMode.SURFACE, ToolMode.GRASS, ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.AUXILIARY]
+		_brush_settings_grid.visible = _tool_mode in [ToolMode.TERRAIN, ToolMode.SURFACE, ToolMode.GRASS, ToolMode.TREE, ToolMode.ORE, ToolMode.GROUND_ROCK, ToolMode.SPAWN, ToolMode.AUXILIARY]
 	if _bottom_dock_panel != null:
 		_bottom_dock_panel.visible = building_mode
 	if _left_toolbar_panel != null:
@@ -1855,7 +1937,7 @@ func _add_building_placement_controls() -> void:
 	_bottom_content.add_child(rotate_button)
 
 	var rules = Label.new()
-	rules.text = "The full building model follows the mouse. The translucent footprint is green when valid and red when outside the map, too steep, or overlapping another placed object."
+	rules.text = "The full building or vehicle model follows the mouse. The translucent footprint is green when valid and red when outside the map, too steep, or overlapping another placed object."
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(rules)
 
@@ -1863,6 +1945,172 @@ func _add_building_placement_controls() -> void:
 	slope.text = "Maximum slope: %.1f°
 Overlap margin: %.2f m" % [building_max_slope_degrees, building_overlap_margin]
 	_bottom_content.add_child(slope)
+
+
+func _add_vehicle_placement_controls() -> void:
+	_building_selected_info_label = Label.new()
+	_building_selected_info_label.text = "Selected: %s" % str(_selected_building_asset.get("label", "None"))
+	_building_selected_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(_building_selected_info_label)
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("Vehicle owner"))
+	var team_option := OptionButton.new()
+	team_option.add_item("No owner")
+	team_option.set_item_metadata(0, "")
+	team_option.add_item("Red team")
+	team_option.set_item_metadata(1, "red")
+	team_option.add_item("Blue team")
+	team_option.set_item_metadata(2, "blue")
+	team_option.select(0 if _selected_vehicle_team.is_empty() else (1 if _selected_vehicle_team == "red" else 2))
+	team_option.item_selected.connect(func(index: int) -> void:
+		_selected_vehicle_team = str(team_option.get_item_metadata(index))
+		_rebuild_building_preview()
+	)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
+	var selected_path := str(_selected_building_asset.get("path", ""))
+	if selected_path == FARM_BASE_VEHICLE_PATH:
+		var reinforced_toggle := CheckBox.new()
+		reinforced_toggle.text = "使用加固版 FarmBaseVehicle（4500 HP）"
+		reinforced_toggle.button_pressed = _selected_vehicle_reinforced_variant
+		reinforced_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_reinforced_variant = enabled
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(reinforced_toggle)
+		var machine_gun_toggle := CheckBox.new()
+		machine_gun_toggle.text = "安装后置车载机枪"
+		machine_gun_toggle.button_pressed = _selected_vehicle_machine_gun_installed
+		machine_gun_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_machine_gun_installed = enabled
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(machine_gun_toggle)
+		var nitro_boost_toggle := CheckBox.new()
+		nitro_boost_toggle.text = "安装车尾氮气加速（最高 8 m/s）"
+		nitro_boost_toggle.button_pressed = _selected_vehicle_nitro_boost_installed
+		nitro_boost_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_nitro_boost_installed = enabled
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(nitro_boost_toggle)
+		var harvest_reel_toggle := CheckBox.new()
+		harvest_reel_toggle.text = "安装收割滚筒（移动时自动收割成熟作物）"
+		harvest_reel_toggle.button_pressed = _selected_vehicle_harvest_reel_installed
+		harvest_reel_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_harvest_reel_installed = enabled
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(harvest_reel_toggle)
+		_add_vehicle_color_option_row(
+			"车身颜色",
+			_selected_vehicle_body_color,
+			func(value: Color) -> void:
+				_selected_vehicle_body_color = value
+				_rebuild_building_preview()
+		)
+		_add_vehicle_color_option_row(
+			"轮毂颜色",
+			_selected_vehicle_wheel_color,
+			func(value: Color) -> void:
+				_selected_vehicle_wheel_color = value
+				_rebuild_building_preview()
+		)
+		var passenger_seat_row := HBoxContainer.new()
+		passenger_seat_row.add_child(_make_label("平台乘客座椅"))
+		var passenger_seat_option := OptionButton.new()
+		passenger_seat_option.add_item("无座椅")
+		passenger_seat_option.set_item_metadata(0, 0)
+		passenger_seat_option.add_item("添加 1 个座椅")
+		passenger_seat_option.set_item_metadata(1, 1)
+		passenger_seat_option.add_item("添加 2 个座椅")
+		passenger_seat_option.set_item_metadata(2, 2)
+		passenger_seat_option.select(clampi(_selected_vehicle_platform_seat_count, 0, 2))
+		passenger_seat_option.item_selected.connect(func(index: int) -> void:
+			_selected_vehicle_platform_seat_count = int(passenger_seat_option.get_item_metadata(index))
+			_rebuild_building_preview()
+		)
+		passenger_seat_row.add_child(passenger_seat_option)
+		_bottom_content.add_child(passenger_seat_row)
+	else:
+		var color_hint := Label.new()
+		color_hint.text = "车身和轮毂颜色配置仅适用于 FarmBaseVehicle。"
+		color_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(color_hint)
+
+	var rotate_button := Button.new()
+	rotate_button.text = "Rotate Preview +%d° (R)" % int(building_rotation_step_degrees)
+	rotate_button.pressed.connect(_rotate_building_preview_once)
+	_bottom_content.add_child(rotate_button)
+
+	var rules := Label.new()
+	rules.text = "Choose a team to assign owner_team, or No owner for a neutral vehicle. FarmBaseVehicle supports independent standard/reinforced variants, body color, wheel color, 0–2 rear platform passenger seats, an optional rear machine gun, an optional rear NitroBoost (8 m/s maximum forward speed), and an optional HarvestReel that harvests mature crops only while moving."
+	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(rules)
+
+
+func _add_vehicle_color_option_row(label_text: String, current_color: Color, changed: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_child(_make_label(label_text))
+	var option := OptionButton.new()
+	for color_value: Variant in VEHICLE_COLOR_OPTIONS:
+		var color_entry := color_value as Dictionary
+		option.add_item(str(color_entry.get("label", "颜色")))
+		option.set_item_metadata(option.item_count - 1, color_entry.get("color", Color.WHITE))
+	option.select(_vehicle_color_option_index(current_color))
+	option.item_selected.connect(func(index: int) -> void:
+		var selected_value: Variant = option.get_item_metadata(index)
+		if selected_value is Color:
+			changed.call(selected_value as Color)
+	)
+	row.add_child(option)
+	_bottom_content.add_child(row)
+
+
+func _vehicle_color_option_index(color: Color) -> int:
+	var closest_index := 0
+	var closest_distance := INF
+	for index in range(VEHICLE_COLOR_OPTIONS.size()):
+		var entry := VEHICLE_COLOR_OPTIONS[index] as Dictionary
+		var option_color := entry.get("color", Color.WHITE) as Color
+		if color.is_equal_approx(option_color):
+			return index
+		var distance := (
+			pow(color.r - option_color.r, 2.0)
+			+ pow(color.g - option_color.g, 2.0)
+			+ pow(color.b - option_color.b, 2.0)
+		)
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_index = index
+	return closest_index
+
+
+func _add_vehicle_browser() -> void:
+	var browser := VBoxContainer.new()
+	browser.name = "VehicleBrowser"
+	browser.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	browser.add_theme_constant_override("separation", 6)
+	_bottom_content.add_child(browser)
+
+	var title := Label.new()
+	title.text = "Vehicle Types"
+	browser.add_child(title)
+
+	_building_count_label = Label.new()
+	_building_count_label.text = "%d vehicles" % VEHICLE_ASSETS.size()
+	browser.add_child(_building_count_label)
+
+	_building_grid = GridContainer.new()
+	_building_grid.columns = maxi(2, int((get_viewport().get_visible_rect().size.x - 570.0) / BUILDING_BROWSER_CARD_SIZE.x))
+	_building_grid.add_theme_constant_override("h_separation", 8)
+	_building_grid.add_theme_constant_override("v_separation", 8)
+	browser.add_child(_building_grid)
+	_building_thumbnail_cards.clear()
+	for asset_value: Variant in VEHICLE_ASSETS:
+		_add_building_asset_card(asset_value as Dictionary, false, true)
 
 func _add_building_browser() -> void:
 	var browser = VBoxContainer.new()
@@ -2175,6 +2423,8 @@ func _add_object_edit_controls() -> void:
 		_add_farmland_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "facility":
 		_add_facility_object_inspector_controls()
+	if is_instance_valid(_selected_map_object) and _selected_map_object is FarmBaseVehicle:
+		_add_farm_base_vehicle_object_inspector_controls()
 
 	var action_row = HBoxContainer.new()
 	_bottom_content.add_child(action_row)
@@ -2280,6 +2530,109 @@ func _set_facility_object_property(property_name: String, value: Variant) -> voi
 	if uuid.is_empty():
 		return
 	_undo_redo.create_action("Edit Facility")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _add_farm_base_vehicle_object_inspector_controls() -> void:
+	var vehicle := _selected_map_object as FarmBaseVehicle
+	var heading := Label.new()
+	heading.text = "FarmBaseVehicle Inspector"
+	_bottom_content.add_child(heading)
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("队伍所属"))
+	var team_option := OptionButton.new()
+	team_option.add_item("无归属")
+	team_option.add_item("红队")
+	team_option.add_item("蓝队")
+	var current_team := str(_get_property_or(vehicle, "owner_team", ""))
+	team_option.select(0 if current_team.is_empty() else (1 if current_team == "red" else 2))
+	team_option.item_selected.connect(func(index: int) -> void:
+		_set_vehicle_object_property("owner_team", "" if index == 0 else ("red" if index == 1 else "blue"))
+	)
+	team_row.add_child(team_option)
+	_bottom_content.add_child(team_row)
+
+	_add_vehicle_color_option_row(
+		"车身颜色",
+		_get_property_or(vehicle, "body_color", Color("000000")) as Color,
+		func(value: Color) -> void:
+			_set_vehicle_object_property("body_color", value)
+	)
+	_add_vehicle_color_option_row(
+		"轮毂颜色",
+		_get_property_or(vehicle, "wheel_color", Color("000000")) as Color,
+		func(value: Color) -> void:
+			_set_vehicle_object_property("wheel_color", value)
+	)
+	var reinforced_toggle := CheckBox.new()
+	reinforced_toggle.text = "使用加固版（4500 HP）"
+	reinforced_toggle.button_pressed = bool(_get_property_or(vehicle, "reinforced_variant", false))
+	reinforced_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("reinforced_variant", enabled)
+	)
+	_bottom_content.add_child(reinforced_toggle)
+	var machine_gun_toggle := CheckBox.new()
+	machine_gun_toggle.text = "安装后置车载机枪"
+	machine_gun_toggle.button_pressed = bool(_get_property_or(vehicle, "platform_machine_gun_installed", false))
+	machine_gun_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("platform_machine_gun_installed", enabled)
+	)
+	_bottom_content.add_child(machine_gun_toggle)
+	var nitro_boost_toggle := CheckBox.new()
+	nitro_boost_toggle.text = "安装车尾氮气加速（最高 8 m/s）"
+	nitro_boost_toggle.button_pressed = bool(_get_property_or(vehicle, "nitro_boost_installed", false))
+	nitro_boost_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("nitro_boost_installed", enabled)
+	)
+	_bottom_content.add_child(nitro_boost_toggle)
+	var harvest_reel_toggle := CheckBox.new()
+	harvest_reel_toggle.text = "安装收割滚筒（移动时自动收割成熟作物）"
+	harvest_reel_toggle.button_pressed = bool(_get_property_or(vehicle, "harvest_reel_installed", false))
+	harvest_reel_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("harvest_reel_installed", enabled)
+	)
+	_bottom_content.add_child(harvest_reel_toggle)
+	var passenger_seat_row := HBoxContainer.new()
+	passenger_seat_row.add_child(_make_label("平台乘客座椅"))
+	var passenger_seat_option := OptionButton.new()
+	passenger_seat_option.add_item("无座椅")
+	passenger_seat_option.set_item_metadata(0, 0)
+	passenger_seat_option.add_item("1 个座椅")
+	passenger_seat_option.set_item_metadata(1, 1)
+	passenger_seat_option.add_item("2 个座椅")
+	passenger_seat_option.set_item_metadata(2, 2)
+	passenger_seat_option.select(clampi(int(_get_property_or(vehicle, "platform_passenger_seat_count", 0)), 0, 2))
+	passenger_seat_option.item_selected.connect(func(index: int) -> void:
+		_set_vehicle_object_property(
+			"platform_passenger_seat_count",
+			int(passenger_seat_option.get_item_metadata(index))
+		)
+	)
+	passenger_seat_row.add_child(passenger_seat_option)
+	_bottom_content.add_child(passenger_seat_row)
+
+	var hint := Label.new()
+	hint.text = "修改会立即更新当前车辆；每辆 FarmBaseVehicle 都可以独立设置普通/加固版本、队伍、颜色、0–2 个平台乘客座椅、后置车载机枪、氮气加速和收割滚筒。收割滚筒只有载具移动时才旋转并收割。默认未安装收割滚筒。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _set_vehicle_object_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _selected_map_object is FarmBaseVehicle:
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit FarmBaseVehicle")
 	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
 	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
 	_undo_redo.commit_action(false)
@@ -2530,7 +2883,16 @@ func _apply_object_property_by_uuid(uuid: String, property_name: String, value: 
 	var node := _find_editor_object_by_uuid(uuid)
 	if node == null or not _has_property(node, property_name):
 		return
-	node.set(property_name, value)
+	if property_name == "reinforced_variant" and node.has_method("set_reinforced_variant"):
+		node.call("set_reinforced_variant", bool(value))
+	elif property_name == "nitro_boost_installed" and node.has_method("set_nitro_boost_installed"):
+		node.call("set_nitro_boost_installed", bool(value))
+	elif property_name == "platform_passenger_seat_count" and node.has_method("set_platform_passenger_seat_count"):
+		node.call("set_platform_passenger_seat_count", int(value))
+	elif property_name == "harvest_reel_installed" and node.has_method("set_harvest_reel_installed"):
+		node.call("set_harvest_reel_installed", bool(value))
+	else:
+		node.set(property_name, value)
 	if node.has_method("refresh_visuals"):
 		node.call("refresh_visuals")
 	if _is_farmland(node):
@@ -2699,7 +3061,7 @@ func _refresh_building_browser_grid() -> void:
 		_building_count_label.text = "%d / %d assets" % [_filtered_building_assets.size(), _building_assets.size()]
 
 
-func _add_building_asset_card(asset: Dictionary, is_facility := false) -> void:
+func _add_building_asset_card(asset: Dictionary, is_facility := false, is_vehicle := false) -> void:
 	var path = str(asset.get("path", ""))
 	var card = PanelContainer.new()
 	card.custom_minimum_size = BUILDING_BROWSER_CARD_SIZE
@@ -2725,6 +3087,8 @@ func _add_building_asset_card(asset: Dictionary, is_facility := false) -> void:
 	select_button.tooltip_text = path
 	if is_facility:
 		select_button.pressed.connect(_select_facility_asset.bind(asset))
+	elif is_vehicle:
+		select_button.pressed.connect(_select_vehicle_asset.bind(asset))
 	else:
 		select_button.pressed.connect(_select_building_asset.bind(asset))
 	column.add_child(select_button)
@@ -2745,6 +3109,17 @@ func _select_building_asset(asset: Dictionary) -> void:
 	if is_instance_valid(_building_selected_info_label):
 		_building_selected_info_label.text = "Selected: %s" % str(asset.get("label", "Building"))
 	_set_status("Building selected: %s" % str(asset.get("label", "Building")))
+
+
+func _select_vehicle_asset(asset: Dictionary) -> void:
+	_selected_building_asset = asset.duplicate(true)
+	if str(asset.get("path", "")) != FARM_BASE_VEHICLE_PATH:
+		_selected_vehicle_platform_seat_count = 0
+		_selected_vehicle_harvest_reel_installed = false
+	_building_preview_yaw = 0.0
+	_rebuild_building_preview()
+	_refresh_bottom_dock()
+	_set_status("Vehicle selected: %s" % str(asset.get("label", "Vehicle")))
 
 
 func _rotate_building_preview_once() -> void:
@@ -2867,6 +3242,7 @@ func _render_one_building_thumbnail(path: String) -> Texture2D:
 
 func _prepare_thumbnail_scene(node: Node) -> void:
 	node.process_mode = Node.PROCESS_MODE_DISABLED
+	_ensure_vehicle_preview_visual(node)
 	if node.get_script() != null:
 		node.set_script(null)
 	if node is CollisionObject3D:
@@ -3172,9 +3548,22 @@ func _select_tool(mode: ToolMode) -> void:
 			var default_facilities := MAP_FACILITY_CATALOG.get_assets(_selected_facility_category)
 			if not default_facilities.is_empty():
 				_selected_building_asset = (default_facilities[0] as Dictionary).duplicate(true)
+	elif mode == ToolMode.VEHICLE:
+		if str(_selected_building_asset.get("placement_category", "")) != "vehicle":
+			_selected_building_asset = (VEHICLE_ASSETS[0] as Dictionary).duplicate(true)
+		_selected_vehicle_team = ""
+		_selected_vehicle_body_color = Color("000000")
+		_selected_vehicle_wheel_color = Color("000000")
+		_selected_vehicle_machine_gun_installed = false
+		_selected_vehicle_platform_seat_count = 0
+		_selected_vehicle_reinforced_variant = false
+		_selected_vehicle_nitro_boost_installed = false
+		_selected_vehicle_harvest_reel_installed = false
+	elif mode == ToolMode.BUILDING and str(_selected_building_asset.get("placement_category", "")) == "vehicle":
+		_selected_building_asset = _building_assets[0].duplicate(true) if not _building_assets.is_empty() else {}
 	_set_road_edit_visuals_visible(mode == ToolMode.ROAD)
 	_set_water_edit_visuals_visible(mode == ToolMode.WATER)
-	if mode not in [ToolMode.BUILDING, ToolMode.FACILITY]:
+	if mode not in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY]:
 		_set_building_preview_visible(false)
 		if _brush_preview_material != null:
 			_brush_preview_material.albedo_color = Color(1.0, 0.8, 0.1, 0.95)
@@ -3184,6 +3573,22 @@ func _select_tool(mode: ToolMode) -> void:
 	_set_selection_visual_visible(mode == ToolMode.OBJECT_EDIT)
 	_refresh_bottom_dock()
 	_set_status("Tool: %s" % _tool_name(mode))
+
+
+func _selected_scene_is_vehicle() -> bool:
+	return _tool_mode == ToolMode.VEHICLE
+
+
+func _selected_vehicle_scene_path() -> String:
+	var base_path := str(_selected_building_asset.get("path", ""))
+	if not _selected_scene_is_vehicle():
+		return base_path
+	var team_paths_value: Variant = _selected_building_asset.get("team_scene_paths", {})
+	if team_paths_value is Dictionary:
+		var team_path := str((team_paths_value as Dictionary).get(_selected_vehicle_team, ""))
+		if not team_path.is_empty():
+			return team_path
+	return base_path
 
 func _select_height_mode(mode: int) -> void:
 	_height_mode = mode
@@ -3438,8 +3843,10 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.GRASS: return "Manual Grass"
 		ToolMode.TREE: return "Trees"
 		ToolMode.ORE: return "Ores"
+		ToolMode.GROUND_ROCK: return "Ground Rocks"
 		ToolMode.SPAWN: return "Spawn Points"
 		ToolMode.BUILDING: return "Buildings"
+		ToolMode.VEHICLE: return "Vehicles"
 		ToolMode.FACILITY: return "Facilities"
 		ToolMode.FARMLAND: return "Farmland"
 		ToolMode.AUXILIARY: return "Auxiliary Areas"
@@ -3839,7 +4246,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_duplicate_selected_object()
 			get_viewport().set_input_as_handled()
 			return
-		if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY] and key_event.keycode == KEY_R:
+		if _tool_mode in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY] and key_event.keycode == KEY_R:
 			_building_preview_yaw += deg_to_rad(building_rotation_step_degrees)
 			_update_building_preview_from_latest_hit()
 			get_viewport().set_input_as_handled()
@@ -3955,7 +4362,7 @@ func _physics_process(delta: float) -> void:
 		_brush_preview.visible = false
 		_set_farmland_cursor_preview_visible(false)
 		_set_height_boundary_visible(false)
-		if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]:
+		if _tool_mode in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY]:
 			_set_building_preview_visible(false)
 		return
 
@@ -3978,7 +4385,7 @@ func _physics_process(delta: float) -> void:
 		_update_farmland_cursor_preview(hit_position)
 	else:
 		_set_farmland_cursor_preview_visible(false)
-	if _tool_mode in [ToolMode.BUILDING, ToolMode.FACILITY]:
+	if _tool_mode in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY]:
 		_set_height_boundary_visible(false)
 		_update_building_preview(hit_position)
 	else:
@@ -4004,6 +4411,8 @@ func _physics_process(delta: float) -> void:
 			_apply_scene_placement_brush(hit_position, delta, _trees_root, "tree")
 		ToolMode.ORE:
 			_apply_scene_placement_brush(hit_position, delta, _ores_root, "ore")
+		ToolMode.GROUND_ROCK:
+			_apply_scene_placement_brush(hit_position, delta, _ground_rocks_root, "ground_rock")
 		ToolMode.SPAWN:
 			_apply_spawn_brush(hit_position)
 		ToolMode.AI:
@@ -4012,7 +4421,7 @@ func _physics_process(delta: float) -> void:
 			_apply_auxiliary_brush(hit_position)
 		ToolMode.FARMLAND:
 			_apply_farmland_brush(hit_position)
-		ToolMode.BUILDING, ToolMode.FACILITY:
+		ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY:
 			_apply_building_placement(hit_position)
 
 func _update_free_camera(delta: float) -> void:
@@ -4102,7 +4511,7 @@ func _end_stroke() -> void:
 			_commit_surface_stroke()
 		ToolMode.GRASS:
 			_commit_grass_stroke()
-		ToolMode.TREE, ToolMode.ORE, ToolMode.SPAWN, ToolMode.AI, ToolMode.BUILDING, ToolMode.FACILITY, ToolMode.AUXILIARY, ToolMode.FARMLAND:
+		ToolMode.TREE, ToolMode.ORE, ToolMode.GROUND_ROCK, ToolMode.SPAWN, ToolMode.AI, ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY, ToolMode.AUXILIARY, ToolMode.FARMLAND:
 			_commit_object_stroke()
 
 	_stroke_height_before.clear()
@@ -4693,6 +5102,7 @@ func _create_map_content_roots() -> void:
 	_manual_grass_root = _new_child_node3d(_map_root, "ManualGrass")
 	_trees_root = _new_child_node3d(_map_root, "Trees")
 	_ores_root = _new_child_node3d(_map_root, "Ores")
+	_ground_rocks_root = _new_child_node3d(_map_root, "GroundRocks")
 	_spawns_root = _new_child_node3d(_map_root, "SpawnPoints")
 	_buildings_root = _new_child_node3d(_map_root, "Buildings")
 	_farmlands_root = _new_child_node3d(_map_root, "FarmFields")
@@ -5801,7 +6211,7 @@ func _rebuild_manual_grass_chunk(species: String, key: String) -> void:
 	_grass_generated_nodes[generated_key] = chunk_root
 
 	var species_definition := MANUAL_GRASS_SPECIES.get(species, MANUAL_GRASS_SPECIES["small"]) as Dictionary
-	var source_path := str(species_definition.get("path", SMALL_GRASS_PATH))
+	var source_path := str(species_definition.get("path", LOW_GRASS_PATH))
 	var components = _get_grass_mesh_components(source_path)
 	for component_index in range(components.size()):
 		var component = components[component_index] as Dictionary
@@ -6522,6 +6932,13 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"field_owner",
 		"generate_on_ready",
 		"owner_team",
+		"body_color",
+		"wheel_color",
+		"platform_machine_gun_installed",
+		"platform_passenger_seat_count",
+		"reinforced_variant",
+		"nitro_boost_installed",
+		"harvest_reel_installed",
 		"tool_owner",
 		"auto_respawn",
 		"respawn_seconds",
@@ -6627,7 +7044,7 @@ func _restore_object_records(records: Array) -> void:
 		node.set_meta("map_editor_asset_path", asset_path)
 		node.set_meta("map_editor_align_mode", str(record.get("align_mode", "surface_normal")))
 		node.set_meta("map_editor_ground_offset", float(record.get("ground_offset", placed_object_ground_offset)))
-		if category in ["building", "facility"]:
+		if category in ["building", "vehicle", "facility"]:
 			node.set_meta(
 				MAP_CAN_OVERLAP_WATER_META,
 				bool(record.get("map_can_overlap_water", node.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
@@ -6682,7 +7099,11 @@ func _category_root_for_record(category: String) -> Node3D:
 			return _trees_root
 		"ore":
 			return _ores_root
+		"ground_rock":
+			return _ground_rocks_root
 		"building":
+			return _buildings_root
+		"vehicle":
 			return _buildings_root
 		"facility":
 			return _buildings_root
@@ -6697,7 +7118,7 @@ func _category_root_for_record(category: String) -> Node3D:
 func _find_editor_object_by_uuid(uuid: String) -> Node3D:
 	if uuid.is_empty():
 		return null
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
+	for root in [_trees_root, _ores_root, _ground_rocks_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -6757,12 +7178,14 @@ func _apply_building_placement(center: Vector3) -> void:
 	if not _building_preview_valid:
 		_set_status("Building placement blocked: %s" % _building_preview_block_reason)
 		return
-	var scene_path = str(_selected_building_asset.get("path", ""))
+	var scene_path := _selected_vehicle_scene_path()
 	var is_facility: bool = _tool_mode == ToolMode.FACILITY
+	var is_vehicle := _selected_scene_is_vehicle()
 	var facility_category := str(_selected_building_asset.get("category", "")) if is_facility else ""
 	var valid_building_path := scene_path.begins_with(BUILDINGS_RESOURCE_ROOT + "/") and not scene_path.begins_with(BUILDINGS_EXCLUDED_ROOT + "/")
+	var valid_vehicle_path := is_vehicle and scene_path.begins_with("res://vehicles/")
 	var valid_facility_path := not MAP_FACILITY_CATALOG.get_asset_by_path(scene_path).is_empty()
-	if (not is_facility and not valid_building_path) or (is_facility and not valid_facility_path):
+	if (not is_facility and not valid_building_path and not valid_vehicle_path) or (is_facility and not valid_facility_path):
 		_set_status("Rejected building path: %s" % scene_path)
 		return
 	var packed = _load_resource_or_null(scene_path) as PackedScene
@@ -6773,12 +7196,13 @@ func _apply_building_placement(center: Vector3) -> void:
 	if instance == null:
 		_set_status("Building scene root is not Node3D: %s" % scene_path)
 		return
-	instance.name = "%s_%04d" % [str(_selected_building_asset.get("id", "building")).capitalize(), _next_object_id]
-	instance.set_meta("map_editor_category", "facility" if is_facility else "building")
+	var object_category := "vehicle" if is_vehicle else ("facility" if is_facility else "building")
+	instance.name = "%s_%04d" % [str(_selected_building_asset.get("id", object_category)).capitalize(), _next_object_id]
+	instance.set_meta("map_editor_category", object_category)
 	instance.set_meta("map_editor_asset_path", scene_path)
-	instance.set_meta("map_editor_uuid", _new_editor_uuid("facility" if is_facility else "building"))
+	instance.set_meta("map_editor_uuid", _new_editor_uuid(object_category))
 	instance.set_meta(MAP_CAN_OVERLAP_WATER_META, bool(instance.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
-	if not is_facility:
+	if not is_facility and not is_vehicle:
 		instance.set_meta(
 			"map_enterable",
 			bool(instance.get_meta("map_enterable", false))
@@ -6793,6 +7217,17 @@ func _apply_building_placement(center: Vector3) -> void:
 			_set_property_if_present(instance, "tool_owner", _selected_defense_team)
 			_set_property_if_present(instance, "auto_respawn", _selected_defense_auto_respawn)
 			_set_property_if_present(instance, "respawn_seconds", _selected_defense_respawn_seconds)
+	elif is_vehicle:
+		_set_property_if_present(instance, "owner_team", _selected_vehicle_team)
+		_set_property_if_present(instance, "body_color", _selected_vehicle_body_color)
+		_set_property_if_present(instance, "wheel_color", _selected_vehicle_wheel_color)
+		_set_property_if_present(instance, "platform_machine_gun_installed", _selected_vehicle_machine_gun_installed)
+		_set_property_if_present(instance, "platform_passenger_seat_count", _selected_vehicle_platform_seat_count)
+		_set_property_if_present(instance, "reinforced_variant", _selected_vehicle_reinforced_variant)
+		_set_property_if_present(instance, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
+		_set_property_if_present(instance, "harvest_reel_installed", _selected_vehicle_harvest_reel_installed)
+		if instance.has_method("refresh_visuals"):
+			instance.call("refresh_visuals")
 	instance.set_meta("map_editor_align_mode", "upright")
 	instance.set_meta("map_editor_ground_offset", building_ground_offset)
 	var wall_snap := _resolve_editor_wall_snap(center, instance)
@@ -6814,23 +7249,38 @@ func _apply_building_placement(center: Vector3) -> void:
 	_stroke_added_objects.append(_serialize_editor_object(instance))
 	_next_object_id += 1
 	_stroke_placed_once = true
-	_set_status("Placed %s: %s" % ["facility" if is_facility else "building", str(_selected_building_asset.get("label", instance.name))])
+	var placement_kind := "vehicle" if is_vehicle else ("facility" if is_facility else "building")
+	_set_status("Placed %s: %s" % [placement_kind, str(_selected_building_asset.get("label", instance.name))])
 
 func _rebuild_building_preview() -> void:
 	_clear_building_preview()
 	if _selected_building_asset.is_empty():
 		return
-	var path = str(_selected_building_asset.get("path", ""))
+	var path := _selected_vehicle_scene_path()
 	var packed = _load_resource_or_null(path) as PackedScene
 	if packed == null:
 		return
 	var preview = packed.instantiate() as Node3D
 	if preview == null:
 		return
+	if _tool_mode == ToolMode.VEHICLE:
+		_set_property_if_present(preview, "owner_team", _selected_vehicle_team)
+		_set_property_if_present(preview, "body_color", _selected_vehicle_body_color)
+		_set_property_if_present(preview, "wheel_color", _selected_vehicle_wheel_color)
+		_set_property_if_present(preview, "platform_machine_gun_installed", _selected_vehicle_machine_gun_installed)
+		_set_property_if_present(preview, "platform_passenger_seat_count", _selected_vehicle_platform_seat_count)
+		_set_property_if_present(preview, "reinforced_variant", _selected_vehicle_reinforced_variant)
+		_set_property_if_present(preview, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
+		_set_property_if_present(preview, "harvest_reel_installed", _selected_vehicle_harvest_reel_installed)
+		if preview.has_method("refresh_visuals"):
+			preview.call("refresh_visuals")
 	_prepare_editor_preview_scene(preview)
 	preview.name = "BuildingPlacementPreview"
 	preview.set_meta(EDITOR_MARKER_META, true)
-	if _tool_mode == ToolMode.FACILITY:
+	if _tool_mode == ToolMode.VEHICLE:
+		preview.set_meta("map_editor_category", "vehicle")
+		preview.set_meta("map_editor_asset_path", path)
+	elif _tool_mode == ToolMode.FACILITY:
 		preview.set_meta("map_editor_category", "facility")
 		preview.set_meta("map_editor_facility_category", str(_selected_building_asset.get("category", "")))
 		preview.set_meta("map_editor_asset_path", path)
@@ -6841,12 +7291,32 @@ func _rebuild_building_preview() -> void:
 
 func _prepare_editor_preview_scene(node: Node) -> void:
 	node.process_mode = Node.PROCESS_MODE_DISABLED
+	_ensure_vehicle_preview_visual(node)
+	if node is VehicleBase:
+		# Keep the authoritative vehicle dimensions available after the preview
+		# script is stripped below. The placement footprint must describe the
+		# vehicle body, not an imported visual or a debug collision enclosure.
+		var vehicle := node as VehicleBase
+		if vehicle.vehicle_config != null:
+			node.set_meta("map_editor_vehicle_collision_size", vehicle.vehicle_config.collision_size)
+			node.set_meta("map_editor_vehicle_collision_offset", vehicle.vehicle_config.collision_offset)
 	if node.get_script() != null:
 		node.set_script(null)
 	if node is CollisionObject3D:
 		var collision_object = node as CollisionObject3D
 		collision_object.collision_layer = 0
 		collision_object.collision_mask = 0
+	if node is CollisionShape3D:
+		# Collision debug geometry is not part of an editor placement preview.
+		# Disable it as well as hiding it so it cannot affect any editor physics
+		# query or appear as a large box around the vehicle.
+		var collision_shape := node as CollisionShape3D
+		collision_shape.disabled = true
+		collision_shape.visible = false
+	if node is CollisionPolygon3D:
+		var collision_polygon := node as CollisionPolygon3D
+		collision_polygon.disabled = true
+		collision_polygon.visible = false
 	if node is GeometryInstance3D:
 		var geometry = node as GeometryInstance3D
 		geometry.transparency = clampf(building_preview_transparency, 0.05, 0.95)
@@ -6861,6 +7331,23 @@ func _prepare_editor_preview_scene(node: Node) -> void:
 		(node as WorldEnvironment).environment = null
 	for child in node.get_children():
 		_prepare_editor_preview_scene(child)
+
+
+func _ensure_vehicle_preview_visual(node: Node) -> void:
+	if not node is VehicleBase:
+		return
+	var vehicle := node as VehicleBase
+	if vehicle.vehicle_config == null or vehicle.vehicle_config.visual_scene == null:
+		return
+	if node.get_node_or_null("_EditorVehicleVisual") != null:
+		return
+	var visual := vehicle.vehicle_config.visual_scene.instantiate() as Node3D
+	if visual == null:
+		return
+	visual.name = "_EditorVehicleVisual"
+	visual.position = vehicle.vehicle_config.visual_offset
+	visual.rotation = vehicle.vehicle_config.visual_rotation
+	node.add_child(visual)
 
 func _clear_building_preview() -> void:
 	if is_instance_valid(_building_preview):
@@ -7080,6 +7567,10 @@ func _get_building_overlap_candidates() -> Array[Node3D]:
 
 
 func _get_node_footprint_polygon(node: Node3D) -> PackedVector2Array:
+	if _is_vehicle_map_node(node):
+		var vehicle_polygon := _get_vehicle_footprint_polygon(node)
+		if vehicle_polygon.size() >= 3:
+			return vehicle_polygon
 	var local_aabb = _calculate_node_aabb_relative_to(node, node)
 	if local_aabb.size.length_squared() <= 0.000001:
 		local_aabb = AABB(Vector3(-0.5, 0.0, -0.5), Vector3(1.0, 1.0, 1.0))
@@ -7095,6 +7586,51 @@ func _get_node_footprint_polygon(node: Node3D) -> PackedVector2Array:
 				var world_corner = node.to_global(local_corner)
 				projected_points.append(Vector2(world_corner.x, world_corner.z))
 	var hull = Geometry2D.convex_hull(projected_points)
+	if hull.size() > 1 and hull[0].is_equal_approx(hull[hull.size() - 1]):
+		hull.resize(hull.size() - 1)
+	return hull
+
+
+func _is_vehicle_map_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	if str(node.get_meta("map_editor_category", "")) == "vehicle":
+		return true
+	return str(node.scene_file_path).begins_with("res://vehicles/")
+
+
+func _get_vehicle_footprint_polygon(node: Node3D) -> PackedVector2Array:
+	var size_value: Variant = null
+	var offset_value: Variant = null
+	if node.has_meta("map_editor_vehicle_collision_size"):
+		size_value = node.get_meta("map_editor_vehicle_collision_size")
+	if node.has_meta("map_editor_vehicle_collision_offset"):
+		offset_value = node.get_meta("map_editor_vehicle_collision_offset")
+	if not size_value is Vector3 or not offset_value is Vector3:
+		if _has_property(node, "vehicle_config"):
+			var config_value: Variant = node.get("vehicle_config")
+			if config_value is VehicleConfig:
+				var config := config_value as VehicleConfig
+				size_value = config.collision_size
+				offset_value = config.collision_offset
+	if not size_value is Vector3 or not offset_value is Vector3:
+		return PackedVector2Array()
+	var size := size_value as Vector3
+	var offset := offset_value as Vector3
+	if size.x <= 0.0001 or size.z <= 0.0001:
+		return PackedVector2Array()
+	var half_size := size * 0.5
+	var local_corners := [
+		offset + Vector3(-half_size.x, 0.0, -half_size.z),
+		offset + Vector3(half_size.x, 0.0, -half_size.z),
+		offset + Vector3(half_size.x, 0.0, half_size.z),
+		offset + Vector3(-half_size.x, 0.0, half_size.z),
+	]
+	var polygon := PackedVector2Array()
+	for local_corner: Vector3 in local_corners:
+		var world_corner := node.to_global(local_corner)
+		polygon.append(Vector2(world_corner.x, world_corner.z))
+	var hull := Geometry2D.convex_hull(polygon)
 	if hull.size() > 1 and hull[0].is_equal_approx(hull[hull.size() - 1]):
 		hull.resize(hull.size() - 1)
 	return hull
@@ -7601,12 +8137,12 @@ func _find_editable_object_root(node: Node) -> Node3D:
 func _is_direct_editable_object(node: Node3D) -> bool:
 	if node == null:
 		return false
-	return node.get_parent() in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]
+	return node.get_parent() in [_trees_root, _ores_root, _ground_rocks_root, _spawns_root, _buildings_root, _farmlands_root]
 
 
 func _get_all_editable_objects() -> Array[Node3D]:
 	var result: Array[Node3D] = []
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
+	for root in [_trees_root, _ores_root, _ground_rocks_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -8306,6 +8842,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"water_count": _water_root.get_child_count(),
 			"tree_count": _trees_root.get_child_count(),
 			"ore_count": _ores_root.get_child_count(),
+			"ground_rock_count": _ground_rocks_root.get_child_count(),
 			"spawn_count": _spawns_root.get_child_count(),
 			"building_count": _buildings_root.get_child_count(),
 			"facility_count": _count_map_facilities(),
@@ -8714,7 +9251,7 @@ func _clear_map_icon() -> void:
 func _recalculate_loaded_object_counters() -> void:
 	_next_object_id = 1
 	_next_spawn_id = 1
-	for root in [_trees_root, _ores_root, _buildings_root, _farmlands_root]:
+	for root in [_trees_root, _ores_root, _ground_rocks_root, _buildings_root, _farmlands_root]:
 		if root != null:
 			_next_object_id += root.get_child_count()
 	if _spawns_root != null:
@@ -8775,7 +9312,7 @@ func _apply_foundation_color() -> void:
 
 func _save_editor_objects_sidecar(folder: String) -> void:
 	var records: Array = []
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
+	for root in [_trees_root, _ores_root, _ground_rocks_root, _spawns_root, _buildings_root, _farmlands_root]:
 		if root == null:
 			continue
 		for child in root.get_children():
@@ -8790,7 +9327,7 @@ func _save_editor_objects_sidecar(folder: String) -> void:
 func _load_editor_objects_sidecar(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		return
-	for root in [_trees_root, _ores_root, _spawns_root, _buildings_root, _farmlands_root]:
+	for root in [_trees_root, _ores_root, _ground_rocks_root, _spawns_root, _buildings_root, _farmlands_root]:
 		for child in root.get_children():
 			child.queue_free()
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -10510,6 +11047,18 @@ func _has_property(object: Object, property_name: String) -> bool:
 
 func _set_property_if_present(object: Object, property_name: String, value: Variant) -> void:
 	if _has_property(object, property_name):
+		if property_name == "reinforced_variant" and object.has_method("set_reinforced_variant"):
+			object.call("set_reinforced_variant", bool(value))
+			return
+		if property_name == "nitro_boost_installed" and object.has_method("set_nitro_boost_installed"):
+			object.call("set_nitro_boost_installed", bool(value))
+			return
+		if property_name == "harvest_reel_installed" and object.has_method("set_harvest_reel_installed"):
+			object.call("set_harvest_reel_installed", bool(value))
+			return
+		if property_name == "platform_passenger_seat_count" and object.has_method("set_platform_passenger_seat_count"):
+			object.call("set_platform_passenger_seat_count", int(value))
+			return
 		object.set(property_name, value)
 
 

@@ -76,9 +76,11 @@ enum GrenadeMode {
 
 const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const INVALID_POSITION := Vector3(INF, INF, INF)
+## 死亡表现保留时间。死亡后不再复用原节点单体复活，时间到后由权威端移除。
+const DEATH_CLEANUP_SECONDS := 10.0
 const SquadMessageTypes := preload("res://src/squad_message.gd")
 
-## 仅供本地调试/测试界面监听；导航刷新不会进入 Squad 通信频道。
+## 仅供本地调试/测试界面监听；既记录区块重建，也记录通信触发的路径刷新。
 signal navigation_path_refreshed(chunk_ids: Array, was_stuck: bool)
 
 
@@ -155,7 +157,8 @@ var grenade_mode: int = GrenadeMode.AUTO
 
 @export var max_hp: float = 260.0
 
-## 与玩家保持一致：死亡后保留倒地表现 10 秒，再回到本队出生点。
+## 兼容旧地图/测试场景的序列化字段。FutureAI 现在不会在原节点上单体复活；
+## 小队的下一批生成由 EnemySquadSpawner.respawn_seconds 负责。
 @export_range(1.0, 30.0, 0.5)
 var respawn_seconds: float = 10.0
 
@@ -267,9 +270,20 @@ var navigation_avoidance_max_neighbors: int = 8
 @export var map_boundary_limit: float = 126.0
 @export var boundary_turn_margin: float = 4.0
 
-## 视锥随巡逻视线转动。角色的实际前方采用 Godot CharacterBody3D 的 -Z 轴。
+## 以 AI 为圆心的三维视觉球体半径。距离使用完整的 XYZ 距离。
 @export_range(1.0, 80.0, 0.5) var vision_range: float = 80.0
+## 正面扇区内的目标在视线通畅时立即被识别；球体其余部分使用察觉度累计。
 @export_range(10.0, 180.0, 1.0) var vision_fov_degrees: float = 120.0
+## 目标位于侧面/背部、且距离视觉球体边缘时，每秒获得的察觉度。
+@export_range(0.01, 1.0, 0.01) var peripheral_awareness_far_per_second := 0.08
+## 目标位于侧面/背部、且非常接近 AI 时，每秒获得的察觉度。
+@export_range(0.1, 4.0, 0.05) var peripheral_awareness_near_per_second := 1.20
+## 正后方的察觉速度乘数；越低越不容易从背后被立即发现。
+@export_range(0.05, 1.0, 0.05) var rear_awareness_multiplier := 0.35
+## 被遮挡或离开视觉球体后，察觉度保留多久才开始衰减。
+@export_range(0.0, 10.0, 0.1) var awareness_memory_seconds := 1.5
+## 失去视线后的察觉度衰减速度，归零后需要重新察觉。
+@export_range(0.05, 4.0, 0.05) var awareness_decay_per_second := 0.60
 @export_range(5.0, 90.0, 1.0) var search_look_sweep_degrees: float = 48.0
 @export_range(0.5, 8.0, 0.1) var search_look_sweep_seconds: float = 2.8
 @export_flags_3d_physics var vision_occlusion_mask: int = 65535
@@ -320,9 +334,6 @@ var navigation_avoidance_max_neighbors: int = 8
 @export var squad_stuck_escape_after_seconds := 10.0
 @export var squad_escape_distance := 5.0
 @export var squad_escape_duration := 5.0
-@export var squad_entry_arrival_distance := 1.1
-## 入口消息先到、队员稍后才卡住时仍保留这条消息一段时间。
-@export var squad_entry_message_lifetime := 30.0
 ## 炸弹警告撤退被碰撞卡住时，先用随机方向脱离队员/墙体拥挤区域。
 @export var squad_warning_stuck_after_seconds := 1.5
 @export var squad_warning_escape_duration := 3.0
@@ -526,6 +537,7 @@ var ar15_burst_pause_timer: float = 0.0
 
 var state: int = AIState.SEARCH
 var current_hp: float = 0.0
+var _death_cleanup_deadline_msec := -1
 
 var target_player: CharacterBody3D
 var last_known_target_position: Vector3 = INVALID_POSITION
@@ -535,12 +547,23 @@ var combat_engagement_point: Vector3 = INVALID_POSITION
 var combat_engagement_target_id: int = 0
 
 var target_refresh_timer: float = 0.0
+## instance_id -> [0, 1]。只在视觉球体内且未位于正面扇区的目标使用。
+var _target_awareness: Dictionary = {}
+## instance_id -> Time.get_ticks_msec()，用于目标暂时被遮挡时的短暂记忆。
+var _target_awareness_last_seen_msec: Dictionary = {}
 var navigation_refresh_timer: float = 0.0
 var enemy_farm_refresh_timer: float = 0.0
 var enemy_farm_position: Vector3 = INVALID_POSITION
 var farm_patrol_position: Vector3 = INVALID_POSITION
 var search_look_phase: float = 0.0
 var search_look_direction: Vector3 = Vector3.ZERO
+
+## 服务器权威端和远端视觉代理共用的最终武器瞄准框架。多人客户端不运行
+## AI 的 _process/_physics_process，因此必须同步方向，而不能让客户端用默认
+## Hand.R 姿态猜枪口方向。
+var _weapon_aim_position: Vector3 = INVALID_POSITION
+var _weapon_aim_direction := Vector3.FORWARD
+var _weapon_aim_active := false
 
 var flee_target: Vector3 = INVALID_POSITION
 var flee_timer: float = 0.0
@@ -595,11 +618,6 @@ var _squad_window_travel_distance := 0.0
 var _squad_blocked_elapsed := 0.0
 var _squad_navigation_retry_timer := 0.0
 var _navigation_using_direct_fallback := false
-var _squad_entry_waypoint := INVALID_POSITION
-var _squad_entry_request_id := ""
-var _squad_pending_entry_position := INVALID_POSITION
-var _squad_pending_entry_request_id := ""
-var _squad_pending_entry_msec := 0
 var _squad_escape_waypoint := INVALID_POSITION
 var _squad_escape_direction := Vector3.ZERO
 var _squad_escape_timer := 0.0
@@ -662,12 +680,14 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if state == AIState.DEAD:
+		_simulate_corpse_gravity(delta)
 		return
 
 	if not _has_simulation_authority():
 		return
 
 	_update_timers(delta)
+	_sanitize_target_references()
 	_squad_navigation_retry_timer = maxf(
 		0.0,
 		_squad_navigation_retry_timer - delta
@@ -700,10 +720,6 @@ func _physics_process(delta: float) -> void:
 	if _update_role_specific_behavior(delta):
 		return
 
-	## 只有已经判定卡住的成员才响应“这里有入口”；正常经过的成员忽略该消息。
-	if _update_squad_entry_waypoint(delta):
-		return
-
 	if _update_squad_support(delta):
 		return
 
@@ -734,9 +750,38 @@ func _physics_process(delta: float) -> void:
 	)
 
 
+## 尸体只保留与静态世界的碰撞：从 LadderClimb 等高处死亡时继续受重力影响，
+## 但根 collision_layer 为 0，不会挡住队友或重新成为战斗/导航目标。
+func _simulate_corpse_gravity(delta: float) -> void:
+	if not is_on_floor():
+		velocity += get_gravity() * delta
+	elif velocity.y < 0.0:
+		velocity.y = 0.0
+	move_and_slide()
+
+
+func _corpse_collision_mask() -> int:
+	return (
+		GameAuthority.COLLISION_LAYER_GROUND
+		| GameAuthority.COLLISION_LAYER_WALL
+		| GameAuthority.COLLISION_LAYER_FARM_TILE
+		| GameAuthority.COLLISION_LAYER_TOOL
+		| GameAuthority.COLLISION_LAYER_BUILDING
+		| GameAuthority.COLLISION_LAYER_VEHICLES
+		| GameAuthority.COLLISION_LAYER_NATURE_RESOURCE
+	)
+
+
 func _has_simulation_authority() -> bool:
 	if not server_authoritative:
 		return true
+	# A cooperative host is a listen server: GameAuthority already knows that it
+	# owns the authoritative world even while the same process renders a local
+	# client. Prefer that explicit role over the transport-specific query.
+	if GameAuthority.is_server_authority():
+		return true
+	if GameAuthority.is_client_proxy():
+		return false
 
 	if not multiplayer.has_multiplayer_peer():
 		return true
@@ -841,9 +886,8 @@ func receive_squad_message(message: Dictionary) -> void:
 		SquadMessageTypes.Type.DEMOLITION_WARNING:
 			if str(message.get("sender_member_id", "")) != squad_member_id:
 				_receive_squad_demolition_warning(payload)
-		SquadMessageTypes.Type.ENTRY_FOUND:
-			if str(message.get("sender_member_id", "")) != squad_member_id:
-				_receive_squad_entry_found(payload, request_id)
+		SquadMessageTypes.Type.NAVIGATION_REFRESH:
+			_receive_squad_navigation_refresh(request_id)
 		SquadMessageTypes.Type.SUPPORT_REQUEST:
 			var support_position: Vector3 = payload.get("position", INVALID_POSITION)
 			_try_claim_squad_support(request_id, support_position)
@@ -953,25 +997,21 @@ func _receive_squad_demolition_warning(payload: Dictionary) -> void:
 	)
 
 
-func _receive_squad_entry_found(payload: Dictionary, request_id: String) -> void:
-	var position: Variant = payload.get("position", INVALID_POSITION)
-	if not position is Vector3 or not (position as Vector3).is_finite():
+func _receive_squad_navigation_refresh(request_id: String) -> void:
+	## 爆破后的导航刷新只让成员废弃旧路径，不会把任何成员拉向爆破点。
+	if state == AIState.DEAD:
 		return
-	var entry_position := position as Vector3
-	if not _squad_entry_is_ahead(entry_position):
-		## 已经经过该入口的正常队员不回头响应旧入口。
-		_clear_pending_squad_entry()
-		return
-	## 消息可能先于卡住状态到达，先保存；只有卡住成员才接管入口航点。
-	_squad_pending_entry_position = entry_position
-	_squad_pending_entry_request_id = request_id
-	_squad_pending_entry_msec = Time.get_ticks_msec()
-	_debug(
-		"squad entry received request=%s position=%s stuck=%s"
-		% [request_id, _format_position(entry_position), str(_squad_stuck)]
-	)
+	var was_stuck := _squad_stuck
+	_reset_navigation_path()
 	if _squad_stuck:
-		_activate_pending_squad_entry()
+		_squad_stuck_elapsed = 0.0
+		_reset_squad_progress_window(_squad_stuck_goal_for_state())
+		_squad_navigation_retry_timer = maxf(0.75, navigation_refresh_interval * 3.0)
+	navigation_path_refreshed.emit([], was_stuck)
+	_debug(
+		"squad navigation refresh received request=%s stuck=%s; target path reset"
+		% [request_id, str(was_stuck)]
+	)
 
 
 func _update_squad_warning_retreat(delta: float) -> bool:
@@ -1058,83 +1098,6 @@ func _start_squad_warning_escape(away: Vector3) -> void:
 		"squad warning escape started direction=%s duration=%.1fs"
 		% [_format_position(direction), _squad_warning_escape_timer]
 	)
-
-
-func _clear_pending_squad_entry() -> void:
-	_squad_pending_entry_position = INVALID_POSITION
-	_squad_pending_entry_request_id = ""
-	_squad_pending_entry_msec = 0
-
-
-func _squad_entry_is_ahead(entry_position: Vector3) -> bool:
-	if not entry_position.is_finite():
-		return false
-	if not is_instance_valid(target):
-		return true
-	## 如果队员已经在入口之后，不允许它因旧消息折返。
-	return _horizontal_distance(entry_position, target.global_position) <= (
-		_horizontal_distance(global_position, target.global_position)
-		+ squad_entry_arrival_distance
-	)
-
-
-func _activate_pending_squad_entry() -> bool:
-	if not _squad_stuck:
-		return false
-	if not _squad_pending_entry_position.is_finite():
-		return false
-	if (
-		_squad_pending_entry_msec <= 0
-		or Time.get_ticks_msec() - _squad_pending_entry_msec
-			> int(maxf(1.0, squad_entry_message_lifetime) * 1000.0)
-	):
-		_clear_pending_squad_entry()
-		return false
-	if not _squad_entry_is_ahead(_squad_pending_entry_position):
-		_clear_pending_squad_entry()
-		return false
-	_squad_entry_waypoint = _squad_pending_entry_position
-	_squad_entry_request_id = _squad_pending_entry_request_id
-	_clear_pending_squad_entry()
-	_squad_stuck = false
-	_squad_stuck_elapsed = 0.0
-	_squad_progress_window_elapsed = 0.0
-	_squad_progress_anchor = global_position
-	_squad_escape_waypoint = INVALID_POSITION
-	_squad_escape_direction = Vector3.ZERO
-	_squad_escape_timer = 0.0
-	_reset_navigation_path()
-	_debug(
-		"squad entry activated request=%s position=%s; stuck state cleared"
-		% [_squad_entry_request_id, _format_position(_squad_entry_waypoint)]
-	)
-	return true
-
-
-func _update_squad_entry_waypoint(delta: float) -> bool:
-	if _squad_entry_waypoint == INVALID_POSITION:
-		return false
-	var distance := _horizontal_distance(global_position, _squad_entry_waypoint)
-	if distance <= squad_entry_arrival_distance:
-		var completed_request_id := _squad_entry_request_id
-		_debug(
-			"squad entry reached request=%s position=%s; resume target"
-			% [_squad_entry_request_id, _format_position(_squad_entry_waypoint)]
-		)
-		_squad_entry_waypoint = INVALID_POSITION
-		_squad_entry_request_id = ""
-		if _squad_pending_entry_request_id == completed_request_id:
-			_clear_pending_squad_entry()
-		_reset_navigation_path()
-		return false
-	var direction := _horizontal_direction(global_position, _squad_entry_waypoint)
-	if direction.length_squared() <= 0.001:
-		return true
-	## 入口是刚刚被打开的真实通路，优先使用入口点的直接方向；
-	## RVO 仍会在 _apply_character_movement 内处理队员之间的避让。
-	## 卡住队员的入口确认属于脱困动作，不让 RVO 再次把队员挡在入口外。
-	_apply_character_movement(_avoid_immediate_obstacle(direction), chase_speed, delta, false)
-	return true
 
 
 func _update_squad_escape(delta: float) -> bool:
@@ -1969,6 +1932,21 @@ func _play_body_animation(
 	)
 
 
+func _play_death_animation() -> void:
+	## 四类 AI 统一优先播放 Death；旧外观才回退到 DeathFallForward。
+	action_animation_locked = true
+	if appearance_player == null:
+		return
+	var animation_name: StringName = &"Death"
+	if not appearance_player.has_animation(animation_name):
+		animation_name = &"DeathFallForward"
+	if appearance_player.has_animation(animation_name):
+		# 死亡后 AI 根节点可能停止常规处理，但 AnimationPlayer 仍需继续推进。
+		appearance_player.process_mode = Node.PROCESS_MODE_ALWAYS
+		appearance_player.set_process(true)
+		appearance_player.play(animation_name, 0.08)
+
+
 func _play_shoot_animation() -> void:
 	action_animation_locked = true
 	_play_body_animation(
@@ -1998,13 +1976,17 @@ func _on_skeleton_animation_finished(
 
 		&"JumpLand":
 			landing_animation = false
+			## 跳跃可能覆盖了尚未结束的 ShootOneHand/ToolUseRight。
+			## 落地后解除动作锁，避免后续 Walk/Idle 更新一直被跳过。
+			action_animation_locked = false
 
 		&"ShootOneHand", &"ToolUseRight", &"PunchRIght":
 			action_animation_locked = false
 
 
 func _update_character_animation(
-	move_direction: Vector3
+	_move_direction: Vector3,
+	actual_horizontal_velocity: Vector3 = Vector3.ZERO
 ) -> void:
 	if appearance_player == null:
 		return
@@ -2012,6 +1994,9 @@ func _update_character_animation(
 	var grounded := is_on_floor()
 
 	if grounded and not was_on_floor:
+		## 即使 JumpLand 没有触发 animation_finished，落地帧也会
+		## 清掉被跳跃覆盖的射击/工具动画锁。
+		action_animation_locked = false
 		_play_body_animation(
 			&"JumpLand",
 			0.05
@@ -2038,7 +2023,7 @@ func _update_character_animation(
 				0.05
 			)
 
-	elif move_direction.length_squared() > 0.001:
+	elif actual_horizontal_velocity.length_squared() > 0.01:
 		_play_body_animation(
 			&"Walk",
 			0.08
@@ -2063,6 +2048,31 @@ func _update_character_animation(
 		)
 
 	was_on_floor = grounded
+
+
+## 远端多人 AI 不运行本地物理，只通过快照更新位置。因此使用服务器
+## 同步的水平速度直接更新表现层动画，而不是依赖本地 is_on_floor/velocity。
+func _update_network_locomotion_animation(
+	horizontal_velocity: Vector3,
+	grounded: bool = true,
+	aiming: bool = false
+) -> void:
+	if appearance_player == null or state == AIState.DEAD or action_animation_locked:
+		return
+	var horizontal := horizontal_velocity
+	horizontal.y = 0.0
+	if not grounded:
+		if appearance_player.current_animation != &"JumpStart":
+			_play_body_animation(&"JumpLoop", 0.05)
+		return
+	if horizontal.length_squared() > 0.01:
+		_play_body_animation(&"Walk", 0.08)
+	elif aiming or _is_valid_target(target_player):
+		_play_body_animation(&"IdleAim", 0.10)
+	elif is_instance_valid(held_weapon):
+		_play_body_animation(&"IdleTool", 0.10)
+	else:
+		_play_body_animation(&"Idle", 0.10)
 
 
 # ------------------------------------------------------------------
@@ -2143,9 +2153,14 @@ func _update_tool_camera_alignment() -> void:
 		* weapon_aim_basis
 	).orthonormalized()
 
-	## 玩家原算法这里使用 camera.global_transform.basis。
-	## AI 使用已经朝向目标的 aim_ray 基准。
+	## 玩家原算法这里直接使用 camera.global_transform.basis。AI 的
+	## aim_ray 是玩家 Camera 的等价瞄准参考节点，所以也必须直接使用它的
+	## 完整 Basis，而不是只用水平朝向或重新用 Vector3.UP 构造 Basis；后者
+	## 会丢掉俯仰/滚转，表现为多人模式下枪口 Y 轴和实际瞄准线分离。
 	var desired_aim_basis: Basis = aim_ray.global_transform.basis.orthonormalized()
+	if is_zero_approx(desired_aim_basis.determinant()):
+		tool_pivot.transform = Transform3D.IDENTITY
+		return
 
 	var desired_pivot_basis: Basis = (
 		desired_aim_basis
@@ -2644,13 +2659,6 @@ func _update_timers(delta: float) -> void:
 		_squad_support_pending_after_bullet = false
 	## 警告计时只用于记录初始撤退窗口，不能在队员仍处于爆炸半径内时
 	## 清除警告；真正的清理由 _update_squad_warning_retreat 在到达安全距离后完成。
-	if (
-		_squad_pending_entry_position.is_finite()
-		and _squad_pending_entry_msec > 0
-		and Time.get_ticks_msec() - _squad_pending_entry_msec
-			> int(maxf(1.0, squad_entry_message_lifetime) * 1000.0)
-	):
-		_clear_pending_squad_entry()
 	target_refresh_timer = maxf(
 		0.0,
 		target_refresh_timer - delta
@@ -2796,6 +2804,7 @@ func _refresh_target() -> void:
 	if target_player == null:
 		if state != AIState.FLEE:
 			state = AIState.SEARCH
+		_weapon_aim_active = false
 
 		last_known_target_position = (
 			INVALID_POSITION
@@ -2851,43 +2860,146 @@ func _find_best_enemy_player() -> CharacterBody3D:
 	return _find_best_visible_hostile()
 
 
+func _uses_server_player_proxies() -> bool:
+	## Multiplayer authority owns ServerPlayerPhysicsBody nodes. The host also
+	## has a local GamePlayer presentation node, but that node is prediction/UI
+	## state and must never become an AI combat target on the server.
+	return GameAuthority.is_server_authority()
+
+
+func _authoritative_human_player_groups() -> Array[StringName]:
+	var groups: Array[StringName] = []
+	groups.append(
+		&"server_human_players"
+		if _uses_server_player_proxies()
+		else &"human_players"
+	)
+	return groups
+
+
+func _authoritative_human_player_nodes() -> Array[Node]:
+	# Return live authority-side player bodies, not stale presentation nodes.
+	var result: Array[Node] = []
+	var seen: Dictionary = {}
+	if _uses_server_player_proxies():
+		var proxy_map: Dictionary = GameAuthority.player_physics_nodes
+		for proxy_value: Variant in proxy_map.values():
+			if not proxy_value is CharacterBody3D or not is_instance_valid(proxy_value) \
+					or not (proxy_value as CharacterBody3D).is_inside_tree():
+				continue
+			var proxy := proxy_value as Node
+			if seen.has(proxy.get_instance_id()):
+				continue
+			seen[proxy.get_instance_id()] = true
+			result.append(proxy)
+		for node in get_tree().get_nodes_in_group("server_human_players"):
+			if not node is CharacterBody3D or not is_instance_valid(node) \
+					or not (node as CharacterBody3D).is_inside_tree():
+				continue
+			if seen.has(node.get_instance_id()):
+				continue
+			seen[node.get_instance_id()] = true
+			result.append(node)
+		return result
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is CharacterBody3D or not is_instance_valid(node) \
+				or not (node as CharacterBody3D).is_inside_tree():
+			continue
+		if seen.has(node.get_instance_id()):
+			continue
+		seen[node.get_instance_id()] = true
+		result.append(node)
+	return result
+
+
+func _server_presentation_player_query_exclusions() -> Array[RID]:
+	## Match GameAuthority's server raycast rule: presentation players are
+	## excluded from authority-side vision and clear-line queries so they cannot
+	## occlude the authoritative physics proxy.
+	var exclusions: Array[RID] = []
+	if not _uses_server_player_proxies():
+		return exclusions
+	for node in get_tree().get_nodes_in_group("human_players"):
+		# ServerPlayerPhysicsBody is also in human_players for compatibility;
+		# only exclude the full presentation GamePlayer nodes.
+		if not node is GamePlayer or not node is CollisionObject3D:
+			continue
+		var rid := (node as CollisionObject3D).get_rid()
+		if not exclusions.has(rid):
+			exclusions.append(rid)
+	return exclusions
+
+
 func _find_best_visible_hostile() -> CharacterBody3D:
 	var best_target: CharacterBody3D
 	var best_score := INF
+	var now_msec := Time.get_ticks_msec()
 
-	for group_name in [&"human_players", &"wild_animals", &"combat_characters"]:
+	var candidates: Array[Node] = _authoritative_human_player_nodes()
+	var seen: Dictionary = {}
+	for player_node in candidates:
+		seen[player_node.get_instance_id()] = true
+	# Deployed remote devices and vehicles opt into ai_combat_targets.  Keep this
+	# group-based so new attackable equipment does not need a per-AI type check.
+	for group_name in [&"wild_animals", &"combat_characters", &"ai_combat_targets"]:
 		for node in get_tree().get_nodes_in_group(group_name):
-			if not node is CharacterBody3D:
-				continue
-			var candidate := node as CharacterBody3D
-			if not _is_active_hostile_candidate(candidate):
-				continue
-			if not _is_inside_vision_cone(candidate) or not _has_visual_contact(candidate):
-				continue
+			if is_instance_valid(node) and not seen.has(node.get_instance_id()):
+				seen[node.get_instance_id()] = true
+				candidates.append(node)
+	for node in candidates:
+		if not node is CharacterBody3D:
+			continue
+		var candidate := node as CharacterBody3D
+		if not _is_active_hostile_candidate(candidate):
+			continue
+		if not _is_inside_vision_cone(candidate) or not _has_visual_contact(candidate):
+			continue
+		if not _is_candidate_aware(candidate, now_msec):
+			continue
 
-			# 视线内玩家优先于野生动物；同类再按距离选择。
-			var priority := 0.0 if candidate.is_in_group("human_players") else 1000.0
-			var score := priority + _horizontal_distance(global_position, candidate.global_position)
-			if score < best_score:
-				best_score = score
-				best_target = candidate
+		# 视线内玩家优先；AI、野生动物、遥控设备和载具同级后按距离选择。
+		var priority := 0.0 if candidate.is_in_group("human_players") \
+			or candidate.is_in_group("server_human_players") else 1000.0
+		var score := priority + global_position.distance_to(candidate.global_position)
+		if score < best_score:
+			best_score = score
+			best_target = candidate
 
+	_decay_unseen_target_awareness(now_msec)
 	return best_target
 
 
-func _is_valid_target(
-	candidate: CharacterBody3D
-) -> bool:
+func _sanitize_target_references() -> void:
+	## A target can be queue_free()'d by damage/explosion processing between two
+	## target refreshes. Clear the stale typed references before any state code
+	## tries to pass them into a CharacterBody3D-specific method.
+	if not is_instance_valid(target_player):
+		target_player = null
+	if not is_instance_valid(retaliation_target):
+		retaliation_target = null
+		retaliation_timer = 0.0
+
+
+func _is_valid_target(candidate: Variant) -> bool:
+	## Do not type this parameter as CharacterBody3D: GDScript validates typed
+	## call arguments before entering the function, and a previously freed target
+	## would therefore throw before is_instance_valid() could reject it.
+	if not is_instance_valid(candidate) or not candidate is CharacterBody3D:
+		return false
+	var character := candidate as CharacterBody3D
 	return (
-		is_instance_valid(candidate)
-		and not candidate.is_queued_for_deletion()
-		and _is_active_hostile_candidate(candidate)
+		not character.is_queued_for_deletion()
+		and _is_active_hostile_candidate(character)
 	)
 
 
 func _is_active_hostile_candidate(candidate: CharacterBody3D) -> bool:
 	if candidate == null or candidate == self:
 		return false
+	if candidate.is_in_group("human_players") or candidate.is_in_group("server_human_players"):
+		var expected_group := "server_human_players" if _uses_server_player_proxies() else "human_players"
+		if not candidate.is_in_group(expected_group):
+			return false
 	if candidate.has_method("get_network_state"):
 		var network_state := candidate.call("get_network_state") as Dictionary
 		if bool(network_state.get("dead", false)):
@@ -2898,15 +3010,82 @@ func _is_active_hostile_candidate(candidate: CharacterBody3D) -> bool:
 
 
 func _is_inside_vision_cone(candidate: Node3D) -> bool:
+	# Despite the legacy method name, vision is now a true 3D sphere.  The
+	# forward cone is used by _is_candidate_aware() only to decide whether
+	# identification is instant or must accumulate peripheral awareness.
+	return global_position.distance_to(candidate.global_position) <= vision_range
+
+
+func _is_candidate_aware(candidate: CharacterBody3D, now_msec: int) -> bool:
+	var candidate_id := candidate.get_instance_id()
+	_target_awareness_last_seen_msec[candidate_id] = now_msec
+
 	var direction := _horizontal_direction(global_position, candidate.global_position)
 	if direction == Vector3.ZERO:
+		_target_awareness[candidate_id] = 1.0
 		return true
-	if _horizontal_distance(global_position, candidate.global_position) > vision_range:
-		return false
 	var forward := -global_transform.basis.z
 	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		_target_awareness[candidate_id] = 1.0
+		return true
 	forward = forward.normalized()
-	return forward.dot(direction) >= cos(deg_to_rad(vision_fov_degrees * 0.5))
+	var facing_dot := forward.dot(direction)
+	var direct_view_threshold := cos(deg_to_rad(vision_fov_degrees * 0.5))
+	if facing_dot >= direct_view_threshold:
+		_target_awareness[candidate_id] = 1.0
+		return true
+
+	# Peripheral/back awareness deliberately builds over repeated 0.2s scans.
+	# A small random factor makes first discovery probabilistic without causing
+	# a detected target to flicker between found and lost states.
+	var distance_ratio := clampf(
+		global_position.distance_to(candidate.global_position) / maxf(0.01, vision_range),
+		0.0,
+		1.0
+	)
+	var proximity := 1.0 - distance_ratio
+	var rear_amount := clampf(
+		(direct_view_threshold - facing_dot) / maxf(0.01, direct_view_threshold + 1.0),
+		0.0,
+		1.0
+	)
+	var awareness_rate := lerpf(
+		peripheral_awareness_far_per_second,
+		peripheral_awareness_near_per_second,
+		proximity
+	)
+	awareness_rate *= lerpf(1.0, rear_awareness_multiplier, rear_amount)
+	awareness_rate *= rng.randf_range(0.75, 1.25)
+	var awareness := clampf(
+		float(_target_awareness.get(candidate_id, 0.0))
+		+ awareness_rate * maxf(0.01, target_refresh_interval),
+		0.0,
+		1.0
+	)
+	_target_awareness[candidate_id] = awareness
+	return awareness >= 1.0
+
+
+func _decay_unseen_target_awareness(now_msec: int) -> void:
+	var stale_ids: Array[int] = []
+	for id_value in _target_awareness.keys():
+		var candidate_id := int(id_value)
+		var last_seen_msec := int(_target_awareness_last_seen_msec.get(candidate_id, 0))
+		if now_msec - last_seen_msec <= roundi(awareness_memory_seconds * 1000.0):
+			continue
+		var awareness := maxf(
+			0.0,
+			float(_target_awareness.get(candidate_id, 0.0))
+			- awareness_decay_per_second * maxf(0.01, target_refresh_interval)
+		)
+		if awareness <= 0.0:
+			stale_ids.append(candidate_id)
+		else:
+			_target_awareness[candidate_id] = awareness
+	for candidate_id in stale_ids:
+		_target_awareness.erase(candidate_id)
+		_target_awareness_last_seen_msec.erase(candidate_id)
 
 
 func _has_visual_contact(candidate: Node3D) -> bool:
@@ -2917,13 +3096,19 @@ func _has_visual_contact(candidate: Node3D) -> bool:
 		var destination := candidate.global_position + Vector3.UP * float(height)
 		if _vision_ray_reaches_candidate(candidate, destination):
 			visible_rays += 1
-	# 至少两条确认射线抵达目标，避免只从墙边露出极小部分时被立即锁定。
-	return visible_rays >= 2
+	# ServerPlayerPhysicsBody is deliberately a compact capsule, unlike the full
+	# visual GamePlayer skeleton. A single unobstructed chest/head ray is enough
+	# to establish real visual contact; requiring two out of three rays made a
+	# plainly visible proxy fail detection at slopes and behind low cover.
+	return visible_rays >= 1
 
 
 func _vision_ray_reaches_candidate(candidate: Node3D, destination: Vector3) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(
-		head.global_position, destination, vision_occlusion_mask, [get_rid()]
+		head.global_position,
+		destination,
+		vision_occlusion_mask,
+		[get_rid()] + _server_presentation_player_query_exclusions()
 	)
 	query.collide_with_bodies = true
 	query.collide_with_areas = true
@@ -3100,6 +3285,7 @@ func _disengage_from_chase() -> void:
 	last_known_target_position = INVALID_POSITION
 	combat_engagement_point = INVALID_POSITION
 	combat_engagement_target_id = 0
+	_weapon_aim_active = false
 	_squad_support_broadcast_active = false
 	_squad_support_pending_after_bullet = false
 	target_refresh_timer = 0.0
@@ -3439,12 +3625,16 @@ func _try_fire_weapon(slot: int) -> void:
 
 
 func _is_ai_hitscan_weapon(slot: int) -> bool:
-	if slot != WeaponSlot.AR15 or not is_instance_valid(held_weapon):
+	if not is_instance_valid(held_weapon):
 		return false
 	var weapon_id := str(weapon_data.get(slot, {}).get("id", ""))
 	if weapon_id.is_empty():
-		weapon_id = ar15_tool_id
-	return weapon_id in ["future_m4", "future_mpx"] \
+		weapon_id = ar15_tool_id if slot == WeaponSlot.AR15 else suppressed_pistol_tool_id
+	## All handheld firearms used by the current Future AI roles resolve their
+	## gameplay ray on the authority. Bandit's suppressed pistol used to fall
+	## through to the legacy physical-bullet branch, which was neither
+	## server-authoritative nor replicated as a multiplayer tracer.
+	return weapon_id in ["future_m4", "future_mpx", "suppressed_pistol"] \
 		and held_weapon.has_method("get_fire_origin") \
 		and held_weapon.has_method("get_fire_direction")
 
@@ -3567,6 +3757,8 @@ func _aim_at(
 	)
 
 	var aim_origin := head.global_position
+	_weapon_aim_position = world_target
+	_weapon_aim_active = true
 
 	aim_ray.global_position = aim_origin
 	look_at_target.global_position = aim_origin
@@ -3595,6 +3787,7 @@ func _aim_at(
 
 	aim_ray.force_raycast_update()
 	look_at_target.force_raycast_update()
+	_weapon_aim_direction = -aim_ray.global_transform.basis.z.normalized()
 
 
 # ------------------------------------------------------------------
@@ -4014,11 +4207,9 @@ func _would_grenade_hurt_friend(
 		CombatBalance.get_float("grenade", "damage_radius")
 	)
 
-	for group_name in [
-		"human_players",
-		"combat_characters",
-		"future_warrior_ai",
-	]:
+	var candidate_groups := _authoritative_human_player_groups()
+	candidate_groups.append_array([&"combat_characters", &"future_warrior_ai"])
+	for group_name in candidate_groups:
 		for node in get_tree().get_nodes_in_group(
 			group_name
 		):
@@ -4399,8 +4590,7 @@ func notify_navigation_chunks_rebuilt(_chunk_ids: Array) -> void:
 	else:
 		_debug("navigation chunks rebuilt; target path refreshed chunks=%s" % [_chunk_ids])
 	_update_health_label()
-	## 测试场景可订阅这个本地信号，把实际路径刷新显示到调试面板；
-	## 不通过 SquadCommunicationChannel，避免把导航内部事件伪装成通信消息。
+	## 测试场景可订阅这个本地信号，把区块重建后的实际路径刷新显示到调试面板。
 	navigation_path_refreshed.emit(_chunk_ids.duplicate(), was_stuck)
 
 
@@ -4531,6 +4721,28 @@ func _apply_character_movement(
 		if _avoidance_safe_velocity_valid:
 			movement_velocity.x = _avoidance_safe_velocity.x
 			movement_velocity.z = _avoidance_safe_velocity.z
+			## 某些拥挤/贴墙场景中 RVO 会返回接近零的安全速度，
+			## 让角色看起来原地跳跃。角色专属 AI 可选择使用自己的
+			## test_move 方向作为最低限度的移动兜底，avoidance_enabled
+			## 仍然保持开启并且每帧仍会提交 set_velocity。
+			if _should_force_flee_motion_when_avoidance_stalls() \
+					and state == AIState.FLEE:
+				var requested_speed := Vector2(
+					desired_velocity.x,
+					desired_velocity.z
+				).length()
+				var safe_speed := Vector2(
+					movement_velocity.x,
+					movement_velocity.z
+				).length()
+				if requested_speed > 0.25 \
+						and safe_speed < maxf(0.35, requested_speed * 0.20):
+					var flee_fallback := _find_open_movement_direction(
+						direction,
+						0.75
+					)
+					movement_velocity.x = flee_fallback.x * speed + rubber_knockback.x
+					movement_velocity.z = flee_fallback.z * speed + rubber_knockback.z
 		_avoidance_safe_velocity_valid = false
 	else:
 		_avoidance_safe_velocity_valid = false
@@ -4588,8 +4800,13 @@ func _apply_character_movement(
 
 	move_and_slide()
 
+	var actual_horizontal_velocity := (
+		(global_position - previous_position) / maxf(delta, 0.0001)
+	)
+	actual_horizontal_velocity.y = 0.0
 	_update_character_animation(
-		direction
+		direction,
+		actual_horizontal_velocity
 	)
 	_update_squad_stuck_tracking(previous_position, direction, speed, delta)
 
@@ -4604,9 +4821,21 @@ func _navigation_avoidance_is_active() -> bool:
 	)
 
 
+## 角色可以覆盖这个钩子，处理 RVO 在 FLEE 期间把安全速度压成零的情况。
+## 普通 FutureWarrior / FutureEngineer 保持原有的严格 RVO 结果。
+func _should_force_flee_motion_when_avoidance_stalls() -> bool:
+	return false
+
+
 ## Engineer 可以覆盖此钩子，在安装/撤退炸药等关键阶段不进入普通卡住计时。
 func _squad_stuck_tracking_allowed() -> bool:
 	return true
+
+
+## 困住判定完成后统一先重置 NavigationAgent3D 路径；子类只能在这个
+## 已重试导航的时点追加角色专属动作，不能跳过后续固定方向脱困流程。
+func _on_squad_stuck_detected(_goal: Vector3) -> void:
+	return
 
 
 ## FutureEngineer 在自己已放置 RemoteBomb 后必须优先完成自身安全撤退；
@@ -4694,7 +4923,6 @@ func _update_squad_stuck_tracking(
 		not is_instance_valid(squad)
 		or not _squad_stuck_tracking_allowed()
 		or not trackable_state
-		or _squad_entry_waypoint != INVALID_POSITION
 		or _squad_escape_waypoint != INVALID_POSITION
 	):
 		_reset_squad_stuck_tracking()
@@ -4861,6 +5089,7 @@ func _update_squad_stuck_tracking(
 		)
 		## 这是 AI 因“困住”主动重试导航的本地诊断事件，不是 Squad 通信。
 		navigation_path_refreshed.emit([], true)
+		_on_squad_stuck_detected(goal)
 		_debug(
 			(
 				"squad stuck detected state=%s elapsed=%.1fs goal_progress=%.2fm "
@@ -4879,8 +5108,6 @@ func _update_squad_stuck_tracking(
 				_format_position(goal),
 			]
 		)
-		## 入口消息可能早于本次卡住判定到达；卡住成立后立即消费最近入口。
-		_activate_pending_squad_entry()
 		return
 
 	_squad_stuck_elapsed += delta
@@ -5064,6 +5291,7 @@ func _update_team_marker_visibility() -> void:
 
 
 func get_network_state() -> Dictionary:
+	var weapon_id := str(weapon_data.get(current_weapon_slot, {}).get("id", ""))
 	return {
 		"ai_id": str(get_meta("network_ai_id", name)),
 		"ai_type": "futurewarrior",
@@ -5075,23 +5303,104 @@ func get_network_state() -> Dictionary:
 		"max_hp": max_hp,
 		"dead": state == AIState.DEAD,
 		"respawn_left": 0.0,
+		"death_cleanup_left": _death_cleanup_remaining_seconds(),
 		"state": int(state),
 		"squad_stuck": _squad_stuck,
+		"weapon_slot": current_weapon_slot,
+		"weapon_id": weapon_id,
+		"aim_active": _weapon_aim_active,
+		"aim_position": _weapon_aim_position,
+		"aim_direction": _weapon_aim_direction,
+		"velocity": velocity,
+		"grounded": is_on_floor(),
 	}
 
 
 func apply_network_state(data: Dictionary) -> void:
+	var was_dead := state == AIState.DEAD
+	var incoming_dead := bool(data.get("dead", false))
 	global_position = data.get("position", global_position) as Vector3
 	rotation.y = float(data.get("yaw", rotation.y))
 	current_hp = float(data.get("hp", current_hp))
-	if data.has("state"):
+	if not incoming_dead and data.has("weapon_slot"):
+		var incoming_weapon_slot := int(data.get("weapon_slot", current_weapon_slot))
+		if incoming_weapon_slot >= 0 and incoming_weapon_slot != current_weapon_slot:
+			_equip_weapon(incoming_weapon_slot)
+	if incoming_dead:
+		state = AIState.DEAD
+	elif data.has("state"):
 		state = int(data.get("state", state))
 	if data.has("squad_stuck"):
 		_squad_stuck = bool(data.get("squad_stuck", _squad_stuck))
+	if incoming_dead and not was_dead:
+		## 远端代理不执行 _die()，否则会重复掉落金钱、通知小队和结算击杀；
+		## 这里只同步死亡动画和不可交互表现。
+		velocity = Vector3.ZERO
+		_death_cleanup_deadline_msec = Time.get_ticks_msec() + roundi(
+			maxf(0.0, float(data.get("death_cleanup_left", DEATH_CLEANUP_SECONDS)))
+			* 1000.0
+		)
+		_play_death_animation()
+		collision_layer = 0
+		collision_mask = _corpse_collision_mask()
+		if hit_3d != null:
+			hit_3d.set_deferred("monitoring", false)
+			hit_3d.set_deferred("monitorable", false)
+		if body_collision_shape != null:
+			body_collision_shape.set_deferred("disabled", false)
+		if hit_collision_shape != null:
+			hit_collision_shape.set_deferred("disabled", true)
+	elif not incoming_dead:
+		_death_cleanup_deadline_msec = -1
+	if not incoming_dead:
+		_apply_network_weapon_aim(data)
+		var velocity_value: Variant = data.get("velocity", Vector3.ZERO)
+		var network_velocity := (
+			velocity_value as Vector3
+			if velocity_value is Vector3
+			else Vector3.ZERO
+		)
+		_update_network_locomotion_animation(
+			network_velocity,
+			bool(data.get("grounded", true)),
+			bool(data.get("aim_active", false))
+		)
 	_update_team_marker_visibility()
 	if health_label != null:
-		health_label.visible = not bool(data.get("dead", false))
+		health_label.visible = not incoming_dead
 		_update_health_label()
+
+
+func _apply_network_weapon_aim(data: Dictionary) -> void:
+	## Remote AI proxies have their runtime processing disabled. Apply the same
+	## aim frame used by the authority before correcting ToolPivot, so the visible
+	## FutureM4/FutureMPX muzzle keeps the player's Y/pitch correction.
+	if not is_instance_valid(head) or not is_instance_valid(aim_ray) \
+		or not is_instance_valid(look_at_target):
+		return
+	var aim_active := bool(data.get("aim_active", false))
+	var direction_value: Variant = data.get("aim_direction", _weapon_aim_direction)
+	var direction := direction_value as Vector3 if direction_value is Vector3 else Vector3.ZERO
+	if direction.length_squared() <= 0.001:
+		direction = -global_transform.basis.z
+	direction = direction.normalized()
+	var position_value: Variant = data.get("aim_position", INVALID_POSITION)
+	_weapon_aim_position = position_value as Vector3 if position_value is Vector3 else INVALID_POSITION
+	_weapon_aim_direction = direction
+	_weapon_aim_active = aim_active
+	var aim_origin := head.global_position
+	if aim_active:
+		## 使用权威端同步的最终方向，而不是客户端重新查找目标或用过期
+		## presentation player 节点重算瞄准点。
+		_aim_at(aim_origin + direction * 100.0)
+		_weapon_aim_position = position_value as Vector3 \
+			if position_value is Vector3 else INVALID_POSITION
+	else:
+		## 从交火恢复到普通移动时清掉上一帧的俯仰，避免枪口继续指向
+		## 已经离开的玩家；根节点的当前 yaw 仍会自然带动武器。
+		aim_ray.rotation = Vector3.ZERO
+		look_at_target.rotation = Vector3.ZERO
+	_update_tool_camera_alignment()
 
 
 func _is_enemy(node: Node) -> bool:
@@ -5125,6 +5434,7 @@ func _get_combat_team(
 		"team",
 		"tool_owner",
 		"owner_team",
+		"kitchen_team",
 	]:
 		if _has_property(
 			node,
@@ -5155,7 +5465,7 @@ func _has_clear_line_to(
 			origin,
 			destination,
 			combat_ray_mask,
-			[get_rid()]
+			[get_rid()] + _server_presentation_player_query_exclusions()
 		)
 	)
 
@@ -5543,7 +5853,9 @@ func _remember_retaliation_target(
 	var closest: CharacterBody3D
 	var best_score := INF
 	var visited := {}
-	for group_name in [&"human_players", &"wild_animals", &"combat_characters"]:
+	var candidate_groups := _authoritative_human_player_groups()
+	candidate_groups.append_array([&"wild_animals", &"combat_characters"])
+	for group_name in candidate_groups:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if not node is CharacterBody3D:
 				continue
@@ -5599,11 +5911,16 @@ func _activate_retaliation_target(attacker: CharacterBody3D) -> void:
 func _find_human_attacker_by_peer_id(peer_id: int) -> CharacterBody3D:
 	if peer_id <= 0:
 		return null
-	for node in get_tree().get_nodes_in_group("human_players"):
-		if not node is CharacterBody3D or not _has_property(node, "authority_peer_id"):
-			continue
-		if int(node.get("authority_peer_id")) == peer_id:
-			return node as CharacterBody3D
+	## The listen server contains both the local GamePlayer presentation and its
+	## ServerPlayerPhysicsBody. Prefer the same authoritative group used by AI
+	## target selection; otherwise damage retaliation could lock onto the stale
+	## presentation transform even though hitscan uses the server proxy.
+	for group_name in _authoritative_human_player_groups():
+		for node in get_tree().get_nodes_in_group(group_name):
+			if not node is CharacterBody3D or not _has_property(node, "authority_peer_id"):
+				continue
+			if int(node.get("authority_peer_id")) == peer_id:
+				return node as CharacterBody3D
 	return null
 
 
@@ -5661,9 +5978,7 @@ func _die(
 	_clear_squad_warning_state()
 	combat_engagement_point = INVALID_POSITION
 	combat_engagement_target_id = 0
-	_squad_entry_waypoint = INVALID_POSITION
-	_squad_entry_request_id = ""
-	_clear_pending_squad_entry()
+	_weapon_aim_active = false
 	_squad_escape_waypoint = INVALID_POSITION
 	_squad_escape_direction = Vector3.ZERO
 	_squad_escape_timer = 0.0
@@ -5676,10 +5991,13 @@ func _die(
 	velocity = Vector3.ZERO
 	rubber_knockback = Vector3.ZERO
 	action_animation_locked = true
-	_play_body_animation(&"DeathFallForward", 0.08)
+	_death_cleanup_deadline_msec = Time.get_ticks_msec() + roundi(
+		DEATH_CLEANUP_SECONDS * 1000.0
+	)
+	_play_death_animation()
 
 	collision_layer = 0
-	collision_mask = 0
+	collision_mask = _corpse_collision_mask()
 
 	if hit_3d != null:
 		## _die() 可能由 Hit3D.body_entered 直接调用；此时物理服务器正在
@@ -5691,10 +6009,7 @@ func _die(
 		hit_3d.set_deferred("collision_mask", 0)
 
 	if body_collision_shape != null:
-		body_collision_shape.set_deferred(
-			"disabled",
-			true
-		)
+		body_collision_shape.set_deferred("disabled", false)
 
 	if hit_collision_shape != null:
 		hit_collision_shape.set_deferred(
@@ -5709,12 +6024,9 @@ func _die(
 	if health_label != null:
 		health_label.visible = false
 
-	if is_instance_valid(external_respawn_controller):
-		_debug("killed by=%s effect=%s; waiting for squad spawner batch replacement" % [attacker_team, effect])
-	else:
-		_debug("killed by=%s effect=%s; respawning in %.1f seconds" % [
-			attacker_team, effect, respawn_seconds,
-		])
+	_debug("killed by=%s effect=%s; death animation playing; removal in %.1f seconds" % [
+		attacker_team, effect, DEATH_CLEANUP_SECONDS,
+	])
 	if is_instance_valid(external_respawn_controller) and external_respawn_controller.has_method("notify_squad_member_dead"):
 		external_respawn_controller.notify_squad_member_dead(self)
 
@@ -5752,18 +6064,28 @@ func _try_spawn_cash_drop_on_death() -> void:
 
 
 func _finish_death() -> void:
-	## 生成器管理的是整批替换：旧成员保持死亡，不能走单体复活链路。
-	if is_instance_valid(external_respawn_controller):
-		return
+	## 无论是否属于小队，死亡节点都只保留十秒用于播放倒地表现。
+	## 小队生成器仍然按自己的 respawn_seconds 生成下一批，不复用这个节点。
 	await get_tree().create_timer(
-		respawn_seconds
+		_death_cleanup_remaining_seconds()
 	).timeout
 	if not is_inside_tree() or state != AIState.DEAD:
 		return
-	_respawn_at_team_spawn()
+	_debug("death cleanup complete; removing node")
+	queue_free()
+
+
+func _death_cleanup_remaining_seconds() -> float:
+	if state != AIState.DEAD or _death_cleanup_deadline_msec < 0:
+		return 0.0
+	return maxf(
+		0.0,
+		float(_death_cleanup_deadline_msec - Time.get_ticks_msec()) / 1000.0
+	)
 
 
 func _respawn_at_team_spawn() -> void:
+	_death_cleanup_deadline_msec = -1
 	_finish_grenade_avoidance()
 	var spawn_position := _get_team_respawn_position()
 	global_position = spawn_position
@@ -5799,9 +6121,6 @@ func _respawn_at_team_spawn() -> void:
 	_squad_support_request_timer = 0.0
 	combat_engagement_point = INVALID_POSITION
 	combat_engagement_target_id = 0
-	_squad_entry_waypoint = INVALID_POSITION
-	_squad_entry_request_id = ""
-	_clear_pending_squad_entry()
 	_squad_escape_waypoint = INVALID_POSITION
 	_squad_escape_direction = Vector3.ZERO
 	_squad_escape_timer = 0.0

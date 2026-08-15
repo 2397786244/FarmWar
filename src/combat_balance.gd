@@ -42,12 +42,31 @@ const PROFILES := {
 	"shotgun": {
 		"range": 60.0, "damage": 60.0, "knockback": 30.0,
 		"visual_speed": 100.0, "visual_lifetime": 0.6,
-		"bullet_count": 2, "spread_degrees": 3.0,
+		"bullet_count": 6, "spread_degrees": 2.0,
 	},
 	"hunting_rifle": {
 		"range": 150.0, "damage": 100.0, "knockback": 20.0,
 		"visual_speed": 120.0, "visual_lifetime": 1.25,
 		"bullet_count": 1, "spread_degrees": 0.0,
+	},
+	"crossbow": {
+		"range": 120.0, "damage": 80.0, "knockback": 20.0,
+		"visual_speed": 90.0, "visual_lifetime": 1.3333333,
+		"bullet_count": 1, "spread_degrees": 0.0,
+	},
+	"long_spear": {
+		"damage": 20.0, "reach": 2.4, "default_tip_distance": 1.35,
+		"hitbox_width": 0.2, "hitbox_height": 0.2, "hitbox_depth": 0.3,
+	},
+	"medieval_shield": {
+		"max_hp": 1000.0,
+		"explosion_damage_multiplier": 0.20,
+		"explosion_absorb_ratio": 0.80,
+		"half_width": 0.66,
+		"half_height": 0.80,
+		"half_thickness": 0.10,
+		"center_height": 1.20,
+		"center_forward_offset": 0.55,
 	},
 	"m4": {
 		"range": 120.0, "damage": 45.0, "knockback": 18.0,
@@ -193,6 +212,7 @@ const PROFILES := {
 ## All deployable/remote-device default health belongs here, including tools
 ## without a combat profile above.
 const TOOL_MAX_HP := {
+	"medieval_shield": 1000.0,
 	"shield_door": 3000.0,
 	"brick": 1000.0,
 	"auto_shooter": 500.0,

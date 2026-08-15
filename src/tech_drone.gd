@@ -146,9 +146,12 @@ func _submit_repair_pulse_authority_action() -> bool:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_remote_action(action)
 		return true
-	if GameAuthority.is_local_authority():
+	if GameAuthority.is_local_interaction_authority():
+		var peer_id := GameAuthority.get_local_interaction_peer_id()
+		if peer_id <= 0:
+			return false
 		var result: Dictionary = GameAuthority.local_remote_action(
-			GameAuthority.LOCAL_PLAYER_ID,
+			peer_id,
 			action
 		)
 		return bool(result.get("ok", false))

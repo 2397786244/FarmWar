@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://bbxxcsgq2d0x1"]
 
-[ext_resource type="Script" path="res://tests/future_engineer_stage2_headless.gd" id="1_stage2"]
+[ext_resource type="Script" uid="uid://b2kgg0x7xnwo3" path="res://tests/future_engineer_stage2_headless.gd" id="1_stage2"]
 
-[node name="FutureEngineerStage2Test" type="Node3D"]
+[node name="FutureEngineerStage2Test" type="Node3D" unique_id=236764176]
 script = ExtResource("1_stage2")

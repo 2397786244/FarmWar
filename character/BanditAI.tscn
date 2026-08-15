@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://4hk3y3svpt63"]
+
+[ext_resource type="Script" path="res://src/bandit_ai.gd" id="1_bandit_script"]
+[ext_resource type="PackedScene" uid="uid://bpso81a7a264g" path="res://assets/characters/Bandit.glb" id="2_75d45"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_6w6wd"]
+radius = 0.34
+height = 1.7
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_75d45"]
+radius = 0.38
+height = 1.72
+
+[node name="BanditAI" type="CharacterBody3D" unique_id=970001891]
+collision_layer = 8
+collision_mask = 647
+script = ExtResource("1_bandit_script")
+max_hp = 160.0
+starting_grenade_count = 0
+grenade_tool_id = ""
+suppressed_pistol_tool_id = "suppressed_pistol"
+suppressed_pistol_scene_path = "res://character/weapons/SuppressedPistol.tscn"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1472687320]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("CapsuleShape3D_6w6wd")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=276476426]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=290212862]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("CapsuleShape3D_75d45")
+
+[node name="HealthLabel3D" type="Label3D" parent="." unique_id=1266545142]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.65, 0)
+billboard = 1
+modulate = Color(0.35, 0.55, 1, 1)
+outline_modulate = Color(0.05, 0.08, 0.12, 1)
+font_size = 54
+outline_size = 9
+
+[node name="Mesh" parent="." unique_id=221430397 instance=ExtResource("2_75d45")]

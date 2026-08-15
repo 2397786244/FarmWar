@@ -31,3 +31,7 @@ max_steering_angle_degrees = 36.0
 min_steering_angle_degrees = 8.0
 steering_response = 3.5
 max_hp = 500.0
+cargo_capacity_kg = 480.0
+cargo_placement_origin = Vector3(0, 1.2, 0)
+cargo_columns = 2
+cargo_rows = 3

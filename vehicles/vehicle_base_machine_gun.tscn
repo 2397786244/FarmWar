@@ -1,0 +1,89 @@
+[gd_scene load_steps=8 format=3 uid="uid://b3vrkhgffvmni"]
+
+[ext_resource type="PackedScene" uid="uid://cjrylv0johjo4" path="res://assets/vehicles/PlatformMachineGun.glb" id="1_ab3oy"]
+[ext_resource type="Script" path="res://src/vehicle_base_machine_gun.gd" id="2_script"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2am16"]
+radius = 0.8
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_ab3oy"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3m2oa"]
+radius = 0.3
+
+[sub_resource type="Curve" id="Curve_ab3oy"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.25, 0.36906666), -0.78933305, -0.78933305, 0, 0, Vector2(1, 0.09520006), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_e50nc"]
+curve = SubResource("Curve_ab3oy")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_2am16"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 20.0
+damping_min = 10.0
+damping_max = 30.000002
+scale_min = 2.0
+scale_max = 3.0
+scale_curve = SubResource("CurveTexture_e50nc")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_x21hq"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.7764706, 0.43529412, 0.14117648, 1)
+grow_amount = 1.326
+
+[sub_resource type="QuadMesh" id="QuadMesh_3m2oa"]
+material = SubResource("StandardMaterial3D_x21hq")
+size = Vector2(0.18, 0.18)
+
+[node name="VehicleBaseMachineGun" type="StaticBody3D" unique_id=151345793]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=1282352835 instance=ExtResource("1_ab3oy")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1701876413]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83941865, 0)
+shape = SubResource("CapsuleShape3D_2am16")
+
+[node name="BaseHit3D" type="Area3D" parent="." unique_id=1467155337]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="BaseHit3D" unique_id=111056196]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0812659, 0)
+shape = SubResource("CapsuleShape3D_ab3oy")
+debug_color = Color(0.9474037, 0.19999829, 0.30339268, 0.41960785)
+
+[node name="StandPos" type="Marker3D" parent="." unique_id=1167271416]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9015869, 0.12380302, -1.2400529)
+
+[node name="GunHit3D" type="Area3D" parent="." unique_id=2041897048]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GunHit3D" unique_id=1847955996]
+transform = Transform3D(1, 0, 0, 0, -0.00029675564, 0.99999994, 0, -0.99999994, -0.00029675564, 0, 1.4952765, 1.2604088)
+shape = SubResource("CapsuleShape3D_3m2oa")
+debug_color = Color(0.99105626, 0, 0.27641356, 0.41960785)
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=948773185]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4891366, 2.1826148)
+gizmo_extents = 0.5
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1733898675]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -0.061671972)
+emitting = false
+amount = 10
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_2am16")
+draw_pass_1 = SubResource("QuadMesh_3m2oa")
+
+[node name="RightHandGrip" type="Marker3D" parent="." unique_id=604229316]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4215739, -0.36012363)

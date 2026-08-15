@@ -1,49 +1,22 @@
 {
   "content": {
-    "ai_configuration": [
-      {
-        "ai_type": "futurewarrior",
-        "name": "",
-        "respawn_seconds": 60.0,
-        "spawn_point_id": "blue_spawn_01",
-        "team": "blue"
-      },
-      {
-        "ai_type": "assistant",
-        "name": "",
-        "respawn_seconds": 60.0,
-        "spawn_point_id": "blue_spawn_01",
-        "team": "blue"
-      },
-      {
-        "ai_type": "futurewarrior",
-        "name": "",
-        "respawn_seconds": 60.0,
-        "spawn_point_id": "blue_spawn_01",
-        "team": "blue"
-      },
-      {
-        "ai_type": "futureengineer",
-        "name": "FutureEngineer_Blue_01",
-        "respawn_seconds": 60.0,
-        "spawn_point_id": "blue_spawn_01",
-        "team": "blue"
-      }
-    ],
-    "ai_count": 4,
-    "building_count": 181,
+    "ai_configuration": [],
+    "ai_count": 0,
+    "building_count": 185,
     "defense_facility_count": 126,
     "editor_objects": "editor_objects.dat",
     "facility_count": 136,
-    "farmland_count": 5,
+    "farmland_count": 6,
+    "ground_rock_count": 24,
     "kitchen_facility_count": 10,
     "manual_grass": "manual_grass.dat",
-    "neutral_crop_generator_count": 3,
+    "neutral_crop_generator_count": 4,
     "ore_count": 22,
     "road_count": 1,
     "roads": "roads.dat",
     "spawn_count": 13,
-    "tree_count": 22,
+    "squad_generator_count": 0,
+    "tree_count": 69,
     "water_bodies": "water_bodies.dat",
     "water_count": 2
   },
@@ -52,6 +25,7 @@
     "building_overlap_validation_enabled": true,
     "building_placement_enabled": true,
     "day_night_enabled_in_gameplay": true,
+    "enemy_squad_generators_enabled": true,
     "farmland_editor_enabled": true,
     "neutral_crop_generators_enabled": true,
     "object_transform_enabled": true,
@@ -69,13 +43,13 @@
   },
   "surface_colors": [
     {
-      "color": "245f32",
+      "color": "184021",
       "id": 0,
       "name": "Grass",
       "roughness": 0.95
     },
     {
-      "color": "8c582e",
+      "color": "603922",
       "id": 1,
       "name": "Soil",
       "roughness": 0.98

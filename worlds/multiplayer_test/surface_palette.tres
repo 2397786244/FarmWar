@@ -6,14 +6,14 @@
 [sub_resource type="Resource" id="Resource_5f5bn"]
 script = ExtResource("2_e53ug")
 display_name = "Grass"
-color = Color(0.14117648, 0.37254903, 0.19607843, 1)
+color = Color(0.09411765, 0.2509804, 0.12941177, 1)
 roughness = 0.95
 
 [sub_resource type="Resource" id="Resource_u1r6w"]
 script = ExtResource("2_e53ug")
 surface_id = 1
 display_name = "Soil"
-color = Color(0.54901963, 0.34509805, 0.18039216, 1)
+color = Color(0.3764706, 0.22352941, 0.13333334, 1)
 roughness = 0.98
 
 [sub_resource type="Resource" id="Resource_yjxb0"]

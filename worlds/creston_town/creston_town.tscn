@@ -12,7 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://dx05fdwc8bbfm" path="res://buildings/SpawnBlueBus.tscn" id="8_blue_bus"]
 [ext_resource type="PackedScene" path="res://buildings/SpawnRedBus.tscn" id="9_red_bus"]
 [ext_resource type="PackedScene" path="res://buildings/TeamSpawnPoint.tscn" id="9_team_spawn"]
-[ext_resource type="Resource" uid="uid://ctglogdhkfavo" path="res://worlds/creston_town/creston_town_grass_scatter.res" id="11_evfb7"]
+[ext_resource type="Resource" path="res://worlds/creston_town/creston_town_grass_scatter.res" id="11_evfb7"]
 [ext_resource type="PackedScene" uid="uid://naa15h6nlj70" path="res://buildings/BlueKitchen.tscn" id="11_frgu0"]
 [ext_resource type="PackedScene" uid="uid://jutywdx0i3n2" path="res://buildings/RedKitchen.tscn" id="12_0jbk6"]
 [ext_resource type="PackedScene" uid="uid://spj4i0yb5npv" path="res://buildings/RedGarage.tscn" id="13_0jbk6"]
@@ -56,8 +56,8 @@
 [ext_resource type="PackedScene" uid="uid://dduhx6injvj85" path="res://buildings/StreetLampCurved.tscn" id="51_u3jlp"]
 [ext_resource type="PackedScene" uid="uid://b7yjt8iyur4gh" path="res://buildings/StreetLampStraight.tscn" id="52_o3ory"]
 [ext_resource type="Script" uid="uid://ds7s0htg58tpd" path="res://src/terrain/grass_scatter_3d.gd" id="53_grass_scatter"]
-[ext_resource type="PackedScene" uid="uid://b3uurwo4gfuai" path="res://assets/environment/Grass_small.glb" id="54_grass_small"]
-[ext_resource type="PackedScene" uid="uid://jvc2pomu8b0q" path="res://assets/environment/Grass_tall.glb" id="55_grass_tall"]
+[ext_resource type="PackedScene" uid="uid://dg508bged6igp" path="res://assets/nature/GrassLow.glb" id="54_grass_low"]
+[ext_resource type="PackedScene" uid="uid://ill5qie84qh8" path="res://assets/nature/GrassTall.glb" id="55_grass_tall"]
 [ext_resource type="Script" uid="uid://5y17x5wvkvdx" path="res://src/wild_animal_generator.gd" id="56_dexwm"]
 [ext_resource type="PackedScene" uid="uid://8eixcic7o4kc" path="res://buildings/warehouse_blue.tscn" id="58_3cyp7"]
 [ext_resource type="PackedScene" path="res://worlds/shared/cloud_system.tscn" id="59_cloud_system"]
@@ -89,6 +89,7 @@
 [ext_resource type="PackedScene" uid="uid://sn4povlunc2" path="res://assets/nature/Wildflower_Coneflower.glb" id="84_coneflower"]
 [ext_resource type="PackedScene" uid="uid://d2tbwv4xsw574" path="res://buildings/OilTanker.tscn" id="84_psq48"]
 [ext_resource type="PackedScene" uid="uid://da7y8jov6tor2" path="res://assets/nature/Fern_Clump.glb" id="85_fern"]
+[ext_resource type="PackedScene" uid="uid://bmdvlt0vay3fb" path="res://assets/nature/GrassDry.glb" id="86_grass_dry"]
 [ext_resource type="PackedScene" uid="uid://kpylbt2bci34" path="res://buildings/FarmVane.tscn" id="85_joolc"]
 [ext_resource type="PackedScene" uid="uid://d3s6tkn0ymhc1" path="res://buildings/WhiteFenceCornerRight.tscn" id="86_qyur3"]
 [ext_resource type="PackedScene" uid="uid://cjwrxd6ptcgjy" path="res://buildings/WhiteFenceStraight.tscn" id="87_hsh88"]
@@ -279,6 +280,7 @@ script = ExtResource("61_far_scenery")
 far_grass_outer_half_extent = 160.0
 far_small_grass_count = 512
 far_tall_grass_count = 256
+far_dry_grass_count = 128
 
 [node name="SurfaceAreas" type="Node3D" parent="." unique_id=451655897]
 
@@ -318,14 +320,16 @@ mask_resolution = 1024
 
 [node name="GrassScatter" type="Node3D" parent="." unique_id=2119945610]
 script = ExtResource("53_grass_scatter")
-small_grass_scene = ExtResource("54_grass_small")
+small_grass_scene = ExtResource("54_grass_low")
 tall_grass_scene = ExtResource("55_grass_tall")
+dry_grass_scene = ExtResource("86_grass_dry")
 black_eyed_susan_scene = ExtResource("83_black_eyed_susan")
 coneflower_scene = ExtResource("84_coneflower")
 fern_scene = ExtResource("85_fern")
 surface_mask = ExtResource("3_iqwys")
 small_density = 0.2
 tall_density = 0.02
+dry_density = 0.01
 small_visibility_distance = 100.0
 tall_visibility_distance = 120.0
 bake_data = ExtResource("11_evfb7")

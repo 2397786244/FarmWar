@@ -16,6 +16,12 @@ signal navigation_idle
 
 const NAVIGATION_MANAGER_GROUP := "dynamic_navigation_chunk_grids"
 const OBSTACLE_GROUP := "ai_demolition_target"
+## 普通会阻挡移动、但不允许 Engineer 爆破的对象使用这个分组。
+## 例如测试场景的 Crate；它们仍参与局部导航烘焙，但不会进入 Squad
+## 的“这里需要爆破”目标候选。
+const NAVIGATION_ONLY_OBSTACLE_GROUP := "ai_navigation_obstacle"
+const GENERATED_BUILDING_OBSTACLE_META := "dynamic_building_navigation_obstacle"
+const SCANNED_BUILDING_META := "dynamic_building_navigation_scanned"
 const GROUND_GROUP := "navigation_ground"
 
 @export_category("Grid")
@@ -57,6 +63,8 @@ var _batch_deadline_msec := 0
 var _initial_bakes_remaining := 0
 var _initialized := false
 var _scan_timer := 0.0
+var _building_scan_timer := 0.0
+var _last_building_navigation_obstacle_count := -1
 var _client_navigation_dropped := false
 
 
@@ -84,6 +92,10 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_scan_timer -= delta
+	_building_scan_timer -= delta
+	if _building_scan_timer <= 0.0:
+		_building_scan_timer = 1.0
+		_ensure_building_navigation_obstacles()
 	if _scan_timer <= 0.0:
 		_scan_timer = 0.5
 		_scan_demolition_obstacles()
@@ -129,6 +141,7 @@ func _initialize_grid() -> void:
 
 	_collect_ground_meshes()
 	_create_regions()
+	_ensure_building_navigation_obstacles()
 	_scan_demolition_obstacles()
 	_initialized = true
 
@@ -236,18 +249,262 @@ func _chunk_ids_for_aabb(bounds: AABB) -> Array[Vector2i]:
 	return result
 
 
+func _ensure_building_navigation_obstacles() -> void:
+	## 地图建筑场景本身只需要维护真实 CollisionShape/CollisionPolygon；
+	## 这里在权威端为它们生成导航包络，避免逐个建筑手写重复的顶点数据。
+	## 只扫描名为 Buildings 的地图内容根节点，不会把 AI、玩家或自然资源
+	## 当成普通建筑障碍。
+	var scene_root := get_tree().current_scene
+	if scene_root == null:
+		scene_root = get_tree().root
+	var building_roots: Array[Node3D] = []
+	if scene_root is Node3D and (scene_root as Node3D).name == "Buildings":
+		building_roots.append(scene_root as Node3D)
+	for candidate in scene_root.find_children("Buildings", "Node3D", true, false):
+		if candidate is Node3D and not building_roots.has(candidate as Node3D):
+			building_roots.append(candidate as Node3D)
+
+	for buildings_root in building_roots:
+		if not is_instance_valid(buildings_root):
+			continue
+		for child in buildings_root.get_children():
+			if child is Node3D:
+				_ensure_one_building_navigation_obstacle(child as Node3D)
+	var obstacle_count := 0
+	for node in get_tree().get_nodes_in_group(NAVIGATION_ONLY_OBSTACLE_GROUP):
+		if node is Node3D and is_instance_valid(node) \
+				and (node as Node3D).find_child("NavigationObstacle3D", true, false) != null:
+			obstacle_count += 1
+	if obstacle_count != _last_building_navigation_obstacle_count \
+			and not building_roots.is_empty():
+		_last_building_navigation_obstacle_count = obstacle_count
+		print(
+			"[DynamicNavigationChunkGrid] building navigation obstacles=%d group=%s"
+			% [obstacle_count, NAVIGATION_ONLY_OBSTACLE_GROUP]
+		)
+
+
+func _ensure_one_building_navigation_obstacle(building: Node3D) -> void:
+	if not is_instance_valid(building) or building.is_queued_for_deletion():
+		return
+	## 可爆破的五种设施仍由 ai_demolition_target 自己管理，不能被这里
+	## 改成“仅导航障碍”或覆盖它们的生命/导航状态。
+	if building.is_in_group(OBSTACLE_GROUP):
+		return
+	if bool(building.get_meta("farmwar_editor_visual_only", false)):
+		return
+	if bool(building.get_meta(SCANNED_BUILDING_META, false)):
+		return
+
+	var existing_obstacle := building.find_child(
+		"NavigationObstacle3D", true, false
+	) as NavigationObstacle3D
+	if existing_obstacle != null:
+		building.add_to_group(NAVIGATION_ONLY_OBSTACLE_GROUP)
+		building.set_meta(SCANNED_BUILDING_META, true)
+		return
+	if bool(building.get_meta(GENERATED_BUILDING_OBSTACLE_META, false)):
+		return
+
+	var bounds_data := _collect_building_collision_bounds(building)
+	if not bool(bounds_data.get("found", false)):
+		building.set_meta(SCANNED_BUILDING_META, true)
+		return
+	var bounds: AABB = bounds_data.get("bounds", AABB())
+	if bounds.size.x <= 0.01 or bounds.size.z <= 0.01:
+		building.set_meta(SCANNED_BUILDING_META, true)
+		return
+
+	var obstacle := NavigationObstacle3D.new()
+	obstacle.name = "NavigationObstacle3D"
+	obstacle.affect_navigation_mesh = true
+	obstacle.carve_navigation_mesh = true
+	obstacle.avoidance_enabled = true
+	## obstacle 的基点和顶点都使用建筑根节点的局部坐标；这样建筑旋转、
+	## 缩放或被编辑器移动后，导航包络会随建筑一起变换。
+	obstacle.position = Vector3(0.0, bounds.position.y, 0.0)
+	obstacle.height = maxf(0.1, bounds.size.y)
+	var margin := maxf(0.05, agent_radius * 0.25)
+	var min_x := bounds.position.x - margin
+	var max_x := bounds.end.x + margin
+	var min_z := bounds.position.z - margin
+	var max_z := bounds.end.z + margin
+	obstacle.vertices = PackedVector3Array([
+		Vector3(min_x, 0.0, min_z),
+		Vector3(max_x, 0.0, min_z),
+		Vector3(max_x, 0.0, max_z),
+		Vector3(min_x, 0.0, max_z),
+	])
+	building.add_child(obstacle)
+	building.add_to_group(NAVIGATION_ONLY_OBSTACLE_GROUP)
+	building.set_meta(GENERATED_BUILDING_OBSTACLE_META, true)
+	building.set_meta(SCANNED_BUILDING_META, true)
+
+
+func _collect_building_collision_bounds(building: Node3D) -> Dictionary:
+	var result := {"found": false, "bounds": AABB()}
+	_collect_building_collision_bounds_recursive(building, building, result)
+	return result
+
+
+func _merge_collision_bounds(result: Dictionary, candidate: AABB) -> void:
+	if candidate.size.length_squared() <= 0.0001:
+		return
+	if not bool(result.get("found", false)):
+		result["bounds"] = candidate
+		result["found"] = true
+		return
+	var current: AABB = result.get("bounds", AABB())
+	result["bounds"] = current.merge(candidate)
+
+
+func _collect_building_collision_bounds_recursive(
+	node: Node,
+	building: Node3D,
+	result: Dictionary,
+) -> void:
+	for child in node.get_children():
+		if child is CollisionShape3D:
+			var shape_node := child as CollisionShape3D
+			if not shape_node.disabled and shape_node.shape != null:
+				var owner := _collision_object_for_shape(shape_node, building)
+				if _is_character_blocking_building_collision(owner):
+					var candidate := _shape_bounds_in_building_space(building, shape_node)
+					_merge_collision_bounds(result, candidate)
+		elif child is CollisionPolygon3D:
+			var polygon_node := child as CollisionPolygon3D
+			if not polygon_node.disabled and not polygon_node.polygon.is_empty():
+				var owner := _collision_object_for_shape(polygon_node, building)
+				if _is_character_blocking_building_collision(owner):
+					var candidate := _polygon_bounds_in_building_space(building, polygon_node)
+					_merge_collision_bounds(result, candidate)
+		_collect_building_collision_bounds_recursive(child, building, result)
+
+
+func _collision_object_for_shape(
+	shape_node: Node,
+	building: Node3D,
+) -> CollisionObject3D:
+	var cursor := shape_node.get_parent()
+	while cursor != null:
+		if cursor is Area3D:
+			return null
+		if cursor is CollisionObject3D:
+			return cursor as CollisionObject3D
+		if cursor == building:
+			break
+		cursor = cursor.get_parent()
+	return building as CollisionObject3D
+
+
+func _is_character_blocking_building_collision(owner: CollisionObject3D) -> bool:
+	if not is_instance_valid(owner) or owner is Area3D:
+		return false
+	var layer := owner.collision_layer
+	## 512 是交互/商店层；只有它的 StaticBody 不会挡路，不应生成导航障碍。
+	if layer == 0 or layer == 512:
+		return false
+	return true
+
+
+func _shape_bounds_in_building_space(
+	building: Node3D,
+	shape_node: CollisionShape3D,
+) -> AABB:
+	var local_bounds := _shape_local_bounds(shape_node.shape)
+	var shape_to_building := building.global_transform.affine_inverse() \
+		* shape_node.global_transform
+	return _transform_aabb(local_bounds, shape_to_building)
+
+
+func _polygon_bounds_in_building_space(
+	building: Node3D,
+	polygon_node: CollisionPolygon3D,
+) -> AABB:
+	var polygon := polygon_node.polygon
+	if polygon.is_empty():
+		return AABB()
+	var half_depth := maxf(0.05, polygon_node.depth * 0.5)
+	var local_bounds := AABB(
+		Vector3(polygon[0].x, polygon[0].y, -half_depth),
+		Vector3.ZERO,
+	)
+	for point in polygon:
+		local_bounds = local_bounds.expand(Vector3(point.x, point.y, -half_depth))
+		local_bounds = local_bounds.expand(Vector3(point.x, point.y, half_depth))
+	var polygon_to_building := building.global_transform.affine_inverse() \
+		* polygon_node.global_transform
+	return _transform_aabb(local_bounds, polygon_to_building)
+
+
+func _shape_local_bounds(shape: Shape3D) -> AABB:
+	if shape is BoxShape3D:
+		var size := (shape as BoxShape3D).size
+		return AABB(-size * 0.5, size)
+	if shape is SphereShape3D:
+		var radius := (shape as SphereShape3D).radius
+		var diameter := radius * 2.0
+		return AABB(Vector3(-radius, -radius, -radius), Vector3.ONE * diameter)
+	if shape is CylinderShape3D:
+		var cylinder := shape as CylinderShape3D
+		return AABB(
+			Vector3(-cylinder.radius, -cylinder.height * 0.5, -cylinder.radius),
+			Vector3(cylinder.radius * 2.0, cylinder.height, cylinder.radius * 2.0),
+		)
+	if shape is CapsuleShape3D:
+		var capsule := shape as CapsuleShape3D
+		return AABB(
+			Vector3(-capsule.radius, -capsule.height * 0.5, -capsule.radius),
+			Vector3(capsule.radius * 2.0, capsule.height, capsule.radius * 2.0),
+		)
+	if shape is ConvexPolygonShape3D:
+		return _points_bounds((shape as ConvexPolygonShape3D).points)
+	if shape is ConcavePolygonShape3D:
+		return _points_bounds((shape as ConcavePolygonShape3D).get_faces())
+	## 未知 Shape3D 类型仍给出一个保守的小包络，避免脚本因资源类型变化
+	## 失败；常见的建筑 Shape 都在上面的分支中精确处理。
+	return AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+
+
+func _points_bounds(points: PackedVector3Array) -> AABB:
+	if points.is_empty():
+		return AABB()
+	var result := AABB(points[0], Vector3.ZERO)
+	for index in range(1, points.size()):
+		result = result.expand(points[index])
+	return result
+
+
+func _transform_aabb(local_bounds: AABB, transform: Transform3D) -> AABB:
+	var corners := [
+		Vector3(local_bounds.position.x, local_bounds.position.y, local_bounds.position.z),
+		Vector3(local_bounds.end.x, local_bounds.position.y, local_bounds.position.z),
+		Vector3(local_bounds.position.x, local_bounds.end.y, local_bounds.position.z),
+		Vector3(local_bounds.end.x, local_bounds.end.y, local_bounds.position.z),
+		Vector3(local_bounds.position.x, local_bounds.position.y, local_bounds.end.z),
+		Vector3(local_bounds.end.x, local_bounds.position.y, local_bounds.end.z),
+		Vector3(local_bounds.position.x, local_bounds.end.y, local_bounds.end.z),
+		Vector3(local_bounds.end.x, local_bounds.end.y, local_bounds.end.z),
+	]
+	var result := AABB(transform * corners[0], Vector3.ZERO)
+	for index in range(1, corners.size()):
+		result = result.expand(transform * corners[index])
+	return result
+
+
 func _scan_demolition_obstacles() -> void:
 	var seen: Dictionary = {}
-	for node in get_tree().get_nodes_in_group(OBSTACLE_GROUP):
-		if not node is Node3D or not is_instance_valid(node):
-			continue
-		var owner := node as Node3D
-		var obstacle := owner.find_child("NavigationObstacle3D", true, false) as NavigationObstacle3D
-		if obstacle == null:
-			continue
-		var id := owner.get_instance_id()
-		seen[id] = true
-		_register_obstacle(owner, obstacle, _is_obstacle_active(obstacle))
+	for group_name in [OBSTACLE_GROUP, NAVIGATION_ONLY_OBSTACLE_GROUP]:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if not node is Node3D or not is_instance_valid(node):
+				continue
+			var owner := node as Node3D
+			var obstacle := owner.find_child("NavigationObstacle3D", true, false) as NavigationObstacle3D
+			if obstacle == null:
+				continue
+			var id := owner.get_instance_id()
+			seen[id] = true
+			_register_obstacle(owner, obstacle, _is_obstacle_active(obstacle))
 
 	for id_value in _obstacles.keys():
 		var id := int(id_value)
@@ -289,6 +546,32 @@ func register_dynamic_obstacle(owner: Node3D, active: bool) -> void:
 	if obstacle == null:
 		return
 	_register_obstacle(owner, obstacle, active)
+	_set_obstacle_active(obstacle, active)
+
+
+func request_dynamic_obstacle_rebuild(owner: Node3D, active: bool) -> void:
+	## 放置和周期复活是“对象重新进入导航世界”的明确生命周期事件。
+	## 即使 obstacle 注册表暂时已经记录了相同状态，也要强制把旧/新
+	## 包围盒标记为 dirty，确保该事件一定触发局部区块重建。
+	if not _has_navigation_authority() or not is_instance_valid(owner):
+		return
+	var obstacle := owner.find_child("NavigationObstacle3D", true, false) as NavigationObstacle3D
+	if obstacle == null:
+		return
+	var id := owner.get_instance_id()
+	var previous: Variant = _obstacles.get(id)
+	var previous_bounds := AABB()
+	if previous is Dictionary:
+		previous_bounds = (previous as Dictionary).get("bounds", AABB())
+	var bounds := _get_obstacle_bounds(owner, obstacle)
+	_obstacles[id] = {
+		"owner": owner,
+		"obstacle": obstacle,
+		"bounds": bounds,
+		"active": active,
+	}
+	_mark_bounds_dirty(previous_bounds)
+	_mark_bounds_dirty(bounds)
 	_set_obstacle_active(obstacle, active)
 
 
@@ -540,7 +823,10 @@ func _finish_bake(
 
 
 func _notify_ai_navigation_updated(chunk_ids: Array[Vector2i]) -> void:
-	for node in get_tree().get_nodes_in_group("future_warrior_ai"):
+	var candidates: Array[Node] = []
+	candidates.append_array(get_tree().get_nodes_in_group("future_warrior_ai"))
+	candidates.append_array(get_tree().get_nodes_in_group("assistant_ai"))
+	for node in candidates:
 		if not is_instance_valid(node) or not node is Node3D \
 				or not node.has_method("notify_navigation_chunks_rebuilt"):
 			continue

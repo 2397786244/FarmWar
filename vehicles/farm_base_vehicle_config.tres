@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="VehicleConfig" format=3 uid="uid://bntc7xewqx2k1"]
+
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="1_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="2_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("2_vehicle_seat")
+anchor_name = "DriverSeatPoint"
+exit_offset = Vector3(2.3, 0.1, 0.3)
+
+[resource]
+script = ExtResource("1_vehicle_config")
+open_cabin = true
+seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver")])
+camera_offset = Vector3(0, 3.8, 8.2)
+camera_orbit_target_height = 1.4
+collision_size = Vector3(3.4, 2.2, 6.6)
+collision_offset = Vector3(0, 1, 0)
+hitbox_size = Vector3(3.6, 2.4, 6.8)
+hitbox_offset = Vector3(0, 1.1, 0)
+wheel_radius = 0.68
+wheel_base = 3.0
+wheel_track = 2.8
+max_forward_speed = 4.0
+max_reverse_speed = 3.0
+acceleration = 1.5
+brake_deceleration = 13.0
+rolling_deceleration = 2.5
+max_steering_angle_degrees = 36.0
+min_steering_angle_degrees = 8.0
+steering_response = 3.5
+max_hp = 3000.0

@@ -16,6 +16,3 @@
 
 ## 在other_items下面的crate文件夹内创建了两个LootChest的glb，一个是Common一个是Golden
 后续要实现战利品箱的功能，玩家可以打开，打开之后里面弹出一些掉落物
-
-## tools下面新增了 高大的BrickWall，一个WIreMeshGate、一个WireMeshWall 一个 LogWall
-## tools下面新增了一个木制的观测塔。需要爬梯子

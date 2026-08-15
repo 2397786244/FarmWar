@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://jvc2pomu8b0q"
-path="res://.godot/imported/Grass_tall.glb-11f76f05418ba2b5727569f0d4f30b6b.scn"
+uid="uid://22ipabqafhev"
+path="res://.godot/imported/CottonWood_Yellow.glb-fe106d88c568626e1226b275fb0b06a2.scn"
 
 [deps]
 
-source_file="res://assets/environment/Grass_tall.glb"
-dest_files=["res://.godot/imported/Grass_tall.glb-11f76f05418ba2b5727569f0d4f30b6b.scn"]
+source_file="res://assets/nature/CottonWood_Yellow.glb"
+dest_files=["res://.godot/imported/CottonWood_Yellow.glb-fe106d88c568626e1226b275fb0b06a2.scn"]
 
 [params]
 

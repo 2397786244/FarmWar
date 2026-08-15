@@ -25,7 +25,24 @@ func emit_visual_only() -> void:
 	_emit_bullet(true)
 
 
-func _emit_bullet(visual_only: bool) -> void:
+## AI hitscan 在权威端完成伤害结算后使用，视觉弹道严格沿用同一条射线。
+func emit_visual_only_tracer(direction: Vector3, travel_distance := -1.0) -> void:
+	_emit_bullet(true, direction, travel_distance)
+
+
+func get_fire_origin() -> Vector3:
+	return muzzle.global_position if is_instance_valid(muzzle) else global_position
+
+
+func get_fire_direction() -> Vector3:
+	return -muzzle.global_transform.basis.z.normalized() if is_instance_valid(muzzle) else -global_transform.basis.z.normalized()
+
+
+func _emit_bullet(
+	visual_only: bool,
+	direction_override := Vector3.ZERO,
+	travel_distance := -1.0
+) -> void:
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
 
@@ -35,9 +52,15 @@ func _emit_bullet(visual_only: bool) -> void:
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
 	var direction := _get_center_screen_direction(shooter)
+	if direction_override.length_squared() > 0.001:
+		direction = direction_override.normalized()
 	bullet.speed = CombatBalance.get_float("nail_gun", "visual_speed", bullet_speed)
 	bullet.max_distance = CombatBalance.get_float("nail_gun", "range", bullet.max_distance)
 	bullet.max_lifetime = CombatBalance.get_float("nail_gun", "visual_lifetime", bullet.max_lifetime)
+	if travel_distance >= 0.0:
+		bullet.max_distance = minf(bullet.max_distance, maxf(0.01, travel_distance))
+		if bullet.speed > 0.01:
+			bullet.max_lifetime = minf(bullet.max_lifetime, bullet.max_distance / bullet.speed)
 	bullet.run(muzzle.global_position, direction, tool_owner)
 
 	muzzle_flash.restart()

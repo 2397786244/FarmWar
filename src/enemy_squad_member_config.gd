@@ -1,7 +1,7 @@
 extends Resource
 class_name EnemySquadMemberConfig
 
-@export_enum("future_warrior", "future_engineer", "future_enemy_player")
+@export_enum("future_warrior", "future_engineer", "assistant", "bandit", "future_enemy_player")
 var ai_type := "future_warrior"
 
 @export_range(0, 32, 1)

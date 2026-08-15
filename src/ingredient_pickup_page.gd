@@ -271,7 +271,7 @@ func _request_action(
 	}
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_ingredient_pickup_action(action)
-	elif GameAuthority.is_local_authority():
+	elif GameAuthority.is_local_interaction_authority():
 		apply_authoritative_action_result(
 			GameAuthority.local_ingredient_pickup_action(player.authority_peer_id, action)
 		)

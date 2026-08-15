@@ -2,12 +2,14 @@ extends Node
 class_name MultiplayerWorldReplicatorService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const PLAYER_SCENE := preload("res://character/player.tscn")
 const AI_SCENES := {
 	"farmer": "res://character/FarmerAI.tscn",
 	"futurewarrior": "res://character/FutureWarriorAI.tscn",
 	"futureengineer": "res://character/FutureEngineerAI.tscn",
 	"assistant": "res://character/AssistantAI.tscn",
+	"bandit": "res://character/BanditAI.tscn",
 }
 const AI_NORMAL_DRONE_SCENE := preload("res://character/AIDevices/AINormalDrone.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
@@ -21,6 +23,7 @@ const PROJECTILE_SCENES := {
 	"rubber_bullet": "res://character/weapons/RubberBullet.tscn",
 	"color_bullet": "res://character/weapons/ColorBullet.tscn",
 	"nail_bullet": "res://character/weapons/NailBullet.tscn",
+	"crossbow_bolt": "res://character/weapons/CrossbowBolt.tscn",
 	"medicine_bullet": "res://character/weapons/MedicineBullet.tscn",
 	"tranquilizer_bullet": "res://character/weapons/TranquilizerBullet.tscn",
 	"defend_bullet": "res://character/weapons/DefendBullet.tscn",
@@ -44,6 +47,7 @@ const ABSORPTION_END_SCALE := 0.06
 const DROPPED_ITEM_SPAWNS_PER_FRAME := 2
 const DROPPED_ITEM_INTEREST_RADIUS_METERS := 1024.0
 const DROPPED_ITEM_MISSING_SNAPSHOT_LIMIT := 6
+const REMOTE_AI_DEATH_CLEANUP_FALLBACK_SECONDS := 10.0
 const REMOTE_SCENES := {
 	"action_drone": "res://character/weapons/ActionDrone.tscn",
 	"normal_drone": "res://character/weapons/NormalDrone.tscn",
@@ -86,6 +90,7 @@ const TILE_TOOL_NAMES := {
 
 var remote_players: Dictionary = {}
 var remote_ai_visuals: Dictionary = {}
+var remote_ai_death_cleanup_deadlines: Dictionary = {}
 var remote_ai_drone_visuals: Dictionary = {}
 var projectile_visuals: Dictionary = {}
 var projectile_visual_states: Dictionary = {}
@@ -233,8 +238,15 @@ func _on_visual_world_event_received(event: Dictionary) -> void:
 		return
 	var event_type := str(event.get("type", ""))
 	if event_type == "visual_projectile_fired":
+		if NetworkSession.is_listen_server() and bool(event.get("skip_listen_server_local", false)):
+			return
 		if _resolve_world_root() == null:
 			return
+		if bool(event.get("camera_recoil", false)):
+			var owner_peer_id := int(event.get("owner_peer_id", 0))
+			var local_player := _local_human_player(owner_peer_id)
+			if local_player != null:
+				local_player.trigger_mounted_machine_gun_recoil()
 		_spawn_transient_projectile_visual(event)
 		return
 	if event_type != "nature_resource_hit":
@@ -289,6 +301,30 @@ func _sync_ai_players(ai_value: Variant) -> void:
 		if ai_id.is_empty() or scene_path.is_empty():
 			continue
 		seen[ai_id] = true
+		var incoming_dead := bool(data.get("dead", false))
+		if incoming_dead:
+			## 服务器会在死亡后保留节点十秒，以便同步倒地表现；客户端
+			## 也必须在这段时间后移除视觉代理，不能因为快照仍含 dead
+			## 就反复创建一个已经应该消失的尸体。
+			var cleanup_deadline := int(remote_ai_death_cleanup_deadlines.get(ai_id, -1))
+			if cleanup_deadline < 0:
+				var cleanup_left := maxf(
+					0.0,
+					float(data.get(
+						"death_cleanup_left",
+						REMOTE_AI_DEATH_CLEANUP_FALLBACK_SECONDS
+					))
+				)
+				cleanup_deadline = Time.get_ticks_msec() + roundi(cleanup_left * 1000.0)
+				remote_ai_death_cleanup_deadlines[ai_id] = cleanup_deadline
+			if Time.get_ticks_msec() >= cleanup_deadline:
+				var expired_visual: Node = remote_ai_visuals.get(ai_id, null) as Node
+				if is_instance_valid(expired_visual):
+					expired_visual.queue_free()
+				remote_ai_visuals.erase(ai_id)
+				continue
+		else:
+			remote_ai_death_cleanup_deadlines.erase(ai_id)
 		var ai := remote_ai_visuals.get(ai_id, null) as Node
 		if not is_instance_valid(ai):
 			var packed := load(scene_path) as PackedScene
@@ -301,7 +337,7 @@ func _sync_ai_players(ai_value: Variant) -> void:
 			ai.name = "Remote_%s" % ai_id
 			ai.set_meta("network_ai_proxy", true)
 			world_root.add_child(ai)
-			_disable_visual_runtime(ai)
+			_disable_visual_runtime(ai, true)
 			remote_ai_visuals[ai_id] = ai
 		if ai.has_method("apply_network_state"):
 			ai.call("apply_network_state", data)
@@ -313,6 +349,10 @@ func _sync_ai_players(ai_value: Variant) -> void:
 		if is_instance_valid(stale):
 			stale.queue_free()
 		remote_ai_visuals.erase(ai_id)
+	for dead_id_value: Variant in remote_ai_death_cleanup_deadlines.keys():
+		var dead_id := str(dead_id_value)
+		if not seen.has(dead_id):
+			remote_ai_death_cleanup_deadlines.erase(dead_id)
 
 
 func _sync_ai_drones(drones_value: Variant) -> void:
@@ -686,6 +726,11 @@ func _spawn_transient_projectile_visual(event: Dictionary) -> void:
 	world_root.add_child(visual)
 	_disable_visual_runtime(visual)
 	visual.global_position = origin
+	# The tracer is normally primed by its own physics callback. This root is
+	# intentionally process-disabled, so prime it after placing the visual and
+	# let the next authority update draw the first moving segment immediately.
+	_refresh_projectile_tracers(visual)
+	_refresh_projectile_tracers(visual)
 	var velocity := normalized_direction * float(event.get("speed", 0.0))
 	_orient_projectile_visual(visual, velocity)
 	transient_projectile_visuals[visual_id] = {
@@ -710,8 +755,19 @@ func _update_transient_projectile_visuals(delta: float) -> void:
 		if velocity is Vector3:
 			visual.global_position += velocity * delta
 			_orient_projectile_visual(visual, velocity)
+			_refresh_projectile_tracers(visual)
 		state["remaining"] = remaining
 		transient_projectile_visuals[visual_id] = state
+
+
+func _refresh_projectile_tracers(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root.has_method("refresh_visual") and root is BulletTracerSegment:
+		root.call("refresh_visual")
+	for child in root.get_children():
+		if child is Node:
+			_refresh_projectile_tracers(child)
 
 
 func _sync_remote_devices(devices_value: Variant) -> void:
@@ -1062,7 +1118,7 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
 	var authority_player_event := NetworkSession.is_listen_server() \
 		and event_type in [
-			"tool_selected", "tool_used", "tool_destroyed",
+			"tool_selected", "tool_used", "tool_destroyed", "shield_broken",
 			"dropped_item_action_result"
 		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
@@ -1086,6 +1142,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_remote_control_session_event(event.get("data", {}))
 		"vehicle_session":
 			_apply_vehicle_session_event(event.get("data", {}))
+		"mounted_machine_gun_session":
+			_apply_mounted_machine_gun_session_event(event.get("data", {}))
 		"cargo_car_action_result":
 			_apply_cargo_car_action_result(event.get("data", {}))
 		"cargo_crate_action_result":
@@ -1122,6 +1180,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_rare_resource_health(event)
 		"nature_resource_health":
 			_apply_nature_resource_health(event)
+		"shield_broken":
+			_apply_shield_broken_event(event)
 		"rift_teleported":
 			_apply_rift_teleported_event(event)
 		"big_mouth_released":
@@ -2020,6 +2080,18 @@ func _apply_vehicle_session_event(data_value: Variant) -> void:
 			return
 
 
+func _apply_mounted_machine_gun_session_event(data_value: Variant) -> void:
+	if not data_value is Dictionary:
+		return
+	var data := data_value as Dictionary
+	if int(data.get("peer_id", 0)) != MultiplayerNetwork.get_unique_peer_id():
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and int((node as GamePlayer).authority_peer_id) == MultiplayerNetwork.get_unique_peer_id():
+			(node as GamePlayer).apply_mounted_machine_gun_session_result(data)
+			return
+
+
 func _local_human_player(peer_id: int) -> GamePlayer:
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
@@ -2032,6 +2104,10 @@ func _apply_cargo_car_action_result(data_value: Variant) -> void:
 	if not data_value is Dictionary:
 		return
 	var data := data_value as Dictionary
+	CARGO_CAR_DEBUG.log(
+		"replicator cargo result peer=%d action=%s vehicle_id=%s ok=%s reason=%s local_peer=%d"
+		% [int(data.get("peer_id", 0)), str(data.get("action", "")), str(data.get("vehicle_id", "")), bool(data.get("ok", false)), str(data.get("reason", "")), MultiplayerNetwork.get_unique_peer_id()]
+	)
 	var player := _local_human_player(MultiplayerNetwork.get_unique_peer_id())
 	if player != null and int(data.get("peer_id", 0)) == player.authority_peer_id:
 		player.apply_cargo_car_action_result(data)
@@ -2189,6 +2265,16 @@ func _apply_harvest_tree_destroyed_event(event: Dictionary) -> void:
 	if tree is HarvestTree:
 		var direction: Variant = event.get("fall_direction", Vector3.ZERO)
 		(tree as HarvestTree).apply_network_destroyed(direction as Vector3 if direction is Vector3 else Vector3.ZERO)
+
+
+func _apply_shield_broken_event(event: Dictionary) -> void:
+	var position_value: Variant = event.get("position", null)
+	if not position_value is Vector3:
+		return
+	GameAuthority.spawn_shield_break_effect(
+		position_value as Vector3,
+		float(event.get("particle_scale", 1.8))
+	)
 
 
 func _apply_rift_teleported_event(event: Dictionary) -> void:
@@ -2646,8 +2732,12 @@ func _apply_player_respawn_state_event(event: Dictionary) -> void:
 		spawn_position = event.get("position", null)
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and int(node.authority_peer_id) == peer_id:
-			if str(event.get("type", "")) == "player_died" and not (node as GamePlayer).is_remote_proxy:
-				(node as GamePlayer).apply_death_inventory_drop(event.get("dropped_inventory_items", []))
+			# The local player consumes the same event through GameAuthority's
+			# reliable-world signal. The replicator is responsible for remote
+			# presentation proxies; skipping the local node prevents duplicate death
+			# inventory removal and duplicate respawn-camera transitions.
+			if not (node as GamePlayer).is_remote_proxy:
+				continue
 			node.call("apply_respawn_state", respawn_left, spawn_position)
 			break
 
@@ -2838,7 +2928,7 @@ func _on_inventory_state_received(state: Dictionary) -> void:
 		GlobalVar.apply_team_scores(scores as Dictionary)
 
 
-func _disable_visual_runtime(root: Node) -> void:
+func _disable_visual_runtime(root: Node, preserve_animation_players := false) -> void:
 	if root is Camera3D:
 		var proxy_camera := root as Camera3D
 		proxy_camera.current = false
@@ -2851,6 +2941,13 @@ func _disable_visual_runtime(root: Node) -> void:
 	# server-confirmed projectile is converted into a collision-free visual.
 	if root is BulletTracerSegment:
 		return
+	if preserve_animation_players and root is AnimationPlayer:
+		## AI 远端代理不运行角色脚本和物理，但 AnimationPlayer 必须继续
+		## 处理服务器快照触发的 Walk/Idle/Jump 表现。
+		root.set_process(true)
+		root.set_physics_process(false)
+		root.set_process_input(false)
+		return
 	# Preserve the cooker animation and local interaction collision on clients.
 	if root is AutoCooker:
 		return
@@ -2862,7 +2959,7 @@ func _disable_visual_runtime(root: Node) -> void:
 		(root as CollisionObject3D).collision_mask = 0
 	for child in root.get_children():
 		if child is Node:
-			_disable_visual_runtime(child)
+			_disable_visual_runtime(child, preserve_animation_players)
 
 
 func _on_disconnected(_reason: String) -> void:
@@ -2882,6 +2979,7 @@ func _clear_all() -> void:
 		collection.clear()
 	projectile_visual_states.clear()
 	last_projectile_snapshot_tick = -1
+	remote_ai_death_cleanup_deadlines.clear()
 	pending_dropped_item_spawns.clear()
 	pending_dropped_item_spawn_ids.clear()
 	dropped_item_missing_snapshot_counts.clear()

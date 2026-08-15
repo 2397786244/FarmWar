@@ -10,6 +10,7 @@ signal signal_link_lost
 enum AttackMode {
 	HUNT_PLAYERS,
 	BOMBARD_ENEMY_FARM,
+	SQUAD_SUPPORT_BOMBARDMENT,
 }
 
 @export var team_id := "blue"
@@ -42,6 +43,11 @@ enum AttackMode {
 @export var strategic_bombard_radius := 10.0
 @export var strategic_bombard_waypoint_switch_radius := 2.5
 @export var strategic_bombard_waypoint_stopping_distance := 0.5
+## 小队支援只允许从“已抵达战略目标上空的高空搜索”进入。
+## 支援期间在请求点附近持续飞行投弹，结束后回到原战略目标的圆形搜索。
+@export var squad_support_bombard_seconds := 30.0
+@export var squad_support_bombard_radius := 5.0
+@export var squad_support_bomb_interval := 2.0
 
 var target_player: CharacterBody3D
 var target_refresh_timer := 0.0
@@ -69,6 +75,10 @@ var movement_stall_origin := Vector3.INF
 var movement_stall_waypoint := Vector3.INF
 var cached_map_bounds := Rect2()
 var cached_map_bounds_valid := false
+var squad_support_position := Vector3.INF
+var squad_support_remaining := 0.0
+var squad_support_bomb_timer := 0.0
+var squad_support_waypoint := Vector3.INF
 
 const MAP_BOUNDARY_COLLISION_LAYER := 2
 
@@ -104,6 +114,48 @@ func has_active_target() -> bool:
 	return is_instance_valid(target_player) and has_attack_link()
 
 
+## 只有已进入战略 target 周围圆形巡航、尚未锁定玩家且不在 target 轰炸时，
+## 才能由 Assistant 认领“正在支援”。这样不会抢占正在进行的攻击/轰炸任务。
+func is_available_for_squad_support() -> bool:
+	return (
+		not destroyed_emitted
+		and not operator_defensive_hold
+		and evasion_remaining <= 0.0
+		and has_attack_link()
+		and attack_mode == AttackMode.HUNT_PLAYERS
+		and not is_instance_valid(target_player)
+		and search_target_reached
+		and squad_support_remaining <= 0.0
+	)
+
+
+func begin_squad_support_bombardment(position: Vector3, duration := -1.0) -> bool:
+	if not position.is_finite() or not is_available_for_squad_support():
+		return false
+	squad_support_position = position
+	squad_support_remaining = maxf(0.1, squad_support_bombard_seconds if duration <= 0.0 else duration)
+	squad_support_bomb_timer = 0.0
+	squad_support_waypoint = Vector3.INF
+	attack_mode = AttackMode.SQUAD_SUPPORT_BOMBARDMENT
+	target_player = null
+	search_waypoint = Vector3.INF
+	search_detour_waypoint = Vector3.INF
+	_reset_movement_stall()
+	if console_debug_enabled:
+		print(
+			"[AIDrone] squad support accepted name=%s point=(%s) duration=%.1fs" % [
+				name,
+				_format_debug_vector(position),
+				squad_support_remaining,
+			]
+		)
+	return true
+
+
+func has_active_squad_support() -> bool:
+	return attack_mode == AttackMode.SQUAD_SUPPORT_BOMBARDMENT and squad_support_remaining > 0.0
+
+
 func set_operator_defensive_hold(value: bool) -> void:
 	operator_defensive_hold = value
 	if value:
@@ -124,9 +176,13 @@ func get_debug_status() -> String:
 	var mode_text := "攻击玩家" if is_instance_valid(target_player) else "高空搜索"
 	if attack_mode == AttackMode.BOMBARD_ENEMY_FARM:
 		mode_text = "目标机动轰炸"
+	elif attack_mode == AttackMode.SQUAD_SUPPORT_BOMBARDMENT:
+		mode_text = "小队支援轰炸"
 	var phase_text := "攻击 %.1f / %.0fs" % [phase_remaining, player_hunt_seconds]
 	if attack_mode == AttackMode.BOMBARD_ENEMY_FARM:
 		phase_text = "目标附近 %.0fm 轰炸 %.1f / %.0fs" % [strategic_bombard_radius, phase_remaining, farm_bombard_seconds]
+	elif attack_mode == AttackMode.SQUAD_SUPPORT_BOMBARDMENT:
+		phase_text = "支援点附近 %.0fm %.1fs" % [squad_support_bombard_radius, squad_support_remaining]
 	elif not is_instance_valid(target_player):
 		phase_text = "先抵达目标" if not search_target_reached else "圆形搜索 %.0fm %.1f / %.0fs" % [search_radius, search_elapsed, search_timeout_seconds]
 	var player_text: String = "无" if not is_instance_valid(target_player) else str(target_player.name)
@@ -136,6 +192,8 @@ func get_debug_status() -> String:
 func get_console_debug_status() -> String:
 	var waypoint_text := "无"
 	var active_waypoint := bombard_waypoint if attack_mode == AttackMode.BOMBARD_ENEMY_FARM else search_waypoint
+	if attack_mode == AttackMode.SQUAD_SUPPORT_BOMBARDMENT:
+		active_waypoint = squad_support_waypoint
 	if attack_mode == AttackMode.HUNT_PLAYERS and search_detour_waypoint != Vector3.INF:
 		active_waypoint = search_detour_waypoint
 	if active_waypoint != Vector3.INF:
@@ -191,6 +249,8 @@ func _physics_process(delta: float) -> void:
 			_update_player_hunt(delta)
 		AttackMode.BOMBARD_ENEMY_FARM:
 			_update_farm_bombardment(delta)
+		AttackMode.SQUAD_SUPPORT_BOMBARDMENT:
+			_update_squad_support_bombardment(delta)
 
 
 func _update_player_hunt(delta: float) -> void:
@@ -281,6 +341,49 @@ func _update_farm_bombardment(delta: float) -> void:
 		bombard_waypoint = Vector3.INF
 		bombard_target_origin = Vector3.INF
 		_reset_movement_stall()
+
+
+func _update_squad_support_bombardment(delta: float) -> void:
+	if not squad_support_position.is_finite():
+		_finish_squad_support_bombardment()
+		return
+	squad_support_remaining = maxf(0.0, squad_support_remaining - delta)
+	squad_support_bomb_timer = maxf(0.0, squad_support_bomb_timer - delta)
+	if squad_support_remaining <= 0.0:
+		_finish_squad_support_bombardment()
+		return
+	if squad_support_waypoint == Vector3.INF \
+			or _horizontal_distance_to(squad_support_waypoint) <= 1.5:
+		squad_support_waypoint = _generate_radial_waypoint(
+			squad_support_position,
+			1.0,
+			maxf(1.0, squad_support_bombard_radius)
+		)
+	_fly_toward(squad_support_waypoint, false, bombing_altitude, 0.75)
+	if _horizontal_distance_to(squad_support_position) <= squad_support_bombard_radius + 2.0 \
+			and squad_support_bomb_timer <= 0.0 and _bomb_cooldown_left <= 0.0:
+		_drop_bomb()
+		if _bomb_cooldown_left > 0.0:
+			squad_support_bomb_timer = squad_support_bomb_interval
+
+
+func _finish_squad_support_bombardment() -> void:
+	if console_debug_enabled and squad_support_position.is_finite():
+		print("[AIDrone] squad support complete name=%s; resume high-altitude search" % name)
+	squad_support_position = Vector3.INF
+	squad_support_remaining = 0.0
+	squad_support_bomb_timer = 0.0
+	squad_support_waypoint = Vector3.INF
+	attack_mode = AttackMode.HUNT_PLAYERS
+	target_player = null
+	target_refresh_timer = 0.0
+	## 支援点与原战略目标不同，强制重新飞回 target 上空后再圆形搜索。
+	search_target_origin = Vector3.INF
+	search_target_reached = false
+	search_elapsed = 0.0
+	search_waypoint = Vector3.INF
+	search_detour_waypoint = Vector3.INF
+	_reset_movement_stall()
 
 
 func _fly_toward(
@@ -664,6 +767,14 @@ func _reset_movement_stall() -> void:
 
 func _reroute_navigation_waypoint() -> void:
 	_reset_movement_stall()
+	if attack_mode == AttackMode.SQUAD_SUPPORT_BOMBARDMENT and squad_support_position.is_finite():
+		squad_support_waypoint = _generate_radial_waypoint(
+			squad_support_position,
+			1.0,
+			maxf(1.0, squad_support_bombard_radius),
+			true
+		)
+		return
 	if attack_mode == AttackMode.BOMBARD_ENEMY_FARM:
 		var bombard_target := _get_strategic_target_position()
 		if bombard_target != Vector3.INF:
@@ -733,11 +844,23 @@ func _update_evasion(delta: float) -> void:
 func _find_visible_enemy_player() -> CharacterBody3D:
 	var best: CharacterBody3D
 	var best_distance := INF
-	for group_name in [&"human_players", &"combat_characters"]:
+	var seen: Dictionary = {}
+	## 服务器端必须查权威玩家代理；其余组覆盖 FutureWarrior/
+	## FutureEngineer、Assistant 和后续其他敌对 AI 玩家。不能只依赖
+	## human_players，否则无人机在合作房主端会漏掉敌对 AI。
+	var group_names: Array[StringName] = [&"combat_characters", &"future_warrior_ai", &"assistant_ai", &"farmer_ai", &"ai_players"]
+	if GameAuthority.is_server_authority():
+		group_names.push_front(&"server_human_players")
+	else:
+		group_names.push_front(&"human_players")
+	for group_name in group_names:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if not node is CharacterBody3D or node == ai_controller:
 				continue
 			var candidate := node as CharacterBody3D
+			if seen.has(candidate.get_instance_id()):
+				continue
+			seen[candidate.get_instance_id()] = true
 			if _is_target_player_dead(candidate):
 				continue
 			if _get_combat_team(candidate) == team_id:

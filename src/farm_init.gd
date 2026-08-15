@@ -24,6 +24,9 @@ const AI_SCENE_PATHS := {
 	"farmerai": "res://character/FarmerAI.tscn",
 	"assistant": "res://character/AssistantAI.tscn",
 	"assistantai": "res://character/AssistantAI.tscn",
+	"bandit": "res://character/BanditAI.tscn",
+	"banditai": "res://character/BanditAI.tscn",
+	"bandit_ai": "res://character/BanditAI.tscn",
 }
 
 
@@ -49,6 +52,10 @@ func _ready() -> void:
 	# Old packages saved their full-map terrain and foundation as shadow casters.
 	# Disable those legacy casters after the scene has finished constructing.
 	call_deferred("_disable_editor_terrain_shadow_casters")
+	# Existing editor maps may contain manually painted grass MultiMeshes that
+	# were baked from the retired environment grass models. Rebuild them from
+	# the saved point data before the loading screen can be dismissed.
+	call_deferred("_rebuild_runtime_manual_grass")
 	MapLoading.ensure_loading(loading_map_name, loading_images_directory, loading_tips_path)
 	_set_loading_progress(0.25, "正在初始化地图系统")
 	await get_tree().process_frame
@@ -171,10 +178,18 @@ func _configure_editor_map_daylight() -> void:
 
 
 func _enforce_runtime_shadow_casters() -> void:
-	for root_name in ["ManualGrass", "GrassScatter", "Trees", "Ores", "Buildings"]:
+	for root_name in ["ManualGrass", "GrassScatter", "Trees", "Ores", "GroundRocks", "Buildings"]:
 		var root := get_node_or_null(NodePath(root_name))
 		if root != null:
 			_set_shadow_casting_recursive(root)
+
+
+func _rebuild_runtime_manual_grass() -> void:
+	var manual_grass_root := get_node_or_null("ManualGrass") as Node3D
+	var species_data: Variant = get_meta("manual_grass", {})
+	if manual_grass_root == null or not species_data is Dictionary:
+		return
+	ManualGrassRuntime.rebuild(manual_grass_root, species_data as Dictionary)
 
 
 func _set_shadow_casting_recursive(node: Node) -> void:

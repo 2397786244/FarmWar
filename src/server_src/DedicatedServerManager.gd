@@ -964,6 +964,11 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 		if owner_peer_id > 0 and _is_peer_connected(owner_peer_id):
 			receive_reliable_world_event.rpc_id(owner_peer_id, event)
 		return
+	if event_type == "shield_state":
+		var shield_owner_peer_id := int(event.get("peer_id", 0))
+		if shield_owner_peer_id > 0 and _is_peer_connected(shield_owner_peer_id):
+			receive_reliable_world_event.rpc_id(shield_owner_peer_id, event)
+		return
 	if event_type in ["cargo_car_action_result", "cargo_delivery_preview", "cargo_delivery_result"]:
 		var cargo_peer_id := int(event.get("peer_id", 0))
 		if cargo_peer_id <= 0:
@@ -1246,6 +1251,14 @@ func request_vehicle_session(vehicle_id: String, connected: bool, seat_index: in
 	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
 		return
 	GameAuthority.server_vehicle_session(sender_id, vehicle_id, connected, seat_index)
+
+
+@rpc("any_peer", "reliable")
+func request_vehicle_action(action: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	GameAuthority.server_vehicle_action(sender_id, action)
 
 
 @rpc("any_peer", "call_remote", "reliable", 4)

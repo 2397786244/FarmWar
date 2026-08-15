@@ -21,6 +21,15 @@ func set_cooldown(remaining: float, duration: float) -> void:
 	queue_redraw()
 
 
+## Uses the same ring for an action that is being charged, rather than a
+## cooldown that is elapsing.  The foreground arc therefore grows clockwise.
+func set_progress(elapsed: float, duration: float) -> void:
+	_remaining = clampf(elapsed, 0.0, maxf(0.0, duration))
+	_duration = maxf(0.0, duration)
+	visible = _remaining > 0.0 and _duration > 0.0
+	queue_redraw()
+
+
 func _draw() -> void:
 	if _duration <= 0.0:
 		return

@@ -7,6 +7,8 @@ const CommunicatorScript := preload("res://src/squad_communicator.gd")
 const DEFAULT_SCENES := {
 	"future_warrior": "res://character/FutureWarriorAI.tscn",
 	"future_engineer": "res://character/FutureEngineerAI.tscn",
+	"assistant": "res://character/AssistantAI.tscn",
+	"bandit": "res://character/BanditAI.tscn",
 }
 
 @export var squad_id := "squad"
@@ -128,8 +130,8 @@ func report_demolition_warning(engineer: Node, explosive_position: Vector3, dang
 	return bool(communication_channel.mark_demolition_planted(request_id, member_id, explosive_position, danger_radius).get("accepted", false))
 
 
-## 入口确认通过统一通信频道广播，Engineer 不直接操作频道成员。
-func report_entry_found(engineer: Node, demolished_position: Vector3) -> bool:
+## 爆破完成后通过统一通信频道请求小队成员刷新自己的导航路径。
+func report_navigation_refresh(engineer: Node, demolished_position: Vector3) -> bool:
 	var request_id := str(engineer.get("squad_demolition_request_id"))
 	var member_id := str(engineer.get("squad_member_id"))
 	return communication_channel.complete_demolition(request_id, member_id, demolished_position)
@@ -198,6 +200,10 @@ func _ensure_shared_target() -> void:
 func _infer_ai_type(member: Node) -> String:
 	if member.get_script() != null and str(member.get_script().resource_path).contains("future_engineer"):
 		return "future_engineer"
+	if member.get_script() != null and str(member.get_script().resource_path).contains("bandit"):
+		return "bandit"
+	if member is AssistantAI:
+		return "assistant"
 	return "future_warrior"
 
 

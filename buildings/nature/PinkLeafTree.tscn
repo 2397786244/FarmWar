@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://pgk6xfj7v3d4"]
+
+[ext_resource type="PackedScene" uid="uid://vbylesh4giee" path="res://assets/nature/PinkLeafTree.glb" id="1_roqsd"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_xxven"]
+size = Vector3(0.8, 6, 0.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gcim6"]
+size = Vector3(1, 6, 1)
+
+[node name="PinkLeafTree" type="StaticBody3D" unique_id=660802194]
+metadata/map_can_overlap_water = false
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "pink_leaf_tree"
+display_name = "樱花树"
+log_drop_count = 4
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2147314023]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.0422673, 0)
+shape = SubResource("BoxShape3D_xxven")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=79013471]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.6, 0)
+billboard = 1
+no_depth_test = true
+text = "500"
+outline_size = 6
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1563054655]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=349846021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.050572, 0)
+shape = SubResource("BoxShape3D_gcim6")
+
+[node name="Mesh" parent="." unique_id=1121587560 instance=ExtResource("1_roqsd")]
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

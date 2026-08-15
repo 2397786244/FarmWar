@@ -3,6 +3,8 @@ class_name GameAuthorityService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
 const PlacementQueryScript = preload("res://src/placement_query.gd")
+const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 
 # GameAuthority 是“多人服务端权威”和“单人本地权威”的统一战局层。
 # 多人模式：客户端只提交输入/请求，Dedicated Server 在这里执行移动、伤害、放置、农田、商店等真实逻辑。
@@ -65,6 +67,7 @@ const SPICY_AREA_SCENE := preload("res://character/weapons/SpicyArea.tscn")
 const BOOM_BULLET_SCENE := preload("res://character/weapons/boom.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
 const DEFEND_BULLET_SCENE := preload("res://character/weapons/DefendBullet.tscn")
+const NAIL_BULLET_VISUAL_SCENE := preload("res://character/weapons/NailBullet.tscn")
 const GRENADE_VISUAL_SCENE := preload("res://character/weapons/Grenade.tscn")
 const SHIELD_LASER_VISUAL_SCENE := preload("res://character/weapons/ShieldLaser.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
@@ -72,6 +75,8 @@ const PICKUP_ITEM_SCENE := preload("res://items/pickup_item.tscn")
 const RED_CARGO_CAR_SCENE := preload("res://vehicles/red_cargo_car.tscn")
 const BLUE_CARGO_CAR_SCENE := preload("res://vehicles/blue_cargo_car.tscn")
 const RIFT_ANCHOR_SCENE := preload("res://character/weapons/RiftAnchor.tscn")
+const SHIELD_BREAK_FRAGMENT_COLOR := Color("75452b")
+const SHIELD_BREAK_PARTICLE_SCALE := 1.8
 const LOG_DROP_MODEL := "res://assets/other_items/Material/Log_Drop.glb"
 const TOOL_DEFINITIONS_PATH := "res://data/tool_definitions.json"
 const FINITE_AMMO_WEAPON_IDS := {
@@ -80,6 +85,7 @@ const FINITE_AMMO_WEAPON_IDS := {
 	"suppressed_pistol": true,
 	"shotgun": true,
 	"hunting_rifle": true,
+	"crossbow": true,
 	"m4": true,
 	"mpx": true,
 	"future_m4": true,
@@ -91,10 +97,12 @@ const ENEMY_ONLY_PLACED_TOOL_TYPES := {
 	"tall_log_wall": true,
 	"tall_mesh_wall": true,
 	"wire_mesh_gate": true,
+	"chain_link_fence": true,
 	"tallbrick": true,
 	"talllogwall": true,
 	"tallmeshwall": true,
 	"wiremeshgate": true,
+	"chainlinkfence": true,
 }
 # Server combat queries hit only meaningful gameplay targets and blockers.
 # Water (65536), shops (512), and other non-combat layers intentionally stay out.
@@ -109,6 +117,17 @@ const COLLISION_LAYER_BUILDING := 4096
 const COLLISION_LAYER_VEHICLES := 8192
 const COLLISION_LAYER_NATURE_RESOURCE := 16384
 const COLLISION_LAYER_WILD_ANIMAL := 32768
+## 死亡玩家的权威物理代理只与静态世界碰撞；其 layer 为 0，因此不会阻挡
+## 存活角色、命中检测和导航，却能从高处正确落到地面。
+const CORPSE_COLLISION_MASK := (
+	COLLISION_LAYER_GROUND
+	| COLLISION_LAYER_WALL
+	| COLLISION_LAYER_FARM_TILE
+	| COLLISION_LAYER_TOOL
+	| COLLISION_LAYER_BUILDING
+	| COLLISION_LAYER_VEHICLES
+	| COLLISION_LAYER_NATURE_RESOURCE
+)
 const WILD_ANIMAL_BODY_MASK := (
 	COLLISION_LAYER_GROUND | COLLISION_LAYER_WALL | COLLISION_LAYER_CHARACTER
 	| COLLISION_LAYER_TOOL | COLLISION_LAYER_BUILDING | COLLISION_LAYER_VEHICLES
@@ -194,6 +213,7 @@ var player_states: Dictionary = {}
 var latest_inputs: Dictionary = {}
 var projectile_states: Dictionary = {}
 var local_projectile_visual_nodes: Dictionary = {}
+var local_transient_projectile_visual_nodes: Dictionary = {}
 var medicine_storm_states: Dictionary = {}
 var next_projectile_id := 1
 var next_medicine_storm_id := 1
@@ -337,6 +357,28 @@ func is_local_authority() -> bool:
 	return mode == MODE_LOCAL
 
 
+func is_local_interaction_authority() -> bool:
+	# 合作房主同时运行服务器权威端与自己的本地表现节点。交互 UI 不能把它
+	# 当作远程客户端，也不能因 MODE_SERVER 而跳过本地权威调用。
+	return mode == MODE_LOCAL or (mode == MODE_SERVER and NetworkSession.is_listen_server())
+
+
+## Returns the peer represented by the local player's presentation node.  A
+## listen server has no client RPC hop, but its local actions must still carry
+## the host player's real peer id for the server-side ownership checks.
+func get_local_interaction_peer_id() -> int:
+	if mode == MODE_LOCAL:
+		return LOCAL_PLAYER_ID
+	if not is_local_interaction_authority():
+		return 0
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
+			var peer_id := int((node as GamePlayer).authority_peer_id)
+			if peer_id > 0:
+				return peer_id
+	return 0
+
+
 func is_client_proxy() -> bool:
 	return mode == MODE_CLIENT
 
@@ -370,6 +412,12 @@ func _reset_runtime_state(clear_players := true) -> void:
 		if is_instance_valid(visual_value):
 			(visual_value as Node).queue_free()
 	local_projectile_visual_nodes.clear()
+	for transient_value: Variant in local_transient_projectile_visual_nodes.values():
+		if transient_value is Dictionary:
+			var transient_node: Variant = (transient_value as Dictionary).get("node", null)
+			if is_instance_valid(transient_node):
+				(transient_node as Node).queue_free()
+	local_transient_projectile_visual_nodes.clear()
 	projectile_states.clear()
 	medicine_storm_states.clear()
 	next_projectile_id = 1
@@ -428,6 +476,7 @@ func _physics_process(delta: float) -> void:
 	if local_match_finished:
 		return
 	_run_authority_tick(delta)
+	_simulate_local_transient_projectile_visuals(delta)
 	if metrics_second_accumulator >= 1.0:
 		_roll_metrics_second()
 	if mode == MODE_SERVER and debug_print_metrics_interval > 0.0:
@@ -712,7 +761,26 @@ func _simulate_players(delta: float) -> void:
 		if respawn_left > 0.0:
 			respawn_left = maxf(0.0, respawn_left - delta)
 			state["respawn_left"] = respawn_left
-			state["velocity"] = Vector3.ZERO
+			if mode == MODE_SERVER:
+				var corpse_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+				var corpse_proxy := _ensure_player_physics_node(peer_id, corpse_position)
+				if corpse_proxy != null:
+					corpse_proxy.global_position = corpse_position
+					corpse_proxy.collision_layer = 0
+					corpse_proxy.collision_mask = CORPSE_COLLISION_MASK
+					var corpse_shape := corpse_proxy.get_node_or_null("CollisionShape3D") as CollisionShape3D
+					if corpse_shape != null:
+						corpse_shape.set_deferred("disabled", false)
+					corpse_proxy.velocity = _vector3_from_value(state.get("velocity", Vector3.ZERO))
+					if not corpse_proxy.is_on_floor():
+						corpse_proxy.velocity += corpse_proxy.get_gravity() * delta
+					elif corpse_proxy.velocity.y < 0.0:
+						corpse_proxy.velocity.y = 0.0
+					corpse_proxy.move_and_slide()
+					state["position"] = corpse_proxy.global_position
+					state["velocity"] = corpse_proxy.velocity
+			else:
+				state["velocity"] = Vector3.ZERO
 			state["knockback_velocity"] = Vector3.ZERO
 			_clear_player_fall_tracking(state)
 			player_states[peer_id] = state
@@ -764,6 +832,31 @@ func _simulate_players(delta: float) -> void:
 			state["vehicle_id"] = ""
 			state["vehicle_seat_index"] = -1
 			_set_server_player_vehicle_collision(peer_id, false)
+		var mounted_vehicle_id := str(state.get("mounted_machine_gun_vehicle_id", ""))
+		if not mounted_vehicle_id.is_empty():
+			var mounted_vehicle := _find_vehicle(mounted_vehicle_id) as FarmBaseVehicle
+			var mounted_gun := mounted_vehicle.get_platform_machine_gun() if mounted_vehicle != null else null
+			if mounted_gun == null or mounted_gun.destroyed_state or mounted_gun.operator_peer_id != peer_id:
+				force_release_mounted_machine_gun(peer_id, mounted_vehicle_id)
+				state = player_states.get(peer_id, state)
+			else:
+				var stand_position := mounted_gun.get_stand_transform().origin
+				var gun_direction := mounted_gun.get_fire_direction()
+				state["position"] = stand_position
+				state["velocity"] = Vector3.ZERO
+				state["knockback_velocity"] = Vector3.ZERO
+				state["yaw"] = atan2(-gun_direction.x, -gun_direction.z)
+				state["pitch"] = deg_to_rad(mounted_gun.elevation_degrees)
+				state["prone"] = false
+				state["swimming"] = false
+				state["locomotion_state"] = "idle_tool"
+				_clear_player_fall_tracking(state, stand_position)
+				player_states[peer_id] = state
+				if mode == MODE_SERVER:
+					var mounted_proxy := _ensure_player_physics_node(peer_id, stand_position)
+					mounted_proxy.global_position = stand_position
+					mounted_proxy.velocity = Vector3.ZERO
+				continue
 		var spicy_remaining := float(state.get("spicy_remaining", 0.0))
 		if mode == MODE_SERVER and spicy_remaining > 0.0:
 			var spicy_tick := minf(delta, spicy_remaining)
@@ -1021,6 +1114,359 @@ func _peer_id_for_player_physics_collider(collider: Variant) -> int:
 	return 0
 
 
+func _current_shield_slot(state: Dictionary) -> int:
+	if str(state.get("current_tool_id", "")) != "medieval_shield":
+		return -1
+	var slot_index := int(state.get("current_tool_index", -1))
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array or slot_index < 0 or slot_index >= (slots_value as Array).size():
+		return -1
+	var item_value: Variant = (slots_value as Array)[slot_index]
+	if not item_value is Dictionary or str((item_value as Dictionary).get("tool_id", "")) != "medieval_shield":
+		return -1
+	return slot_index
+
+
+func _held_shield_frame(peer_id: int) -> Dictionary:
+	if not player_states.has(peer_id):
+		return {}
+	var state: Dictionary = player_states[peer_id]
+	var slot_index := _current_shield_slot(state)
+	if slot_index < 0:
+		return {}
+	var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var authoritative_position: Variant = get_authoritative_player_position(peer_id)
+	if authoritative_position is Vector3:
+		position = authoritative_position as Vector3
+	var yaw := float(state.get("yaw", 0.0))
+	var pitch := float(state.get("pitch", 0.0))
+	# MedievalShield.tscn is authored with its face toward local -Z.  The
+	# player's yaw/pitch basis therefore supplies the world-space direction of
+	# that local -Z face, including looking up/down for explosion-side checks.
+	var orientation := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch)
+	var forward := (-orientation.z).normalized()
+	var right := orientation.x.normalized()
+	var up := orientation.y.normalized()
+	var center := position \
+		+ Vector3.UP * CombatBalance.get_float("medieval_shield", "center_height", 1.20) \
+		+ forward * CombatBalance.get_float("medieval_shield", "center_forward_offset", 0.55)
+	return {
+		"peer_id": peer_id,
+		"slot_index": slot_index,
+		"center": center,
+		"forward": forward,
+		"right": right,
+		"up": up,
+		"half_width": CombatBalance.get_float("medieval_shield", "half_width", 0.66),
+		"half_height": CombatBalance.get_float("medieval_shield", "half_height", 0.80),
+		"half_thickness": CombatBalance.get_float("medieval_shield", "half_thickness", 0.10),
+	}
+
+
+func _held_shield_effect_position(peer_id: int) -> Vector3:
+	# Use the actual visible AbsorbArea when this authority process owns a
+	# player presentation. Dedicated servers do not have that scene, so the
+	# authoritative shield frame is the deterministic fallback for all peers.
+	for node_value in get_tree().get_nodes_in_group("human_players"):
+		if not node_value is GamePlayer:
+			continue
+		var player := node_value as GamePlayer
+		if int(player.authority_peer_id) != peer_id:
+			continue
+		var tool_value: Variant = player.get("tool_node")
+		if tool_value is Node3D:
+			var absorb_area := (tool_value as Node3D).find_child(
+				"AbsorbArea", true, false
+			) as Node3D
+			if is_instance_valid(absorb_area) and absorb_area.is_inside_tree():
+				return absorb_area.global_position
+	var frame := _held_shield_frame(peer_id)
+	var frame_center: Variant = frame.get("center", null)
+	if frame_center is Vector3:
+		return frame_center as Vector3
+	var state_value: Variant = player_states.get(peer_id, {})
+	return _vector3_from_value(
+		(state_value as Dictionary).get("position", Vector3.ZERO)
+		if state_value is Dictionary else Vector3.ZERO
+	)
+
+
+func spawn_shield_break_effect(
+	world_position: Vector3,
+	particle_scale := SHIELD_BREAK_PARTICLE_SCALE
+) -> GPUParticles3D:
+	var world_parent: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) \
+		else get_tree().current_scene
+	var particles := NatureResourceHitEffect.spawn(
+		world_parent,
+		world_position,
+		SHIELD_BREAK_FRAGMENT_COLOR,
+		particle_scale,
+		"ShieldBreakEffect"
+	)
+	if is_instance_valid(particles):
+		particles.add_to_group("shield_break_effects")
+		particles.set_meta("shield_break_particle_scale", float(particle_scale))
+	return particles
+
+
+func _segment_hit_against_shield(start: Vector3, end: Vector3, frame: Dictionary) -> Dictionary:
+	var center: Vector3 = frame.get("center", Vector3.ZERO)
+	var right: Vector3 = frame.get("right", Vector3.RIGHT)
+	var up: Vector3 = frame.get("up", Vector3.UP)
+	var forward: Vector3 = frame.get("forward", Vector3.FORWARD)
+	var start_offset := start - center
+	var end_offset := end - center
+	var local_start := Vector3(
+		start_offset.dot(right),
+		start_offset.dot(up),
+		start_offset.dot(forward)
+	)
+	var local_end := Vector3(
+		end_offset.dot(right),
+		end_offset.dot(up),
+		end_offset.dot(forward)
+	)
+	var local_delta := local_end - local_start
+	var extents := [
+		float(frame.get("half_width", 0.66)),
+		float(frame.get("half_height", 0.80)),
+		float(frame.get("half_thickness", 0.10)),
+	]
+	var enter := 0.0
+	var exit := 1.0
+	for axis in range(3):
+		var axis_start := local_start[axis]
+		var axis_delta := local_delta[axis]
+		var extent: float = extents[axis]
+		if absf(axis_delta) <= 0.00001:
+			if absf(axis_start) > extent:
+				return {}
+			continue
+		var first := (-extent - axis_start) / axis_delta
+		var second := (extent - axis_start) / axis_delta
+		if first > second:
+			var swap := first
+			first = second
+			second = swap
+		enter = maxf(enter, first)
+		exit = minf(exit, second)
+		if enter > exit:
+			return {}
+	var hit_t := clampf(enter, 0.0, 1.0)
+	var front_coordinate := local_start.z
+	if absf(front_coordinate) <= extents[2] + 0.01:
+		front_coordinate = -local_delta.z
+	return {
+		"t": hit_t,
+		"position": start.lerp(end, hit_t),
+		"front": front_coordinate >= 0.0,
+	}
+
+
+func _find_shield_on_segment(
+	start: Vector3,
+	end: Vector3,
+	attacker_peer_id := 0,
+	attacker_team := "",
+	only_peer_id := 0
+) -> Dictionary:
+	var best := {}
+	var best_t := INF
+	for raw_peer_id in player_states.keys():
+		var peer_id := int(raw_peer_id)
+		if only_peer_id > 0 and peer_id != only_peer_id:
+			continue
+		if peer_id == attacker_peer_id or not player_states.has(peer_id):
+			continue
+		var state: Dictionary = player_states[peer_id]
+		if float(state.get("respawn_left", 0.0)) > 0.0:
+			continue
+		if not attacker_team.is_empty() and str(state.get("team", "")) == attacker_team:
+			continue
+		var frame := _held_shield_frame(peer_id)
+		if frame.is_empty():
+			continue
+		var shield_hit := _segment_hit_against_shield(start, end, frame)
+		if shield_hit.is_empty():
+			continue
+		var hit_t := float(shield_hit.get("t", INF))
+		if hit_t >= best_t:
+			continue
+		best = shield_hit.duplicate(true)
+		best["peer_id"] = peer_id
+		best["slot_index"] = int(frame.get("slot_index", -1))
+		best_t = hit_t
+	return best
+
+
+func _shield_peer_id_for_collider(collider: Variant) -> int:
+	if not collider is Node:
+		return 0
+	var cursor := collider as Node
+	for _depth in range(16):
+		if cursor == null:
+			break
+		if cursor.has_method("is_held_shield") and bool(cursor.call("is_held_shield")) \
+				and cursor.has_method("get_shield_owner_peer_id"):
+			return int(cursor.call("get_shield_owner_peer_id"))
+		cursor = cursor.get_parent()
+	return 0
+
+
+func _remove_one_shield_from_loadout(state: Dictionary) -> void:
+	for bucket in ["primary_weapon_ids", "special_tool_ids"]:
+		var ids_value: Variant = state.get(bucket, [])
+		if not ids_value is Array:
+			continue
+		var ids: Array = (ids_value as Array).duplicate(true)
+		var index := ids.find("medieval_shield")
+		if index < 0:
+			continue
+		ids.remove_at(index)
+		state[bucket] = ids
+		return
+
+
+func apply_held_shield_damage(
+	shield_peer_id: int,
+	damage: float,
+	attacker_peer_id := 0,
+	effect := "shield",
+	absorb_ratio := 1.0,
+	attacker_team := "",
+	show_hit_marker := true
+) -> Dictionary:
+	var empty_result := {
+		"blocked": false,
+		"peer_id": shield_peer_id,
+		"hp": 0.0,
+		"max_hp": CombatBalance.get_float("medieval_shield", "max_hp", 1000.0),
+	}
+	if not is_local_authority() and not is_server_authority():
+		return empty_result
+	if damage <= 0.0 or not player_states.has(shield_peer_id):
+		return empty_result
+	var state: Dictionary = player_states[shield_peer_id]
+	if not attacker_team.is_empty() and str(state.get("team", "")) == attacker_team:
+		return empty_result
+	var slot_index := _current_shield_slot(state)
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if slot_index < 0 or not slots_value is Array or slot_index >= (slots_value as Array).size():
+		return empty_result
+	var slot_value: Variant = (slots_value as Array)[slot_index]
+	if not slot_value is Dictionary:
+		return empty_result
+	var item := (slot_value as Dictionary).duplicate(true)
+	var max_hp := maxf(
+		1.0,
+		float(item.get("max_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)))
+	)
+	var old_hp := clampf(float(item.get("current_hp", max_hp)), 0.0, max_hp)
+	var shield_damage := maxf(0.0, damage * maxf(0.0, absorb_ratio))
+	var applied_damage := minf(old_hp, shield_damage)
+	if applied_damage <= 0.0:
+		return empty_result
+	var new_hp := maxf(0.0, old_hp - applied_damage)
+	var broken := new_hp <= 0.001
+	var break_position := _held_shield_effect_position(shield_peer_id)
+	var slots: Array = (slots_value as Array).duplicate(true)
+	if broken:
+		slots[slot_index] = {}
+		_remove_one_shield_from_loadout(state)
+		state["current_tool_id"] = ""
+		state["current_tool_index"] = slot_index
+	else:
+		item["kind"] = "tool"
+		item["max_hp"] = max_hp
+		item["current_hp"] = new_hp
+		slots[slot_index] = item
+	state["backpack_slot_items"] = slots
+	state["backpack_layout_valid"] = true
+	player_states[shield_peer_id] = state
+	var result := {
+		"blocked": true,
+		"peer_id": shield_peer_id,
+		"slot_index": slot_index,
+		"hp": new_hp,
+		"max_hp": max_hp,
+		"absorbed_damage": applied_damage,
+		"incoming_damage": damage,
+		"broken": broken,
+		"break_position": break_position,
+	}
+	if attacker_peer_id > 0 and show_hit_marker:
+		_emit_hit_confirmed(attacker_peer_id, 1, applied_damage, "shield")
+	reliable_world_event_ready.emit({
+		"type": "shield_state",
+		"peer_id": shield_peer_id,
+		"slot_index": slot_index,
+		"tool_id": "medieval_shield",
+		"hp": new_hp,
+		"max_hp": max_hp,
+		"absorbed_damage": applied_damage,
+		"incoming_damage": damage,
+		"broken": broken,
+		"current_tool_index": int(state.get("current_tool_index", slot_index)),
+		"current_tool_id": str(state.get("current_tool_id", "")),
+		"player_slots": slots.duplicate(true),
+		"tick": server_tick,
+	})
+	if broken:
+		reliable_world_event_ready.emit({
+			"type": "shield_broken",
+			"peer_id": shield_peer_id,
+			"position": break_position,
+			"particle_scale": SHIELD_BREAK_PARTICLE_SCALE,
+			"tick": server_tick,
+		})
+	return result
+
+
+func _apply_explosion_shield_if_front(
+	explosion_position: Vector3,
+	target_position: Vector3,
+	target_peer_id: int,
+	incoming_damage: float,
+	attacker_peer_id := 0,
+	attacker_team := ""
+) -> Dictionary:
+	var shield_hit := _find_shield_on_segment(
+		explosion_position,
+		target_position,
+		attacker_peer_id,
+		attacker_team,
+		target_peer_id
+	)
+	if shield_hit.is_empty() or not bool(shield_hit.get("front", false)):
+		return {"hit": false, "multiplier": 1.0}
+	# A wall or building before the shield means the blast never reaches the
+	# held shield.  A physical shield collider itself is the expected blocker.
+	var blocker := _raycast_world(
+		explosion_position + Vector3.UP * 0.35,
+		target_position,
+		EXPLOSION_OCCLUSION_MASK
+	)
+	if not blocker.is_empty():
+		var blocker_shield_peer := _shield_peer_id_for_collider(blocker.get("collider", null))
+		if blocker_shield_peer != target_peer_id:
+			return {"hit": false, "multiplier": 1.0}
+	var shield_result := apply_held_shield_damage(
+		target_peer_id,
+		incoming_damage,
+		attacker_peer_id,
+		"explosion",
+		CombatBalance.get_float("medieval_shield", "explosion_absorb_ratio", 0.80),
+		attacker_team,
+		false
+	)
+	return {
+		"hit": bool(shield_result.get("blocked", false)),
+		"multiplier": CombatBalance.get_float("medieval_shield", "explosion_damage_multiplier", 0.20),
+		"shield": shield_result,
+	}
+
+
 func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	var existing: Dictionary = player_states.get(peer_id, {})
 	existing["peer_id"] = peer_id
@@ -1087,6 +1533,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 		existing["respawn_left"] = maxf(0.0, float(selection.get("respawn_left", 0.0)))
 	if not existing.has("backpack_slot_items"):
 		existing["backpack_slot_items"] = _build_initial_backpack_layout(existing)
+	_normalize_shield_inventory_items(existing)
 	existing["backpack_layout_valid"] = bool(existing.get("backpack_layout_valid", true))
 	existing["tool_cooldowns"] = existing.get("tool_cooldowns", {})
 	existing["weapon_ammo_states"] = _initialize_weapon_ammo_states(
@@ -1106,6 +1553,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["labeled_remaining"] = float(existing.get("labeled_remaining", 0.0))
 	existing["vehicle_id"] = str(existing.get("vehicle_id", ""))
 	existing["vehicle_seat_index"] = int(existing.get("vehicle_seat_index", -1))
+	existing["mounted_machine_gun_vehicle_id"] = ""
 	_clear_player_fall_tracking(existing)
 	player_states[peer_id] = existing
 	if mode == MODE_SERVER:
@@ -1119,6 +1567,7 @@ func unregister_player(peer_id: int) -> void:
 	if player_states.has(peer_id):
 		_force_release_kitchen_user(peer_id)
 		release_big_mouth_capture(peer_id, "disconnected")
+		force_release_mounted_machine_gun(peer_id)
 	_destroy_rift_anchor_for_peer(peer_id)
 	_remove_player_from_vehicle(peer_id, false)
 	player_states.erase(peer_id)
@@ -1476,10 +1925,49 @@ func _build_initial_backpack_layout(state: Dictionary) -> Array[Dictionary]:
 			if tool_id.is_empty() or (seen.has(tool_id) and not _tool_allows_multiple(tool_id)) \
 					or next_index >= slots.size():
 				continue
-			slots[next_index] = {"kind": "tool", "tool_id": tool_id}
+			var item := {"kind": "tool", "tool_id": tool_id}
+			if tool_id == "medieval_shield":
+				item["max_hp"] = CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
+				item["current_hp"] = item["max_hp"]
+				item["shield_instance_id"] = _new_shield_instance_id(state, next_index)
+			slots[next_index] = item
 			seen[tool_id] = true
 			next_index += 1
 	return slots
+
+
+func _new_shield_instance_id(state: Dictionary, slot_index: int) -> String:
+	return "shield:%d:%d:%d" % [
+		int(state.get("peer_id", 0)),
+		Time.get_ticks_usec(),
+		slot_index,
+	]
+
+
+func _normalize_shield_inventory_items(state: Dictionary) -> void:
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return
+	var slots: Array = (slots_value as Array).duplicate(true)
+	var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
+	for index in range(slots.size()):
+		if not slots[index] is Dictionary:
+			continue
+		var item := (slots[index] as Dictionary).duplicate(true)
+		if str(item.get("tool_id", "")) != "medieval_shield":
+			continue
+		item["kind"] = "tool"
+		item["max_hp"] = maxf(1.0, float(item.get("max_hp", max_hp)))
+		item["current_hp"] = clampf(
+			float(item.get("current_hp", item["max_hp"])),
+			0.0,
+			float(item["max_hp"])
+		)
+		var instance_id := str(item.get("shield_instance_id", ""))
+		if instance_id.is_empty():
+			item["shield_instance_id"] = _new_shield_instance_id(state, index)
+		slots[index] = item
+	state["backpack_slot_items"] = slots
 
 
 func _server_layout_add_item(state: Dictionary, item: Dictionary) -> void:
@@ -1510,9 +1998,22 @@ func _server_layout_add_item(state: Dictionary, item: Dictionary) -> void:
 				slots[index] = existing
 				state["backpack_slot_items"] = slots
 				return
+	var item_to_add := item.duplicate(true)
+	if str(item_to_add.get("kind", "")) == "tool" \
+			and str(item_to_add.get("tool_id", "")) == "medieval_shield":
+		var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
+		item_to_add["kind"] = "tool"
+		item_to_add["max_hp"] = maxf(1.0, float(item_to_add.get("max_hp", max_hp)))
+		item_to_add["current_hp"] = clampf(
+			float(item_to_add.get("current_hp", item_to_add["max_hp"])),
+			0.0,
+			float(item_to_add["max_hp"])
+		)
+		if str(item_to_add.get("shield_instance_id", "")).is_empty():
+			item_to_add["shield_instance_id"] = _new_shield_instance_id(state, slots.size())
 	for index in range(slots.size()):
 		if slots[index] is Dictionary and (slots[index] as Dictionary).is_empty():
-			slots[index] = item.duplicate(true)
+			slots[index] = item_to_add
 			state["backpack_slot_items"] = slots
 			return
 	state["backpack_layout_valid"] = false
@@ -1670,6 +2171,8 @@ func _ensure_player_physics_node(peer_id: int, position: Vector3) -> CharacterBo
 		push_error("Unable to create the shared player physics body.")
 		return null
 	body.name = "ServerPlayerProxy_%d" % peer_id
+	if body.has_method("configure_for_peer"):
+		body.call("configure_for_peer", peer_id)
 	var parent := GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if parent != null:
 		parent.add_child(body)
@@ -1820,11 +2323,16 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 				print("[VehicleSession] rejected peer=%d team=%s vehicle=%s owner_team=%s" % [
 					peer_id, player_team, vehicle_id, vehicle.owner_team,
 				])
-			elif not str(state.get("vehicle_id", "")).is_empty():
+			elif not str(state.get("vehicle_id", "")).is_empty() \
+					or not str(state.get("mounted_machine_gun_vehicle_id", "")).is_empty():
 				result["reason"] = "already_seated"
 			elif not _can_server_interact_with_position(state, vehicle.global_position, PLAYER_VEHICLE_INTERACTION_RANGE):
 				result["reason"] = "vehicle_out_of_range"
 			else:
+				if seat_index >= 0 and vehicle is FarmBaseVehicle \
+						and not (vehicle as FarmBaseVehicle).is_platform_passenger_seat(seat_index):
+					result["reason"] = "invalid_passenger_seat"
+					return result
 				var requested_seat := vehicle.get_available_seat_index(true) if seat_index < 0 else seat_index
 				if vehicle.enter_seat(peer_id, requested_seat):
 					state["prone"] = false
@@ -1872,6 +2380,9 @@ func local_vehicle_input(peer_id: int, input_frame: Dictionary) -> void:
 func server_vehicle_input(peer_id: int, input_frame: Dictionary) -> void:
 	if not player_states.has(peer_id):
 		return
+	if str(input_frame.get("control_mode", "")) == "mounted_machine_gun":
+		_server_mounted_machine_gun_input(peer_id, input_frame)
+		return
 	var state: Dictionary = player_states[peer_id]
 	var vehicle_id := str(input_frame.get("vehicle_id", ""))
 	if vehicle_id.is_empty() or vehicle_id != str(state.get("vehicle_id", "")):
@@ -1892,6 +2403,232 @@ func server_vehicle_input(peer_id: int, input_frame: Dictionary) -> void:
 		}
 	vehicle_states[vehicle_id] = vehicle_state
 	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
+
+
+func local_vehicle_action(peer_id: int, action: Dictionary) -> void:
+	_sync_local_player_interaction_state(peer_id)
+	server_vehicle_action(peer_id, action)
+
+
+func server_vehicle_action(peer_id: int, action: Dictionary) -> void:
+	if not player_states.has(peer_id):
+		return
+	var action_name := str(action.get("action", ""))
+	if action_name == "mounted_machine_gun_enter":
+		_server_mounted_machine_gun_session(peer_id, str(action.get("vehicle_id", "")), true)
+		return
+	if action_name == "mounted_machine_gun_exit":
+		_server_mounted_machine_gun_session(peer_id, str(action.get("vehicle_id", "")), false)
+		return
+	if action_name == "mounted_machine_gun_fire":
+		_server_mounted_machine_gun_fire(
+			peer_id,
+			str(action.get("vehicle_id", "")),
+			_vector3_from_value(action.get("aim_point", Vector3.ZERO))
+		)
+		return
+	var state: Dictionary = player_states[peer_id]
+	var vehicle_id := str(action.get("vehicle_id", ""))
+	if vehicle_id.is_empty() or vehicle_id != str(state.get("vehicle_id", "")):
+		return
+	var vehicle := _find_vehicle(vehicle_id)
+	if vehicle == null or vehicle.driver_peer_id != peer_id:
+		return
+	if action_name == "toggle_headlights" and vehicle.has_method("toggle_headlights"):
+		vehicle.call("toggle_headlights")
+		var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
+		vehicle_state.merge(vehicle.get_network_state(), true)
+		vehicle_states[vehicle_id] = vehicle_state
+	bytes_received_this_second += len(JSON.stringify(action).to_utf8_buffer())
+
+
+func _server_mounted_machine_gun_session(peer_id: int, vehicle_id: String, connected: bool) -> Dictionary:
+	var result := {
+		"ok": false,
+		"peer_id": peer_id,
+		"vehicle_id": vehicle_id,
+		"connected": connected,
+		"tick": server_tick,
+	}
+	if not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+	else:
+		var state: Dictionary = player_states[peer_id]
+		var active_id := str(state.get("mounted_machine_gun_vehicle_id", ""))
+		var vehicle := _find_vehicle(vehicle_id) as FarmBaseVehicle
+		var machine_gun := vehicle.get_platform_machine_gun() if vehicle != null else null
+		if connected:
+			if vehicle == null or machine_gun == null:
+				result["reason"] = "machine_gun_not_installed"
+			elif machine_gun.destroyed_state or machine_gun.current_hp <= 0.0:
+				result["reason"] = "machine_gun_destroyed"
+			elif not vehicle.can_team_enter(str(state.get("team", ""))):
+				result["reason"] = "wrong_team"
+			elif not str(state.get("vehicle_id", "")).is_empty() or not active_id.is_empty():
+				result["reason"] = "player_busy"
+			elif float(state.get("respawn_left", 0.0)) > 0.0:
+				result["reason"] = "player_dead"
+			elif machine_gun.operator_peer_id > 0 and machine_gun.operator_peer_id != peer_id:
+				result["reason"] = "machine_gun_in_use"
+			elif not _can_server_interact_with_position(state, machine_gun.global_position, PLAYER_VEHICLE_INTERACTION_RANGE + 1.5):
+				result["reason"] = "machine_gun_out_of_range"
+			else:
+				machine_gun.operator_peer_id = peer_id
+				state["mounted_machine_gun_vehicle_id"] = vehicle_id
+				state["position"] = machine_gun.get_stand_transform().origin
+				state["velocity"] = Vector3.ZERO
+				state["prone"] = false
+				player_states[peer_id] = state
+				_set_server_player_mounted_gun_collision(peer_id, true, state["position"])
+				result["ok"] = true
+		else:
+			if active_id.is_empty() or (not vehicle_id.is_empty() and active_id != vehicle_id):
+				result["reason"] = "not_machine_gun_operator"
+			else:
+				result = _release_mounted_machine_gun(peer_id, active_id, "player_exit")
+	if bool(result.get("ok", false)):
+		_apply_local_player_mounted_machine_gun_session(result)
+	reliable_world_event_ready.emit({"type": "mounted_machine_gun_session", "data": result, "tick": server_tick})
+	return result
+
+
+func _server_mounted_machine_gun_input(peer_id: int, input_frame: Dictionary) -> void:
+	var state: Dictionary = player_states.get(peer_id, {})
+	var vehicle_id := str(input_frame.get("vehicle_id", ""))
+	if state.is_empty() or vehicle_id != str(state.get("mounted_machine_gun_vehicle_id", "")):
+		return
+	var vehicle := _find_vehicle(vehicle_id) as FarmBaseVehicle
+	var machine_gun := vehicle.get_platform_machine_gun() if vehicle != null else null
+	if machine_gun == null or machine_gun.destroyed_state or machine_gun.operator_peer_id != peer_id:
+		force_release_mounted_machine_gun(peer_id, vehicle_id)
+		return
+	var input_seq := int(input_frame.get("input_seq", -1))
+	var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
+	if input_seq <= int(vehicle_state.get("mounted_machine_gun_last_input_seq", 0)):
+		return
+	vehicle_state["mounted_machine_gun_last_input_seq"] = input_seq
+	machine_gun.set_aim(
+		float(input_frame.get("yaw", machine_gun.yaw_degrees)),
+		float(input_frame.get("elevation", machine_gun.elevation_degrees))
+	)
+	state["position"] = machine_gun.get_stand_transform().origin
+	state["velocity"] = Vector3.ZERO
+	var direction := machine_gun.get_fire_direction()
+	state["yaw"] = atan2(-direction.x, -direction.z)
+	state["pitch"] = deg_to_rad(machine_gun.elevation_degrees)
+	player_states[peer_id] = state
+	vehicle_state.merge(vehicle.get_network_state(), true)
+	vehicle_states[vehicle_id] = vehicle_state
+	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
+
+
+func _server_mounted_machine_gun_fire(
+	peer_id: int,
+	vehicle_id: String,
+	requested_aim_point := Vector3.ZERO
+) -> Dictionary:
+	var result := {"ok": false, "peer_id": peer_id, "vehicle_id": vehicle_id}
+	var state: Dictionary = player_states.get(peer_id, {})
+	if state.is_empty() or vehicle_id != str(state.get("mounted_machine_gun_vehicle_id", "")):
+		result["reason"] = "not_machine_gun_operator"
+		return result
+	var vehicle := _find_vehicle(vehicle_id) as FarmBaseVehicle
+	var machine_gun := vehicle.get_platform_machine_gun() if vehicle != null else null
+	if machine_gun == null or machine_gun.destroyed_state or machine_gun.operator_peer_id != peer_id:
+		result["reason"] = "machine_gun_unavailable"
+		force_release_mounted_machine_gun(peer_id, vehicle_id)
+		return result
+	var now_msec := Time.get_ticks_msec()
+	if not machine_gun.can_fire(now_msec):
+		result["reason"] = "cooldown"
+		return result
+	machine_gun.mark_fired(now_msec)
+	var origin := machine_gun.get_muzzle_origin()
+	var direction := machine_gun.get_fire_direction()
+	if requested_aim_point is Vector3:
+		var aim_offset := (requested_aim_point as Vector3) - origin
+		var aim_distance := aim_offset.length()
+		if aim_distance > 0.01:
+			var aim_target := requested_aim_point as Vector3
+			if aim_distance > VehicleBaseMachineGun.RANGE_METERS:
+				aim_target = origin + aim_offset / aim_distance * VehicleBaseMachineGun.RANGE_METERS
+			direction = (aim_target - origin).normalized()
+	var hit := _server_hitscan(
+		peer_id, {"origin": origin, "direction": direction},
+		VehicleBaseMachineGun.RANGE_METERS, VehicleBaseMachineGun.DAMAGE, 0.0,
+		"nail", true, machine_gun.get_raycast_exclusions()
+	)
+	var speed := machine_gun.get_visual_speed()
+	var lifetime := VehicleBaseMachineGun.RANGE_METERS / speed
+	if str(hit.get("hit_kind", "none")) != "none":
+		lifetime = minf(lifetime, maxf(0.01, origin.distance_to(_vector3_from_value(hit.get("hit_position", origin))) / maxf(speed, 0.01)))
+	# Mounted weapons have no client-side handheld projectile prediction, so the
+	# operator must also receive the authoritative NailBullet visual.
+	_emit_visual_projectile(peer_id, "nail_bullet", origin, direction, speed, lifetime, "nail", true, true, true)
+	var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
+	vehicle_state.merge(vehicle.get_network_state(), true)
+	vehicle_states[vehicle_id] = vehicle_state
+	result.merge(hit, true)
+	result["ok"] = true
+	return result
+
+
+func force_release_mounted_machine_gun(peer_id: int, vehicle_id := "") -> void:
+	if not player_states.has(peer_id):
+		return
+	var state: Dictionary = player_states[peer_id]
+	var active_id := str(state.get("mounted_machine_gun_vehicle_id", ""))
+	if active_id.is_empty():
+		return
+	if not vehicle_id.is_empty() and active_id != vehicle_id:
+		return
+	var result := _release_mounted_machine_gun(peer_id, active_id, "forced_release")
+	_apply_local_player_mounted_machine_gun_session(result)
+	reliable_world_event_ready.emit({"type": "mounted_machine_gun_session", "data": result, "tick": server_tick})
+
+
+func _release_mounted_machine_gun(peer_id: int, vehicle_id: String, reason: String) -> Dictionary:
+	var state: Dictionary = player_states.get(peer_id, {})
+	var vehicle := _find_vehicle(vehicle_id) as FarmBaseVehicle
+	var machine_gun := vehicle.get_platform_machine_gun() if vehicle != null else null
+	var exit_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	if machine_gun != null:
+		exit_position = machine_gun.get_stand_transform().origin
+		if machine_gun.operator_peer_id == peer_id:
+			machine_gun.operator_peer_id = 0
+	state["mounted_machine_gun_vehicle_id"] = ""
+	state["position"] = exit_position
+	state["velocity"] = Vector3.ZERO
+	player_states[peer_id] = state
+	_set_server_player_vehicle_collision(peer_id, false, exit_position)
+	if vehicle != null:
+		var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
+		vehicle_state.merge(vehicle.get_network_state(), true)
+		vehicle_states[vehicle_id] = vehicle_state
+	return {
+		"ok": true, "peer_id": peer_id, "vehicle_id": vehicle_id,
+		"connected": false, "exit_position": exit_position, "reason": reason,
+	}
+
+
+func _apply_local_player_mounted_machine_gun_session(result: Dictionary) -> void:
+	if not is_local_interaction_authority():
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
+				and int((node as GamePlayer).authority_peer_id) == int(result.get("peer_id", 0)):
+			(node as GamePlayer).apply_mounted_machine_gun_session_result(result)
+			return
+
+
+func _apply_local_player_mounted_machine_gun_recoil(peer_id: int) -> void:
+	if not is_local_interaction_authority():
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
+				and int((node as GamePlayer).authority_peer_id) == peer_id:
+			(node as GamePlayer).trigger_mounted_machine_gun_recoil()
+			return
 
 
 func _register_world_vehicles() -> void:
@@ -1938,6 +2675,25 @@ func _simulate_vehicles(delta: float) -> void:
 			float(input.get("brake", 1.0 if vehicle.driver_peer_id == 0 else 0.0))
 		)
 		vehicle.simulate_authority(delta)
+		if vehicle is FarmBaseVehicle:
+			var machine_gun := (vehicle as FarmBaseVehicle).get_platform_machine_gun()
+			if machine_gun != null and machine_gun.operator_peer_id > 0:
+				var operator_peer_id := machine_gun.operator_peer_id
+				var operator_state: Dictionary = player_states.get(operator_peer_id, {})
+				if operator_state.is_empty() or machine_gun.destroyed_state \
+						or str(operator_state.get("mounted_machine_gun_vehicle_id", "")) != vehicle_id \
+						or float(operator_state.get("respawn_left", 0.0)) > 0.0:
+					force_release_mounted_machine_gun(operator_peer_id, vehicle_id)
+				else:
+					operator_state["position"] = machine_gun.get_stand_transform().origin
+					operator_state["velocity"] = Vector3.ZERO
+					var gun_direction := machine_gun.get_fire_direction()
+					operator_state["yaw"] = atan2(-gun_direction.x, -gun_direction.z)
+					operator_state["pitch"] = deg_to_rad(machine_gun.elevation_degrees)
+					player_states[operator_peer_id] = operator_state
+					var proxy: Node = player_physics_nodes.get(operator_peer_id, null)
+					if is_instance_valid(proxy) and proxy is Node3D:
+						(proxy as Node3D).global_position = machine_gun.get_stand_transform().origin
 		state.merge(vehicle.get_network_state(), true)
 		vehicle_states[vehicle_id] = state
 
@@ -1949,6 +2705,13 @@ func destroy_vehicle_with_occupants(vehicle: VehicleBase) -> void:
 		return
 	var vehicle_id := vehicle.get_vehicle_id()
 	var occupant_peer_ids := vehicle.get_seat_occupants()
+	if vehicle is FarmBaseVehicle:
+		var machine_gun := (vehicle as FarmBaseVehicle).get_platform_machine_gun()
+		if machine_gun != null and machine_gun.operator_peer_id > 0:
+			# The gunner is also a member of the vehicle.  Do not merely eject the
+			# player to the platform when the carrier itself is destroyed.
+			if not occupant_peer_ids.has(machine_gun.operator_peer_id):
+				occupant_peer_ids.append(machine_gun.operator_peer_id)
 	for peer_id in occupant_peer_ids:
 		if peer_id > 0:
 			_begin_player_respawn(peer_id)
@@ -2092,6 +2855,7 @@ func _set_server_player_vehicle_collision(peer_id: int, seated: bool, position :
 	var proxy := _ensure_player_physics_node(peer_id, position)
 	if proxy == null:
 		return
+	_clear_server_mounted_gun_collision_exception(proxy)
 	if seated:
 		proxy.global_position = position
 		proxy.velocity = Vector3.ZERO
@@ -2112,6 +2876,46 @@ func _set_server_player_vehicle_collision(peer_id: int, seated: bool, position :
 			proxy,
 			bool((player_states.get(peer_id, {}) as Dictionary).get("prone", false))
 		)
+
+
+func _set_server_player_mounted_gun_collision(peer_id: int, mounted: bool, position := Vector3.ZERO) -> void:
+	if mode != MODE_SERVER:
+		return
+	if not mounted:
+		_set_server_player_vehicle_collision(peer_id, false, position)
+		return
+	var proxy := _ensure_player_physics_node(peer_id, position)
+	if proxy == null:
+		return
+	_clear_server_mounted_gun_collision_exception(proxy)
+	proxy.global_position = position
+	proxy.velocity = Vector3.ZERO
+	# A mounted gunner remains exposed and can still be hit. Keep the authority
+	# capsule on the character layer and retain ground collision as a safety net,
+	# while excluding the vehicle layer so it cannot push its carrier.
+	proxy.collision_layer = COLLISION_LAYER_CHARACTER
+	proxy.collision_mask = COLLISION_LAYER_GROUND
+	var mounted_vehicle_id := str((player_states.get(peer_id, {}) as Dictionary).get("mounted_machine_gun_vehicle_id", ""))
+	var mounted_vehicle := _find_vehicle(mounted_vehicle_id) as VehicleBase
+	if mounted_vehicle != null:
+		proxy.add_collision_exception_with(mounted_vehicle)
+		mounted_vehicle.add_collision_exception_with(proxy)
+		proxy.set_meta("mounted_machine_gun_collision_vehicle_id", mounted_vehicle_id)
+	var shape := proxy.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if shape != null:
+		shape.set_deferred("disabled", false)
+
+
+func _clear_server_mounted_gun_collision_exception(proxy: CharacterBody3D) -> void:
+	if not is_instance_valid(proxy):
+		return
+	var vehicle_id := str(proxy.get_meta("mounted_machine_gun_collision_vehicle_id", ""))
+	if not vehicle_id.is_empty():
+		var vehicle := _find_vehicle(vehicle_id) as VehicleBase
+		if vehicle != null:
+			proxy.remove_collision_exception_with(vehicle)
+			vehicle.remove_collision_exception_with(proxy)
+	proxy.remove_meta("mounted_machine_gun_collision_vehicle_id")
 
 
 func _set_server_player_prone_collision(proxy: CharacterBody3D, prone: bool) -> void:
@@ -2138,10 +2942,11 @@ func _set_server_player_prone_collision(proxy: CharacterBody3D, prone: bool) -> 
 
 
 func _apply_local_player_vehicle_session(result: Dictionary) -> void:
-	if mode != MODE_LOCAL:
+	if not is_local_interaction_authority():
 		return
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is GamePlayer and int(node.authority_peer_id) == int(result.get("peer_id", 0)):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
+				and int(node.authority_peer_id) == int(result.get("peer_id", 0)):
 			node.call("apply_vehicle_session_result", result, _find_vehicle(str(result.get("vehicle_id", ""))))
 			return
 
@@ -2186,6 +2991,7 @@ func server_select_tool(peer_id: int, tool_index: int, tool_id := "") -> void:
 
 
 func local_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
+	_sync_local_player_interaction_state(peer_id)
 	return server_try_use_tool(peer_id, tool_request)
 
 
@@ -2295,6 +3101,7 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 
 
 func local_gate_action(peer_id: int, action: Dictionary) -> Dictionary:
+	_sync_local_player_interaction_state(peer_id)
 	return server_gate_action(peer_id, action)
 
 
@@ -2646,6 +3453,7 @@ func _simulate_gate_interactions(delta: float) -> void:
 
 
 func local_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
+	_sync_local_player_interaction_state(peer_id)
 	return server_reload_weapon(peer_id, tool_id)
 
 
@@ -2712,9 +3520,9 @@ func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
 
 func _animation_action_for_tool(tool_id: String) -> String:
 	match tool_id:
-		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
+		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "crossbow", "m4", "mpx", "future_m4", "future_mpx", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
 			return "shooting"
-		"eater":
+		"eater", "long_spear":
 			return "melee"
 		_:
 			return "utility"
@@ -2754,6 +3562,10 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float("nail_gun", "visual_speed")
 			lifetime = CombatBalance.get_float("nail_gun", "visual_lifetime")
+		"crossbow":
+			visual_type = "crossbow_bolt"
+			speed = CombatBalance.get_float("crossbow", "visual_speed")
+			lifetime = CombatBalance.get_float("crossbow", "visual_lifetime")
 		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15":
 			visual_type = "nail_bullet"
 			speed = CombatBalance.get_float(tool_id, "visual_speed")
@@ -2820,13 +3632,24 @@ func _emit_visual_projectile(
 	speed: float,
 	lifetime: float,
 	effect: String = "",
-	spawn_for_owner := false
+	spawn_for_owner := false,
+	spawn_local_authority_visual := false,
+	camera_recoil := false
 ) -> void:
 	var normalized_direction := direction.normalized()
 	if normalized_direction.length_squared() <= 0.001:
 		return
 	var visual_id := next_visual_projectile_id
 	next_visual_projectile_id += 1
+	var local_visual_spawned := spawn_local_authority_visual \
+			and visual_type == "nail_bullet" \
+			and _should_render_authoritative_projectiles_locally()
+	if local_visual_spawned:
+		_spawn_local_transient_projectile_visual(
+			visual_id, visual_type, origin, normalized_direction, speed, lifetime, effect
+		)
+		if camera_recoil:
+			_apply_local_player_mounted_machine_gun_recoil(owner_peer_id)
 	# This is a transient cosmetic tracer only. Gameplay damage is already
 	# resolved authoritatively before this event is emitted, so packet loss must
 	# not consume the reliable world-event channel.
@@ -2842,8 +3665,71 @@ func _emit_visual_projectile(
 		"lifetime": lifetime,
 		"effect": effect,
 		"spawn_for_owner": spawn_for_owner,
+		"camera_recoil": camera_recoil,
+		# The listen-server host already created this specific mounted-gun visual
+		# locally. Clients must still receive and render the network event.
+		"skip_listen_server_local": local_visual_spawned,
 		"tick": server_tick,
 	})
+
+
+func _spawn_local_transient_projectile_visual(
+	visual_id: int,
+	visual_type: String,
+	origin: Vector3,
+	direction: Vector3,
+	speed: float,
+	lifetime: float,
+	effect: String
+) -> void:
+	if visual_id <= 0 or visual_type != "nail_bullet":
+		return
+	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
+	if world == null:
+		return
+	var visual := NAIL_BULLET_VISUAL_SCENE.instantiate() as NailBullet
+	if visual == null:
+		return
+	world.add_child(visual)
+	visual.add_to_group("local_transient_projectile_visuals")
+	visual.make_visual_only()
+	visual.global_position = origin
+	visual.direction = direction
+	visual.start_position = origin
+	visual.bullet_owner = effect
+	visual.set_physics_process(false)
+	if direction.length_squared() > 0.001:
+		visual.look_at(origin + direction, Vector3.UP)
+	local_transient_projectile_visual_nodes[visual_id] = {
+		"node": visual,
+		"velocity": direction * maxf(0.0, speed),
+		"remaining": maxf(0.01, lifetime),
+	}
+
+
+func _simulate_local_transient_projectile_visuals(delta: float) -> void:
+	if not _should_render_authoritative_projectiles_locally():
+		return
+	for visual_id_value in local_transient_projectile_visual_nodes.keys():
+		var visual_id := int(visual_id_value)
+		var state: Dictionary = local_transient_projectile_visual_nodes.get(visual_id, {})
+		var visual: Node3D = state.get("node", null)
+		var remaining := float(state.get("remaining", 0.0)) - delta
+		if not is_instance_valid(visual) or remaining <= 0.0:
+			if is_instance_valid(visual):
+				visual.queue_free()
+			local_transient_projectile_visual_nodes.erase(visual_id)
+			continue
+		var velocity: Variant = state.get("velocity", Vector3.ZERO)
+		if velocity is Vector3:
+			visual.global_position += velocity as Vector3 * delta
+			if (velocity as Vector3).length_squared() > 0.001:
+				visual.look_at(visual.global_position + velocity as Vector3, Vector3.UP)
+			var tracer := visual.find_child("tracer", true, false)
+			if tracer != null and tracer.has_method("refresh_visual"):
+				tracer.call("refresh_visual")
+		state["remaining"] = remaining
+		local_transient_projectile_visual_nodes[visual_id] = state
 
 
 func _make_base_tool_result(peer_id: int, tool_id: String, tool_request: Dictionary) -> Dictionary:
@@ -2872,8 +3758,10 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("freeze_gun", "range"), CombatBalance.get_float("freeze_gun", "damage"), CombatBalance.get_float("freeze_gun", "knockback"), "freeze"), true)
 		"nail_gun":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("nail_gun", "range"), CombatBalance.get_float("nail_gun", "damage"), CombatBalance.get_float("nail_gun", "knockback"), "nail"), true)
-		"suppressed_pistol", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15":
+		"suppressed_pistol", "hunting_rifle", "crossbow", "m4", "mpx", "future_m4", "future_mpx", "ar15":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float(tool_id, "range"), CombatBalance.get_float(tool_id, "damage"), CombatBalance.get_float(tool_id, "knockback"), "nail"), true)
+		"long_spear":
+			result.merge(_server_long_spear(peer_id, tool_request), true)
 		"shotgun":
 			result.merge(_server_shotgun(peer_id, tool_request), true)
 		"medicine_pistol":
@@ -3555,6 +4443,26 @@ func grant_crop_harvest(
 	return true
 
 
+func grant_team_crop_harvest(
+	team: String,
+	ingredient_id: String,
+	weight_kg: float,
+	_drop_position := Vector3.ZERO
+) -> bool:
+	# HarvestReel deposits into shared team storage, so it does not use the
+	# personal backpack capacity path used by player interaction harvesting.
+	if should_send_network_requests() or not GlobalVar.team_storage.has(team) \
+			or IngredientCatalog.get_definition(ingredient_id).is_empty() \
+			or weight_kg <= 0.0:
+		return false
+	if not GlobalVar.add_item(team, ingredient_id, weight_kg):
+		return false
+	# The existing authority signal is consumed by both the local UI and the
+	# dedicated/cooperative inventory broadcasters.
+	inventory_state_ready.emit(_build_inventory_state())
+	return true
+
+
 func _spawn_crop_harvest_overflow(position: Vector3, ingredient_id: String, weight_kg: float) -> void:
 	if weight_kg <= 0.001:
 		return
@@ -3949,7 +4857,13 @@ func local_ingredient_pickup_action(peer_id: int, action: Dictionary) -> Diction
 
 
 func _sync_local_player_interaction_state(peer_id: int) -> void:
-	if mode != MODE_LOCAL or not player_states.has(peer_id):
+	# A cooperative listen server is also the local player's authority. Its
+	# GamePlayer presentation node is predicted locally while the server proxy
+	# is simulated from the input stream, so synchronize the local presentation
+	# before an interaction request is range/forward validated. Dedicated servers
+	# and ENet clients must never use a presentation node as authority state.
+	var is_listen_server := mode == MODE_SERVER and NetworkSession.is_listen_server()
+	if (mode != MODE_LOCAL and not is_listen_server) or not player_states.has(peer_id):
 		return
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if not is_instance_valid(node) or not node is GamePlayer:
@@ -4003,6 +4917,18 @@ func _sync_local_player_interaction_state(peer_id: int) -> void:
 		state["backpack_slot_items"] = backpack_slots
 		state["backpack_layout_valid"] = backpack_slots.size() == _server_bag_capacity(state)
 		player_states[peer_id] = state
+		# The host's local GamePlayer is presentation/prediction only. Before an
+		# immediate E action is range or line-of-sight checked, bring its server
+		# collision proxy to the same authoritative action frame as well. Without
+		# this, player_states can be current while all physics queries still see the
+		# previous-tick ServerPlayerPhysicsBody.
+		if mode == MODE_SERVER and str(state.get("vehicle_id", "")).is_empty():
+			var proxy := _ensure_player_physics_node(peer_id, player.global_position)
+			if is_instance_valid(proxy):
+				proxy.global_position = player.global_position
+				proxy.rotation.y = player.rotation.y
+				proxy.velocity = player.velocity
+				_set_server_player_prone_collision(proxy, bool(state.get("prone", false)))
 		return
 
 
@@ -4946,6 +5872,10 @@ func _can_server_pickup_dropped_item(state: Dictionary, target_position: Vector3
 
 
 func server_cargo_car_action(peer_id: int, action: Dictionary) -> Dictionary:
+	CARGO_CAR_DEBUG.log(
+		"authority request peer=%d action=%s vehicle_id=%s mode=%s"
+		% [peer_id, str(action.get("action", "")), str(action.get("vehicle_id", "")), mode]
+	)
 	var result := {
 		"ok": false,
 		"peer_id": peer_id,
@@ -5277,6 +6207,10 @@ func _fill_cargo_car_result(result: Dictionary, state: Dictionary, vehicle: Vehi
 
 
 func _emit_cargo_car_result(result: Dictionary) -> Dictionary:
+	CARGO_CAR_DEBUG.log(
+		"authority result peer=%d action=%s vehicle_id=%s ok=%s reason=%s"
+		% [int(result.get("peer_id", 0)), str(result.get("action", "")), str(result.get("vehicle_id", "")), bool(result.get("ok", false)), str(result.get("reason", ""))]
+	)
 	reliable_world_event_ready.emit({"type": "cargo_car_action_result", "data": result, "tick": server_tick})
 	return result
 
@@ -5482,6 +6416,20 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 	if not slots_value is Array or (slots_value as Array).size() != _server_bag_capacity(state):
 		result["reason"] = "invalid_slot_count"
 		return result
+	_normalize_shield_inventory_items(state)
+	var existing_shields_by_id := {}
+	var existing_slots_value: Variant = state.get("backpack_slot_items", [])
+	if existing_slots_value is Array:
+		for existing_index in range((existing_slots_value as Array).size()):
+			var existing_value: Variant = (existing_slots_value as Array)[existing_index]
+			if not existing_value is Dictionary:
+				continue
+			var existing_item := existing_value as Dictionary
+			if str(existing_item.get("tool_id", "")) != "medieval_shield":
+				continue
+			var existing_id := str(existing_item.get("shield_instance_id", ""))
+			if not existing_id.is_empty():
+				existing_shields_by_id[existing_id] = existing_item.duplicate(true)
 	var normalized_slots: Array[Dictionary] = []
 	var tool_ids := {}
 	var equipment_ids := {}
@@ -5521,6 +6469,30 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 					authoritative_livestock_items.erase(livestock_instance_id)
 				else:
 					normalized = {"kind": "tool", "tool_id": tool_id}
+					if tool_id == "medieval_shield":
+						var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
+						var requested_id := str(item.get("shield_instance_id", ""))
+						var preserved: Dictionary = existing_shields_by_id.get(requested_id, {})
+						if preserved.is_empty() and existing_slots_value is Array \
+								and normalized_slots.size() < (existing_slots_value as Array).size():
+							var old_slot_value: Variant = (existing_slots_value as Array)[normalized_slots.size()]
+							if old_slot_value is Dictionary \
+									and str((old_slot_value as Dictionary).get("tool_id", "")) == tool_id:
+								preserved = (old_slot_value as Dictionary).duplicate(true)
+						var shield_id := requested_id
+						if shield_id.is_empty():
+							shield_id = str(preserved.get("shield_instance_id", ""))
+						if shield_id.is_empty():
+							shield_id = _new_shield_instance_id(state, normalized_slots.size())
+						normalized["shield_instance_id"] = shield_id
+						normalized["max_hp"] = maxf(
+							1.0, float(preserved.get("max_hp", max_hp))
+						)
+						normalized["current_hp"] = clampf(
+							float(preserved.get("current_hp", normalized["max_hp"])),
+							0.0,
+							float(normalized["max_hp"])
+						)
 			"equipment":
 				var equipment_id := str(item.get("equipment_id", ""))
 				var definition := EquipmentCatalog.get_definition(equipment_id)
@@ -6171,6 +7143,24 @@ func _remove_authoritative_dropped_item(item_id: String, emit_event: bool) -> vo
 		reliable_world_event_ready.emit({"type": "dropped_item_removed", "item_id": item_id, "tick": server_tick})
 
 
+## Bandit 没有背包；到达掉落物时直接将其从权威世界移除。
+## 使用可靠移除事件，确保所有客户端同步清掉同一个 PickupItem 视觉实例。
+func consume_dropped_item_for_bandit(pickup: PickupItem, collector: Node3D) -> bool:
+	if not (is_server_authority() or is_local_authority()):
+		return false
+	if not is_instance_valid(pickup) or not is_instance_valid(collector) or not pickup.landed:
+		return false
+	var item_id := pickup.item_id
+	if item_id.is_empty() or dropped_item_nodes.get(item_id, null) != pickup:
+		return false
+	var horizontal_offset := pickup.global_position - collector.global_position
+	horizontal_offset.y = 0.0
+	if horizontal_offset.length() > 1.35:
+		return false
+	_remove_authoritative_dropped_item(item_id, true)
+	return true
+
+
 func _clear_dropped_items() -> void:
 	for pickup in dropped_item_nodes.values():
 		if is_instance_valid(pickup):
@@ -6709,6 +7699,235 @@ func _emit_weapon_ammo_state(peer_id: int, tool_id: String, ammo_state: Dictiona
 	})
 
 
+func _server_long_spear(peer_id: int, tool_request: Dictionary) -> Dictionary:
+	var result := {
+		"ok": true,
+		"hit_kind": "none",
+		"hit_position": Vector3.ZERO,
+		"target_count": 0,
+		"total_damage": 0.0,
+		"effect": "melee",
+	}
+	if not player_states.has(peer_id):
+		result["ok"] = false
+		result["reason"] = "unknown_player"
+		return result
+	var state: Dictionary = player_states[peer_id]
+	var player_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var authoritative_position: Variant = get_authoritative_player_position(peer_id)
+	if authoritative_position is Vector3:
+		player_position = authoritative_position as Vector3
+	var yaw := float(state.get("yaw", 0.0))
+	var forward := -Basis(Vector3.UP, yaw).z.normalized()
+	var reach := CombatBalance.get_float("long_spear", "reach", 2.4)
+	var default_tip_distance := CombatBalance.get_float(
+		"long_spear", "default_tip_distance", 1.35
+	)
+	var fallback_center := player_position + Vector3.UP * 1.2 + forward * default_tip_distance
+	var attack_center := fallback_center
+	var requested_value: Variant = tool_request.get("melee_center", null)
+	if requested_value is Vector3:
+		var requested_center := requested_value as Vector3
+		var offset := requested_center - player_position
+		var horizontal_offset := Vector3(offset.x, 0.0, offset.z)
+		var horizontal_forward_dot := 1.0
+		if horizontal_offset.length_squared() > 0.0001:
+			horizontal_forward_dot = forward.dot(horizontal_offset.normalized())
+		if offset.length() <= reach \
+				and offset.y >= -0.35 and offset.y <= 2.6 \
+				and horizontal_forward_dot >= 0.15:
+			attack_center = requested_center
+	result["hit_position"] = attack_center
+
+	var exclusions := _player_raycast_exclusion(peer_id)
+	for player_value: Variant in get_tree().get_nodes_in_group("human_players"):
+		if player_value is GamePlayer and player_value is CollisionObject3D \
+				and int((player_value as GamePlayer).authority_peer_id) == peer_id:
+			var player_rid := (player_value as CollisionObject3D).get_rid()
+			if not exclusions.has(player_rid):
+				exclusions.append(player_rid)
+	# A client-provided tip position is never allowed to place the hitbox through
+	# an opaque wall or building.  Other damageable targets do not block the tiny
+	# tip box, which preserves intentional multi-target hits.
+	var blocker := _raycast_world(
+		player_position + Vector3.UP * 1.2,
+		attack_center,
+		COLLISION_LAYER_WALL | COLLISION_LAYER_BUILDING,
+		exclusions
+	)
+	if not blocker.is_empty():
+		result["blocked"] = true
+		return result
+
+	var box := BoxShape3D.new()
+	box.size = Vector3(
+		CombatBalance.get_float("long_spear", "hitbox_width", 0.2),
+		CombatBalance.get_float("long_spear", "hitbox_height", 0.2),
+		CombatBalance.get_float("long_spear", "hitbox_depth", 0.3)
+	)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = box
+	query.transform = Transform3D(Basis.looking_at(forward, Vector3.UP), attack_center)
+	query.collision_mask = DEFAULT_COMBAT_RAYCAST_MASK
+	query.exclude = exclusions
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
+	query.margin = 0.02
+	var world_3d := get_tree().root.get_world_3d()
+	if world_3d == null:
+		result["ok"] = false
+		result["reason"] = "world_unavailable"
+		return result
+	var hits := world_3d.direct_space_state.intersect_shape(query, 64)
+	var damaged_targets: Dictionary = {}
+	var hit_player := false
+	var hit_world_target := false
+	var base_damage := CombatBalance.get_float("long_spear", "damage", 20.0)
+	var team := str(state.get("team", ""))
+	for hit_value: Variant in hits:
+		if not hit_value is Dictionary:
+			continue
+		var collider: Variant = (hit_value as Dictionary).get("collider", null)
+		var direct_shield_peer_id := _shield_peer_id_for_collider(collider)
+		if direct_shield_peer_id > 0 and direct_shield_peer_id != peer_id:
+			var shield_key := "shield:%d" % direct_shield_peer_id
+			if not damaged_targets.has(shield_key):
+				damaged_targets[shield_key] = true
+				damaged_targets["player:%d" % direct_shield_peer_id] = true
+				var shield_result := apply_held_shield_damage(
+					direct_shield_peer_id,
+					base_damage,
+					peer_id,
+					"melee",
+					1.0,
+					team,
+					false
+				)
+				if bool(shield_result.get("blocked", false)):
+					result["target_count"] = int(result["target_count"]) + 1
+					result["total_damage"] = float(result["total_damage"]) \
+							+ float(shield_result.get("absorbed_damage", base_damage))
+					hit_world_target = true
+			continue
+		var target_peer_id := _long_spear_player_peer_id(collider)
+		if target_peer_id == peer_id:
+			continue
+		if target_peer_id > 0:
+			var player_key := "player:%d" % target_peer_id
+			if damaged_targets.has(player_key):
+				continue
+			var shield_hit := _find_shield_on_segment(
+				player_position + Vector3.UP * 1.2,
+				attack_center,
+				peer_id,
+				team,
+				target_peer_id
+			)
+			if not shield_hit.is_empty():
+				damaged_targets[player_key] = true
+				damaged_targets["shield:%d" % target_peer_id] = true
+				var shield_result := apply_held_shield_damage(
+					target_peer_id,
+					base_damage,
+					peer_id,
+					"melee",
+					1.0,
+					team,
+					false
+				)
+				if bool(shield_result.get("blocked", false)):
+					result["target_count"] = int(result["target_count"]) + 1
+					result["total_damage"] = float(result["total_damage"]) \
+							+ float(shield_result.get("absorbed_damage", base_damage))
+					hit_world_target = true
+				continue
+			damaged_targets[player_key] = true
+			var damage_position := attack_center
+			var target_position: Variant = get_authoritative_player_position(target_peer_id)
+			if target_position is Vector3:
+				damage_position = target_position as Vector3
+			var applied_player_damage := base_damage * AreaProtectorTool.get_damage_multiplier_at(
+				self, damage_position, team
+			)
+			if _damage_player(
+				target_peer_id, applied_player_damage, 0.0, forward,
+				team, "melee", peer_id
+			):
+				result["target_count"] = int(result["target_count"]) + 1
+				result["total_damage"] = float(result["total_damage"]) + applied_player_damage
+				hit_player = true
+			continue
+		var damage_target := _long_spear_damage_target(collider)
+		if damage_target == null:
+			continue
+		var target_key := _long_spear_target_key(damage_target)
+		if damaged_targets.has(target_key):
+			continue
+		damaged_targets[target_key] = true
+		var damage_position := attack_center
+		if damage_target is Node3D:
+			damage_position = (damage_target as Node3D).global_position
+		var applied_damage := base_damage * AreaProtectorTool.get_damage_multiplier_at(
+			self, damage_position, team
+		)
+		if _apply_hit_to_collider(
+			damage_target, "melee", applied_damage, team,
+			int((hit_value as Dictionary).get("shape", -1)), peer_id
+		):
+			result["target_count"] = int(result["target_count"]) + 1
+			result["total_damage"] = float(result["total_damage"]) + applied_damage
+			hit_world_target = true
+	if int(result["target_count"]) > 0:
+		result["hit_kind"] = "multiple" if int(result["target_count"]) > 1 \
+				else ("player" if hit_player and not hit_world_target else "world")
+		_emit_hit_confirmed(
+			peer_id, int(result["target_count"]), float(result["total_damage"]), "long_spear"
+		)
+	return result
+
+
+func _long_spear_player_peer_id(collider: Variant) -> int:
+	var proxy_peer_id := _peer_id_for_player_physics_collider(collider)
+	if proxy_peer_id > 0:
+		return proxy_peer_id
+	if not collider is Node:
+		return 0
+	var cursor := collider as Node
+	for _depth in range(16):
+		if cursor == null:
+			break
+		if cursor is GamePlayer:
+			return int((cursor as GamePlayer).authority_peer_id)
+		cursor = cursor.get_parent()
+	return 0
+
+
+func _long_spear_damage_target(collider: Variant) -> Node:
+	if not collider is Node or not is_instance_valid(collider):
+		return null
+	var cursor := collider as Node
+	for _depth in range(16):
+		if cursor == null:
+			break
+		if cursor is FarmTile or cursor is FutureWarriorAI or cursor is FarmerAI \
+				or cursor is AssistantAI or cursor is AINormalDrone \
+				or cursor is VehicleBase:
+			return cursor
+		if not _registered_tool_ref_for_node(cursor).is_empty():
+			return cursor
+		if cursor.has_method("impact_from_peer") or cursor.has_method("impact"):
+			return cursor
+		cursor = cursor.get_parent()
+	return null
+
+
+func _long_spear_target_key(target: Node) -> String:
+	var tool_ref := _registered_tool_ref_for_node(target)
+	if not tool_ref.is_empty():
+		return "tool:%s:%s" % [str(tool_ref.get("kind", "")), str(tool_ref.get("id", ""))]
+	return "node:%d" % target.get_instance_id()
+
+
 func _server_hitscan(
 	peer_id: int,
 	tool_request: Dictionary,
@@ -6716,7 +7935,8 @@ func _server_hitscan(
 	damage: float,
 	knockback: float,
 	effect: String,
-	show_owner_hit_marker := true
+	show_owner_hit_marker := true,
+	extra_exclusions: Array[RID] = []
 ) -> Dictionary:
 	var state: Dictionary = player_states[peer_id]
 	var team := str(state.get("team", ""))
@@ -6728,10 +7948,40 @@ func _server_hitscan(
 	# The requested origin is normally the camera or muzzle, both of which can
 	# overlap the caster's authority capsule. Ignore that capsule so a hitscan
 	# starts in front of its owner, as the client-side LookAtTarget does.
-	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, _player_raycast_exclusion(peer_id))
+	var exclusions := _player_raycast_exclusion(peer_id)
+	for rid: RID in extra_exclusions:
+		if not exclusions.has(rid):
+			exclusions.append(rid)
+	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclusions)
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
 	var hit_position := trace_end
 	var hit_kind := "world" if hit.has("collider") else "none"
+	var shield_peer_id := _shield_peer_id_for_collider(hit.get("collider", null))
+	var shield_hit_position := trace_end
+	if shield_peer_id <= 0:
+		var shield_hit := _find_shield_on_segment(origin, trace_end, peer_id, team)
+		if not shield_hit.is_empty():
+			shield_peer_id = int(shield_hit.get("peer_id", 0))
+			shield_hit_position = _vector3_from_value(shield_hit.get("position", trace_end))
+	if shield_peer_id > 0:
+		var shield_result := apply_held_shield_damage(
+			shield_peer_id,
+			damage,
+			peer_id,
+			effect,
+			1.0,
+			team,
+			show_owner_hit_marker
+		)
+		if bool(shield_result.get("blocked", false)):
+			return {
+				"hit_kind": "shield",
+				"hit_peer_id": shield_peer_id,
+				"hit_position": shield_hit_position,
+				"effect": effect,
+				"damage": float(shield_result.get("absorbed_damage", damage)),
+				"knockback": knockback,
+			}
 	# A direct server-physics hit is the exact player capsule intersection. The
 	# segment test remains as a latency-tolerant fallback, limited by the first
 	# world/body collision so it cannot shoot through cover.
@@ -6742,9 +7992,9 @@ func _server_hitscan(
 		hit_peer_id = _find_player_hit_by_segment(peer_id, team, origin, trace_end, 0.75)
 	var damage_position := hit_position
 	if hit_peer_id != 0 and player_states.has(hit_peer_id):
-		damage_position = _vector3_from_value(
-			(player_states[hit_peer_id] as Dictionary).get("position", hit_position)
-		)
+		var authoritative_position: Variant = get_authoritative_player_position(hit_peer_id)
+		if authoritative_position is Vector3:
+			damage_position = authoritative_position as Vector3
 	var applied_damage := damage * AreaProtectorTool.get_damage_multiplier_at(
 		self, damage_position, team
 	)
@@ -6817,32 +8067,80 @@ func server_ai_hitscan(
 	var knockback := maxf(0.0, CombatBalance.get_float(tool_id, "knockback"))
 	var end := origin + normalized_direction * max_distance
 	var exclude: Array[RID] = []
+	exclude.append_array(_server_presentation_player_raycast_exclusion())
 	if shooter is CollisionObject3D:
-		exclude.append((shooter as CollisionObject3D).get_rid())
+		var shooter_rid := (shooter as CollisionObject3D).get_rid()
+		if not exclude.has(shooter_rid):
+			exclude.append(shooter_rid)
 	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclude)
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
 	var hit_position := trace_end
 	var hit_kind := "world" if hit.has("collider") else "none"
+	var shield_peer_id := _shield_peer_id_for_collider(hit.get("collider", null))
+	var shield_hit_position := trace_end
+	if shield_peer_id <= 0:
+		var shield_hit := _find_shield_on_segment(origin, trace_end, 0, attacker_team)
+		if not shield_hit.is_empty():
+			shield_peer_id = int(shield_hit.get("peer_id", 0))
+			shield_hit_position = _vector3_from_value(shield_hit.get("position", trace_end))
+	if shield_peer_id > 0:
+		var shield_result := apply_held_shield_damage(
+			shield_peer_id,
+			damage,
+			0,
+			"nail",
+			1.0,
+			attacker_team,
+			false
+		)
+		if bool(shield_result.get("blocked", false)):
+			hit_position = shield_hit_position
+			hit_kind = "shield"
+			result["ok"] = true
+			result["hit_kind"] = hit_kind
+			result["hit_peer_id"] = shield_peer_id
+			result["hit_position"] = hit_position
+			result["direction"] = normalized_direction
+			result["damage"] = float(shield_result.get("absorbed_damage", damage))
+			result["knockback"] = knockback
+			result["visual_distance"] = origin.distance_to(hit_position)
+			_emit_ai_hitscan_visual(
+				shooter,
+				attacker_team,
+				tool_id,
+				origin,
+				normalized_direction,
+				float(result["visual_distance"])
+			)
+			return result
 
 	var hit_peer_id := _valid_hitscan_player_target(
 		_peer_id_for_player_physics_collider(hit.get("collider", null)),
 		0,
 		attacker_team
 	)
-	if hit_peer_id == 0:
+	## Multiplayer AI uses a live ServerPlayerPhysicsBody for every player. Once
+	## that proxy exists, the physics ray is the single source of truth; a
+	## position-radius fallback would reintroduce the original bug by allowing a
+	## ray that visually misses the capsule to damage a stale/nearby player state.
+	## Local single-player has no server proxy, so it retains the compatibility
+	## fallback against the local authority player state.
+	if hit_peer_id == 0 and is_local_authority():
 		hit_peer_id = _find_player_hit_by_segment(
 			0,
 			attacker_team,
 			origin,
 			trace_end,
-			0.75
+			## Keep the single-player compatibility fallback at the local player
+			## capsule scale; the multiplayer server path does not use this test.
+			0.50
 		)
 
 	var damage_position := hit_position
-	if hit_peer_id != 0 and player_states.has(hit_peer_id):
-		damage_position = _vector3_from_value(
-			(player_states[hit_peer_id] as Dictionary).get("position", hit_position)
-		)
+	if hit_peer_id != 0:
+		var authoritative_position: Variant = get_authoritative_player_position(hit_peer_id)
+		if authoritative_position is Vector3:
+			damage_position = authoritative_position as Vector3
 	var applied_damage := damage * AreaProtectorTool.get_damage_multiplier_at(
 		self,
 		damage_position,
@@ -6946,10 +8244,10 @@ func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		center_direction = Vector3.FORWARD
 	var bullet_count := maxi(
 		1,
-		CombatBalance.get_int("shotgun", "bullet_count", 2)
+		CombatBalance.get_int("shotgun", "bullet_count", 6)
 	)
 	var spread_degrees := CombatBalance.get_float(
-		"shotgun", "spread_degrees", 3.0
+		"shotgun", "spread_degrees", 2.0
 	)
 	var screen_right := center_direction.cross(Vector3.UP).normalized()
 	var spread_axis := screen_right.cross(center_direction).normalized()
@@ -7086,6 +8384,35 @@ func _server_tranquilizer_hitscan(peer_id: int, tool_request: Dictionary) -> Dic
 	var end := origin + direction * CombatBalance.get_float("tranquilizer_pistol", "range")
 	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, _player_raycast_exclusion(peer_id))
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
+	var shield_peer_id := _shield_peer_id_for_collider(hit.get("collider", null))
+	var shield_hit_position := trace_end
+	if shield_peer_id <= 0:
+		var shield_hit := _find_shield_on_segment(origin, trace_end, peer_id, team)
+		if not shield_hit.is_empty():
+			shield_peer_id = int(shield_hit.get("peer_id", 0))
+			shield_hit_position = _vector3_from_value(shield_hit.get("position", trace_end))
+	if shield_peer_id > 0:
+		var shield_damage := damage * AreaProtectorTool.get_damage_multiplier_at(
+			self, shield_hit_position, team
+		)
+		var shield_result := apply_held_shield_damage(
+			shield_peer_id,
+			shield_damage,
+			peer_id,
+			TranquilizerBullet.EFFECT_TRANQUILIZER,
+			1.0,
+			team,
+			true
+		)
+		if bool(shield_result.get("blocked", false)):
+			return {
+				"hit_kind": "shield",
+				"hit_peer_id": shield_peer_id,
+				"hit_position": shield_hit_position,
+				"effect": TranquilizerBullet.EFFECT_TRANQUILIZER,
+				"damage": float(shield_result.get("absorbed_damage", shield_damage)),
+				"knockback": 0.0,
+			}
 	var hit_peer_id := _valid_hitscan_player_target(
 		_peer_id_for_player_physics_collider(hit.get("collider", null)), peer_id, team
 	)
@@ -7478,6 +8805,10 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 			"state": remote_state,
 			"tick": server_tick,
 		})
+	_notify_dynamic_navigation_obstacle_lifecycle(
+		node,
+		_navigation_obstacle_active_for_node(node)
+	)
 	var result := {
 		"ok": true,
 		"placed": device_type,
@@ -7489,9 +8820,12 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 	}
 	if bool(wall_snap.get("active", false)):
 		result["wall_snap_source_id"] = str(wall_snap.get("source_id", ""))
-	if mode == MODE_LOCAL and is_remote_device:
-		# 单人本地权威需要把实例返回给 Player，便于立刻进入无人机/小车等遥控视角。
-		# Dedicated Server 模式不能把 Node 放进 RPC 事件，否则网络序列化会失败。
+	if is_remote_device and is_local_interaction_authority():
+		# 单人本地权威以及合作 listen-server 房主都在同一个进程内运行
+		# Player 和权威设备。把真实权威节点返回给房主的 Player，才能立即
+		# 建立遥控相机、鼠标输入和本地遥控动作链路。
+		# Dedicated Server 不满足 is_local_interaction_authority()，不会把 Node
+		# 放进网络结果，避免尝试序列化服务器节点。
 		result["remote_node"] = node
 	_free_placement_debug(
 		"created type=%s path=%s position=%s active=%s"
@@ -7604,6 +8938,10 @@ func register_map_placed_tool(
 	if not PlacementQueryScript.wall_family_for_tool(tool_name).is_empty():
 		placed_tool_states[tool_id]["wall_half_length"] = \
 			PlacementQueryScript.wall_half_length_for_node(node)
+	_notify_dynamic_navigation_obstacle_lifecycle(
+		node,
+		_navigation_obstacle_active_for_node(node)
+	)
 	return true
 
 
@@ -8505,6 +9843,50 @@ func _register_placed_tool(peer_id: int, tool_name: String, team: String, tool_p
 	}
 
 
+func _notify_dynamic_navigation_obstacle_lifecycle(node: Node, active: bool) -> void:
+	## 放置/复活/移除是导航障碍的生命周期边界。五种防御设施自身
+	## 也会在状态切换时注册，这里再从权威 GameAuthority 明确发出
+	## 生命周期 dirty 请求，覆盖节点刚加入场景或刚重新实例化的时序。
+	if node == null or not is_instance_valid(node) or not node is Node3D:
+		return
+	var obstacle := (node as Node3D).find_child(
+		"NavigationObstacle3D", true, false
+	) as NavigationObstacle3D
+	if obstacle == null:
+		return
+	var navigation_grid := get_tree().get_first_node_in_group(
+		"dynamic_navigation_chunk_grids"
+	)
+	if navigation_grid == null:
+		return
+	if navigation_grid.has_method("request_dynamic_obstacle_rebuild"):
+		navigation_grid.call(
+			"request_dynamic_obstacle_rebuild",
+			node as Node3D,
+			active
+		)
+	elif navigation_grid.has_method("register_dynamic_obstacle"):
+		navigation_grid.call(
+			"register_dynamic_obstacle",
+			node as Node3D,
+			active
+		)
+
+
+func _navigation_obstacle_active_for_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var active := true
+	if _node_has_property(node, "destroyed"):
+		active = not bool(node.get("destroyed"))
+	if _node_has_property(node, "active"):
+		active = active and bool(node.get("active"))
+	## WireMeshGate 打开时，门本体不应继续作为导航障碍。
+	if _node_has_property(node, "is_open"):
+		active = active and not bool(node.get("is_open"))
+	return active
+
+
 func _respawn_registered_map_tool(tool_id: String, tool: Dictionary) -> void:
 	if tool_id.is_empty() or not bool(tool.get("map_static", false)):
 		return
@@ -8536,6 +9918,10 @@ func _respawn_registered_map_tool(tool_id: String, tool: Dictionary) -> void:
 		node.set("current_hp", max_hp)
 	if node is WireMeshGate:
 		tool["is_open"] = false
+	_notify_dynamic_navigation_obstacle_lifecycle(
+		node,
+		_navigation_obstacle_active_for_node(node)
+	)
 	placed_tool_states[tool_id] = tool
 	reliable_world_event_ready.emit({
 		"type": "tool_respawned",
@@ -8899,7 +10285,18 @@ func apply_local_boom_explosion(
 		if distance > radius:
 			continue
 		var ratio := 1.0 - (distance / radius) * 0.5
-		var occlusion := _explosion_damage_multiplier(position, target_position + Vector3.UP * 0.9)
+		var incoming_damage := damage * ratio
+		var shield_result := _apply_explosion_shield_if_front(
+			position,
+			target_position + Vector3.UP * 0.9,
+			peer_id,
+			incoming_damage,
+			attacker_peer_id,
+			team
+		)
+		var occlusion := float(shield_result.get("multiplier", 1.0)) \
+			if bool(shield_result.get("hit", false)) \
+			else _explosion_damage_multiplier(position, target_position + Vector3.UP * 0.9, null, peer_id)
 		var direction := (target_position - position).normalized()
 		_damage_player(
 			peer_id,
@@ -8924,6 +10321,7 @@ func apply_local_boom_explosion(
 	_damage_assistant_ai_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_ai_normal_drones_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_vehicles_in_radius(position, radius, damage, team, effect)
+	_damage_mounted_machine_guns_in_radius(position, radius, damage, team, effect)
 	_damage_tools_in_radius(position, radius, damage, team, effect)
 	_damage_harvest_trees_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
 	_damage_nature_resources_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
@@ -8964,7 +10362,23 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 				var ratio := 1.0 if is_direct_hit else maxf(0.0, 1.0 - dist / radius) \
 					if linear_falloff else 1.0 - (dist / radius) * 0.5
 				var dir := (pos - hit_position).normalized()
-				var occlusion := _explosion_damage_multiplier(hit_position, pos + Vector3.UP * 0.9)
+				var incoming_damage := damage * ratio
+				var shield_result := _apply_explosion_shield_if_front(
+					hit_position,
+					pos + Vector3.UP * 0.9,
+					int(peer_id),
+					incoming_damage,
+					int(projectile.get("owner_peer_id", 0)),
+					team
+				)
+				var occlusion := float(shield_result.get("multiplier", 1.0)) \
+					if bool(shield_result.get("hit", false)) \
+					else _explosion_damage_multiplier(
+						hit_position,
+						pos + Vector3.UP * 0.9,
+						null,
+						int(peer_id)
+					)
 				var applied_damage := damage * ratio * occlusion
 				if _damage_player(
 					int(peer_id), applied_damage, knockback_strength * ratio * occlusion,
@@ -9018,6 +10432,12 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 		var damaged_vehicles := _damage_vehicles_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff)
 		confirmed_target_count += damaged_vehicles
 		if damaged_vehicles > 0:
+			confirmed_total_damage += damage
+		var damaged_machine_guns := _damage_mounted_machine_guns_in_radius(
+			hit_position, radius, damage, damage_team, effect, linear_falloff
+		)
+		confirmed_target_count += damaged_machine_guns
+		if damaged_machine_guns > 0:
 			confirmed_total_damage += damage
 		var damaged_tools := _damage_tools_in_radius(
 			hit_position,
@@ -9340,10 +10760,32 @@ func _can_server_interact_with_position(state: Dictionary, target_position: Vect
 
 
 func _player_raycast_exclusion(peer_id: int) -> Array[RID]:
-	var exclude: Array[RID] = []
+	var exclude: Array[RID] = _server_presentation_player_raycast_exclusion()
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CollisionObject3D:
-		exclude.append((proxy as CollisionObject3D).get_rid())
+		var proxy_rid := (proxy as CollisionObject3D).get_rid()
+		if not exclude.has(proxy_rid):
+			exclude.append(proxy_rid)
+	return exclude
+
+
+func _server_presentation_player_raycast_exclusion() -> Array[RID]:
+	## Listen-server 场景同时存在 GamePlayer 的画面节点和
+	## ServerPlayerPhysicsBody。服务器物理查询只能看到后者；否则本地主机的
+	## 预测/插值画面节点可能在权威代理前先挡住射线，造成目标坐标和命中坐标
+	## 来自两套不同的玩家实体。
+	var exclude: Array[RID] = []
+	if mode != MODE_SERVER:
+		return exclude
+	for node in get_tree().get_nodes_in_group("human_players"):
+		# The authoritative ServerPlayerPhysicsBody is intentionally also in
+		# human_players for compatibility. Exclude only full GamePlayer
+		# presentation nodes; excluding every member would hide the real target.
+		if not node is GamePlayer or not node is CollisionObject3D:
+			continue
+		var rid := (node as CollisionObject3D).get_rid()
+		if not exclude.has(rid):
+			exclude.append(rid)
 	return exclude
 
 
@@ -9388,7 +10830,11 @@ func _find_player_hit_by_segment(
 			continue
 		if not include_same_team and not shooter_team.is_empty() and str(state.get("team", "")) == shooter_team:
 			continue
-		var pos := _vector3_from_value(state.get("position", Vector3.ZERO)) + Vector3.UP
+		var pos := _vector3_from_value(state.get("position", Vector3.ZERO))
+		var authoritative_position: Variant = get_authoritative_player_position(peer_id)
+		if authoritative_position is Vector3:
+			pos = authoritative_position as Vector3
+		pos += Vector3.UP
 		var t := clampf((pos - start).dot(segment) / len_sq, 0.0, 1.0)
 		var closest := start + segment * t
 		if closest.distance_to(pos) <= radius and t < best_t:
@@ -9633,6 +11079,30 @@ func damage_player_from_wild_animal(
 	var melee_tolerance := 0.2
 	if horizontal_distance > maxf(0.0, max_range) + melee_tolerance:
 		return false
+	# BlackBear's close attack is a line from the animal into the player's
+	# torso. Resolve the same authoritative shield box used by projectiles and
+	# LongSpear before touching player HP. The shield helper also determines
+	# whether the attacker is on the shield's authored front (-Z) side, so a
+	# rear attack is intentionally allowed through.
+	var shield_hit := _find_shield_on_segment(
+		animal_position + Vector3.UP * 1.0,
+		target_position + Vector3.UP * 1.0,
+		0,
+		"",
+		peer_id
+	)
+	if not shield_hit.is_empty() and bool(shield_hit.get("front", false)):
+		var shield_result := apply_held_shield_damage(
+			peer_id,
+			damage,
+			0,
+			"wild_animal",
+			1.0,
+			"",
+			false
+		)
+		if bool(shield_result.get("blocked", false)):
+			return true
 	return _damage_player(peer_id, damage, 0.0, direction, "", "wild_animal")
 
 
@@ -9675,6 +11145,7 @@ func _begin_player_respawn(peer_id: int) -> void:
 		return
 	var state: Dictionary = player_states[peer_id]
 	_force_release_kitchen_user(peer_id)
+	force_release_mounted_machine_gun(peer_id)
 	_destroy_rift_anchor_for_peer(peer_id)
 	if float(state.get("respawn_left", 0.0)) > 0.0:
 		return
@@ -9702,9 +11173,16 @@ func _begin_player_respawn(peer_id: int) -> void:
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CollisionObject3D:
 		(proxy as CollisionObject3D).collision_layer = 0
-		(proxy as CollisionObject3D).collision_mask = 0
+		(proxy as CollisionObject3D).collision_mask = CORPSE_COLLISION_MASK
+		var corpse_shape := (proxy as Node).get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if corpse_shape != null:
+			corpse_shape.set_deferred("disabled", false)
+	# A cooperative listen-server is both the server authority and the local
+	# player's visual client. Apply the presentation state immediately on that
+	# process; remote clients still receive the reliable event below.
 	if mode == MODE_LOCAL:
 		_apply_local_player_death_inventory(peer_id, dropped_inventory_items)
+	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
 		_apply_local_player_respawn_state(peer_id, PLAYER_RESPAWN_SECONDS)
 	reliable_world_event_ready.emit({
 		"type": "player_died",
@@ -9974,7 +11452,12 @@ func _respawn_player(peer_id: int) -> void:
 		body.velocity = Vector3.ZERO
 		body.collision_layer = COLLISION_LAYER_CHARACTER
 		body.collision_mask = DEFAULT_COMBAT_RAYCAST_MASK
-	if mode == MODE_LOCAL:
+		var shape := body.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if shape != null:
+			shape.set_deferred("disabled", false)
+	# Keep the cooperative listen-server's local player in sync immediately after
+	# the authoritative respawn, including collision and interaction detectors.
+	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
 		_apply_local_player_respawn_state(peer_id, 0.0, spawn_position)
 	reliable_world_event_ready.emit({
 		"type": "player_respawned",
@@ -9997,7 +11480,11 @@ func _get_random_team_spawn_position(team: String, peer_id: int) -> Vector3:
 
 func _apply_local_player_respawn_state(peer_id: int, respawn_left: float, spawn_position: Variant = null) -> void:
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is GamePlayer and int(node.authority_peer_id) == peer_id:
+		# The listen server has both the real local player and visual proxies in
+		# this group.  Applying the state to a proxy first leaves the host without
+		# its death camera and respawn overlay.
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy \
+				and int(node.authority_peer_id) == peer_id:
 			node.call("apply_respawn_state", respawn_left, spawn_position)
 			break
 
@@ -10345,8 +11832,11 @@ func _damage_registered_tool_ref(
 		return false
 	var node = _node_for_tool_ref(tool_ref)
 	var before_hp := float(state.get("hp", _tool_max_hp(str(state.get("tool_name", state.get("device_type", ""))))))
-	if node != null and is_instance_valid(node) and node.has_method("impact"):
-		node.call("impact", effect, damage, attacker_team)
+	if node != null and is_instance_valid(node):
+		if allow_friendly_fire and node.has_method("impact_with_friendly_fire"):
+			node.call("impact_with_friendly_fire", effect, damage, attacker_team)
+		elif node.has_method("impact"):
+			node.call("impact", effect, damage, attacker_team)
 	var after_hp := before_hp - damage
 	if node != null and is_instance_valid(node):
 		if node is FarmTile:
@@ -10536,6 +12026,7 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 				node.call("apply_network_destroyed")
 			elif node.has_method("apply_network_health"):
 				node.call("apply_network_health", 0.0)
+		_notify_dynamic_navigation_obstacle_lifecycle(node, false)
 		placed_tool_states[id] = state
 		reliable_world_event_ready.emit({
 			"type": "tool_destroyed",
@@ -10549,6 +12040,7 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 		})
 		return
 	if node != null and is_instance_valid(node):
+		_notify_dynamic_navigation_obstacle_lifecycle(node, false)
 		if node is FarmTile:
 			(node as FarmTile).apply_authoritative_tool_destroyed()
 		else:
@@ -10877,21 +12369,77 @@ func _damage_vehicles_in_radius(center: Vector3, radius: float, damage: float, a
 	return damaged_count
 
 
+func _damage_mounted_machine_guns_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false
+) -> int:
+	if radius <= 0.0 or damage <= 0.0:
+		return 0
+	var damaged_count := 0
+	for node in get_tree().get_nodes_in_group("mounted_vehicle_machine_guns"):
+		if not node is VehicleBaseMachineGun or not is_instance_valid(node):
+			continue
+		var machine_gun := node as VehicleBaseMachineGun
+		if machine_gun.destroyed_state:
+			continue
+		var distance := machine_gun.global_position.distance_to(center)
+		if distance > radius:
+			continue
+		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
+		var occlusion := _explosion_damage_multiplier(
+			center, machine_gun.global_position + Vector3.UP, machine_gun
+		)
+		if machine_gun.impact(effect, damage * ratio * occlusion, attacker_team):
+			damaged_count += 1
+	return damaged_count
+
+
 func _explosion_damage_multiplier(
 	explosion_position: Vector3,
 	target_position: Vector3,
-	target_node: Node = null
+	target_node: Node = null,
+	target_peer_id := 0
 ) -> float:
 	var origin := explosion_position + Vector3.UP * 0.35
 	var hit := _raycast_world(origin, target_position, EXPLOSION_OCCLUSION_MASK)
-	if hit.is_empty():
-		return 1.0
-	var collider: Variant = hit.get("collider", null)
-	if _collider_belongs_to_target(collider, target_node):
-		return 1.0
-	if _collider_collision_layer(collider) & COLLISION_LAYER_TOOL:
-		return EXPLOSION_TOOL_DAMAGE_MULTIPLIER
-	return EXPLOSION_WALL_DAMAGE_MULTIPLIER
+	if not hit.is_empty():
+		var collider: Variant = hit.get("collider", null)
+		var shield_peer_id := _shield_peer_id_for_collider(collider)
+		if shield_peer_id > 0 and (target_peer_id <= 0 or shield_peer_id == target_peer_id):
+			var shield_hit := _find_shield_on_segment(
+				explosion_position,
+				target_position,
+				0,
+				"",
+				shield_peer_id
+			)
+			if bool(shield_hit.get("front", false)):
+				return CombatBalance.get_float(
+					"medieval_shield", "explosion_damage_multiplier", 0.20
+				)
+			return 1.0
+		if _collider_belongs_to_target(collider, target_node):
+			return 1.0
+		if _collider_collision_layer(collider) & COLLISION_LAYER_TOOL:
+			return EXPLOSION_TOOL_DAMAGE_MULTIPLIER
+		return EXPLOSION_WALL_DAMAGE_MULTIPLIER
+	if target_peer_id > 0:
+		var shield_hit := _find_shield_on_segment(
+			explosion_position,
+			target_position,
+		0,
+		"",
+		target_peer_id
+		)
+		if bool(shield_hit.get("front", false)):
+			return CombatBalance.get_float(
+				"medieval_shield", "explosion_damage_multiplier", 0.20
+			)
+	return 1.0
 
 
 func _collider_belongs_to_target(collider: Variant, target_node: Node) -> bool:
@@ -11645,6 +13193,34 @@ func _build_world_snapshot() -> Dictionary:
 	for raw_peer_id in player_states.keys():
 		var peer_id := int(raw_peer_id)
 		var state: Dictionary = player_states[peer_id]
+		var selected_weapon_ammo: Dictionary = {}
+		var selected_shield_hp: Dictionary = {}
+		var selected_tool_id := str(state.get("current_tool_id", ""))
+		if _uses_finite_ammo(selected_tool_id):
+			var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
+			var ammo_value: Variant = ammo_states.get(
+				selected_tool_id,
+				_default_weapon_ammo_state(selected_tool_id)
+			)
+			if ammo_value is Dictionary:
+				var ammo_state := ammo_value as Dictionary
+				selected_weapon_ammo = {
+					"ammo_in_mag": int(ammo_state.get("ammo_in_mag", 0)),
+					"reload_remaining": float(ammo_state.get("reload_remaining", 0.0)),
+					"reload_duration": float(ammo_state.get("reload_duration", 0.0)),
+				}
+		if selected_tool_id == "medieval_shield":
+			var shield_slot := _current_shield_slot(state)
+			var shield_slots_value: Variant = state.get("backpack_slot_items", [])
+			if shield_slot >= 0 and shield_slots_value is Array \
+					and shield_slot < (shield_slots_value as Array).size():
+				var shield_item_value: Variant = (shield_slots_value as Array)[shield_slot]
+				if shield_item_value is Dictionary:
+					var shield_item := shield_item_value as Dictionary
+					selected_shield_hp = {
+						"current_hp": float(shield_item.get("current_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0))),
+						"max_hp": float(shield_item.get("max_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0))),
+					}
 		public_players.append({
 			"peer_id": peer_id,
 			"display_name": state.get("display_name", "Player_%d" % peer_id),
@@ -11676,9 +13252,12 @@ func _build_world_snapshot() -> Dictionary:
 			"labeled_remaining": float(state.get("labeled_remaining", 0.0)),
 			"current_tool_index": int(state.get("current_tool_index", 0)),
 			"current_tool_id": str(state.get("current_tool_id", "")),
+			"selected_weapon_ammo": selected_weapon_ammo,
+			"selected_shield_hp": selected_shield_hp,
 			"last_input_seq": int(state.get("last_input_seq", 0)),
 			"vehicle_id": state.get("vehicle_id", ""),
 			"vehicle_seat_index": int(state.get("vehicle_seat_index", -1)),
+			"mounted_machine_gun_vehicle_id": str(state.get("mounted_machine_gun_vehicle_id", "")),
 		})
 	var public_vehicles: Array[Dictionary] = []
 	for raw_vehicle_id in vehicle_states.keys():
@@ -11701,6 +13280,17 @@ func _build_world_snapshot() -> Dictionary:
 			"cargo_available_slots": int(vehicle.get("cargo_available_slots", 12)),
 			"driver_peer_id": int(vehicle.get("driver_peer_id", 0)),
 			"seat_occupants": vehicle.get("seat_occupants", []),
+			"headlights_on": bool(vehicle.get("headlights_on", false)),
+			"brake_lights_on": bool(vehicle.get("brake_lights_on", false)),
+			"body_color": vehicle.get("body_color", null),
+			"wheel_color": vehicle.get("wheel_color", null),
+			"platform_machine_gun_installed": bool(vehicle.get("platform_machine_gun_installed", false)),
+			"platform_machine_gun": vehicle.get("platform_machine_gun", {}),
+			"platform_passenger_seat_count": int(vehicle.get("platform_passenger_seat_count", 0)),
+			"nitro_boost_installed": bool(vehicle.get("nitro_boost_installed", false)),
+			"nitro_boost_active": bool(vehicle.get("nitro_boost_active", false)),
+			"nitro_boost": vehicle.get("nitro_boost", {}),
+			"harvest_reel_installed": bool(vehicle.get("harvest_reel_installed", false)),
 		})
 	var public_projectiles: Array[Dictionary] = []
 	for raw_projectile_id in projectile_states.keys():

@@ -1,0 +1,42 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://di1hwfkc3mc4o" path="res://assets/nature/Pine_Yellow.glb" id="1_pine_yellow"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pine_yellow"]
+size = Vector3(0.8, 7.5, 0.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pine_yellow_hit"]
+size = Vector3(1, 7.6, 1)
+
+[node name="Pine_Yellow" type="StaticBody3D"]
+metadata/map_can_overlap_water = false
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "pine_yellow"
+display_name = "秋季松树"
+log_drop_count = 4
+
+[node name="Mesh" parent="." instance=ExtResource("1_pine_yellow")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.7661657, 0)
+shape = SubResource("BoxShape3D_pine_yellow")
+
+[node name="Label3D" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.6, 0)
+billboard = 1
+no_depth_test = true
+text = "500"
+outline_size = 6
+
+[node name="Hit3D" type="Area3D" parent="."]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.7969022, 0)
+shape = SubResource("BoxShape3D_pine_yellow_hit")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

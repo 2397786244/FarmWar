@@ -11,7 +11,7 @@ class_name BulletTracerSegment
 @export_range(1.0, 30.0, 0.5) var emission_energy: float = 12.0
 
 var bullet_root: Node3D
-var previous_position:Vector3=Vector3.ZERO
+var previous_position: Vector3 = Vector3.ZERO
 var tracer_mesh: CylinderMesh
 
 
@@ -64,23 +64,43 @@ func _ready() -> void:
 	visible = false
 
 
-var frame_counter:int = 0
+var frame_counter: int = 0
+
+
+## Refreshes the tracer from the current parent position.
+##
+## Networked hitscan visuals are collision-free presentation nodes. Their root
+## is moved manually by MultiplayerWorldReplicator, and some of those roots
+## have their own physics processing disabled. Keeping the geometry update in a
+## callable method makes the tail independent of the root's process state and
+## also lets the replicator refresh it immediately after moving the visual.
+func refresh_visual() -> void:
+	_refresh_from_parent()
+
+
 func _physics_process(_delta: float) -> void:
+	_refresh_from_parent()
+
+
+func _refresh_from_parent() -> void:
 	if not is_instance_valid(bullet_root):
 		queue_free()
 		return
-	
-	if frame_counter <= 1:	
+
+	if frame_counter <= 1:
 		frame_counter += 1
 		previous_position = bullet_root.global_position
 		return
-		
+
 	var current_position := bullet_root.global_position
 	var movement := current_position - previous_position
 	var movement_length := movement.length()
 
 	if movement_length <= 0.001:
-		visible = false
+		# Do not hide a freshly refreshed segment when the parent was moved by
+		# the authority visual loop just before this node's own physics tick.
+		# The segment will be replaced on the next movement or freed with the
+		# transient projectile.
 		previous_position = current_position
 		return
 

@@ -12,9 +12,12 @@ const MODE_NONE := "none"
 const MODE_HOST := "host"
 const MODE_CLIENT := "client"
 const DEFAULT_SPAWN := Vector3(0.0, 1.6, 0.0)
+const SPAWN_SOURCE_SAVED := "saved_position"
+const SPAWN_SOURCE_TEAM := "team_spawn"
 const CHUNK_SIZE_METERS := 256.0
 const INTEREST_RADIUS_METERS := 1024.0
 const WORLD_SAVE_INTERVAL_SECONDS := 10.0
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const FARM_RESTORE_WAIT_FRAMES := 120
 const DROPPED_ITEM_RECONCILE_INTERVAL_SECONDS := 3.0
 const UNRELIABLE_ACTION_TYPES := {
@@ -44,6 +47,7 @@ var threaded_scene_path := ""
 var pending_join_token := ""
 var client_scene_ready_sent := false
 var client_world_state_received := false
+var client_spawn_position_received := false
 var client_world_ready_sent := false
 var client_bootstrap_completing := false
 
@@ -99,6 +103,12 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	if world.is_empty() or selection.is_empty():
 		session_failed.emit("合作世界或房主角色档案无效。")
 		return false
+	# Steam Lobby 只承载地图和房间元数据。准备室从 Lobby 读取的 world
+	# 不包含 world_state/team_storage；房主必须按 world_id 从本地存档重新
+	# 读取完整权威世界，不能把 Lobby 元数据当成存档本体。
+	var persisted_world := CooperativeWorldStorage.load_world(str(world.get("world_id", "")))
+	if not persisted_world.is_empty():
+		world = persisted_world
 	var host_map_validation := GameMapRegistry.validate_world_map(world)
 	if not bool(host_map_validation.get("valid", false)):
 		session_failed.emit(str(host_map_validation.get("error", "房主选择的地图不可用。")))
@@ -148,6 +158,10 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 			_merge_saved_player_state(local_selection, saved_host_state),
 			multiplayer.get_unique_id()
 		)
+	# The host owns the first team-spawn slot. A saved position, when present,
+	# still takes precedence over this slot during world bootstrap.
+	_mark_selection_spawn_source(local_selection)
+	local_selection["spawn_index"] = 0
 	joined_players.clear()
 	peer_chunk_subscriptions.clear()
 	world_save_accumulator = 0.0
@@ -162,6 +176,7 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	pending_join_token = ""
 	client_scene_ready_sent = false
 	client_world_state_received = false
+	client_spawn_position_received = false
 	client_world_ready_sent = false
 	client_bootstrap_completing = false
 	joined_players[int(local_selection["peer_id"])] = local_selection.duplicate(true)
@@ -169,7 +184,9 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	GameAuthority.set_physics_process(false)
 	_connect_multiplayer_signals()
 	_connect_authority_signals()
-	_save_host_runtime_state()
+	# 不要在世界状态恢复前写回存档。start_server_mode() 会先把全局
+	# 队伍库存重置为初始值；此时保存会把已有存档的资金/库存覆盖掉。
+	# 成功恢复并完成权威端初始化后再进行首次保存。
 	# Keep the lobby in a non-running state while the host prepares the map.
 	# Clients must not create a SteamMultiplayerPeer until the host is ready.
 	SteamService.set_cooperative_world_starting()
@@ -231,6 +248,7 @@ func join_hosted_world() -> bool:
 	pending_join_token = _make_join_token()
 	client_scene_ready_sent = false
 	client_world_state_received = false
+	client_spawn_position_received = false
 	client_world_ready_sent = false
 	client_bootstrap_completing = false
 	local_selection = _normalize_selection(profile, 0)
@@ -274,6 +292,7 @@ func stop_session() -> void:
 	world_state_restored = false
 	client_scene_ready_sent = false
 	client_world_state_received = false
+	client_spawn_position_received = false
 	client_world_ready_sent = false
 	client_bootstrap_completing = false
 	if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
@@ -499,8 +518,12 @@ func _begin_join_request(sender_id: int, request: Dictionary) -> void:
 	locked_selection["display_name"] = str(profile.get("display_name", "Player_%d" % sender_id))
 	var selection := _normalize_selection(locked_selection, sender_id)
 	selection["team"] = "red"
-	if not selection.has("position"):
-		selection["position"] = _next_spawn_position(sender_id)
+	# Do not invent a position while the map is still loading. The host resolves
+	# a team spawn after the map has initialized and sends that final position in
+	# the authoritative world-state payload. A missing position therefore means
+	# "use a team spawn", never "use a temporary map-origin position".
+	_mark_selection_spawn_source(selection)
+	selection["spawn_index"] = _allocate_join_spawn_index()
 	var manifest := _make_world_manifest(join_token)
 	pending_join_sessions[sender_id] = {
 		"join_token": join_token,
@@ -594,6 +617,22 @@ func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
 	if not session_value is Dictionary:
 		return
 	var session := session_value as Dictionary
+	var selection: Dictionary = {}
+	var selection_value: Variant = session.get("selection", {})
+	if selection_value is Dictionary:
+		selection = (selection_value as Dictionary).duplicate(true)
+	selection["peer_id"] = peer_id
+	selection["team"] = "red"
+	# A saved position is used only when the player is not currently respawning.
+	# Otherwise, or when the save has no position, resolve the deterministic
+	# team-spawn slot now that the host's map is fully initialized.
+	if float(selection.get("respawn_left", 0.0)) > 0.0 or not selection.has("position"):
+		selection["position"] = _map_spawn_position(
+			int(selection.get("spawn_index", 0)), peer_id
+		)
+	_mark_selection_spawn_source(selection)
+	session["selection"] = selection.duplicate(true)
+	pending_join_sessions[peer_id] = session
 	var world_state: Dictionary = {}
 	var stored_state: Variant = active_world.get("world_state", {})
 	if stored_state is Dictionary:
@@ -615,6 +654,7 @@ func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
 		"game_day": int(active_world.get("game_day", 1)),
 		"world_elapsed_seconds": float(active_world.get("world_elapsed_seconds", 0.0)),
 		"world_state": world_state,
+		"player_selection": selection,
 		"state_revision": int(Time.get_ticks_msec()),
 		"join_token": join_token,
 	}
@@ -633,8 +673,11 @@ func _finalize_join_request(sender_id: int, session: Dictionary) -> void:
 	var selection := (selection_value as Dictionary).duplicate(true)
 	selection["peer_id"] = sender_id
 	selection["team"] = "red"
-	if not selection.has("position"):
-		selection["position"] = _next_spawn_position(sender_id)
+	if float(selection.get("respawn_left", 0.0)) > 0.0 or not selection.has("position"):
+		selection["position"] = _map_spawn_position(
+			int(selection.get("spawn_index", 0)), sender_id
+		)
+	_mark_selection_spawn_source(selection)
 	joined_players[sender_id] = selection.duplicate(true)
 	GameAuthority.register_or_update_player(sender_id, selection)
 	_save_joined_player_profile(sender_id, selection)
@@ -647,6 +690,11 @@ func _finalize_join_request(sender_id: int, session: Dictionary) -> void:
 func submit_action(action_type: String, payload: Dictionary = {}) -> void:
 	if not is_client():
 		return
+	if action_type == "ingredient_action" and str(payload.get("station_kind", "")) == "cargo_car":
+		CARGO_CAR_DEBUG.log(
+			"co-op submit action=%s vehicle_id=%s local_peer=%d"
+			% [str(payload.get("action", "")), str(payload.get("vehicle_id", "")), multiplayer.get_unique_id()]
+		)
 	if UNRELIABLE_ACTION_TYPES.has(action_type):
 		request_unreliable_game_action.rpc_id(1, action_type, payload)
 	else:
@@ -676,6 +724,11 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 	# host's authoritative state.
 	if sender_id <= 0 or not joined_players.has(sender_id):
 		return
+	if action_type == "ingredient_action" and str(payload.get("station_kind", "")) == "cargo_car":
+		CARGO_CAR_DEBUG.log(
+			"co-op host received action=%s vehicle_id=%s sender=%d"
+			% [str(payload.get("action", "")), str(payload.get("vehicle_id", "")), sender_id]
+		)
 	match action_type:
 		"player_input":
 			GameAuthority.server_receive_player_input(sender_id, payload)
@@ -703,6 +756,8 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 			GameAuthority.server_vehicle_input(sender_id, payload)
 		"vehicle_session":
 			GameAuthority.server_vehicle_session(sender_id, str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+		"vehicle_action":
+			GameAuthority.server_vehicle_action(sender_id, payload)
 		"team_chat":
 			GameAuthority.server_team_chat(sender_id, str(payload.get("message", "")), str(payload.get("scope", "team")))
 		"gate_action":
@@ -756,6 +811,30 @@ func receive_world_state(payload: Dictionary) -> void:
 		return
 	if str(payload.get("world_id", "")) != str(active_world.get("world_id", "")):
 		return
+	var selection_value: Variant = payload.get("player_selection", {})
+	if not selection_value is Dictionary:
+		# Never release the loading screen on a world-state packet that does not
+		# include the host's authoritative player selection and spawn position.
+		return
+	var authoritative_selection := _normalize_selection(
+		selection_value as Dictionary,
+		multiplayer.get_unique_id()
+	)
+	var authoritative_position: Variant = authoritative_selection.get("position", null)
+	if not authoritative_position is Vector3 or not (authoritative_position as Vector3).is_finite():
+		# The client must not fall back to its manifest-time/team-default position;
+		# keep loading until the host sends a usable final position.
+		return
+	var spawn_source := str(authoritative_selection.get("spawn_source", ""))
+	if spawn_source not in [SPAWN_SOURCE_SAVED, SPAWN_SOURCE_TEAM]:
+		# A position without a source is not enough to decide whether this was the
+		# saved location or the host's newly allocated team spawn.
+		return
+	# The host resolves a no-save joiner's team spawn only after its map is
+	# initialized. Replace the manifest-time profile before creating the local
+	# player so the first visible frame is already at the final position.
+	local_selection = authoritative_selection
+	client_spawn_position_received = true
 	active_world["world_state"] = payload.get("world_state", {})
 	active_world["team_money"] = float(payload.get("team_money", active_world.get("team_money", 0.0)))
 	active_world["game_day"] = int(payload.get("game_day", active_world.get("game_day", 1)))
@@ -863,7 +942,8 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 	if event_type == "hit_confirmed":
 		_send_hit_confirmation_to_peer(int(event.get("attacker_peer_id", 0)), event)
 		return
-	if event_type == "weapon_ammo_state" or event_type == "action_reward":
+	if event_type == "weapon_ammo_state" or event_type == "action_reward" \
+			or event_type == "shield_state":
 		_send_reliable_event_to_peer(int(event.get("peer_id", 0)), event)
 		return
 	if event_type in ["backpack_test_grant", "personal_inventory_grant"]:
@@ -1158,9 +1238,9 @@ func _bootstrap_loaded_world(scene: Node3D, generation: int) -> void:
 		# client must not fabricate a world state. Tell the host that it is ready
 		# to receive the authoritative state over channel 3.
 		_send_scene_ready(scene)
-		if not client_world_state_received:
+		if not client_world_state_received or not client_spawn_position_received:
 			if is_instance_valid(MapLoading):
-				MapLoading.update_progress(0.82, "地图已加载，正在等待房主发送世界状态")
+				MapLoading.update_progress(0.82, "地图已加载，正在等待房主发送出生位置")
 			return
 		call_deferred("_complete_client_world_bootstrap", scene, generation)
 		return
@@ -1200,6 +1280,8 @@ func _bootstrap_loaded_world(scene: Node3D, generation: int) -> void:
 	world_loading = false
 	GameAuthority.set_physics_process(true)
 	if is_host():
+		# 此时库存已经从存档恢复，写入当前格式的完整快照，同时迁移旧档。
+		_save_authoritative_world_state()
 		# Advertise a running world only after scene, terrain/collision, spawn and
 		# authority initialization have all completed. This closes the startup
 		# window in which a joining client could trigger add_peer() too early.
@@ -1225,7 +1307,8 @@ func _send_scene_ready(scene: Node3D) -> void:
 
 func _complete_client_world_bootstrap(scene_value: Variant, generation: int) -> void:
 	if client_bootstrap_completing or not is_client() or not client_scene_ready_sent \
-			or not client_world_state_received or not is_instance_valid(scene_value) \
+			or not client_world_state_received or not client_spawn_position_received \
+			or not is_instance_valid(scene_value) \
 			or not scene_value is Node3D:
 		return
 	var scene := scene_value as Node3D
@@ -1306,7 +1389,10 @@ func _activate_local_player(scene: Node3D) -> void:
 		var player := node as GamePlayer
 		if player.is_remote_proxy or not scene.is_ancestor_of(player):
 			continue
-		player.process_mode = Node.PROCESS_MODE_INHERIT
+		if player.has_method("activate_local_runtime"):
+			player.call("activate_local_runtime")
+		else:
+			player.process_mode = Node.PROCESS_MODE_INHERIT
 
 
 func _spawn_local_player(scene: Node3D) -> bool:
@@ -1388,7 +1474,10 @@ func _apply_local_spawn_state(player: GamePlayer) -> void:
 		player.server_hp = clampf(float(local_selection.get("current_hp", 200.0)), 0.0, 200.0)
 		if player.has_method("_update_health_ui"):
 			player.call("_update_health_ui")
-	var spawn_position := _map_spawn_position(0, int(local_selection.get("peer_id", 0)))
+	var spawn_position := _map_spawn_position(
+		int(local_selection.get("spawn_index", 0)),
+		int(local_selection.get("peer_id", 0))
+	)
 	var saved_respawn_left := maxf(0.0, float(local_selection.get("respawn_left", 0.0)))
 	var position_value: Variant = local_selection.get("position", null)
 	var can_resume_position := saved_respawn_left <= 0.0 and position_value is Vector3
@@ -1403,7 +1492,24 @@ func _apply_local_spawn_state(player: GamePlayer) -> void:
 
 
 func _next_spawn_position(peer_id: int) -> Vector3:
-	return _map_spawn_position(joined_players.size() % 4, peer_id)
+	return _map_spawn_position(_allocate_join_spawn_index(), peer_id)
+
+
+func _allocate_join_spawn_index() -> int:
+	var used_indices: Dictionary = {}
+	for selection_value: Variant in joined_players.values():
+		if selection_value is Dictionary and (selection_value as Dictionary).has("spawn_index"):
+			used_indices[int((selection_value as Dictionary).get("spawn_index", 0))] = true
+	for session_value: Variant in pending_join_sessions.values():
+		if not session_value is Dictionary:
+			continue
+		var selection_value: Variant = (session_value as Dictionary).get("selection", {})
+		if selection_value is Dictionary and (selection_value as Dictionary).has("spawn_index"):
+			used_indices[int((selection_value as Dictionary).get("spawn_index", 0))] = true
+	for index in range(4):
+		if not used_indices.has(index):
+			return index
+	return used_indices.size()
 
 
 func _map_spawn_position(player_index := 0, peer_id := 0) -> Vector3:
@@ -1542,6 +1648,16 @@ func _as_vector3(value: Variant) -> Vector3:
 	return DEFAULT_SPAWN
 
 
+func _mark_selection_spawn_source(selection: Dictionary) -> void:
+	var position_value: Variant = selection.get("position", null)
+	var respawn_left := maxf(0.0, float(selection.get("respawn_left", 0.0)))
+	if respawn_left <= 0.0 and position_value is Vector3 \
+			and (position_value as Vector3).is_finite():
+		selection["spawn_source"] = SPAWN_SOURCE_SAVED
+	else:
+		selection["spawn_source"] = SPAWN_SOURCE_TEAM
+
+
 func _normalize_selection(source: Dictionary, peer_id: int) -> Dictionary:
 	var saved_position: Variant = source.get("position", null)
 	if saved_position == null:
@@ -1563,6 +1679,8 @@ func _normalize_selection(source: Dictionary, peer_id: int) -> Dictionary:
 		"personal_cargo_crates",
 		"equipped_backpack_id", "equipped_chest_armor_id", "equipped_legwear_id",
 		"current_hp", "max_hp", "respawn_left", "current_tool_index", "current_tool_id",
+		"spawn_index",
+		"spawn_source",
 	]:
 		if source.has(key):
 			var value: Variant = source.get(key)
@@ -1723,6 +1841,11 @@ func _capture_persistent_world_state() -> Dictionary:
 			state["scene_path"] = "res://vehicles/red_cargo_car.tscn"
 		state["driver_peer_id"] = 0
 		state["seat_occupants"] = []
+		var machine_gun_value: Variant = state.get("platform_machine_gun", {})
+		if machine_gun_value is Dictionary:
+			var machine_gun_state := (machine_gun_value as Dictionary).duplicate(true)
+			machine_gun_state["operator_peer_id"] = 0
+			state["platform_machine_gun"] = machine_gun_state
 		vehicles.append(state)
 
 	var placed_tools: Array[Dictionary] = []
@@ -1758,6 +1881,9 @@ func _capture_persistent_world_state() -> Dictionary:
 			livestock.append(animal.get_persistent_state())
 
 	return {
+		# 保存完整队伍仓库。team_inventory 保留给旧版本读取，以兼容
+		# 既有存档和仍只关心 red 队库存的旧客户端。
+		"team_storage": GlobalVar.team_storage.duplicate(true),
 		"team_inventory": (GlobalVar.team_storage.get("red", {}) as Dictionary).duplicate(true),
 		"farm_tiles": farm_tiles,
 		"vehicles": vehicles,
@@ -1799,10 +1925,10 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 	if world_state_restored or not is_instance_valid(scene) or scene != get_tree().current_scene:
 		return
 	var state_value: Variant = active_world.get("world_state", {})
-	if not state_value is Dictionary:
-		world_state_restored = true
-		return
-	var world_state := state_value as Dictionary
+	var world_state: Dictionary = state_value as Dictionary if state_value is Dictionary else {}
+	# 仓库不依赖场景节点，先恢复它。这样 HUD、房主权威端和随后加入的
+	# 客户端在世界初始化期间就能读到同一份资金与物资。
+	_restore_saved_team_storage(world_state)
 	if world_state.is_empty():
 		world_state_restored = true
 		return
@@ -1812,7 +1938,6 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 			break
 	if not is_active() or scene != get_tree().current_scene:
 		return
-	_restore_team_inventory(world_state.get("team_inventory", {}))
 	_restore_farm_tiles(world_state.get("farm_tiles", []))
 	if is_host():
 		_restore_persistent_vehicles(world_state.get("vehicles", []))
@@ -1825,16 +1950,59 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 	world_state_restored = true
 
 
-func _restore_team_inventory(value: Variant) -> void:
+func _restore_saved_team_storage(world_state: Dictionary) -> void:
+	# 当前格式：world_state.team_storage（red/blue 的完整仓库）。
+	# 兼容格式依次为 world_state.team_inventory（仅 red）、顶层
+	# team_storage，以及带有非空 world_state 的顶层 team_money。
+	var restored_any := _restore_team_storage(world_state.get("team_storage", {}))
+	if not restored_any:
+		restored_any = _restore_team_inventory("red", world_state.get("team_inventory", {}))
+	if not restored_any:
+		restored_any = _restore_team_storage(active_world.get("team_storage", {}))
+	# 旧档只有在已保存过世界状态时才将顶层 team_money 视为有效数据。
+	# 全新旧格式世界的初始占位值为 0，此时必须继续使用 1000 初始资金。
+	# 顶层金额是存档浏览器显示的摘要，也会在每次权威保存时更新；当旧档的
+	# world_state 库存快照较早时，以它覆盖 red.money，保证浏览器与进场一致。
+	if active_world.has("team_money") and (restored_any or not world_state.is_empty()):
+		_restore_team_inventory("red", {"money": active_world.get("team_money", 0.0)})
+
+
+func _restore_team_storage(value: Variant) -> bool:
 	if not value is Dictionary:
-		return
+		return false
+	var saved_storage := value as Dictionary
+	var restored_any := false
+	for team_id_value: Variant in saved_storage.keys():
+		var team := str(team_id_value)
+		var inventory_value: Variant = saved_storage[team_id_value]
+		if not GlobalVar.team_storage.has(team) or not inventory_value is Dictionary:
+			continue
+		restored_any = _restore_team_inventory(team, inventory_value) or restored_any
+	return restored_any
+
+
+func _restore_team_inventory(team: String, value: Variant) -> bool:
+	if not GlobalVar.team_storage.has(team) or not value is Dictionary:
+		return false
 	var saved := value as Dictionary
-	var inventory: Dictionary = GlobalVar.team_storage.get("red", {})
+	if saved.is_empty():
+		return false
+	var inventory: Dictionary = (GlobalVar.team_storage.get(team, {}) as Dictionary).duplicate(true)
+	var restored_any := false
 	for item_id_value: Variant in saved.keys():
 		var item_id := str(item_id_value)
-		inventory[item_id] = float(saved[item_id_value])
-		GlobalVar.storage_changed.emit("red", item_id, float(inventory[item_id]))
-	GlobalVar.team_storage["red"] = inventory
+		var amount_value: Variant = saved[item_id_value]
+		if not amount_value is float and not amount_value is int:
+			continue
+		var previous_amount := float(inventory.get(item_id, 0.0))
+		var restored_amount := float(amount_value)
+		inventory[item_id] = restored_amount
+		GlobalVar.storage_changed.emit(team, item_id, restored_amount)
+		if item_id == "money" and not is_zero_approx(restored_amount - previous_amount):
+			GlobalVar.team_money_changed.emit(team, restored_amount - previous_amount, restored_amount)
+		restored_any = true
+	GlobalVar.team_storage[team] = inventory
+	return restored_any
 
 
 func _farm_generation_finished(scene: Node3D) -> bool:
@@ -1882,6 +2050,11 @@ func _restore_persistent_vehicles(value: Variant) -> void:
 				vehicle.call("set_kitchen_team", vehicle.owner_team)
 		state["driver_peer_id"] = 0
 		state["seat_occupants"] = []
+		var machine_gun_value: Variant = state.get("platform_machine_gun", {})
+		if machine_gun_value is Dictionary:
+			var machine_gun_state := (machine_gun_value as Dictionary).duplicate(true)
+			machine_gun_state["operator_peer_id"] = 0
+			state["platform_machine_gun"] = machine_gun_state
 		vehicle.apply_network_state(state)
 		var manifest: Variant = state.get("cargo_manifest", [])
 		if manifest is Array:

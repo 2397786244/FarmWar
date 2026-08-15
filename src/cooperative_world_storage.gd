@@ -46,7 +46,11 @@ func create_world(config: Dictionary) -> Dictionary:
 		"map_source": str(config.get("map_source", "builtin")),
 		"max_players": clampi(int(config.get("max_players", 4)), 1, 4),
 		"death_drop_mode": _normalize_death_drop_mode(str(config.get("death_drop_mode", "save"))),
-		"team_money": 0.0,
+		# 新世界也保存完整的队伍仓库快照。首次进入时这会恢复为
+		# GlobalVar 的初始库存（含 1000 队伍资金），而不是把新档误判为
+		# 一个资金为 0 的旧档。
+		"team_storage": _make_initial_team_storage(),
+		"team_money": float(GlobalVar.INITIAL_MONEY),
 		"game_day": 1,
 		"world_elapsed_seconds": 0.0,
 		"host_steam_id": int(config.get("host_steam_id", 0)),
@@ -65,6 +69,23 @@ func create_world(config: Dictionary) -> Dictionary:
 		active_world = world.duplicate(true)
 		return active_world.duplicate(true)
 	return {}
+
+
+func _make_initial_team_storage() -> Dictionary:
+	# 创建新世界时不能复制当前运行中世界的余额或物资；只复用其键集合，
+	# 并将所有物资归零、资金恢复为新世界的初始资金。
+	var initial_storage: Dictionary = {}
+	for team_id_value: Variant in GlobalVar.team_storage.keys():
+		var team := str(team_id_value)
+		var current_inventory: Variant = GlobalVar.team_storage[team_id_value]
+		if not current_inventory is Dictionary:
+			continue
+		var inventory: Dictionary = {}
+		for item_id_value: Variant in (current_inventory as Dictionary).keys():
+			var item_id := str(item_id_value)
+			inventory[item_id] = float(GlobalVar.INITIAL_MONEY) if item_id == "money" else 0.0
+		initial_storage[team] = inventory
+	return initial_storage
 
 
 func load_world(world_id: String) -> Dictionary:

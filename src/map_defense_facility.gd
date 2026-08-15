@@ -68,6 +68,18 @@ func impact(_effect: String, strength: float, attacker_team := "") -> bool:
 		return false
 	if not attacker_team.is_empty() and not tool_owner.is_empty() and attacker_team == tool_owner:
 		return false
+	return _apply_impact_strength(strength)
+
+
+## RemoteBomb 的 friendly_fire 由 GameAuthority 显式传入，不能通过普通 impact()
+## 的队伍参数绕过，以免同队普通子弹也能误伤防御设施。
+func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team := "") -> bool:
+	if destroyed or strength <= 0.0 or current_hp <= 0.0:
+		return false
+	return _apply_impact_strength(strength)
+
+
+func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
 		destroyed = true
@@ -147,8 +159,9 @@ func _set_defense_active(value: bool) -> void:
 
 
 func _set_navigation_obstacle_active(value: bool) -> void:
-	## 当前阶段只把五种可爆破防御设施接入动态导航；建筑物和普通道具
-	## 没有 NavigationObstacle3D，也不会被这个管理器扫描。
+	## 这里仅切换可爆破防御设施自身的导航障碍。普通建筑的导航障碍由
+	## DynamicNavigationChunkGrid 根据 Buildings 下的物理碰撞体统一生成，
+	## 不通过防御设施的生命状态接口管理。
 	var obstacle := find_child("NavigationObstacle3D", true, false) as NavigationObstacle3D
 	if obstacle == null:
 		return

@@ -9,7 +9,7 @@ enum Type {
 	DEMOLITION_REQUEST,
 	DEMOLITION_CLAIM,
 	DEMOLITION_WARNING,
-	ENTRY_FOUND,
+	NAVIGATION_REFRESH,
 	SUPPORT_REQUEST,
 	SUPPORT_ACK,
 }
@@ -44,8 +44,8 @@ static func type_name(type: int) -> String:
 			return "这里由我来爆破"
 		Type.DEMOLITION_WARNING:
 			return "这里将要爆破请撤退"
-		Type.ENTRY_FOUND:
-			return "这里有入口"
+		Type.NAVIGATION_REFRESH:
+			return "重新更新导航"
 		Type.SUPPORT_REQUEST:
 			return "我被攻击了请支援"
 		Type.SUPPORT_ACK:

@@ -99,6 +99,12 @@ func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -
 	request_vehicle_session.rpc_id(1, vehicle_id, connected, seat_index)
 
 
+func submit_vehicle_action(action: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_vehicle_action.rpc_id(1, action)
+
+
 func submit_team_chat(message: String, scope: String) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
@@ -186,6 +192,11 @@ func request_vehicle_input(_input_frame: Dictionary) -> void:
 
 @rpc("any_peer", "reliable")
 func request_vehicle_session(_vehicle_id: String, _connected: bool, _seat_index: int = -1) -> void:
+	pass
+
+
+@rpc("any_peer", "reliable")
+func request_vehicle_action(_action: Dictionary) -> void:
 	pass
 
 

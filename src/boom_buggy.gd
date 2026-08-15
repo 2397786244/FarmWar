@@ -176,6 +176,8 @@ func activate_tool() -> void:
 func _activate_after_tree_ready() -> void:
 	if not _activated or _exploding:
 		return
+	# BoomBuggy becomes attackable only after it has entered the game world.
+	add_to_group("ai_combat_targets")
 
 	_configure_scene_nodes()
 	_connect_hit_area_signal()
@@ -789,7 +791,32 @@ func _update_remote_actions(delta:float) -> void:
 	if is_electronics_disabled():
 		_current_ensure_time = 0.0
 		return
-	if Input.is_action_pressed("remote_primary_action"):
+	_update_primary_action_hold(Input.is_action_pressed("remote_primary_action"), delta)
+
+
+## The listen server's device body is simulated by GameAuthority, so its own
+## _physics_process intentionally does not consume Input.  GamePlayer drives
+## this public entry point for the host to retain the same hold-to-detonate
+## behaviour as local/client control.
+func request_primary_action(held: bool = true, delta: float = 0.0) -> void:
+	if not _activated or not _remote_control_active or _exploding:
+		return
+	_update_primary_action_hold(held, delta)
+
+
+func get_primary_action_hold_elapsed() -> float:
+	return clampf(_current_ensure_time, 0.0, explosion_ensure_time)
+
+
+func get_primary_action_hold_duration() -> float:
+	return maxf(0.0, explosion_ensure_time)
+
+
+func _update_primary_action_hold(held: bool, delta: float) -> void:
+	if is_electronics_disabled():
+		_current_ensure_time = 0.0
+		return
+	if held:
 		_current_ensure_time += delta
 		if _current_ensure_time >= explosion_ensure_time:
 			_current_ensure_time = 0
@@ -883,8 +910,12 @@ func _submit_remote_authority_action(action_name: String) -> bool:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_remote_action(action)
 		return true
-	if GameAuthority.is_local_authority():
-		GameAuthority.local_remote_action(GameAuthority.LOCAL_PLAYER_ID, action)
+	if GameAuthority.is_local_interaction_authority():
+		var peer_id := GameAuthority.get_local_interaction_peer_id()
+		if peer_id <= 0:
+			return false
+		var result: Dictionary = GameAuthority.local_remote_action(peer_id, action)
+		return bool(result.get("ok", false))
 	return false
 
 

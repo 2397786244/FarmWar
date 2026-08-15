@@ -70,6 +70,8 @@ func send_message(sender_id: String, type: int, payload: Dictionary = {}, reply_
 			return claim_demolition(sender_id, reply_to)
 		Message.Type.DEMOLITION_WARNING:
 			return mark_demolition_planted(reply_to, sender_id, payload.get("position", Vector3.ZERO), payload.get("radius", demolition_warning_radius))
+		Message.Type.NAVIGATION_REFRESH:
+			return {"accepted": complete_demolition(reply_to, sender_id, payload.get("position", Vector3.INF))}
 		Message.Type.SUPPORT_REQUEST:
 			return request_support(sender_id, payload.get("position", Vector3.ZERO))
 		Message.Type.SUPPORT_ACK:
@@ -181,7 +183,7 @@ func mark_demolition_planted(request_id: String, sender_id: String, position: Ve
 	return {"accepted": true, "request_id": request_id}
 
 
-func complete_demolition(request_id: String, sender_id: String, _entry_position: Vector3) -> bool:
+func complete_demolition(request_id: String, sender_id: String, demolished_position: Vector3) -> bool:
 	if not _is_authority():
 		return false
 	if not _demolition_tasks.has(request_id):
@@ -189,14 +191,14 @@ func complete_demolition(request_id: String, sender_id: String, _entry_position:
 	var task: Dictionary = _demolition_tasks[request_id]
 	if task.get("owner_id", "") != sender_id:
 		return false
-	if not _entry_position.is_finite():
+	if not demolished_position.is_finite():
 		return false
-	## 爆破任务完成时广播一次入口点。请求表在广播后才删除，保证同一
-	## request_id 的重复确认不会产生第二条“这里有入口”消息。
+	## 爆破任务完成时广播一次导航刷新。请求表在广播后才删除，保证同一
+	## request_id 的重复确认不会产生第二条“重新更新导航”消息。
 	var message := _make_message(
-		Message.Type.ENTRY_FOUND,
+		Message.Type.NAVIGATION_REFRESH,
 		sender_id,
-		{"position": _entry_position},
+		{"position": demolished_position},
 		request_id,
 		request_id
 	)
@@ -382,7 +384,7 @@ func _debug_message(message: Dictionary) -> void:
 			float(payload.get("radius", demolition_warning_radius)),
 			payload.get("position", Vector3.ZERO),
 		]
-	elif int(message.get("type", -1)) == Message.Type.ENTRY_FOUND:
+	elif int(message.get("type", -1)) == Message.Type.NAVIGATION_REFRESH:
 		details = " position=%s" % payload.get("position", Vector3.ZERO)
 	print(
 		"[SquadChannel] %s sender=%s request=%s%s"

@@ -10,7 +10,6 @@ enum DemolitionPhase {
 	MOVE_TO_TARGET,
 	PLANT_EXPLOSIVE,
 	RETREAT_FROM_EXPLOSIVE,
-	MOVE_TO_ENTRY,
 }
 
 
@@ -46,7 +45,6 @@ var max_explosive_count := 10
 @export var demolition_bomb_offset := 0.48
 @export var demolition_bomb_height_offset := 0.18
 @export var demolition_speed_multiplier := 0.92
-@export var demolition_entry_arrival_distance := 0.8
 
 
 @export_category("Engineer Debug")
@@ -61,8 +59,6 @@ var demolition_phase := DemolitionPhase.NONE
 var demolition_target: Node3D
 var demolition_position := INVALID_POSITION
 var demolition_surface_normal := Vector3.UP
-## 炸药成功引爆后，Engineer 必须先走到这个入口点确认通路。
-var demolition_entry_position := INVALID_POSITION
 
 var active_remote_bomb: RemoteBomb
 var explosives_remaining := 10
@@ -76,6 +72,8 @@ var _remote_bomb_retreat_anchor := INVALID_POSITION
 var _remote_bomb_retreat_no_progress_elapsed := 0.0
 var _remote_bomb_retreat_escape_direction := Vector3.ZERO
 var _remote_bomb_retreat_escape_timer := 0.0
+var _pending_navigation_refresh_position := INVALID_POSITION
+var _waiting_for_navigation_refresh := false
 
 
 func _ready() -> void:
@@ -102,11 +100,6 @@ func _update_role_specific_behavior(delta: float) -> bool:
 	if state == AIState.DEAD:
 		return true
 
-	## 成功爆破后的入口确认优先级高于普通 target 推进。
-	if demolition_phase == DemolitionPhase.MOVE_TO_ENTRY:
-		_update_move_to_demolition_entry(delta)
-		return true
-
 	if demolition_phase == DemolitionPhase.RETREAT_FROM_EXPLOSIVE:
 		_update_retreat_from_explosive(delta)
 		return true
@@ -114,6 +107,10 @@ func _update_role_specific_behavior(delta: float) -> bool:
 	if not _is_valid_demolition_target(demolition_target):
 		if demolition_phase != DemolitionPhase.NONE:
 			_clear_demolition_target("target_invalid")
+		## 爆破后的导航区块尚未完成重建时，保留普通推进/自卫，但不再认领
+		## 下一项爆破任务，避免覆盖等待广播的 request_id。
+		if _waiting_for_navigation_refresh:
+			return false
 		if explosives_remaining <= 0:
 			return false
 		if _is_valid_target(target_player):
@@ -145,15 +142,110 @@ func _squad_stuck_tracking_allowed() -> bool:
 		and demolition_phase not in [
 			DemolitionPhase.PLANT_EXPLOSIVE,
 			DemolitionPhase.RETREAT_FROM_EXPLOSIVE,
-			DemolitionPhase.MOVE_TO_ENTRY,
 		]
 	)
+
+
+## 困住后的通用流程由父类统一处理：先废弃 NavigationAgent3D 的旧路径并重试，
+## 随后才调用本钩子。工程师在仍有炸药、且没有进行中的爆破任务时，会直接占用
+## 附近实际阻挡自己的防御设施并进入爆破流程；不能先发“这里需要爆破”，否则
+## 会让自己错误地等待公共任务的竞领。_assign_self_detected_demolition() 会通过
+## 频道内部任务表完成同目标去重和原子占用，但不会广播 DEMOLITION_REQUEST。
+func _on_squad_stuck_detected(goal: Vector3) -> void:
+	if (
+		state == AIState.DEAD
+		or explosives_remaining <= 0
+		or demolition_phase != DemolitionPhase.NONE
+		or not squad_demolition_request_id.is_empty()
+		or is_instance_valid(active_remote_bomb)
+		or _waiting_for_navigation_refresh
+		or not is_instance_valid(squad_communicator)
+	):
+		return
+	var detected := _detect_stuck_demolition_target(goal)
+	if detected.is_empty():
+		_debug_engineer(
+			"stuck navigation retry found no nearby demolition target position=%s"
+			% _format_position(global_position)
+		)
+		return
+	var obstacle := detected.get("target") as Node3D
+	var assigned := _assign_self_detected_demolition(detected)
+	_debug_engineer(
+		"stuck direct demolition target=%s hit=%s assigned=%s" % [
+			_target_name(obstacle),
+			_format_position(detected.get("position", global_position) as Vector3),
+			str(assigned),
+		]
+	)
+
+
+## 仅探测 Engineer 当前卡住位置附近的几个方向，绝不扫描地图。优先战略目标方向，
+## 再检查当前朝向与两侧，既能处理贴墙，也能覆盖导航把 AI 推向墙角的情况。
+func _detect_stuck_demolition_target(goal: Vector3) -> Dictionary:
+	var preferred := _horizontal_direction(global_position, goal)
+	if preferred.length_squared() <= 0.001:
+		preferred = -global_transform.basis.z
+	preferred.y = 0.0
+	if preferred.length_squared() <= 0.001:
+		preferred = Vector3.FORWARD
+	preferred = preferred.normalized()
+	var facing := -global_transform.basis.z
+	facing.y = 0.0
+	if facing.length_squared() <= 0.001:
+		facing = preferred
+	else:
+		facing = facing.normalized()
+	var directions: Array[Vector3] = [
+		preferred,
+		facing,
+		preferred.rotated(Vector3.UP, PI * 0.5),
+		preferred.rotated(Vector3.UP, -PI * 0.5),
+		-preferred,
+	]
+	var origin := global_position + Vector3.UP * 0.82
+	var probe_distance := maxf(demolition_detection_distance, 3.2)
+	for direction in directions:
+		if direction.length_squared() <= 0.001:
+			continue
+		var query := PhysicsRayQueryParameters3D.create(
+			origin,
+			origin + direction.normalized() * probe_distance,
+			body_collision_mask,
+			[get_rid()]
+		)
+		query.collide_with_bodies = true
+		query.collide_with_areas = true
+		query.hit_from_inside = true
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			continue
+		var collider := hit.get("collider") as Node3D
+		var obstacle := _resolve_demolition_target_root(collider)
+		if not _is_valid_demolition_target(obstacle):
+			continue
+		var hit_position: Variant = hit.get("position", obstacle.global_position)
+		var hit_normal: Variant = hit.get("normal", Vector3.UP)
+		return {
+			"target": obstacle,
+			"position": hit_position as Vector3,
+			"normal": hit_normal as Vector3,
+		}
+	return {}
 
 
 func _squad_warning_can_override_role_behavior() -> bool:
 	## 自己的 RemoteBomb 已经放下后，必须先撤到 10m 并引爆；
 	## 其他 Engineer 的警告在自己的炸弹处理完成后再消费。
 	return not is_instance_valid(active_remote_bomb)
+
+
+func _squad_stuck_goal_for_state() -> Vector3:
+	## 爆破推进必须以炸药安放点为进度目标，不能把朝战略 target 的侧向
+	## 移动误认为已接近墙体。
+	if demolition_phase == DemolitionPhase.MOVE_TO_TARGET and demolition_position.is_finite():
+		return demolition_position
+	return super._squad_stuck_goal_for_state()
 
 
 # ------------------------------------------------------------------
@@ -314,7 +406,6 @@ func assign_demolition_target(
 	if not _is_valid_demolition_target(resolved):
 		return false
 	demolition_target = resolved
-	demolition_entry_position = INVALID_POSITION
 	demolition_surface_normal = hit_normal.normalized() if hit_normal.length_squared() > 0.001 else Vector3.UP
 	if hit_position != INVALID_POSITION:
 		demolition_position = _make_demolition_position(hit_position, demolition_surface_normal)
@@ -338,7 +429,7 @@ func is_available_for_demolition() -> bool:
 		and demolition_phase == DemolitionPhase.NONE
 		and not is_instance_valid(demolition_target)
 		and not is_instance_valid(active_remote_bomb)
-		and demolition_entry_position == INVALID_POSITION
+		and not _waiting_for_navigation_refresh
 	)
 
 
@@ -495,41 +586,6 @@ func _clear_demolition_target(reason: String) -> void:
 	_release_squad_demolition_task(reason)
 
 
-func _queue_demolition_entry(position: Vector3) -> void:
-	if position == INVALID_POSITION:
-		_clear_demolition_target("entry_position_invalid")
-		return
-
-	## 爆破点取炸药的实际引爆位置；保留水平位置，随后用直接方向确认入口。
-	demolition_entry_position = position
-	demolition_target = null
-	demolition_position = INVALID_POSITION
-	demolition_surface_normal = Vector3.UP
-	demolition_phase = DemolitionPhase.MOVE_TO_ENTRY
-	navigation_refresh_timer = 0.0
-	_debug_engineer(
-		"demolition entry queued position=%s; confirm before target advance"
-		% _format_position(demolition_entry_position)
-	)
-
-
-func _clear_demolition_entry(reason: String) -> void:
-	var completed_position := demolition_entry_position
-	if demolition_entry_position != INVALID_POSITION:
-		_debug_engineer(
-			"demolition entry cleared reason=%s position=%s"
-			% [reason, _format_position(demolition_entry_position)]
-		)
-	if reason in ["entry_confirmed", "blocked_by_new_obstacle"]:
-		_complete_squad_demolition_task(completed_position)
-	else:
-		_release_squad_demolition_task(reason)
-	demolition_entry_position = INVALID_POSITION
-	if demolition_phase == DemolitionPhase.MOVE_TO_ENTRY:
-		demolition_phase = DemolitionPhase.NONE
-	navigation_refresh_timer = 0.0
-
-
 func _release_squad_demolition_task(reason: String) -> void:
 	if squad_demolition_request_id.is_empty():
 		return
@@ -542,18 +598,47 @@ func _release_squad_demolition_task(reason: String) -> void:
 	squad_demolition_request_id = ""
 
 
-func _complete_squad_demolition_task(entry_position: Vector3) -> void:
+func _complete_squad_demolition_task(demolished_position: Vector3) -> void:
 	if squad_demolition_request_id.is_empty():
 		return
-	if is_instance_valid(squad) and squad.has_method("report_entry_found"):
-		squad.report_entry_found(self, entry_position)
+	if is_instance_valid(squad) and squad.has_method("report_navigation_refresh"):
+		squad.report_navigation_refresh(self, demolished_position)
 	elif is_instance_valid(squad_communicator) and is_instance_valid(squad_communicator.channel):
 		squad_communicator.channel.complete_demolition(
 			squad_demolition_request_id,
 			squad_member_id,
-			entry_position
+			demolished_position
 		)
 	squad_demolition_request_id = ""
+
+
+func _queue_navigation_refresh_after_rebuild(
+	navigation_grid: Node,
+	demolished_position: Vector3
+) -> void:
+	_pending_navigation_refresh_position = demolished_position
+	_waiting_for_navigation_refresh = true
+	if is_instance_valid(navigation_grid) and navigation_grid.has_method("wait_for_idle"):
+		call_deferred("_broadcast_navigation_refresh_when_ready", navigation_grid)
+		return
+	_broadcast_navigation_refresh_when_ready(null)
+
+
+func _broadcast_navigation_refresh_when_ready(navigation_grid: Node) -> void:
+	if is_instance_valid(navigation_grid) and navigation_grid.has_method("wait_for_idle"):
+		await navigation_grid.wait_for_idle()
+	if not _waiting_for_navigation_refresh:
+		return
+	var demolished_position := _pending_navigation_refresh_position
+	_waiting_for_navigation_refresh = false
+	_pending_navigation_refresh_position = INVALID_POSITION
+	if state == AIState.DEAD or not demolished_position.is_finite():
+		return
+	## 此时 dirty 区块已烘焙完成，Engineer 和所有仍存活 Squad 成员才会
+	## 丢弃旧 NavigationAgent3D 路径，确保下一次寻路使用新网格。
+	_reset_navigation_path()
+	_complete_squad_demolition_task(demolished_position)
+	_debug_engineer("navigation rebuild complete; squad navigation refresh broadcast")
 
 
 # ------------------------------------------------------------------
@@ -577,40 +662,6 @@ func _update_move_to_demolition_target(delta: float) -> void:
 		return
 	var direction := _direction_to_goal(demolition_position)
 	_apply_character_movement(direction, chase_speed * demolition_speed_multiplier, delta)
-
-
-func _update_move_to_demolition_entry(delta: float) -> void:
-	if demolition_entry_position == INVALID_POSITION:
-		_clear_demolition_entry("entry_position_missing")
-		return
-
-	## 新障碍可能在爆破后被敌对玩家补放到入口处；有炸药时立即转回同一套爆破流程。
-	if explosives_remaining > 0:
-		var detected := _detect_forward_demolition_target()
-		if not detected.is_empty():
-			_debug_engineer(
-				"demolition entry blocked by %s; reassign demolition"
-				% _target_name(detected.get("target") as Node3D)
-			)
-			var entry_position := demolition_entry_position
-			_clear_demolition_entry("blocked_by_new_obstacle")
-			_assign_self_detected_demolition({
-				"target": detected.get("target") as Node3D,
-				"position": detected.get("position", entry_position) as Vector3,
-				"normal": detected.get("normal", Vector3.UP) as Vector3,
-			})
-			return
-
-	var distance := _horizontal_distance(global_position, demolition_entry_position)
-	if distance <= demolition_entry_arrival_distance:
-		_clear_demolition_entry("entry_confirmed")
-		return
-
-	## 这里故意不使用 NavigationAgent3D 的 next path position：
-	## 爆破后需要先确认真实碰撞入口，而不是沿旧的绕行路径继续走。
-	var direction := _horizontal_direction(global_position, demolition_entry_position)
-	_perform_demolition_combat()
-	_apply_character_movement(direction, chase_speed, delta)
 
 
 func _update_plant_explosive(delta: float) -> void:
@@ -802,8 +853,22 @@ func _detonate_remote_bomb() -> void:
 		_format_position(explosion_position), exploded
 	])
 	if exploded:
-		## 炸药没有被摧毁且权威爆炸成功：先把实际爆破点作为入口确认点。
-		_queue_demolition_entry(explosion_position)
+		## 防御设施的生命周期会注册 dirty 区块；这里再显式请求一次，确保
+		## 爆破完成后的本帧一定进入局部导航重建队列。
+		var navigation_grid := get_tree().get_first_node_in_group(
+			"dynamic_navigation_chunk_grids"
+		)
+		if _is_valid_demolition_target(demolition_target) \
+				and navigation_grid != null \
+				and navigation_grid.has_method("request_dynamic_obstacle_rebuild"):
+			navigation_grid.call("request_dynamic_obstacle_rebuild", demolition_target, false)
+		_reset_navigation_path()
+		demolition_phase = DemolitionPhase.NONE
+		demolition_target = null
+		demolition_position = INVALID_POSITION
+		demolition_surface_normal = Vector3.UP
+		_queue_navigation_refresh_after_rebuild(navigation_grid, explosion_position)
+		_debug_engineer("demolition complete; waiting for local navigation rebuild before squad refresh")
 	elif _is_valid_demolition_target(demolition_target) and explosives_remaining > 0:
 		demolition_phase = DemolitionPhase.MOVE_TO_TARGET
 	else:
@@ -834,7 +899,8 @@ func _die(attacker_team: String, effect: String) -> void:
 		active_remote_bomb = null
 	demolition_phase = DemolitionPhase.NONE
 	demolition_target = null
-	demolition_entry_position = INVALID_POSITION
+	_waiting_for_navigation_refresh = false
+	_pending_navigation_refresh_position = INVALID_POSITION
 	_release_squad_demolition_task("engineer_dead")
 	super._die(attacker_team, effect)
 
@@ -845,7 +911,6 @@ func _respawn_at_team_spawn() -> void:
 	demolition_phase = DemolitionPhase.NONE
 	demolition_target = null
 	demolition_position = INVALID_POSITION
-	demolition_entry_position = INVALID_POSITION
 	squad_demolition_request_id = ""
 	_ensure_strategic_target()
 	_update_health_label()
@@ -862,7 +927,6 @@ func get_network_state() -> Dictionary:
 	result["max_explosives"] = max_explosive_count
 	result["target_position"] = target.global_position if is_instance_valid(target) else INVALID_POSITION
 	result["demolition_target"] = _target_name(demolition_target)
-	result["demolition_entry_position"] = demolition_entry_position
 	return result
 
 
@@ -872,10 +936,6 @@ func apply_network_state(data: Dictionary) -> void:
 		demolition_phase = int(data.get("engineer_phase", demolition_phase))
 	if data.has("explosives_remaining"):
 		explosives_remaining = int(data.get("explosives_remaining", explosives_remaining))
-	if data.has("demolition_entry_position"):
-		var entry_value: Variant = data.get("demolition_entry_position", INVALID_POSITION)
-		if entry_value is Vector3:
-			demolition_entry_position = entry_value as Vector3
 	_update_health_label()
 
 
@@ -902,7 +962,7 @@ func _emit_console_debug(delta: float) -> void:
 	print((
 		"[FutureEngineer] name=%s team=%s state=%s phase=%s pos=(%s) "
 		+ "target=%s target_pos=(%s) target_source=%s "
-		+ "route=%s demolition_target=%s entry=(%s) "
+		+ "route=%s demolition_target=%s "
 		+ "bomb=%d/%d active_bomb=%s player=%s weapon=%s squad_member=%s squad_task=%s"
 	) % [
 			name,
@@ -915,7 +975,6 @@ func _emit_console_debug(delta: float) -> void:
 			_target_source(),
 			route_mode,
 			_target_name(demolition_target),
-			_format_position(demolition_entry_position),
 			explosives_remaining,
 			max_explosive_count,
 			"yes" if is_instance_valid(active_remote_bomb) else "no",
@@ -963,8 +1022,6 @@ func _demolition_phase_name(value: int) -> String:
 			return "PLANT_EXPLOSIVE"
 		DemolitionPhase.RETREAT_FROM_EXPLOSIVE:
 			return "RETREAT_FROM_EXPLOSIVE"
-		DemolitionPhase.MOVE_TO_ENTRY:
-			return "MOVE_TO_ENTRY"
 	return "UNKNOWN"
 
 

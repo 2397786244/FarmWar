@@ -9,6 +9,7 @@ const GROUND_COLLISION_LAYER := 1
 const BULLET_COLLISION_LAYER := 32
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
 const VEHICLE_SHIELD_SCENE := preload("res://character/weapons/VehicleShieldBubble.tscn")
+const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const NETWORK_INTERPOLATION_RATE := 18.0
 const NETWORK_SNAP_DISTANCE := 6.0
 const CARGO_SLOT_COUNT := 12
@@ -21,7 +22,10 @@ const CARGO_SLOT_COUNT := 12
 ## Map instances can start loaded without making the mutable cargo weight a resource setting.
 @export_range(0.0, 500.0, 1.0, "suffix:kg") var initial_cargo_weight_kg := 0.0
 
-@onready var vehicle_shape := $VehicleShape as CollisionShape3D
+## Older vehicle scenes use one configurable box named VehicleShape. Custom
+## vehicles may instead provide several direct CollisionShape3D children, so
+## this node is intentionally optional.
+@onready var vehicle_shape := get_node_or_null("VehicleShape") as CollisionShape3D
 @onready var ground_probe := $GroundProbe as RayCast3D
 @onready var driver_seat := $DriverSeat as Node3D
 @onready var camera_orbit_yaw := $CameraOrbitYaw as Node3D
@@ -29,7 +33,9 @@ const CARGO_SLOT_COUNT := 12
 @onready var vehicle_camera := $CameraOrbitYaw/CameraOrbitPitch/VehicleCamera as Camera3D
 @onready var exit_point := $ExitPoint as Marker3D
 @onready var hit_area := $Hit3D as Area3D
-@onready var hit_shape := $Hit3D/CollisionShape3D as CollisionShape3D
+## Custom hit areas may contain several shapes and omit the legacy primary
+## CollisionShape3D. Keep the legacy shape optional as well.
+@onready var hit_shape := get_node_or_null("Hit3D/CollisionShape3D") as CollisionShape3D
 
 var body_visual: Node3D
 var driver_seat_point: Node3D
@@ -76,11 +82,14 @@ func _ready() -> void:
 	if not vehicle_deployed:
 		collision_layer = 0
 		collision_mask = 0
-		vehicle_shape.set_deferred("disabled", true)
+		_set_direct_body_collision_shapes_disabled(true)
 		hit_area.monitoring = false
 		hit_area.monitorable = false
 		return
 	add_to_group("vehicle_bases")
+	# All deployed VehicleBase subclasses use the same AI target path, including
+	# CargoCar, SurveyRider, KitchenCar and FarmBaseVehicle.
+	add_to_group("ai_combat_targets")
 	_configure_physics_nodes()
 	_apply_vehicle_config()
 	_create_cargo_interaction_areas()
@@ -106,14 +115,24 @@ func set_drive_input(throttle: float, steering: float, brake: float = 0.0) -> vo
 	drive_brake = clampf(brake, 0.0, 1.0)
 
 
+## Subclasses can override these accessors for temporary vehicle modules such
+## as FarmBaseVehicle's NitroBoost without mutating the shared VehicleConfig.
+func get_max_forward_speed() -> float:
+	return vehicle_config.max_forward_speed if vehicle_config != null else 0.0
+
+
+func get_max_reverse_speed() -> float:
+	return vehicle_config.max_reverse_speed if vehicle_config != null else 0.0
+
+
 func simulate_authority(delta: float) -> void:
 	if not vehicle_deployed or vehicle_config == null or not is_inside_tree() \
 			or is_queued_for_deletion() or get_world_3d() == null:
 		return
 	_tick_vehicle_shield(delta)
-	var target_speed := vehicle_config.max_forward_speed * maxf(drive_throttle, 0.0)
+	var target_speed := get_max_forward_speed() * maxf(drive_throttle, 0.0)
 	if drive_throttle < 0.0:
-		target_speed = vehicle_config.max_reverse_speed * drive_throttle
+		target_speed = get_max_reverse_speed() * drive_throttle
 	if drive_brake > 0.01:
 		current_speed = move_toward(
 			current_speed,
@@ -124,7 +143,7 @@ func simulate_authority(delta: float) -> void:
 		var speed_change := vehicle_config.acceleration if absf(target_speed) > absf(current_speed) else vehicle_config.rolling_deceleration
 		current_speed = move_toward(current_speed, target_speed, speed_change * delta)
 
-	var speed_ratio := clampf(absf(current_speed) / maxf(vehicle_config.max_forward_speed, 0.01), 0.0, 1.0)
+	var speed_ratio := clampf(absf(current_speed) / maxf(get_max_forward_speed(), 0.01), 0.0, 1.0)
 	var max_steering: float = lerpf(
 		deg_to_rad(vehicle_config.max_steering_angle_degrees),
 		deg_to_rad(vehicle_config.min_steering_angle_degrees),
@@ -522,20 +541,27 @@ func release_cargo_user(peer_id: int) -> bool:
 
 
 func is_cargo_storage_interaction_available_to(world_position: Vector3) -> bool:
-	for child: Node in get_children():
-		if not child is CargoCarInteractionArea:
-			continue
+	# Cargo interaction areas are grouped under CargoInteractionAreas so that
+	# they do not become direct vehicle children. Search recursively; checking
+	# only get_children() made every server-side range check fail.
+	for child: Node in find_children("*", "CargoCarInteractionArea", true, false):
 		var area := child as CargoCarInteractionArea
 		if area.interaction_kind != "cargo":
 			continue
-		var shape_node := area.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		var shape_nodes := area.find_children("*", "CollisionShape3D", true, false)
+		var shape_node := shape_nodes[0] as CollisionShape3D if not shape_nodes.is_empty() else null
 		var shape := shape_node.shape as BoxShape3D if shape_node != null else null
 		if shape == null:
+			CARGO_CAR_DEBUG.log("range check area=%s has no BoxShape3D" % area.get_path())
 			continue
 		var local := area.to_local(world_position)
 		var half := shape.size * 0.5 + Vector3(0.55, 0.35, 0.55)
 		if absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z:
 			return true
+	CARGO_CAR_DEBUG.log(
+		"range check vehicle=%s id=%s position=%s -> false (cargo areas=%d)"
+		% [name, network_id, str(world_position), find_children("*", "CargoCarInteractionArea", true, false).size()]
+	)
 	return false
 
 
@@ -741,14 +767,16 @@ func _apply_vehicle_config() -> void:
 		return
 	current_hp = vehicle_config.max_hp
 	_last_available_cargo_slots = get_available_cargo_slot_count()
-	var body_shape := vehicle_shape.shape as BoxShape3D
-	if body_shape != null:
-		body_shape.size = vehicle_config.collision_size
-	vehicle_shape.position = vehicle_config.collision_offset
-	var damage_shape := hit_shape.shape as BoxShape3D
-	if damage_shape != null:
-		damage_shape.size = vehicle_config.hitbox_size
-	hit_shape.position = vehicle_config.hitbox_offset
+	if is_instance_valid(vehicle_shape):
+		var body_shape := vehicle_shape.shape as BoxShape3D
+		if body_shape != null:
+			body_shape.size = vehicle_config.collision_size
+		vehicle_shape.position = vehicle_config.collision_offset
+	if is_instance_valid(hit_shape):
+		var damage_shape := hit_shape.shape as BoxShape3D
+		if damage_shape != null:
+			damage_shape.size = vehicle_config.hitbox_size
+		hit_shape.position = vehicle_config.hitbox_offset
 	vehicle_camera.position = vehicle_config.camera_offset
 	vehicle_camera.fov = vehicle_config.camera_base_fov
 	cargo_weight_kg = clampf(initial_cargo_weight_kg, 0.0, get_cargo_capacity_kg())
@@ -762,8 +790,12 @@ func _apply_vehicle_config() -> void:
 func _load_body_visual() -> void:
 	if vehicle_config.visual_scene == null:
 		# Tool vehicles can keep their visual and animation nodes directly in the
-		# gameplay scene instead of requiring a second visual-only resource.
+		# gameplay scene instead of requiring a second visual-only resource. Mesh
+		# is the name used by the imported farm vehicle scene, while BodyVisual is
+		# retained for the older tool vehicle scenes.
 		body_visual = get_node_or_null("BodyVisual") as Node3D
+		if not is_instance_valid(body_visual):
+			body_visual = get_node_or_null("Mesh") as Node3D
 		if is_instance_valid(body_visual):
 			_cache_visual_nodes()
 			return
@@ -834,6 +866,12 @@ func _update_cargo_hit_shape() -> void:
 	hit_shape.position = vehicle_config.hitbox_offset + (Vector3.UP if has_upper_cargo_layer else Vector3.ZERO)
 
 
+func _set_direct_body_collision_shapes_disabled(disabled: bool) -> void:
+	for child in get_children():
+		if child is CollisionShape3D:
+			(child as CollisionShape3D).set_deferred("disabled", disabled)
+
+
 func _clear_cargo_crates() -> void:
 	for crate in _cargo_crates:
 		if is_instance_valid(crate):
@@ -878,7 +916,14 @@ func _compact_cargo_manifest() -> void:
 
 
 func _create_cargo_interaction_areas() -> void:
-	if not supports_cargo() or find_child("CargoInteractionAreas", false, false) != null:
+	if not supports_cargo():
+		CARGO_CAR_DEBUG.log(
+			"skip cargo areas vehicle=%s id=%s capacity=%.1f config=%s"
+			% [name, network_id, get_cargo_capacity_kg(), vehicle_config.resource_path if vehicle_config != null else "<null>"]
+		)
+		return
+	if find_child("CargoInteractionAreas", false, false) != null:
+		CARGO_CAR_DEBUG.log("cargo areas already exist vehicle=%s id=%s" % [name, network_id])
 		return
 	var root := Node3D.new()
 	root.name = "CargoInteractionAreas"
@@ -889,6 +934,10 @@ func _create_cargo_interaction_areas() -> void:
 	_add_cargo_interaction_area(root, "CargoAreaLeft", "cargo", Vector3(-2.45, 1.0, -1.15), Vector3(1.25, 2.0, 4.6))
 	_add_cargo_interaction_area(root, "CargoAreaRight", "cargo", Vector3(2.45, 1.0, -1.15), Vector3(1.25, 2.0, 4.6))
 	_add_cargo_interaction_area(root, "CargoAreaRear", "cargo", Vector3(0.0, 1.0, -4.35), Vector3(3.8, 2.0, 1.15))
+	CARGO_CAR_DEBUG.log(
+		"created cargo areas vehicle=%s id=%s capacity=%.1f areas=%d"
+		% [name, network_id, get_cargo_capacity_kg(), find_children("*", "CargoCarInteractionArea", true, false).size()]
+	)
 
 
 func _add_cargo_interaction_area(root: Node3D, area_name: String, kind: String, position_value: Vector3, size: Vector3) -> void:
@@ -898,6 +947,7 @@ func _add_cargo_interaction_area(root: Node3D, area_name: String, kind: String, 
 	area.position = position_value
 	root.add_child(area)
 	var shape := CollisionShape3D.new()
+	shape.name = "CollisionShape3D"
 	var box := BoxShape3D.new()
 	box.size = size
 	shape.shape = box

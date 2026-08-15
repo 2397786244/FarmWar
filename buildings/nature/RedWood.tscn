@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://cqs5r6n8ilf0w"]
+
+[ext_resource type="PackedScene" uid="uid://dg1rkxw3xsqbt" path="res://assets/nature/RedWood.glb" id="1_1icuh"]
+[ext_resource type="Script" uid="uid://0u2h78vvvt4q" path="res://src/harvest_tree.gd" id="2_tree"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vegrn"]
+size = Vector3(1, 10, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_6pe81"]
+size = Vector3(1, 9.8, 1)
+
+[node name="RedWood" type="StaticBody3D" unique_id=368382087]
+metadata/map_can_overlap_water = false
+collision_layer = 128
+collision_mask = 32
+script = ExtResource("2_tree")
+tree_id = "redwood"
+display_name = "红杉"
+log_drop_count = 4
+
+[node name="Mesh" parent="." unique_id=407219946 instance=ExtResource("1_1icuh")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=408076677]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.9396796, 0)
+shape = SubResource("BoxShape3D_vegrn")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1431963183]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.6, 0)
+billboard = 1
+no_depth_test = true
+text = "500"
+outline_size = 6
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=266779050]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1841013610]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.8311644, 0)
+shape = SubResource("BoxShape3D_6pe81")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_body_entered"]

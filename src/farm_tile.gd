@@ -287,6 +287,17 @@ func _store_harvest_result(
 	harvested_weight_kg: float,
 	absorption_context: Dictionary
 ) -> void:
+	if str(absorption_context.get("absorption_type", "")) == "farm_vehicle_crop":
+		var vehicle_team := str(absorption_context.get("team", ""))
+		if not vehicle_team.is_empty() and is_instance_valid(GameAuthority) \
+				and GameAuthority.has_method("grant_team_crop_harvest"):
+			GameAuthority.grant_team_crop_harvest(
+				vehicle_team,
+				harvested_seed,
+				harvested_weight_kg,
+				global_position
+			)
+		return
 	if str(absorption_context.get("absorption_type", "")) == "farm_runner_crop":
 		GlobalVar.add_item(land_owner, harvested_seed, harvested_weight_kg)
 		return

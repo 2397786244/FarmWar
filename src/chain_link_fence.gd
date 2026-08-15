@@ -112,6 +112,17 @@ func impact(_effect: String, strength: float, attacker_team := "") -> bool:
 	if not attacker_team.is_empty() and not tool_owner.is_empty() \
 			and attacker_team == tool_owner:
 		return false
+	return _apply_impact_strength(strength)
+
+
+## 与 MapDefenseFacility 保持一致：只有爆炸结算显式调用该接口时才允许友伤。
+func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team := "") -> bool:
+	if destroyed or strength <= 0.0 or current_hp <= 0.0:
+		return false
+	return _apply_impact_strength(strength)
+
+
+func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
 		destroyed = true
@@ -203,7 +214,6 @@ func _has_property(object: Object, property_name: String) -> bool:
 
 func _set_gameplay_active(enabled: bool) -> void:
 	var active_for_gameplay := enabled and not _network_visual_only
-	_set_navigation_obstacle_active(active_for_gameplay)
 	collision_layer = 0
 	collision_mask = 0
 	if is_instance_valid(body_shape):
@@ -216,16 +226,3 @@ func _set_gameplay_active(enabled: bool) -> void:
 	hit_area.monitorable = active_for_gameplay
 	if is_instance_valid(hit_shape):
 		hit_shape.set_deferred("disabled", not active_for_gameplay)
-
-
-func _set_navigation_obstacle_active(value: bool) -> void:
-	var obstacle := find_child("NavigationObstacle3D", true, false) as NavigationObstacle3D
-	if obstacle == null:
-		return
-	obstacle.set_deferred("affect_navigation_mesh", value)
-	obstacle.set_deferred("avoidance_enabled", value)
-	var navigation_grid := get_tree().get_first_node_in_group(
-		"dynamic_navigation_chunk_grids"
-	)
-	if navigation_grid != null and navigation_grid.has_method("register_dynamic_obstacle"):
-		navigation_grid.call("register_dynamic_obstacle", self, value)
