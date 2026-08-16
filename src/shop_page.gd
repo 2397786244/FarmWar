@@ -419,6 +419,13 @@ func _get_owned_amount(product: Dictionary) -> float:
 			if str(item.get("kind", "")) == "dish" and str(item.get("dish_id", "")) == item_id:
 				return float(item.get("servings", 0))
 		return 0.0
+	if str(product.get("kind", "")) == "ammo_supply_box" and is_instance_valid(current_player):
+		var count := 0
+		for item: Dictionary in current_player.backpack_items:
+			if str(item.get("kind", "")) == "tool" \
+					and str(item.get("tool_id", "")) == item_id:
+				count += 1
+		return float(count)
 	if str(product.get("kind", "")) == "weapon" and is_instance_valid(current_player):
 		var count := 0
 		for item: Dictionary in current_player.backpack_items:

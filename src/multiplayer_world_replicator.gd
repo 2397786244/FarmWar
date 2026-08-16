@@ -783,6 +783,15 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 			continue
 		seen[device_id] = true
 		var visual := _get_or_create_remote_device_visual(device_id, data)
+		var local_controller := _get_local_remote_control_node(device_id)
+		# A session event can replace a presentation visual after the player has
+		# already started controlling the device.  Always bind the snapshot entry
+		# to the instance that owns the local camera before applying transforms.
+		if local_controller != null and visual != local_controller:
+			if is_instance_valid(visual) and not visual.is_queued_for_deletion():
+				visual.queue_free()
+			visual = local_controller
+			remote_device_visuals[device_id] = local_controller
 		if visual != null:
 			if REMOTE_CONTROLLED_DEVICE_TYPES.has(str(data.get("device_type", ""))):
 				_set_remote_device_jam_ratio(visual, float(data.get("jam_ratio", 1.0)))
@@ -793,7 +802,16 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 		if visual != null and visual.has_method("apply_network_health"):
 			visual.call("apply_network_health", float(data.get("hp", 0.0)))
 		var pos: Variant = data.get("position", Vector3.ZERO)
-		if visual != null and _is_local_remote_device_active(device_id) and visual.has_method("apply_authoritative_snapshot"):
+		# _get_local_remote_control_node() already requires an active local
+		# session and returns the exact camera/input instance.  Use the instance
+		# identity as the final guard so a transient ID mismatch cannot fall back
+		# to the proxy yaw path.
+		var local_controller_active := local_controller != null \
+			and visual == local_controller
+		if visual != null and local_controller_active and visual.has_method("apply_authoritative_snapshot"):
+			# The controlled node applies the snapshot in its own prediction/
+			# reconciliation loop.  In particular, do not write rotation.y here:
+			# this is the same local-first rule that already protects CameraPivot.x.
 			visual.call("apply_authoritative_snapshot", data)
 		elif visual != null and pos is Vector3:
 			visual.global_position = visual.global_position.lerp(pos, 0.55)
@@ -903,6 +921,16 @@ func _get_or_create_remote_device_visual(device_id: String, data: Dictionary, ke
 			duplicate.queue_free()
 		remote_device_visuals.erase(device_id)
 		return authoritative_device
+	var local_controller := _get_local_remote_control_node(device_id)
+	if local_controller != null:
+		var duplicate: Node = remote_device_visuals.get(device_id, null)
+		if is_instance_valid(duplicate) and duplicate != local_controller \
+				and not duplicate.is_queued_for_deletion():
+			duplicate.queue_free()
+		local_controller.set_meta("network_device_id", device_id)
+		local_controller.set_meta("runtime_enabled", true)
+		remote_device_visuals[device_id] = local_controller
+		return local_controller
 	var existing: Node = remote_device_visuals.get(device_id, null)
 	if is_instance_valid(existing):
 		if keep_runtime and not bool(existing.get_meta("runtime_enabled", false)):
@@ -1087,7 +1115,10 @@ func _apply_interest_chunk_visibility(snapshot: Dictionary) -> void:
 	for node in get_tree().get_nodes_in_group("farm_tiles"):
 		if node is FarmTile:
 			var tile := node as FarmTile
-			var chunk := Vector2i(floori(tile.global_position.x / 256.0), floori(tile.global_position.z / 256.0))
+			var chunk := Vector2i(
+				floori(tile.global_position.x / GameAuthority.INTEREST_CHUNK_SIZE_METERS),
+				floori(tile.global_position.z / GameAuthority.INTEREST_CHUNK_SIZE_METERS)
+			)
 			tile.visible = active_chunks.has(chunk)
 
 
@@ -1105,11 +1136,27 @@ func _set_remote_device_augment_ratio(device: Node, ratio: float) -> void:
 		device.set("aug_ratio", clampf(ratio, 1.0, 100.0))
 
 
-func _is_local_remote_device_active(device_id: String) -> bool:
+func _get_local_remote_control_node(device_id: String) -> Node3D:
+	if device_id.is_empty():
+		return null
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is GamePlayer and int(node.authority_peer_id) == MultiplayerNetwork.get_unique_peer_id():
-			# The active device ID survives scene teardown without retaining a Node.
-			if node.active_remote_device_id == device_id:
+		if not node is GamePlayer or (node as GamePlayer).is_remote_proxy:
+			continue
+		var player := node as GamePlayer
+		if player.has_method("get_active_remote_device_node"):
+			var candidate: Variant = player.call("get_active_remote_device_node", device_id)
+			if candidate is Node3D and is_instance_valid(candidate) \
+					and not (candidate as Node3D).is_queued_for_deletion():
+				return candidate as Node3D
+	return null
+
+
+func _is_local_remote_device_active(device_id: String, candidate: Node3D = null) -> bool:
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and not (node as GamePlayer).is_remote_proxy:
+			var player := node as GamePlayer
+			if player.has_method("is_controlling_remote_device") \
+					and bool(player.call("is_controlling_remote_device", device_id, candidate)):
 				return true
 	return false
 
@@ -1392,9 +1439,14 @@ func _apply_remote_device_spawned(state_value: Variant) -> void:
 	if visual == null:
 		return
 	var position: Variant = state.get("position", Vector3.ZERO)
-	if position is Vector3:
+	var local_controller := _get_local_remote_control_node(device_id)
+	# The reliable spawn event can arrive after the local player has already
+	# entered the device.  It is an initial-spawn transform for presentation
+	# proxies, not an authority correction for the local camera/input instance.
+	# In particular, never restore an old yaw over the local mouse prediction.
+	if not (local_controller != null and visual == local_controller) and position is Vector3:
 		visual.global_position = position
-	visual.rotation.y = float(state.get("yaw", visual.rotation.y))
+		visual.rotation.y = float(state.get("yaw", visual.rotation.y))
 
 
 func _apply_weapon_ammo_state_event(event: Dictionary) -> void:
@@ -2431,7 +2483,7 @@ func _apply_projectile_explosion(event: Dictionary) -> void:
 			_spawn_spicy_area_visual(pos, str(event.get("team", "")), event.get("direction", Vector3.FORWARD))
 		elif projectile_type == "grenade":
 			_spawn_grenade_explosion(pos)
-		elif projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb"]:
+		elif projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb", "boom_buggy_explosion"]:
 			_spawn_boom_effect(pos)
 		else:
 			_spawn_impact_flash(pos, str(event.get("effect", "Explosion")))

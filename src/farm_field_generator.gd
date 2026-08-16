@@ -291,6 +291,9 @@ func _clear_collision_chunks() -> void:
 func clear_field() -> void:
 	for tile in generated_tiles:
 		if is_instance_valid(tile):
+			var crop_visual_manager := FarmCropVisualManager.find_for_node(tile)
+			if crop_visual_manager != null:
+				crop_visual_manager.unregister_tile_crops(tile)
 			Farmlandmanager.unregister_land(tile)
 			tile.queue_free()
 	generated_tiles.clear()

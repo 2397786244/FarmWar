@@ -48,6 +48,9 @@ const CROP_INTERACTION_DISTANCE := 4.0
 const INTERACTION_MAX_DISTANCE := 4.0
 const INTERACTION_MIN_FORWARD_DOT := -0.15
 const INTERACTION_OCCLUSION_MASK := 2
+const AMMO_SUPPLY_BOX_ID := "ammo_supply_box"
+const AMMO_SUPPLY_BOX_CAPACITY := 200
+const NO_AMMO_SUPPLY_BOX_NOTICE := "当前背包内没有能供弹的弹药盒了！"
 
 const TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const CooldownRingScene := preload("res://src/cooldown_ring.gd")
@@ -185,6 +188,8 @@ var damage_flash_root: Control
 var damage_flash_tween: Tween
 var gameplay_notice: Label
 var gameplay_notice_tween: Tween
+var weather_notice: Label
+var weather_notice_tween: Tween
 var message_area_notice: Label
 var action_reward_feed: VBoxContainer
 var action_reward_tweens: Dictionary = {}
@@ -755,6 +760,11 @@ func get_backpack_item(index: int) -> Dictionary:
 				roundi(float(result.get("current_hp", result.get("max_hp", 1000.0)))),
 				roundi(float(result.get("max_hp", 1000.0))),
 			]
+		elif str(result.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID:
+			result["detail"] = "%d / %d 发" % [
+				clampi(int(result.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)), 0, AMMO_SUPPLY_BOX_CAPACITY),
+				AMMO_SUPPLY_BOX_CAPACITY,
+			]
 		elif str(result.get("tool_id", "")).begins_with("animal_"):
 			result["detail"] = "%d%% | %d/%d HP | %.1f kg" % [
 				roundi(float(result.get("growth_progress", 0.0))),
@@ -885,6 +895,16 @@ func _make_tool_backpack_item(tool_id: String, source: Dictionary = {}) -> Dicti
 	item["tool_id"] = tool_id
 	var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 	item["weight_kg"] = float(item.get("weight_kg", definition.get("weight_kg", 0.0)))
+	if tool_id == AMMO_SUPPLY_BOX_ID:
+		item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item["ammo_remaining"] = clampi(
+			int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+			0,
+			AMMO_SUPPLY_BOX_CAPACITY
+		)
+		if str(item.get("ammo_box_instance_id", "")).is_empty():
+			item["ammo_box_instance_id"] = "ammo_box:%d:%d" % [authority_peer_id, Time.get_ticks_usec()]
+		return item
 	if tool_id == "medieval_shield":
 		var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
 		item["max_hp"] = maxf(1.0, float(item.get("max_hp", max_hp)))
@@ -898,10 +918,50 @@ func _make_tool_backpack_item(tool_id: String, source: Dictionary = {}) -> Dicti
 	if definition.has("magazine_size"):
 		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
 		item["ammo_in_mag"] = clampi(int(item.get("ammo_in_mag", capacity)), 0, capacity)
-		item["reserve_ammo"] = maxi(0, int(item.get("reserve_ammo", definition.get("initial_reserve_ammo", 200))))
+		# Reserve ammunition is now supplied only by AmmoSupplyBox items. Keep the
+		# legacy field for old snapshots, but never grant or preserve the old free
+		# reserve pool.
+		item["reserve_ammo"] = 0
 		item["reload_remaining"] = maxf(0.0, float(item.get("reload_remaining", 0.0)))
 		item["reload_duration"] = maxf(0.0, float(item.get("reload_duration", 0.0)))
 	return item
+
+
+func _normalize_local_ammo_supply_box_items() -> void:
+	for index in range(backpack_items.size()):
+		var item := backpack_items[index]
+		if str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		item["kind"] = "tool"
+		item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item["ammo_remaining"] = clampi(
+			int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+			0,
+			AMMO_SUPPLY_BOX_CAPACITY
+		)
+		if str(item.get("ammo_box_instance_id", "")).is_empty():
+			item["ammo_box_instance_id"] = "ammo_box:%d:%d:%d" % [
+				authority_peer_id, Time.get_ticks_usec(), index
+			]
+		backpack_items[index] = item
+
+
+func _normalize_local_weapon_ammo_items() -> void:
+	for index in range(backpack_items.size()):
+		var item := backpack_items[index]
+		if str(item.get("kind", "")) != "tool":
+			continue
+		var tool_id := str(item.get("tool_id", ""))
+		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+		if not definition.has("magazine_size"):
+			continue
+		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
+		item["ammo_in_mag"] = clampi(int(item.get("ammo_in_mag", capacity)), 0, capacity)
+		item["reserve_ammo"] = 0
+		item["reload_remaining"] = maxf(0.0, float(item.get("reload_remaining", 0.0)))
+		item["reload_duration"] = maxf(0.0, float(item.get("reload_duration", 0.0)))
+		item["reload_ammo_amount"] = maxi(0, int(item.get("reload_ammo_amount", 0)))
+		backpack_items[index] = item
 
 
 func apply_test_backpack_grant(entries: Array) -> void:
@@ -1313,7 +1373,13 @@ func _backpack_items_match(first: Dictionary, second: Dictionary) -> bool:
 	if kind != str(second.get("kind", "")):
 		return false
 	if kind == "tool" or kind == "weapon":
-		return str(first.get("tool_id", "")) == str(second.get("tool_id", ""))
+		if str(first.get("tool_id", "")) != str(second.get("tool_id", "")):
+			return false
+		if str(first.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID:
+			var first_instance := str(first.get("ammo_box_instance_id", ""))
+			var second_instance := str(second.get("ammo_box_instance_id", ""))
+			return first_instance.is_empty() or second_instance.is_empty() or first_instance == second_instance
+		return true
 	if kind == "ingredient":
 		return str(first.get("ingredient_id", "")) == str(second.get("ingredient_id", "")) \
 				and _is_chopped_ingredient_item(first) == bool(second.get("is_chopped", false)) \
@@ -1508,6 +1574,7 @@ func _ready() -> void:
 		_create_crosshair()
 		_create_interact_hint()
 		_create_gameplay_notice()
+		_create_weather_notice()
 		_create_message_area_notice()
 		_create_damage_feedback_ui()
 		_create_action_reward_feed()
@@ -3673,6 +3740,8 @@ func _use_current_tool() -> void:
 		# 兼容没有启用 GameAuthority 的旧测试场景。
 		ret = tool_node.call("emit")
 		_consume_predicted_ammo()
+		if category == "shooting":
+			trigger_weapon_camera_recoil(selected_tool_id)
 	## 这里要更新工具的安装位置
 	
 	## 处理工具的类别，如果是remote要特殊处理
@@ -3743,8 +3812,8 @@ func _request_reload_current_weapon() -> void:
 		return
 	if int(item.get("ammo_in_mag", 0)) >= int(definition.get("magazine_size", 1)):
 		return
-	if int(item.get("reserve_ammo", 0)) <= 0:
-		show_gameplay_notice("没有备用弹药")
+	if not _has_ammo_supply_box_with_ammo():
+		show_gameplay_notice(NO_AMMO_SUPPLY_BOX_NOTICE)
 		return
 	if GameAuthority.should_send_network_requests():
 		var reload_time := maxf(0.05, float(definition.get("reload_time", 1.0)))
@@ -3757,11 +3826,79 @@ func _request_reload_current_weapon() -> void:
 		GameAuthority.local_reload_weapon(authority_peer_id, tool_id)
 	else:
 		var needed := maxi(0, int(definition.get("magazine_size", 1)) - int(item.get("ammo_in_mag", 0)))
-		var transferred := mini(needed, int(item.get("reserve_ammo", 0)))
+		var transferred := _consume_local_ammo_supply_box_ammo(needed)
+		if transferred <= 0:
+			show_gameplay_notice(NO_AMMO_SUPPLY_BOX_NOTICE)
+			return
 		item["ammo_in_mag"] = int(item.get("ammo_in_mag", 0)) + transferred
-		item["reserve_ammo"] = int(item.get("reserve_ammo", 0)) - transferred
+		item["reserve_ammo"] = 0
 		backpack_items[current_tool_index] = item
 	_update_ammo_ui()
+
+
+func _has_ammo_supply_box_with_ammo() -> bool:
+	for item: Dictionary in backpack_items:
+		if str(item.get("kind", "")) != "tool" or str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		if int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)) > 0:
+			return true
+	return false
+
+
+func _get_ammo_supply_box_total() -> int:
+	var total := 0
+	for item: Dictionary in backpack_items:
+		if str(item.get("kind", "")) != "tool" or str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		total += clampi(
+			int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+			0,
+			AMMO_SUPPLY_BOX_CAPACITY
+		)
+	return total
+
+
+func _consume_local_ammo_supply_box_ammo(requested: int) -> int:
+	var remaining := maxi(0, requested)
+	var transferred := 0
+	if remaining <= 0:
+		return 0
+	var ammo_boxes: Array[Dictionary] = []
+	for index in range(backpack_items.size()):
+		var item := backpack_items[index]
+		if str(item.get("kind", "")) != "tool" or str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		ammo_boxes.append({
+			"index": index,
+			"available": clampi(
+				int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+				0,
+				AMMO_SUPPLY_BOX_CAPACITY
+			),
+		})
+	ammo_boxes.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("available", 0)) < int(right.get("available", 0))
+	)
+	for box: Dictionary in ammo_boxes:
+		if remaining <= 0:
+			break
+		var index := int(box.get("index", -1))
+		if index < 0 or index >= backpack_items.size():
+			continue
+		var item := backpack_items[index]
+		var available := clampi(int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)), 0, AMMO_SUPPLY_BOX_CAPACITY)
+		var used := mini(remaining, available)
+		if used <= 0:
+			continue
+		item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item["ammo_remaining"] = available - used
+		backpack_items[index] = item
+		remaining -= used
+		transferred += used
+	if transferred > 0:
+		_refresh_hotbar()
+		_submit_backpack_layout_sync()
+	return transferred
 
 
 func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
@@ -3807,6 +3944,12 @@ func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
 		tool_node.call("emit")
 	elif tool_id == "medicine_cannon" and _is_authority_local_player():
 		tool_node.call("emit")
+	if category == "shooting":
+		# Camera recoil is a local presentation effect. The local player already
+		# renders the immediate firing visual in single-player, listen-server, and
+		# client-predicted multiplayer paths, so apply it here once instead of
+		# treating every replicated pellet/projectile as another shot.
+		trigger_weapon_camera_recoil(tool_id)
 
 
 func play_remote_tool_visual(tool_id: String, tool_index: int) -> void:
@@ -4448,6 +4591,27 @@ func _create_gameplay_notice() -> void:
 	$SubViewport.add_child(gameplay_notice)
 
 
+func _create_weather_notice() -> void:
+	if is_instance_valid(weather_notice):
+		return
+	weather_notice = Label.new()
+	weather_notice.name = "WeatherNotice"
+	weather_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	weather_notice.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	weather_notice.offset_left = 24.0
+	weather_notice.offset_top = -218.0
+	weather_notice.offset_right = 560.0
+	weather_notice.offset_bottom = -174.0
+	weather_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	weather_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	weather_notice.add_theme_color_override("font_color", Color("#63FF82"))
+	weather_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
+	weather_notice.add_theme_constant_override("outline_size", 6)
+	weather_notice.add_theme_font_size_override("font_size", 23)
+	weather_notice.visible = false
+	$SubViewport.add_child(weather_notice)
+
+
 func _create_message_area_notice() -> void:
 	if is_instance_valid(message_area_notice):
 		return
@@ -4519,6 +4683,22 @@ func show_gameplay_notice(message: String, duration := 2.2) -> void:
 	gameplay_notice_tween.tween_interval(maxf(0.2, duration))
 	gameplay_notice_tween.tween_property(gameplay_notice, "modulate:a", 0.0, 0.25)
 	gameplay_notice_tween.tween_callback(func() -> void: gameplay_notice.visible = false)
+
+
+func show_weather_notice(message: String, duration := 3.0) -> void:
+	if is_remote_proxy or is_respawning or message.strip_edges().is_empty():
+		return
+	if not is_instance_valid(weather_notice):
+		_create_weather_notice()
+	if is_instance_valid(weather_notice_tween):
+		weather_notice_tween.kill()
+	weather_notice.text = message
+	weather_notice.modulate = Color.WHITE
+	weather_notice.visible = true
+	weather_notice_tween = create_tween()
+	weather_notice_tween.tween_interval(maxf(0.2, duration))
+	weather_notice_tween.tween_property(weather_notice, "modulate:a", 0.0, 0.25)
+	weather_notice_tween.tween_callback(func() -> void: weather_notice.visible = false)
 
 
 func _create_action_reward_feed() -> void:
@@ -5660,14 +5840,25 @@ func _get_selected_item_info_text() -> String:
 		var tool_id := str(item.get("tool_id", ""))
 		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 		var tool_name := str(definition.get("name", definition.get("short", tool_id)))
+		if tool_id == AMMO_SUPPLY_BOX_ID:
+			return "%s\n%d / %d 发" % [
+				tool_name,
+				clampi(int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)), 0, AMMO_SUPPLY_BOX_CAPACITY),
+				AMMO_SUPPLY_BOX_CAPACITY,
+			]
+		if definition.has("magazine_size"):
+			var current_ammo := clampi(
+				int(item.get("ammo_in_mag", 0)),
+				0,
+				maxi(1, int(definition.get("magazine_size", 1)))
+			)
+			var total_available := _get_ammo_supply_box_total() + maxi(
+				0,
+				int(item.get("reserve_ammo", 0))
+			)
+			return "%s\n%d / %d" % [tool_name, current_ammo, total_available]
 		if is_instance_valid(tool_node) and tool_node.has_method("get_held_item_info_text"):
 			return str(tool_node.call("get_held_item_info_text", item, definition))
-		if definition.has("magazine_size"):
-			return "%s\n%d / %d" % [
-				tool_name,
-				int(item.get("ammo_in_mag", 0)),
-				int(item.get("reserve_ammo", 0)),
-			]
 		return tool_name
 	return str(get_backpack_item(current_tool_index).get("display_name", ""))
 
@@ -5702,11 +5893,44 @@ func apply_weapon_ammo_state(tool_id: String, ammo_state: Dictionary) -> void:
 		if str(item.get("kind", "")) != "tool" or str(item.get("tool_id", "")) != tool_id:
 			continue
 		item["ammo_in_mag"] = maxi(0, int(ammo_state.get("ammo_in_mag", item.get("ammo_in_mag", 0))))
-		item["reserve_ammo"] = maxi(0, int(ammo_state.get("reserve_ammo", item.get("reserve_ammo", 0))))
+		item["reserve_ammo"] = 0
 		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
 		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
 		backpack_items[index] = item
 		break
+	_sync_selected_weapon_ammo_visual()
+	_update_ammo_ui()
+	_update_cooldown_ring()
+
+
+func apply_weapon_ammo_states_snapshot(ammo_states: Dictionary) -> void:
+	for index in range(backpack_items.size()):
+		var item := backpack_items[index]
+		var tool_id := str(item.get("tool_id", ""))
+		if str(item.get("kind", "")) != "tool" or not ammo_states.has(tool_id):
+			continue
+		var ammo_value: Variant = ammo_states.get(tool_id, {})
+		if not ammo_value is Dictionary:
+			continue
+		var ammo_state := ammo_value as Dictionary
+		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+		if not definition.has("magazine_size"):
+			continue
+		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
+		item["ammo_in_mag"] = clampi(
+			int(ammo_state.get("ammo_in_mag", capacity)),
+			0,
+			capacity
+		)
+		item["reserve_ammo"] = 0
+		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
+		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
+		item["reload_ammo_amount"] = maxi(0, int(ammo_state.get("reload_ammo_amount", 0)))
+		backpack_items[index] = item
+	var previous_suppress_sync := suppress_backpack_layout_sync
+	suppress_backpack_layout_sync = true
+	_sync_equipped_tools_from_backpack()
+	suppress_backpack_layout_sync = previous_suppress_sync
 	_sync_selected_weapon_ammo_visual()
 	_update_ammo_ui()
 	_update_cooldown_ring()
@@ -6200,6 +6424,8 @@ func apply_cargo_backpack_slots(slots_value: Array) -> void:
 	backpack_items.clear()
 	for value: Variant in slots_value:
 		backpack_items.append((value as Dictionary).duplicate(true) if value is Dictionary else {})
+	_normalize_local_weapon_ammo_items()
+	_normalize_local_ammo_supply_box_items()
 	_sync_equipped_tools_from_backpack()
 	suppress_backpack_layout_sync = false
 	_refresh_hotbar()
@@ -7245,6 +7471,34 @@ func apply_explosion_camera_shake(explosion_position: Vector3, radius: float) ->
 		camera_shake_strength = maxf(camera_shake_strength, lerpf(0.035, 0.26, ratio))
 
 
+func trigger_weapon_camera_recoil(tool_id: String) -> void:
+	if is_remote_proxy:
+		return
+	var strength := CombatBalance.get_float(
+		tool_id, "camera_recoil_strength", 0.0
+	)
+	var duration := CombatBalance.get_float(
+		tool_id, "camera_recoil_duration", 0.0
+	)
+	if strength <= 0.0 or duration <= 0.0:
+		return
+	_apply_camera_recoil(strength, duration)
+
+
+func _apply_camera_recoil(strength: float, duration: float) -> void:
+	if is_remote_proxy or strength <= 0.0 or duration <= 0.0:
+		return
+	if camera_shake_time <= 0.0:
+		camera_shake_duration = duration
+	else:
+		camera_shake_duration = maxf(camera_shake_duration, duration)
+	camera_shake_time = maxf(camera_shake_time, duration)
+	# Do not weaken an existing hit or explosion reaction when a shot happens in
+	# the same frame. Repeated automatic fire keeps the latest short recoil alive
+	# without stacking six times for the shotgun's six visual pellets.
+	camera_shake_strength = maxf(camera_shake_strength, strength)
+
+
 func trigger_mounted_machine_gun_recoil() -> void:
 	if is_remote_proxy or not mounted_machine_gun_is_active:
 		return
@@ -7254,12 +7508,7 @@ func trigger_mounted_machine_gun_recoil() -> void:
 	# simultaneous explosion or hit reaction is never weakened.
 	const recoil_duration := 0.13
 	const recoil_strength := 0.06
-	if camera_shake_time <= 0.0:
-		camera_shake_duration = recoil_duration
-	else:
-		camera_shake_duration = maxf(camera_shake_duration, recoil_duration)
-	camera_shake_time = maxf(camera_shake_time, recoil_duration)
-	camera_shake_strength = maxf(camera_shake_strength, recoil_strength)
+	_apply_camera_recoil(recoil_strength, recoil_duration)
 
 
 func _create_damage_feedback_ui() -> void:
@@ -8152,7 +8401,7 @@ func impact(effect: String, strength: float, shooter: String) -> bool:
 			flame_remaining = maxf(flame_remaining, 3.0)
 		"freeze", "ice":
 			freeze_remaining = maxf(freeze_remaining, 2.0)
-		"bug":
+		"bug", "bug_storm":
 			bug_remaining = maxf(bug_remaining, 4.0)
 		"labeled", "labelled":
 			labeled_remaining = maxf(
@@ -8162,21 +8411,26 @@ func impact(effect: String, strength: float, shooter: String) -> bool:
 		_:
 			pass
 	var damage := maxf(0.0, strength)
+	if normalized_effect == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(damage)
 	if damage <= 0.0:
 		return true
 	if GameAuthority.is_local_authority() and GameAuthority.player_states.has(authority_peer_id):
 		var attacker_peer_id := GameAuthority.resolve_attacker_peer_id(shooter)
-		var shield_result := GameAuthority.apply_held_shield_damage(
-			authority_peer_id,
-			damage,
-			attacker_peer_id,
-			effect,
-			1.0,
-			shooter,
-			true
-		)
-		if bool(shield_result.get("blocked", false)):
-			return true
+		# 虫云不是弹丸、近战或炮弹爆炸命中，不能被手持盾牌吸收。
+		# 其他伤害类型继续沿用现有的盾牌 HP / 吸收比例处理。
+		if normalized_effect != "bug_storm":
+			var shield_result := GameAuthority.apply_held_shield_damage(
+				authority_peer_id,
+				damage,
+				attacker_peer_id,
+				effect,
+				1.0,
+				shooter,
+				true
+			)
+			if bool(shield_result.get("blocked", false)):
+				return true
 		var applied := GameAuthority._damage_player(
 			authority_peer_id, damage, 0.0, Vector3.ZERO, shooter, effect, attacker_peer_id
 		)
@@ -8228,10 +8482,26 @@ func remote_device_start():
 	if remote_tool_node.has_method("set_remote_receiver"):
 		remote_tool_node.call("set_remote_receiver", self)
 	remote_tool_node.begin_remote_control()
+	var started := true
+	if remote_tool_node.has_method("is_remote_control_active"):
+		started = bool(remote_tool_node.call("is_remote_control_active"))
+	if not started:
+		remote_control_camera = null
+		pending_remote_device_id = ""
+		_update_control_status_ui()
+		return
 	if remote_control_camera == null:
 		remote_control_camera = remote_tool_node.find_child("Camera3D", true, false) as Camera3D
-	if is_instance_valid(remote_control_camera):
-		remote_camera_rest_position = remote_control_camera.position
+	if not is_instance_valid(remote_control_camera):
+		if remote_tool_node.has_method("end_remote_control"):
+			remote_tool_node.call("end_remote_control")
+		remote_control_camera = null
+		pending_remote_device_id = ""
+		_update_control_status_ui()
+		return
+	if remote_tool_node.has_method("set_local_remote_control_runtime"):
+		remote_tool_node.call("set_local_remote_control_runtime", true)
+	remote_camera_rest_position = remote_control_camera.position
 	remote_is_active = true
 	active_remote_device_id = _remote_device_id(remote_tool_node)
 	pending_remote_device_id = ""
@@ -8274,6 +8544,8 @@ func remote_device_close(notify_authority := true):
 		GameAuthority.local_remote_control_session(authority_peer_id, closed_device_id, false)
 	
 func remote_destoryed():
+	if is_instance_valid(remote_tool_node) and remote_tool_node.has_method("set_local_remote_control_runtime"):
+		remote_tool_node.call("set_local_remote_control_runtime", false)
 	if is_instance_valid(remote_effect):
 		_set_remote_effect_signal_strength(remote_effect, 1.0)
 		remote_effect.visible = false
@@ -8319,6 +8591,36 @@ func _remote_device_id(device: Node3D) -> String:
 	if device.is_inside_tree():
 		return str(device.get_path())
 	return ""
+
+
+## Returns true only for the local player's currently controlled device.
+##
+## A cooperative client can briefly have more than one instance for the same
+## network device while the reliable spawn/session events and the snapshot
+## stream converge.  The instance check lets the replicator protect the node
+## that actually owns the local camera, while the ID check keeps this helper
+## usable during the normal event order.
+func is_controlling_remote_device(device_id: String, candidate: Node3D = null) -> bool:
+	if is_remote_proxy or not remote_is_active or device_id.is_empty():
+		return false
+	if not is_instance_valid(remote_tool_node) or remote_tool_node.is_queued_for_deletion():
+		return false
+	var active_id := active_remote_device_id
+	var node_id := _remote_device_id(remote_tool_node)
+	if active_id != device_id and node_id != device_id:
+		return false
+	return candidate == null or candidate == remote_tool_node
+
+
+## Returns the local camera/input device for a network ID, if this player is
+## actively controlling it.  The replicator uses the returned instance to
+## avoid replacing it with a presentation-only visual during synchronization.
+func get_active_remote_device_node(device_id: String = "") -> Node3D:
+	if not is_instance_valid(remote_tool_node) or remote_tool_node.is_queued_for_deletion():
+		return null
+	if device_id.is_empty() or is_controlling_remote_device(device_id, remote_tool_node):
+		return remote_tool_node
+	return null
 
 
 func _remote_device_quality(device: Node3D) -> String:

@@ -5,6 +5,7 @@ const CombatBalance = preload("res://src/combat_balance.gd")
 const PlacementQueryScript = preload("res://src/placement_query.gd")
 const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
+const AI_INTEREST_MANAGER_SCRIPT := preload("res://src/ai_interest_manager.gd")
 
 # GameAuthority 是“多人服务端权威”和“单人本地权威”的统一战局层。
 # 多人模式：客户端只提交输入/请求，Dedicated Server 在这里执行移动、伤害、放置、农田、商店等真实逻辑。
@@ -34,6 +35,7 @@ const PLAYER_JUMP_GRACE_TICKS := 3
 const PLAYER_MAX_HP := 200.0
 const PLAYER_RESPAWN_SECONDS := 10.0
 const PLAYER_VOID_DEATH_Y := -50.0
+const INTEREST_CHUNK_SIZE_METERS := 256.0
 const WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS := 10.0
 const LOCAL_MATCH_DURATION_SECONDS := 48.0 * 60.0
 const PLAYER_KNOCKBACK_DECELERATION := 18.0
@@ -79,6 +81,9 @@ const SHIELD_BREAK_FRAGMENT_COLOR := Color("75452b")
 const SHIELD_BREAK_PARTICLE_SCALE := 1.8
 const LOG_DROP_MODEL := "res://assets/other_items/Material/Log_Drop.glb"
 const TOOL_DEFINITIONS_PATH := "res://data/tool_definitions.json"
+const AMMO_SUPPLY_BOX_ID := "ammo_supply_box"
+const AMMO_SUPPLY_BOX_CAPACITY := 200
+const NO_AMMO_SUPPLY_BOX_NOTICE := "当前背包内没有能供弹的弹药盒了！"
 const FINITE_AMMO_WEAPON_IDS := {
 	"nail_gun": true,
 	"rubber_revolver": true,
@@ -196,6 +201,7 @@ const PROJECTILE_COLLISION_MASK_BY_TYPE := {
 
 var mode := MODE_DISABLED
 var server_manager: Node
+var ai_interest_manager
 var local_player_id := LOCAL_PLAYER_ID
 var tick_accumulator := 0.0
 var server_tick := 0
@@ -263,6 +269,8 @@ func _ready() -> void:
 	# the engine's 60 Hz physics delta only every other frame.
 	set_process(false)
 	set_physics_process(true)
+	ai_interest_manager = AI_INTEREST_MANAGER_SCRIPT.new()
+	ai_interest_manager.setup(self)
 	_load_authoritative_tool_cooldowns()
 	if not GlobalVar.team_money_changed.is_connected(_on_team_money_changed):
 		GlobalVar.team_money_changed.connect(_on_team_money_changed)
@@ -387,6 +395,34 @@ func should_send_network_requests() -> bool:
 	return mode == MODE_CLIENT and NetworkSession.is_client()
 
 
+## Rebuild the authority-side AI interest set after a player receives a final
+## spawn position or leaves the world.  This is intentionally immediate so a
+## newly joined player never enters an active chunk with sleeping AI around it.
+func refresh_ai_interest(immediate := false) -> void:
+	if ai_interest_manager == null:
+		return
+	ai_interest_manager.request_refresh(immediate)
+
+
+func is_ai_interest_sleeping(node: Node) -> bool:
+	return ai_interest_manager != null and ai_interest_manager.is_sleeping(node)
+
+
+func wake_ai_interest_entity(collider: Node) -> void:
+	if ai_interest_manager != null:
+		ai_interest_manager.wake_node(collider)
+
+
+func get_ai_interest_active_chunks() -> Array[Vector2i]:
+	if ai_interest_manager == null:
+		return []
+	return ai_interest_manager.get_active_chunks()
+
+
+func get_ai_interest_sleeping_count() -> int:
+	return ai_interest_manager.get_sleeping_count() if ai_interest_manager != null else 0
+
+
 func set_metrics_print_interval(seconds: float) -> void:
 	debug_print_metrics_interval = maxf(0.0, seconds)
 	debug_print_metrics_left = debug_print_metrics_interval
@@ -400,6 +436,8 @@ func enable_metrics_periodic_log(enabled: bool, seconds: float = 10.0) -> void:
 
 
 func _reset_runtime_state(clear_players := true) -> void:
+	if ai_interest_manager != null:
+		ai_interest_manager.reset()
 	tick_accumulator = 0.0
 	server_tick = 0
 	low_freq_snapshot_accumulator = 0.0
@@ -511,6 +549,8 @@ func _run_authority_tick(delta: float) -> void:
 	_simulate_cargo_garages(simulation_delta)
 	_simulate_vehicles(simulation_delta)
 	_simulate_players(simulation_delta)
+	if ai_interest_manager != null:
+		ai_interest_manager.tick(simulation_delta)
 	_simulate_remote_devices(simulation_delta)
 	_update_remote_device_link_quality()
 	_simulate_projectiles(simulation_delta)
@@ -1343,6 +1383,10 @@ func apply_held_shield_damage(
 		"hp": 0.0,
 		"max_hp": CombatBalance.get_float("medieval_shield", "max_hp", 1000.0),
 	}
+	# 虫云不是盾牌规则中的弹丸、近战或炮弹爆炸伤害，不能消耗或
+	# 阻挡手持盾牌。这里做集中拦截，避免未来新增调用方误用该接口。
+	if str(effect).strip_edges().to_lower() == "bug_storm":
+		return empty_result
 	if not is_local_authority() and not is_server_authority():
 		return empty_result
 	if damage <= 0.0 or not player_states.has(shield_peer_id):
@@ -1534,6 +1578,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	if not existing.has("backpack_slot_items"):
 		existing["backpack_slot_items"] = _build_initial_backpack_layout(existing)
 	_normalize_shield_inventory_items(existing)
+	_normalize_ammo_supply_box_inventory_items(existing)
 	existing["backpack_layout_valid"] = bool(existing.get("backpack_layout_valid", true))
 	existing["tool_cooldowns"] = existing.get("tool_cooldowns", {})
 	existing["weapon_ammo_states"] = _initialize_weapon_ammo_states(
@@ -1541,6 +1586,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 		existing.get("primary_weapon_ids", []),
 		existing.get("special_tool_ids", [])
 	)
+	_sync_weapon_ammo_states_to_backpack_slots(existing)
 	existing["last_input_seq"] = int(existing.get("last_input_seq", 0))
 	existing["last_received_input_seq"] = int(existing.get("last_received_input_seq", 0))
 	existing["last_jump_seq"] = int(existing.get("last_jump_seq", 0))
@@ -1561,6 +1607,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 		if selection.has("position") and is_instance_valid(proxy):
 			proxy.global_position = _vector3_from_value(existing.get("position", Vector3.ZERO))
 			proxy.velocity = _vector3_from_value(existing.get("velocity", Vector3.ZERO))
+	refresh_ai_interest(true)
 
 
 func unregister_player(peer_id: int) -> void:
@@ -1575,8 +1622,10 @@ func unregister_player(peer_id: int) -> void:
 	chat_submission_times_msec.erase(peer_id)
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy):
+		_unbind_listen_server_player_collision_exception(peer_id, proxy as CharacterBody3D)
 		proxy.queue_free()
 	player_physics_nodes.erase(peer_id)
+	refresh_ai_interest(true)
 
 
 func grant_test_backpack_entries_to_all(entries: Array) -> bool:
@@ -1831,6 +1880,7 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 		ammo_states[requested_id] = _default_weapon_ammo_state(requested_id)
 		state["weapon_ammo_states"] = ammo_states
+	_sync_weapon_ammo_states_to_backpack_slots(state)
 	player_states[peer_id] = state
 	_emit_debug_backpack_grant(peer_id, entries)
 	_emit_team_chat_system(
@@ -1926,6 +1976,12 @@ func _build_initial_backpack_layout(state: Dictionary) -> Array[Dictionary]:
 					or next_index >= slots.size():
 				continue
 			var item := {"kind": "tool", "tool_id": tool_id}
+			if _uses_finite_ammo(tool_id):
+				item.merge(_default_weapon_ammo_state(tool_id), true)
+			if tool_id == AMMO_SUPPLY_BOX_ID:
+				item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+				item["ammo_remaining"] = AMMO_SUPPLY_BOX_CAPACITY
+				item["ammo_box_instance_id"] = _new_ammo_supply_box_instance_id(state, next_index)
 			if tool_id == "medieval_shield":
 				item["max_hp"] = CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
 				item["current_hp"] = item["max_hp"]
@@ -1970,6 +2026,40 @@ func _normalize_shield_inventory_items(state: Dictionary) -> void:
 	state["backpack_slot_items"] = slots
 
 
+func _new_ammo_supply_box_instance_id(state: Dictionary, slot_index: int) -> String:
+	return "ammo_box:%d:%d:%d" % [
+		int(state.get("peer_id", 0)), Time.get_ticks_usec(), slot_index
+	]
+
+
+func _normalize_ammo_supply_box_inventory_items(state: Dictionary) -> void:
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return
+	var slots: Array = (slots_value as Array).duplicate(true)
+	var used_instance_ids := {}
+	for index in range(slots.size()):
+		if not slots[index] is Dictionary:
+			continue
+		var item := (slots[index] as Dictionary).duplicate(true)
+		if str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		item["kind"] = "tool"
+		item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item["ammo_remaining"] = clampi(
+			int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+			0,
+			AMMO_SUPPLY_BOX_CAPACITY
+		)
+		var instance_id := str(item.get("ammo_box_instance_id", ""))
+		if instance_id.is_empty() or used_instance_ids.has(instance_id):
+			instance_id = _new_ammo_supply_box_instance_id(state, index)
+		item["ammo_box_instance_id"] = instance_id
+		used_instance_ids[instance_id] = true
+		slots[index] = item
+	state["backpack_slot_items"] = slots
+
+
 func _server_layout_add_item(state: Dictionary, item: Dictionary) -> void:
 	if not bool(state.get("backpack_layout_valid", false)):
 		return
@@ -1999,6 +2089,17 @@ func _server_layout_add_item(state: Dictionary, item: Dictionary) -> void:
 				state["backpack_slot_items"] = slots
 				return
 	var item_to_add := item.duplicate(true)
+	if str(item_to_add.get("kind", "")) == "tool" \
+			and str(item_to_add.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID:
+		item_to_add["kind"] = "tool"
+		item_to_add["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item_to_add["ammo_remaining"] = clampi(
+			int(item_to_add.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+			0,
+			AMMO_SUPPLY_BOX_CAPACITY
+		)
+		if str(item_to_add.get("ammo_box_instance_id", "")).is_empty():
+			item_to_add["ammo_box_instance_id"] = _new_ammo_supply_box_instance_id(state, slots.size())
 	if str(item_to_add.get("kind", "")) == "tool" \
 			and str(item_to_add.get("tool_id", "")) == "medieval_shield":
 		var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
@@ -2060,7 +2161,14 @@ func _server_layout_items_match(first: Dictionary, second: Dictionary) -> bool:
 	if str(first.get("kind", "")) != kind and not (kind == "weapon" and str(first.get("kind", "")) == "tool"):
 		return false
 	match kind:
-		"tool", "weapon": return str(first.get("tool_id", "")) == str(second.get("tool_id", ""))
+		"tool", "weapon":
+			if str(first.get("tool_id", "")) != str(second.get("tool_id", "")):
+				return false
+			if str(second.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID:
+				var first_instance := str(first.get("ammo_box_instance_id", ""))
+				var second_instance := str(second.get("ammo_box_instance_id", ""))
+				return second_instance.is_empty() or first_instance == second_instance
+			return true
 		"equipment": return str(first.get("equipment_id", "")) == str(second.get("equipment_id", ""))
 		"ingredient":
 			return str(first.get("ingredient_id", "")) == str(second.get("ingredient_id", "")) \
@@ -2164,6 +2272,7 @@ func _ensure_player_physics_node(peer_id: int, position: Vector3) -> CharacterBo
 	var existing: Node = player_physics_nodes.get(peer_id, null)
 	if existing is CharacterBody3D and is_instance_valid(existing) \
 			and existing.is_inside_tree() and not existing.is_queued_for_deletion():
+		_bind_listen_server_player_collision_exception(peer_id, existing as CharacterBody3D)
 		return existing as CharacterBody3D
 	player_physics_nodes.erase(peer_id)
 	var body := PLAYER_PHYSICS_BODY_SCENE.instantiate() as CharacterBody3D
@@ -2182,13 +2291,55 @@ func _ensure_player_physics_node(peer_id: int, position: Vector3) -> CharacterBo
 		body.queue_free()
 		return null
 	player_physics_nodes[peer_id] = body
+	_bind_listen_server_player_collision_exception(peer_id, body)
 	return body
+
+
+func _bind_listen_server_player_collision_exception(
+	peer_id: int,
+	proxy: CharacterBody3D
+) -> void:
+	## 房主进程同时有本地 GamePlayer 表现/预测实体和权威物理代理。
+	## 两者属于同一个玩家，不能互相用 CharacterBody3D 的碰撞解算推开，
+	## 但二者仍需分别保留与世界、AI 和其他玩家的正常碰撞。
+	if mode != MODE_SERVER or not NetworkSession.is_listen_server() \
+			or peer_id <= 0 or not is_instance_valid(proxy) \
+			or not proxy.is_inside_tree():
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is GamePlayer or not is_instance_valid(node):
+			continue
+		var player := node as GamePlayer
+		if player.is_remote_proxy or int(player.authority_peer_id) != peer_id \
+				or not player.is_inside_tree():
+			continue
+		player.add_collision_exception_with(proxy)
+		proxy.add_collision_exception_with(player)
+		return
+
+
+func _unbind_listen_server_player_collision_exception(
+	peer_id: int,
+	proxy: CharacterBody3D
+) -> void:
+	if peer_id <= 0 or not is_instance_valid(proxy):
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is GamePlayer or not is_instance_valid(node):
+			continue
+		var player := node as GamePlayer
+		if player.is_remote_proxy or int(player.authority_peer_id) != peer_id:
+			continue
+		player.remove_collision_exception_with(proxy)
+		proxy.remove_collision_exception_with(player)
+		return
 
 
 func _clear_player_physics_nodes() -> void:
 	for peer_id in player_physics_nodes.keys():
 		var proxy: Node = player_physics_nodes[peer_id]
 		if is_instance_valid(proxy):
+			_unbind_listen_server_player_collision_exception(int(peer_id), proxy as CharacterBody3D)
 			proxy.queue_free()
 	player_physics_nodes.clear()
 
@@ -3067,6 +3218,7 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 			ammo_state["ammo_in_mag"] = maxi(0, int(ammo_state.get("ammo_in_mag", 0)) - 1)
 			ammo_states[tool_id] = ammo_state
 			state["weapon_ammo_states"] = ammo_states
+			_sync_weapon_ammo_states_to_backpack_slots(state)
 			_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
 		var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {})
 		var consumed_on_use := bool(definition.get("consumed_on_use", false))
@@ -3479,6 +3631,7 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 		return result
 	var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 	var ammo_state: Dictionary = ammo_states.get(tool_id, _default_weapon_ammo_state(tool_id))
+	ammo_state["reserve_ammo"] = 0
 	if float(ammo_state.get("reload_remaining", 0.0)) > 0.0:
 		result["reason"] = "already_reloading"
 		_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
@@ -3488,20 +3641,90 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 		result["reason"] = "magazine_full"
 		_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
 		return result
-	if int(ammo_state.get("reserve_ammo", 0)) <= 0:
-		result["reason"] = "no_reserve_ammo"
+	if not _state_has_ammo_supply_box_with_ammo(state):
+		result["reason"] = "no_ammo_supply_box"
+		_emit_gameplay_notice(peer_id, NO_AMMO_SUPPLY_BOX_NOTICE)
 		_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
 		return result
 	var reload_time := _weapon_reload_time(tool_id)
 	ammo_state["reload_remaining"] = reload_time
 	ammo_state["reload_duration"] = reload_time
+	ammo_state["reload_ammo_amount"] = capacity - int(ammo_state.get("ammo_in_mag", 0))
+	ammo_state["reserve_ammo"] = 0
 	ammo_states[tool_id] = ammo_state
 	state["weapon_ammo_states"] = ammo_states
+	_sync_weapon_ammo_states_to_backpack_slots(state)
 	player_states[peer_id] = state
 	result["ok"] = true
 	result["ammo_state"] = ammo_state.duplicate(true)
 	_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
 	return result
+
+
+func _state_has_ammo_supply_box_with_ammo(state: Dictionary) -> bool:
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return false
+	for item_value: Variant in slots_value as Array:
+		if not item_value is Dictionary:
+			continue
+		var item := item_value as Dictionary
+		if str(item.get("kind", "")) == "tool" \
+				and str(item.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID \
+				and int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)) > 0:
+			return true
+	return false
+
+
+func _consume_ammo_supply_box_ammo(state: Dictionary, requested: int) -> int:
+	var remaining := maxi(0, requested)
+	if remaining <= 0:
+		return 0
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return 0
+	var slots: Array = (slots_value as Array).duplicate(true)
+	var transferred := 0
+	var ammo_boxes: Array[Dictionary] = []
+	for index in range(slots.size()):
+		if not slots[index] is Dictionary:
+			continue
+		var item := slots[index] as Dictionary
+		if str(item.get("kind", "")) != "tool" \
+				or str(item.get("tool_id", "")) != AMMO_SUPPLY_BOX_ID:
+			continue
+		ammo_boxes.append({
+			"index": index,
+			"available": clampi(
+				int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)),
+				0,
+				AMMO_SUPPLY_BOX_CAPACITY
+			),
+		})
+	ammo_boxes.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("available", 0)) < int(right.get("available", 0))
+	)
+	for box: Dictionary in ammo_boxes:
+		if remaining <= 0:
+			break
+		var index := int(box.get("index", -1))
+		if index < 0 or index >= slots.size() or not slots[index] is Dictionary:
+			continue
+		var item := (slots[index] as Dictionary).duplicate(true)
+		var available := clampi(int(item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY)), 0, AMMO_SUPPLY_BOX_CAPACITY)
+		var used := mini(remaining, available)
+		if used <= 0:
+			continue
+		item["kind"] = "tool"
+		item["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+		item["ammo_remaining"] = available - used
+		slots[index] = item
+		remaining -= used
+		transferred += used
+	if transferred > 0:
+		state["backpack_slot_items"] = slots
+		state["backpack_layout_valid"] = true
+	return transferred
 
 
 func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
@@ -4514,9 +4737,26 @@ func _emit_personal_inventory_grant(peer_id: int, entries: Array[Dictionary]) ->
 	if mode == MODE_LOCAL:
 		_apply_test_backpack_grant_to_local_player(peer_id, entries, player_slots)
 	if mode != MODE_LOCAL:
-		reliable_world_event_ready.emit({
+			reliable_world_event_ready.emit({
 			"type": "personal_inventory_grant", "peer_id": peer_id,
 			"entries": entries, "player_slots": player_slots, "tick": server_tick,
+		})
+
+
+func _emit_personal_inventory_slots(peer_id: int, state: Dictionary) -> void:
+	# Keep the slot snapshot consistent with the authoritative magazine state
+	# before copying it into the event.  Reload completion emits both a weapon
+	# ammo event and an inventory event; the latter must not carry stale ammo_in_mag
+	# values that would overwrite the freshly reloaded HUD state.
+	_sync_weapon_ammo_states_to_backpack_slots(state)
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	var player_slots: Array = (slots_value as Array).duplicate(true) if slots_value is Array else []
+	if mode == MODE_LOCAL:
+		_apply_test_backpack_grant_to_local_player(peer_id, [], player_slots)
+	elif mode != MODE_CLIENT:
+		reliable_world_event_ready.emit({
+			"type": "personal_inventory_grant", "peer_id": peer_id,
+			"entries": [], "player_slots": player_slots, "tick": server_tick,
 		})
 
 
@@ -4714,12 +4954,47 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 	var is_dish := product_kind == "dish"
 	var is_weapon := product_kind == "weapon"
 	var is_livestock := product_kind == "livestock"
+	var is_ammo_supply_box := product_kind == "ammo_supply_box" or item_id == AMMO_SUPPLY_BOX_ID
 	var dish_weight := float(DishCatalog.get_definition(item_id).get("serving_weight_kg", 0.0)) * amount if is_dish else 0.0
 	var state: Dictionary = player_states[peer_id]
 	var transaction_total_price := 0
 	var player_slots_result: Array = []
 	var failure_reason := ""
-	if is_livestock and is_buy and bool(product.get("can_buy", false)):
+	if is_ammo_supply_box and is_buy and bool(product.get("can_buy", false)):
+		var box_amount := int(amount)
+		var total_price := roundi(float(product.get("buy_price", 0)) * float(box_amount))
+		var definition: Dictionary = authoritative_tool_definitions.get(AMMO_SUPPLY_BOX_ID, {})
+		var box_weight := float(definition.get("weight_kg", 0.0)) * float(box_amount)
+		var has_capacity := box_amount > 0 \
+			and _server_backpack_entry_count(state) + box_amount <= _server_bag_capacity(state) \
+			and _personal_ingredient_total_weight(state) + box_weight <= _server_bag_weight_capacity_kg(state) + 0.001
+		if has_capacity and GlobalVar.check_team_item_amount(team, "money") >= total_price:
+			ok = GlobalVar.remove_item(team, "money", total_price)
+			if ok:
+				var ammo_box_ids: Array = state.get("special_tool_ids", [])
+				var entries: Array[Dictionary] = []
+				for _index in range(box_amount):
+					var entry := {
+						"kind": "tool",
+						"tool_id": AMMO_SUPPLY_BOX_ID,
+						"ammo_capacity": AMMO_SUPPLY_BOX_CAPACITY,
+						"ammo_remaining": AMMO_SUPPLY_BOX_CAPACITY,
+						"ammo_box_instance_id": _new_ammo_supply_box_instance_id(state, _index),
+						"weight_kg": float(definition.get("weight_kg", 0.0)),
+					}
+					ammo_box_ids.append(AMMO_SUPPLY_BOX_ID)
+					_server_layout_add_item(state, entry)
+					entries.append(entry)
+				state["special_tool_ids"] = ammo_box_ids
+				player_states[peer_id] = state
+				player_slots_result = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+				transaction_total_price = total_price
+				_emit_personal_inventory_grant(peer_id, entries)
+		elif not has_capacity:
+			failure_reason = "personal_bag_full"
+		else:
+			failure_reason = "insufficient_money"
+	elif is_livestock and is_buy and bool(product.get("can_buy", false)):
 		var livestock_amount := int(amount)
 		var chop_check := _check_livestock_purchase_capacity(team, item_id, livestock_amount)
 		if not bool(chop_check.get("ok", false)):
@@ -4799,6 +5074,7 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 						ammo_states[item_id] = _default_weapon_ammo_state(item_id)
 					state["weapon_ammo_states"] = ammo_states
 					weapon_entry.merge(ammo_states[item_id] as Dictionary, true)
+				_sync_weapon_ammo_states_to_backpack_slots(state)
 				player_states[peer_id] = state
 				_emit_personal_inventory_grant(peer_id, [weapon_entry])
 	elif is_dish and is_buy and bool(product.get("can_buy", false)):
@@ -4925,6 +5201,7 @@ func _sync_local_player_interaction_state(peer_id: int) -> void:
 		if mode == MODE_SERVER and str(state.get("vehicle_id", "")).is_empty():
 			var proxy := _ensure_player_physics_node(peer_id, player.global_position)
 			if is_instance_valid(proxy):
+				_bind_listen_server_player_collision_exception(peer_id, proxy)
 				proxy.global_position = player.global_position
 				proxy.rotation.y = player.rotation.y
 				proxy.velocity = player.velocity
@@ -6417,7 +6694,9 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 		result["reason"] = "invalid_slot_count"
 		return result
 	_normalize_shield_inventory_items(state)
+	_normalize_ammo_supply_box_inventory_items(state)
 	var existing_shields_by_id := {}
+	var existing_ammo_boxes_by_id := {}
 	var existing_slots_value: Variant = state.get("backpack_slot_items", [])
 	if existing_slots_value is Array:
 		for existing_index in range((existing_slots_value as Array).size()):
@@ -6425,11 +6704,14 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 			if not existing_value is Dictionary:
 				continue
 			var existing_item := existing_value as Dictionary
-			if str(existing_item.get("tool_id", "")) != "medieval_shield":
-				continue
-			var existing_id := str(existing_item.get("shield_instance_id", ""))
-			if not existing_id.is_empty():
-				existing_shields_by_id[existing_id] = existing_item.duplicate(true)
+			if str(existing_item.get("tool_id", "")) == "medieval_shield":
+				var existing_id := str(existing_item.get("shield_instance_id", ""))
+				if not existing_id.is_empty():
+					existing_shields_by_id[existing_id] = existing_item.duplicate(true)
+			if str(existing_item.get("tool_id", "")) == AMMO_SUPPLY_BOX_ID:
+				var ammo_box_id := str(existing_item.get("ammo_box_instance_id", ""))
+				if not ammo_box_id.is_empty():
+					existing_ammo_boxes_by_id[ammo_box_id] = existing_item.duplicate(true)
 	var normalized_slots: Array[Dictionary] = []
 	var tool_ids := {}
 	var equipment_ids := {}
@@ -6469,6 +6751,27 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 					authoritative_livestock_items.erase(livestock_instance_id)
 				else:
 					normalized = {"kind": "tool", "tool_id": tool_id}
+					if tool_id == AMMO_SUPPLY_BOX_ID:
+						var requested_box_id := str(item.get("ammo_box_instance_id", ""))
+						var preserved_box: Dictionary = existing_ammo_boxes_by_id.get(requested_box_id, {})
+						if preserved_box.is_empty() and existing_slots_value is Array \
+								and normalized_slots.size() < (existing_slots_value as Array).size():
+							var old_box_value: Variant = (existing_slots_value as Array)[normalized_slots.size()]
+							if old_box_value is Dictionary \
+									and str((old_box_value as Dictionary).get("tool_id", "")) == tool_id:
+								preserved_box = (old_box_value as Dictionary).duplicate(true)
+						var box_id := requested_box_id
+						if box_id.is_empty():
+							box_id = str(preserved_box.get("ammo_box_instance_id", ""))
+						if box_id.is_empty():
+							box_id = _new_ammo_supply_box_instance_id(state, normalized_slots.size())
+						normalized["ammo_box_instance_id"] = box_id
+						normalized["ammo_capacity"] = AMMO_SUPPLY_BOX_CAPACITY
+						normalized["ammo_remaining"] = clampi(
+							int(preserved_box.get("ammo_remaining", item.get("ammo_remaining", AMMO_SUPPLY_BOX_CAPACITY))),
+							0,
+							AMMO_SUPPLY_BOX_CAPACITY
+						)
 					if tool_id == "medieval_shield":
 						var max_hp := CombatBalance.get_float("medieval_shield", "max_hp", 1000.0)
 						var requested_id := str(item.get("shield_instance_id", ""))
@@ -6538,6 +6841,7 @@ func server_inventory_layout_action(peer_id: int, action: Dictionary) -> Diction
 		return result
 	state["backpack_slot_items"] = normalized_slots
 	state["backpack_layout_valid"] = true
+	_sync_weapon_ammo_states_to_backpack_slots(state)
 	var previous_tool_index := int(state.get("current_tool_index", -1))
 	var previous_tool_id := str(state.get("current_tool_id", ""))
 	var selected_slot := clampi(
@@ -6998,9 +7302,10 @@ func _restore_dropped_item_to_player(state: Dictionary, item: Dictionary) -> voi
 					var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 					ammo_states[tool_id] = {
 						"ammo_in_mag": clampi(int(item.get("ammo_in_mag", _weapon_magazine_size(tool_id))), 0, _weapon_magazine_size(tool_id)),
-						"reserve_ammo": maxi(0, int(item.get("reserve_ammo", _weapon_initial_reserve(tool_id)))),
+						"reserve_ammo": 0,
 						"reload_remaining": 0.0,
 						"reload_duration": 0.0,
+						"reload_ammo_amount": 0,
 					}
 					state["weapon_ammo_states"] = ammo_states
 		"ingredient":
@@ -7629,8 +7934,9 @@ func _weapon_magazine_size(tool_id: String) -> int:
 
 
 func _weapon_initial_reserve(tool_id: String) -> int:
-	var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {})
-	return maxi(0, int(definition.get("initial_reserve_ammo", 200)))
+	# Kept as a compatibility helper for old save data. Player weapons no longer
+	# receive a free reserve pool; all reserve ammunition comes from AmmoSupplyBox.
+	return 0
 
 
 func _weapon_reload_time(tool_id: String) -> float:
@@ -7641,9 +7947,10 @@ func _weapon_reload_time(tool_id: String) -> float:
 func _default_weapon_ammo_state(tool_id: String) -> Dictionary:
 	return {
 		"ammo_in_mag": _weapon_magazine_size(tool_id),
-		"reserve_ammo": _weapon_initial_reserve(tool_id),
+		"reserve_ammo": 0,
 		"reload_remaining": 0.0,
 		"reload_duration": 0.0,
+		"reload_ammo_amount": 0,
 	}
 
 
@@ -7652,7 +7959,9 @@ func _get_or_create_weapon_ammo_state(state: Dictionary, tool_id: String) -> Dic
 	if not ammo_states.has(tool_id):
 		ammo_states[tool_id] = _default_weapon_ammo_state(tool_id)
 		state["weapon_ammo_states"] = ammo_states
-	return ammo_states[tool_id] as Dictionary
+	var ammo_state := ammo_states[tool_id] as Dictionary
+	ammo_state["reserve_ammo"] = 0
+	return ammo_state
 
 
 func _initialize_weapon_ammo_states(existing_value: Variant, primary_value: Variant, special_value: Variant) -> Dictionary:
@@ -7664,8 +7973,52 @@ func _initialize_weapon_ammo_states(existing_value: Variant, primary_value: Vari
 		for id_value: Variant in source_value as Array:
 			var tool_id := str(id_value)
 			if _uses_finite_ammo(tool_id):
-				result[tool_id] = (existing.get(tool_id, _default_weapon_ammo_state(tool_id)) as Dictionary).duplicate(true)
+				var source_state: Variant = existing.get(tool_id, _default_weapon_ammo_state(tool_id))
+				var normalized := _default_weapon_ammo_state(tool_id)
+				if source_state is Dictionary:
+					var source := source_state as Dictionary
+					normalized["ammo_in_mag"] = clampi(
+						int(source.get("ammo_in_mag", normalized["ammo_in_mag"])),
+						0,
+						_weapon_magazine_size(tool_id)
+					)
+					normalized["reload_remaining"] = maxf(0.0, float(source.get("reload_remaining", 0.0)))
+					normalized["reload_duration"] = maxf(0.0, float(source.get("reload_duration", 0.0)))
+					normalized["reload_ammo_amount"] = maxi(0, int(source.get("reload_ammo_amount", 0)))
+				result[tool_id] = normalized
 	return result
+
+
+func _sync_weapon_ammo_states_to_backpack_slots(state: Dictionary) -> void:
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	var ammo_states_value: Variant = state.get("weapon_ammo_states", {})
+	if not slots_value is Array or not ammo_states_value is Dictionary:
+		return
+	var slots: Array = (slots_value as Array).duplicate(true)
+	var ammo_states := ammo_states_value as Dictionary
+	for index in range(slots.size()):
+		if not slots[index] is Dictionary:
+			continue
+		var item := (slots[index] as Dictionary).duplicate(true)
+		var tool_id := str(item.get("tool_id", ""))
+		if not _uses_finite_ammo(tool_id) or not ammo_states.has(tool_id):
+			continue
+		var ammo_value: Variant = ammo_states.get(tool_id, {})
+		if not ammo_value is Dictionary:
+			continue
+		var ammo_state := ammo_value as Dictionary
+		var capacity := _weapon_magazine_size(tool_id)
+		item["ammo_in_mag"] = clampi(
+			int(ammo_state.get("ammo_in_mag", capacity)),
+			0,
+			capacity
+		)
+		item["reserve_ammo"] = 0
+		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
+		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
+		item["reload_ammo_amount"] = maxi(0, int(ammo_state.get("reload_ammo_amount", 0)))
+		slots[index] = item
+	state["backpack_slot_items"] = slots
 
 
 func _tick_weapon_reloads(peer_id: int, state: Dictionary, delta: float) -> void:
@@ -7680,12 +8033,24 @@ func _tick_weapon_reloads(peer_id: int, state: Dictionary, delta: float) -> void
 		ammo_state["reload_remaining"] = remaining
 		if remaining <= 0.0:
 			var needed := maxi(0, _weapon_magazine_size(tool_id) - int(ammo_state.get("ammo_in_mag", 0)))
-			var transferred := mini(needed, int(ammo_state.get("reserve_ammo", 0)))
+			var requested := int(ammo_state.get("reload_ammo_amount", needed))
+			if requested <= 0:
+				requested = needed
+			requested = mini(needed, requested)
+			var transferred := _consume_ammo_supply_box_ammo(state, requested)
 			ammo_state["ammo_in_mag"] = int(ammo_state.get("ammo_in_mag", 0)) + transferred
-			ammo_state["reserve_ammo"] = int(ammo_state.get("reserve_ammo", 0)) - transferred
+			ammo_state["reserve_ammo"] = 0
+			ammo_state["reload_ammo_amount"] = 0
 			ammo_state["reload_duration"] = 0.0
+			if transferred <= 0:
+				_emit_gameplay_notice(peer_id, NO_AMMO_SUPPLY_BOX_NOTICE)
+			ammo_states[tool_id] = ammo_state
+			state["weapon_ammo_states"] = ammo_states
+			_sync_weapon_ammo_states_to_backpack_slots(state)
 			_emit_weapon_ammo_state(peer_id, tool_id, ammo_state)
+			_emit_personal_inventory_slots(peer_id, state)
 		ammo_states[tool_id] = ammo_state
+	_sync_weapon_ammo_states_to_backpack_slots(state)
 	state["weapon_ammo_states"] = ammo_states
 
 
@@ -7759,26 +8124,72 @@ func _server_long_spear(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		result["blocked"] = true
 		return result
 
-	var box := BoxShape3D.new()
-	box.size = Vector3(
-		CombatBalance.get_float("long_spear", "hitbox_width", 0.2),
-		CombatBalance.get_float("long_spear", "hitbox_height", 0.2),
-		CombatBalance.get_float("long_spear", "hitbox_depth", 0.3)
-	)
-	var query := PhysicsShapeQueryParameters3D.new()
-	query.shape = box
-	query.transform = Transform3D(Basis.looking_at(forward, Vector3.UP), attack_center)
-	query.collision_mask = DEFAULT_COMBAT_RAYCAST_MASK
-	query.exclude = exclusions
-	query.collide_with_areas = true
-	query.collide_with_bodies = true
-	query.margin = 0.02
+	var hitbox_width := CombatBalance.get_float("long_spear", "hitbox_width", 0.2)
+	var hitbox_height := CombatBalance.get_float("long_spear", "hitbox_height", 0.2)
+	var hitbox_depth := CombatBalance.get_float("long_spear", "hitbox_depth", 0.3)
 	var world_3d := get_tree().root.get_world_3d()
 	if world_3d == null:
 		result["ok"] = false
 		result["reason"] = "world_unavailable"
 		return result
-	var hits := world_3d.direct_space_state.intersect_shape(query, 64)
+	# Query the authored tip box and the short swept volume from the player's
+	# authoritative hand-height frame to that tip.  A tip-only query can miss a
+	# zombie when the spear tip has already moved past its body; the sweep makes
+	# the Tool-layer collision behave as a real obstruction along the spear's
+	# path while retaining the existing multi-target and de-duplication rules.
+	var hits: Array = []
+	var tip_box := BoxShape3D.new()
+	tip_box.size = Vector3(hitbox_width, hitbox_height, hitbox_depth)
+	var tip_query := PhysicsShapeQueryParameters3D.new()
+	tip_query.shape = tip_box
+	tip_query.transform = Transform3D(Basis.looking_at(forward, Vector3.UP), attack_center)
+	tip_query.collision_mask = DEFAULT_COMBAT_RAYCAST_MASK
+	tip_query.exclude = exclusions
+	tip_query.collide_with_areas = true
+	tip_query.collide_with_bodies = true
+	tip_query.margin = 0.02
+	hits.append_array(world_3d.direct_space_state.intersect_shape(tip_query, 64))
+
+	var spear_start := player_position + Vector3.UP * 1.2
+	var spear_segment := attack_center - spear_start
+	var spear_length := spear_segment.length()
+	if spear_length > 0.05:
+		var sweep_box := BoxShape3D.new()
+		sweep_box.size = Vector3(
+			hitbox_width,
+			hitbox_height,
+			maxf(hitbox_depth, spear_length + hitbox_depth)
+		)
+		var sweep_direction := spear_segment / spear_length
+		var sweep_up := Vector3.UP
+		if absf(sweep_direction.dot(sweep_up)) > 0.98:
+			sweep_up = Vector3.RIGHT
+		var sweep_query := PhysicsShapeQueryParameters3D.new()
+		sweep_query.shape = sweep_box
+		sweep_query.transform = Transform3D(
+			Basis.looking_at(sweep_direction, sweep_up),
+			spear_start.lerp(attack_center, 0.5)
+		)
+		sweep_query.collision_mask = DEFAULT_COMBAT_RAYCAST_MASK
+		sweep_query.exclude = exclusions
+		sweep_query.collide_with_areas = true
+		sweep_query.collide_with_bodies = true
+		sweep_query.margin = 0.02
+		hits.append_array(world_3d.direct_space_state.intersect_shape(sweep_query, 64))
+	# The Zombie body capsule and Head3D intentionally overlap around the neck.
+	# Process head colliders first so de-duplication cannot let a body collider
+	# consume the target before the fatal headshot collider is handled.
+	var head_hits: Array = []
+	var non_head_hits: Array = []
+	for hit_value: Variant in hits:
+		if not hit_value is Dictionary:
+			continue
+		if _is_zombie_head_collider((hit_value as Dictionary).get("collider", null)):
+			head_hits.append(hit_value)
+		else:
+			non_head_hits.append(hit_value)
+	hits = head_hits
+	hits.append_array(non_head_hits)
 	var damaged_targets: Dictionary = {}
 	var hit_player := false
 	var hit_world_target := false
@@ -7871,7 +8282,7 @@ func _server_long_spear(peer_id: int, tool_request: Dictionary) -> Dictionary:
 			self, damage_position, team
 		)
 		if _apply_hit_to_collider(
-			damage_target, "melee", applied_damage, team,
+			collider, "melee", applied_damage, team,
 			int((hit_value as Dictionary).get("shape", -1)), peer_id
 		):
 			result["target_count"] = int(result["target_count"]) + 1
@@ -7928,6 +8339,64 @@ func _long_spear_target_key(target: Node) -> String:
 	return "node:%d" % target.get_instance_id()
 
 
+func _zombie_for_collider(collider: Variant) -> Zombie:
+	if not collider is Node or not is_instance_valid(collider):
+		return null
+	var cursor := collider as Node
+	for _depth in range(16):
+		if cursor == null:
+			break
+		if cursor is Zombie:
+			return cursor as Zombie
+		cursor = cursor.get_parent()
+	return null
+
+
+func _is_zombie_head_collider(collider: Variant) -> bool:
+	var zombie := _zombie_for_collider(collider)
+	if zombie == null or not collider is Node:
+		return false
+	var head := zombie.find_child("Head3D", true, false) as Area3D
+	if head == null:
+		return false
+	var node := collider as Node
+	return node == head or head.is_ancestor_of(node)
+
+
+func _prefer_zombie_head_hit(
+	origin: Vector3,
+	end: Vector3,
+	hit: Dictionary,
+	exclusions: Array[RID]
+) -> Dictionary:
+	if not hit.has("collider"):
+		return hit
+	var collider: Variant = hit.get("collider", null)
+	if _is_zombie_head_collider(collider):
+		return hit
+	var zombie := _zombie_for_collider(collider)
+	if zombie == null or not zombie is CollisionObject3D:
+		return hit
+	# Root Zombie and Head3D overlap. If the first ray result is the body
+	# capsule, probe again while excluding that root so a real Head3D hit is not
+	# hidden by Godot's shape ordering.
+	var head_exclusions: Array[RID] = []
+	head_exclusions.append_array(exclusions)
+	var zombie_rid := (zombie as CollisionObject3D).get_rid()
+	if not head_exclusions.has(zombie_rid):
+		head_exclusions.append(zombie_rid)
+	var head_hit := _raycast_world(
+		origin,
+		end,
+		COLLISION_LAYER_CHARACTER,
+		head_exclusions
+	)
+	if _zombie_for_collider(head_hit.get("collider", null)) == zombie \
+			and _is_zombie_head_collider(head_hit.get("collider", null)):
+		return head_hit
+	return hit
+
+
 func _server_hitscan(
 	peer_id: int,
 	tool_request: Dictionary,
@@ -7953,6 +8422,7 @@ func _server_hitscan(
 		if not exclusions.has(rid):
 			exclusions.append(rid)
 	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclusions)
+	hit = _prefer_zombie_head_hit(origin, end, hit, exclusions)
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
 	var hit_position := trace_end
 	var hit_kind := "world" if hit.has("collider") else "none"
@@ -8073,6 +8543,7 @@ func server_ai_hitscan(
 		if not exclude.has(shooter_rid):
 			exclude.append(shooter_rid)
 	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclude)
+	hit = _prefer_zombie_head_hit(origin, end, hit, exclude)
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
 	var hit_position := trace_end
 	var hit_kind := "world" if hit.has("collider") else "none"
@@ -8382,7 +8853,9 @@ func _server_tranquilizer_hitscan(peer_id: int, tool_request: Dictionary) -> Dic
 		direction = Vector3.FORWARD
 	var damage := CombatBalance.get_float("tranquilizer_pistol", "damage")
 	var end := origin + direction * CombatBalance.get_float("tranquilizer_pistol", "range")
-	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, _player_raycast_exclusion(peer_id))
+	var exclusions := _player_raycast_exclusion(peer_id)
+	var hit := _raycast_world(origin, end, DEFAULT_COMBAT_RAYCAST_MASK, exclusions)
+	hit = _prefer_zombie_head_hit(origin, end, hit, exclusions)
 	var trace_end := _vector3_from_value(hit.get("position", end)) if hit.has("collider") else end
 	var shield_peer_id := _shield_peer_id_for_collider(hit.get("collider", null))
 	var shield_hit_position := trace_end
@@ -10494,7 +10967,7 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 	if projectile_type == "grenade":
 		_spawn_local_grenade_explosion(hit_position)
 	elif _should_render_authoritative_projectiles_locally() \
-			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb"]:
+			and projectile_type in ["boom", "drone_bomb", "auto_shooter_boom", "engineer_remote_bomb", "boom_buggy_explosion"]:
 		_spawn_local_boom_explosion(hit_position)
 	reliable_world_event_ready.emit({
 		"type": "projectile_exploded",
@@ -11459,6 +11932,7 @@ func _respawn_player(peer_id: int) -> void:
 	# the authoritative respawn, including collision and interaction detectors.
 	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
 		_apply_local_player_respawn_state(peer_id, 0.0, spawn_position)
+	refresh_ai_interest(true)
 	reliable_world_event_ready.emit({
 		"type": "player_respawned",
 		"peer_id": peer_id,
@@ -11532,6 +12006,8 @@ func _apply_hit_to_collider(
 		if farm_tile != null:
 			farm_tile.impact(effect, damage, attacker_team)
 			return false
+	if collider is Node:
+		wake_ai_interest_entity(collider as Node)
 	var node = collider
 	while node != null:
 		if node is FutureWarriorAI:
@@ -11559,6 +12035,15 @@ func _apply_hit_to_collider(
 			return bool((node as AssistantAI).impact(effect, damage, attacker_team))
 		if node is AINormalDrone:
 			return bool((node as AINormalDrone).impact(effect, damage, attacker_team))
+		if node is Zombie:
+			return bool((node as Zombie).impact_from_collider(
+				collider,
+				effect,
+				damage,
+				attacker_team,
+				attacker_peer_id,
+				attacker_node
+			))
 		if node is VehicleBase:
 			return _damage_vehicle(node as VehicleBase, damage, effect, attacker_team)
 		var tool_ref := _registered_tool_ref_for_node(node)
@@ -11599,6 +12084,7 @@ func _damage_future_warriors_in_radius(
 		if applied_damage <= 0.0:
 			continue
 		var direction := warrior.global_position - center
+		wake_ai_interest_entity(warrior)
 		if warrior.impact(effect, applied_damage, attacker_team, direction):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied_damage
@@ -11632,6 +12118,7 @@ func _damage_farmer_ais_in_radius(
 		if applied_damage <= 0.0:
 			continue
 		var direction := farmer.global_position - center
+		wake_ai_interest_entity(farmer)
 		if farmer.impact(effect, applied_damage, attacker_team, direction):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied_damage
@@ -11660,6 +12147,7 @@ func _damage_group_nodes_in_radius(group_name: String, center: Vector3, radius: 
 			continue
 		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
 		var applied := maxf(0.0, damage * ratio * _explosion_damage_multiplier(center, target.global_position + Vector3.UP, target))
+		wake_ai_interest_entity(target)
 		if applied > 0.0 and target.has_method("impact") and bool(target.call("impact", effect, applied, attacker_team)):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied
@@ -12242,6 +12730,7 @@ func _damage_wild_animals_in_radius(
 			continue
 		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
 		var occlusion := _explosion_damage_multiplier(center, animal.global_position + Vector3.UP * 0.8, animal)
+		wake_ai_interest_entity(animal)
 		var applied := bool(animal.call(
 			"impact_from_peer", effect, damage * ratio * occlusion, attacker_team, attacker_peer_id
 		)) if attacker_peer_id > 0 and animal.has_method("impact_from_peer") else bool(
@@ -12484,6 +12973,9 @@ func _apply_remote_action_gameplay(peer_id: int, action: Dictionary, result: Dic
 			_configured_tool_float(device_node, "bomb_explosion_radius", CombatBalance.get_float("normal_drone", "bomb_radius")),
 			"Explosion")
 	elif device_type == "boom_buggy" and action_name == "primary":
+		var device_id := str(result.get("device_id", ""))
+		var detonation_state: Dictionary = remote_device_states.get(device_id, {}).duplicate(true)
+		var detonation_controller_peer_id := int(detonation_state.get("controller_peer_id", peer_id))
 		var projectile_id := next_projectile_id
 		next_projectile_id += 1
 		projectile_states[projectile_id] = {
@@ -12502,6 +12994,11 @@ func _apply_remote_action_gameplay(peer_id: int, action: Dictionary, result: Dic
 		}
 		_explode_projectile(projectile_id, position)
 		projectile_states.erase(projectile_id)
+		_finalize_boom_buggy_remote_detonation(
+			device_id,
+			detonation_state,
+			detonation_controller_peer_id
+		)
 	elif device_type == "small_mouse" and action_name == "primary":
 		# The client aims from ActionMount toward the center-screen ray target.
 		# Use the same authoritative mount here so the damage ray and visible
@@ -12520,6 +13017,8 @@ func _apply_remote_action_gameplay(peer_id: int, action: Dictionary, result: Dic
 			var mount_direction := (aim_point - laser_origin).normalized()
 			if mount_direction.length_squared() > 0.001:
 				laser_direction = mount_direction
+
+
 		var data := _server_hitscan(peer_id, {
 			"origin": laser_origin,
 			"direction": laser_direction,
@@ -12547,6 +13046,53 @@ func _apply_remote_action_gameplay(peer_id: int, action: Dictionary, result: Dic
 		)
 	elif device_type == "tech_drone" and action_name == "primary":
 		_apply_tech_drone_repair_pulse(peer_id, result, device_node, action)
+
+
+func _finalize_boom_buggy_remote_detonation(
+	device_id: String,
+	fallback_state: Dictionary = {},
+	fallback_controller_peer_id: int = 0
+) -> void:
+	## 爆炸伤害已经由 _explode_projectile() 完成；这里仅收尾 Remote 生命周期。
+	## 该函数必须允许爆炸范围内的既有 impact() 路径先把设备删除，避免二次
+	## 销毁或二次会话事件。
+	if device_id.is_empty():
+		return
+	var state_value: Variant = remote_device_states.get(device_id, null)
+	if state_value is Dictionary and not (state_value as Dictionary).is_empty():
+		var state := (state_value as Dictionary).duplicate(true)
+		if str(state.get("device_type", "")) != "boom_buggy":
+			return
+		var controller_peer_id := int(state.get("controller_peer_id", 0))
+		state["controller_peer_id"] = 0
+		state["input"] = {}
+		remote_device_states[device_id] = state
+		if controller_peer_id != 0:
+			_emit_remote_control_session_event(
+				state,
+				controller_peer_id,
+				false,
+				true,
+				"device_detonated"
+			)
+		_destroy_registered_tool_ref({"kind": "remote", "id": device_id})
+		return
+
+	# 如果 _explode_projectile() 内部复用了既有 impact() 路径并已经删除了
+	# remote_device_states，这里仍通知原操作者退出 Remote；不再尝试销毁。
+	if str(fallback_state.get("device_type", "")) != "boom_buggy":
+		return
+	if fallback_controller_peer_id != 0:
+		var disconnected_state := fallback_state.duplicate(true)
+		disconnected_state["controller_peer_id"] = 0
+		disconnected_state["input"] = {}
+		_emit_remote_control_session_event(
+			disconnected_state,
+			fallback_controller_peer_id,
+			false,
+			true,
+			"device_detonated"
+		)
 
 
 func _tech_drone_electronic_type_key(value: String) -> String:
@@ -13291,6 +13837,7 @@ func _build_world_snapshot() -> Dictionary:
 			"nitro_boost_active": bool(vehicle.get("nitro_boost_active", false)),
 			"nitro_boost": vehicle.get("nitro_boost", {}),
 			"harvest_reel_installed": bool(vehicle.get("harvest_reel_installed", false)),
+			"roof_headlights_installed": bool(vehicle.get("roof_headlights_installed", false)),
 		})
 	var public_projectiles: Array[Dictionary] = []
 	for raw_projectile_id in projectile_states.keys():

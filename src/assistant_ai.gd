@@ -60,6 +60,7 @@ enum OperationState {
 @export_file("*.tscn") var nailgun_scene_path := "res://character/weapons/Nailgun.tscn"
 
 var current_hp := 0.0
+var interest_sleeping := false
 var drone: AINormalDrone
 var nailgun: Node3D
 var target_player: CharacterBody3D
@@ -159,7 +160,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if is_dead:
+	if interest_sleeping or is_dead:
 		return
 	_update_aim_reference()
 	_update_upper_body_aim(delta)
@@ -167,6 +168,8 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if interest_sleeping:
+		return
 	if is_dead:
 		_simulate_corpse_gravity(delta)
 		if not _has_simulation_authority():
@@ -216,6 +219,29 @@ func _physics_process(delta: float) -> void:
 	_update_character_animation(actual_horizontal_velocity)
 	_update_debug_label()
 	_emit_console_debug(delta)
+
+
+func can_enter_interest_sleep() -> bool:
+	return not is_dead
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if is_dead:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		knockback_velocity = Vector3.ZERO
+		target_player = null
+		advancing_for_signal_recovery = false
+		operation_state = OperationState.DEFENSIVE_PATROL
+		_update_label()
+		return
+	interest_sleeping = false
+	if is_dead:
+		return
+	velocity = Vector3.ZERO
+	operation_state = OperationState.DEFENSIVE_PATROL
 
 
 func _spawn_drone() -> void:
@@ -1224,7 +1250,10 @@ func impact(
 ) -> bool:
 	if is_dead or strength <= 0.0 or attacker_team == team_id:
 		return false
-	current_hp = maxf(0.0, current_hp - strength)
+	var damage := strength
+	if _effect.to_lower() == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
+	current_hp = maxf(0.0, current_hp - damage)
 	_update_label()
 	if current_hp > 0.0:
 		if _remember_retaliation_target(attacker_team, hit_direction, attacker_node):

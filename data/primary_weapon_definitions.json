@@ -79,7 +79,7 @@
 	  "icon": "",
 	  "power": 80,
 	  "fire_rate": 0.333,
-	  "cooldown": 3.0,
+	  "cooldown": 0.0,
 	  "description": "双手持握的弩，射程120米，箭速90米/秒，单发伤害80；每次射击后装填3秒。"
 	},
 	{

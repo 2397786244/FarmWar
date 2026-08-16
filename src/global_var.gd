@@ -69,6 +69,7 @@ var shop_products: Array[Dictionary] = [
 	{"id": "m4", "name": "M4卡宾枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3000, "sell_price": 0, "can_buy": true, "can_sell": false},
 	{"id": "ar15", "name": "AR15步枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 4000, "sell_price": 0, "can_buy": true, "can_sell": false},
 	{"id": "suppressed_pistol", "name": "消音手枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 800, "sell_price": 0, "can_buy": true, "can_sell": false},
+	{"id": "ammo_supply_box", "name": "弹药盒", "kind": "ammo_supply_box", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 0, "can_buy": true, "can_sell": false},
 	{"id": "grenade", "name": "手雷", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 0, "can_buy": true, "can_sell": false},
 ]
 

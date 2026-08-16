@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/zombie_generator.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://character/Zombie.tscn" id="2_zombie"]
+
+[node name="ZombieGenerator" type="Marker3D"]
+script = ExtResource("1_script")
+zombie_scene = ExtResource("2_zombie")
+

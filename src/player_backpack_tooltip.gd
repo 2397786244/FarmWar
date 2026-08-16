@@ -117,6 +117,10 @@ func _resolve_tool(tool_id: String, item: Dictionary = {}) -> Dictionary:
 	var description := str(runtime_definition.get("description", runtime_definition.get("hint", "暂无说明。")))
 	var item_type := "道具"
 	var stats := ""
+	if tool_id == "ammo_supply_box":
+		stats = "剩余弹药：%d / 200 发" % clampi(
+			int(item.get("ammo_remaining", 200)), 0, 200
+		)
 	if primary_weapons_by_id.has(tool_id):
 		var weapon: Dictionary = primary_weapons_by_id[tool_id]
 		title = str(weapon.get("name", title))
@@ -133,7 +137,7 @@ func _resolve_tool(tool_id: String, item: Dictionary = {}) -> Dictionary:
 		description = str(special_tool.get("description", description))
 		item_type = "道具"
 		stats = "冷却：%s" % _format_seconds(float(special_tool.get("cooldown", runtime_definition.get("cooldown", 0.0))))
-	elif runtime_definition.has("cooldown"):
+	elif runtime_definition.has("cooldown") and tool_id != "ammo_supply_box":
 		stats = "冷却：%s" % _format_seconds(float(runtime_definition.get("cooldown", 0.0)))
 	var weight_kg := float(item.get("weight_kg", runtime_definition.get("weight_kg", 0.0)))
 	if weight_kg > 0.0:

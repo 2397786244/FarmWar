@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://worlds/coop_test/coop_test.tscn" id="1_coop_test"]
+
+; 这个场景是 coop_test 的可运行包装器，而不是一个脱离地图的等待节点。
+; 冒烟控制器保留在 coop_test 地图内，这样 CooperativeSession 自动切换到
+; 正式地图场景后，控制器仍然存在并能继续显示房主端状态。
+[node name="coop_test" instance=ExtResource("1_coop_test")]

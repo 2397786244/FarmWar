@@ -536,6 +536,7 @@ var ar15_burst_pause_timer: float = 0.0
 # ------------------------------------------------------------------
 
 var state: int = AIState.SEARCH
+var interest_sleeping := false
 var current_hp: float = 0.0
 var _death_cleanup_deadline_msec := -1
 
@@ -665,7 +666,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if state == AIState.DEAD:
+	if interest_sleeping or state == AIState.DEAD:
 		return
 
 	## 状态和最近一条 Squad 消息需要在状态切换后立即反映到头顶 Label3D；
@@ -679,6 +680,8 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if interest_sleeping:
+		return
 	if state == AIState.DEAD:
 		_simulate_corpse_gravity(delta)
 		return
@@ -2290,12 +2293,11 @@ func _load_item_data(
 			)
 		)
 
-		result["initial_reserve_ammo"] = int(
-			json_definition.get(
-				"initial_reserve_ammo",
-				fallback_reserve_ammo
-			)
-		)
+		# Player weapons now receive no free reserve ammunition; they reload from
+		# AmmoSupplyBox items. AI loadouts are independent and do not have player
+		# backpacks, so keep using each AI's exported reserve setting instead of
+		# inheriting the player-only value from the shared tool definition.
+		result["initial_reserve_ammo"] = fallback_reserve_ammo
 
 		result["reload_time"] = float(
 			json_definition.get(
@@ -5316,6 +5318,33 @@ func get_network_state() -> Dictionary:
 	}
 
 
+func can_enter_interest_sleep() -> bool:
+	return state != AIState.DEAD
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if state == AIState.DEAD:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		target_player = null
+		retaliation_target = null
+		_weapon_aim_active = false
+		action_animation_locked = false
+		_play_body_animation(&"Idle", 0.08)
+		_update_health_label()
+		return
+	interest_sleeping = false
+	if state == AIState.DEAD:
+		return
+	state = AIState.SEARCH
+	velocity = Vector3.ZERO
+	target_player = null
+	_weapon_aim_active = false
+	action_animation_locked = false
+
+
 func apply_network_state(data: Dictionary) -> void:
 	var was_dead := state == AIState.DEAD
 	var incoming_dead := bool(data.get("dead", false))
@@ -5673,6 +5702,8 @@ func impact(
 
 	if effect == "explosion":
 		damage *= explosion_damage_multiplier
+	elif effect.to_lower() == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
 
 	_apply_damage(
 		damage,

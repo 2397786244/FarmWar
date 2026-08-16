@@ -46,6 +46,7 @@ var _last_client_snapshot_tick := -1
 var _client_world_time_anchor := -1.0
 var _update_accumulator := 0.0
 var _rain_strength := 0.0
+var _eclipse_strength := 0.0
 
 
 func _ready() -> void:
@@ -85,6 +86,24 @@ func get_daylight_game_hours() -> float:
 	return 2.0 * rad_to_deg(acos(cosine_hour_angle)) / 15.0
 
 
+func get_world_clock_state() -> Dictionary:
+	# Return the shared world clock in both absolute and wrapped forms. The
+	# weather system uses the day index to make one deterministic eclipse
+	# decision per in-game day, so both systems must use this same clock.
+	var elapsed_seconds := _synchronized_elapsed_seconds()
+	var total_hours := initial_hour + elapsed_seconds / maxf(0.01, real_day_duration_seconds) * 24.0
+	return {
+		"elapsed_seconds": elapsed_seconds,
+		"total_hours": total_hours,
+		"day_index": floori(total_hours / 24.0),
+		"hour": fposmod(total_hours, 24.0),
+	}
+
+
+func get_current_hour() -> float:
+	return current_hour
+
+
 func _apply_time_of_day() -> void:
 	current_hour = fposmod(
 		initial_hour + _synchronized_elapsed_seconds() / real_day_duration_seconds * 24.0,
@@ -113,6 +132,24 @@ func get_street_light_factor() -> float:
 
 func set_weather_state(weather_type: String, intensity := 1.0) -> void:
 	_rain_strength = clampf(intensity, 0.0, 1.0) if weather_type == "rain" else 0.0
+	_apply_time_of_day()
+
+
+func set_eclipse_state(active: bool, strength := 1.0) -> void:
+	_eclipse_strength = clampf(strength, 0.0, 1.0) if active else 0.0
+	_apply_time_of_day()
+
+
+func set_atmospheric_state(
+	weather_type: String,
+	intensity: float,
+	eclipse_active: bool,
+	eclipse_strength: float
+) -> void:
+	# WeatherSystem3D calls this combined setter once per frame so rain and
+	# eclipse do not each recalculate the sun/environment independently.
+	_rain_strength = clampf(intensity, 0.0, 1.0) if weather_type == "rain" else 0.0
+	_eclipse_strength = clampf(eclipse_strength, 0.0, 1.0) if eclipse_active else 0.0
 	_apply_time_of_day()
 
 
@@ -192,7 +229,8 @@ func _apply_directional_lights(
 	if _sun != null:
 		_set_light_direction(_sun, -sun_direction)
 		_sun.light_energy = pow(maxf(sin(altitude), 0.0), 0.35) * maximum_sun_energy \
-			* lerpf(1.0, 0.24, _rain_strength)
+			* lerpf(1.0, 0.24, _rain_strength) \
+			* lerpf(1.0, 0.08, _eclipse_strength)
 		var warm_factor := 1.0 - smoothstep(deg_to_rad(2.0), deg_to_rad(22.0), altitude)
 		_sun.light_color = Color(1.0, 0.58, 0.32).lerp(
 			Color(1.0, 0.95, 0.82), 1.0 - warm_factor
@@ -201,7 +239,8 @@ func _apply_directional_lights(
 	if _moon != null:
 		_set_light_direction(_moon, sun_direction)
 		_moon.light_energy = maximum_moon_energy * smoothstep(0.35, 0.92, night_factor) \
-			* lerpf(1.0, 0.20, _rain_strength)
+			* lerpf(1.0, 0.20, _rain_strength) \
+			* lerpf(1.0, 0.55, _eclipse_strength)
 		_moon.visible = _moon.light_energy > 0.002
 
 
@@ -232,10 +271,13 @@ func _apply_environment(altitude: float) -> void:
 	)
 	_environment.ambient_light_energy = lerpf(
 		night_ambient_energy, day_ambient_energy, daylight_factor
-	) * lerpf(1.0, 0.58, _rain_strength)
+	) * lerpf(1.0, 0.58, _rain_strength) \
+		* lerpf(1.0, 0.20, _eclipse_strength)
 	_environment.ambient_light_color = Color(0.16, 0.21, 0.36).lerp(
 		Color.WHITE, daylight_factor
-	).lerp(Color(0.30, 0.38, 0.54), _rain_strength * 0.78)
+	).lerp(Color(0.30, 0.38, 0.54), _rain_strength * 0.78).lerp(
+		Color(0.08, 0.11, 0.20), _eclipse_strength * 0.82
+	)
 	_environment.fog_enabled = _rain_strength > 0.01
 	_environment.fog_light_color = Color(0.12, 0.17, 0.29)
 	_environment.fog_light_energy = lerpf(0.0, 0.55, _rain_strength)
@@ -250,16 +292,20 @@ func _apply_environment(altitude: float) -> void:
 		Color(0.72, 0.88, 0.97), daylight_factor
 	)
 	horizon = horizon.lerp(Color(1.0, 0.32, 0.12), twilight * 0.72)
-	_sky_material.sky_top_color = top.lerp(Color(0.016, 0.030, 0.085), _rain_strength)
-	_sky_material.sky_horizon_color = horizon.lerp(Color(0.075, 0.12, 0.23), _rain_strength)
+	_sky_material.sky_top_color = top.lerp(Color(0.016, 0.030, 0.085), _rain_strength).lerp(
+		Color(0.012, 0.020, 0.055), _eclipse_strength * 0.78
+	)
+	_sky_material.sky_horizon_color = horizon.lerp(Color(0.075, 0.12, 0.23), _rain_strength).lerp(
+		Color(0.055, 0.075, 0.14), _eclipse_strength * 0.78
+	)
 	_sky_material.ground_bottom_color = Color(0.012, 0.018, 0.028).lerp(
 		Color(0.25, 0.40, 0.22), daylight_factor
-	)
+	).lerp(Color(0.035, 0.045, 0.075), _eclipse_strength * 0.72)
 	_sky_material.ground_horizon_color = Color(0.03, 0.04, 0.07).lerp(
 		Color(0.62, 0.73, 0.54), daylight_factor
 	).lerp(Color(0.62, 0.20, 0.10), twilight * 0.45).lerp(
 		Color(0.055, 0.075, 0.12), _rain_strength
-	)
+	).lerp(Color(0.07, 0.09, 0.16), _eclipse_strength * 0.78)
 
 
 func _create_moon() -> void:
@@ -309,7 +355,7 @@ func _update_celestial_visuals(sun_direction: Vector3) -> void:
 	var center := camera.global_position if camera != null else global_position
 	if _sun_visual != null:
 		_sun_visual.global_position = center + sun_direction * 320.0
-		_sun_visual.visible = sun_direction.y > -0.08 and _rain_strength < 0.18
+		_sun_visual.visible = sun_direction.y > -0.08 and _rain_strength < 0.18 and _eclipse_strength < 0.85
 	if _moon_visual != null:
 		_moon_visual.global_position = center - sun_direction * 300.0
 		_moon_visual.visible = sun_direction.y < 0.12 and _rain_strength < 0.18

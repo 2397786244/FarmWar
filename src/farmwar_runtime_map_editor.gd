@@ -63,6 +63,7 @@ enum ToolMode {
 	OBJECT_EDIT,
 	ROAD,
 	WATER,
+	WEATHER,
 	FARMLAND,
 }
 
@@ -109,10 +110,15 @@ const FAR_SCENERY_PATH = "res://src/far_scenery_ring_3d.gd"
 const CLOUD_SYSTEM_PATH = "res://worlds/shared/cloud_system.tscn"
 const DAY_NIGHT_SYSTEM_PATH = "res://worlds/shared/day_night_system.tscn"
 const WEATHER_SYSTEM_PATH = "res://worlds/shared/weather_system.tscn"
+const DEFAULT_CLEAR_WEATHER_PROBABILITY := 0.50
+const DEFAULT_RAIN_WEATHER_PROBABILITY := 0.40
+const DEFAULT_ECLIPSE_WEATHER_PROBABILITY := 0.10
+const DEFAULT_RAIN_INTENSITY := 0.82
 const WATER_BODY_PATH = "res://worlds/shared/WaterBody3D.tscn"
 const TEAM_SPAWN_POINT_PATH = "res://buildings/TeamSpawnPoint.tscn"
 const ENEMY_SQUAD_SPAWNER_PATH = "res://character/EnemySquadSpawner.tscn"
 const SQUAD_TARGET_POINT_PATH = "res://buildings/SquadTargetPoint.tscn"
+const ZOMBIE_GENERATOR_PATH = "res://buildings/auxiliary/ZombieGenerator.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
 const FARM_FIELD_GENERATOR_SCRIPT_PATH = "res://src/farm_field_generator.gd"
@@ -369,6 +375,13 @@ var _terrain_skirt_mesh: MeshInstance3D
 var _ground_safety_mesh: MeshInstance3D
 var _day_night_system: Node
 var _weather_system: Node
+var _weather_clear_probability := DEFAULT_CLEAR_WEATHER_PROBABILITY
+var _weather_rain_probability := DEFAULT_RAIN_WEATHER_PROBABILITY
+var _weather_rain_intensity := DEFAULT_RAIN_INTENSITY
+var _weather_eclipse_probability := DEFAULT_ECLIPSE_WEATHER_PROBABILITY
+var _weather_probability_sliders: Dictionary = {}
+var _weather_probability_labels: Dictionary = {}
+var _weather_probability_total_label: Label
 
 # Terrain chunks and collision shapes keyed by Vector2i.
 var _terrain_chunks: Dictionary = {}
@@ -413,7 +426,9 @@ var _ai_configurations: Array = []
 var _selected_ai_index := -1
 var _selected_squad_spawner_index := -1
 var _selected_squad_member_index := 0
-## AI 工具中的一次性地图放置动作：squad_spawner / squad_target / 空。
+var _selected_zombie_generator_index := -1
+## AI 工具中的一次性地图放置动作：squad_spawner / squad_target /
+## zombie_generator / 空。
 var _ai_placement_mode := ""
 var _brush_radius = 8.0
 var _brush_strength = 2.5
@@ -442,6 +457,7 @@ var _selected_vehicle_platform_seat_count := 0
 var _selected_vehicle_reinforced_variant := false
 var _selected_vehicle_nitro_boost_installed := false
 var _selected_vehicle_harvest_reel_installed := false
+var _selected_vehicle_roof_headlights_installed := false
 var _facility_assets: Array[Dictionary] = []
 var _selected_facility_category := "kitchen"
 var _selected_facility_team := "red"
@@ -884,6 +900,7 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.SURFACE, "Surface Colors", "Paint and configure terrain surface colors")
 	_add_tool_button(column, group, ToolMode.ROAD, "Roads", "Draw and edit continuous curve roads")
 	_add_tool_button(column, group, ToolMode.WATER, "Water", "Draw irregular lakes and river centerlines")
+	_add_tool_button(column, group, ToolMode.WEATHER, "Weather", "Configure clear, rain and eclipse probabilities")
 	_add_tool_button(column, group, ToolMode.GRASS, "Grass", "Manual MultiMesh grass brush")
 	_add_tool_button(column, group, ToolMode.TREE, "Trees", "Place complete harvestable tree scenes")
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
@@ -1105,6 +1122,9 @@ func _refresh_bottom_dock() -> void:
 		ToolMode.WATER:
 			_tool_title_label.text = "Water Bodies"
 			_add_water_buttons()
+		ToolMode.WEATHER:
+			_tool_title_label.text = "Weather System"
+			_add_weather_controls()
 		_:
 			_tool_title_label.text = "Unavailable"
 
@@ -1329,6 +1349,152 @@ func _add_auxiliary_buttons() -> void:
 	_bottom_content.add_child(hint)
 
 
+func _add_weather_controls() -> void:
+	var explanation := Label.new()
+	explanation.text = "天气设置会写入当前地图。自动天气每天只抽取一种：晴天、雨天或日食。三个概率合计始终为 100%；日食仍只会在 09:00–12:00 之间开始，持续到不晚于 18:00。"
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(explanation)
+
+	_weather_probability_sliders.clear()
+	_weather_probability_labels.clear()
+	_weather_probability_total_label = Label.new()
+	_weather_probability_total_label.text = "概率合计：100%"
+	_weather_probability_total_label.add_theme_color_override("font_color", Color("63FF82"))
+	_bottom_content.add_child(_weather_probability_total_label)
+
+	_add_weather_probability_control("clear", "晴天概率", _weather_clear_probability, "自动天气中整天晴朗的概率")
+	_add_weather_probability_control("rain", "雨天概率", _weather_rain_probability, "当天抽到雨天后，全天保持雨天")
+	_add_weather_probability_control("eclipse", "日食概率（每天）", _weather_eclipse_probability, "当天抽到日食后，再从 09:00–12:00 选择开始时间")
+
+	var intensity_label := Label.new()
+	intensity_label.text = "雨势强度：%.0f%%" % (_weather_rain_intensity * 100.0)
+	_bottom_content.add_child(intensity_label)
+	var intensity_slider := HSlider.new()
+	intensity_slider.min_value = 0.1
+	intensity_slider.max_value = 1.0
+	intensity_slider.step = 0.01
+	intensity_slider.value = _weather_rain_intensity
+	intensity_slider.custom_minimum_size.x = 220.0
+	intensity_slider.tooltip_text = "雨滴、云层和降雨环境效果的强度"
+	intensity_slider.value_changed.connect(func(value: float) -> void:
+		_weather_rain_intensity = clampf(value, 0.1, 1.0)
+		intensity_label.text = "雨势强度：%.0f%%" % (_weather_rain_intensity * 100.0)
+		_apply_weather_editor_property("rain_intensity", _weather_rain_intensity)
+	)
+	_bottom_content.add_child(intensity_slider)
+
+	var hint := Label.new()
+	hint.text = "概率修改会按比例重新分配另外两项，保证总和为 100%。日食和雨天不会同时存在；天气结果使用天气种子和游戏内日期计算，并由房主/本地权威天气状态同步给合作玩家。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_weather_probability_control(
+	probability_id: String,
+	label_text: String,
+	current_value: float,
+	tooltip: String
+) -> void:
+	var label := Label.new()
+	label.text = "%s：%.0f%%" % [label_text, current_value * 100.0]
+	label.tooltip_text = tooltip
+	_weather_probability_labels[probability_id] = label
+	_bottom_content.add_child(label)
+
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.01
+	slider.value = current_value
+	slider.custom_minimum_size.x = 220.0
+	slider.tooltip_text = tooltip
+	slider.value_changed.connect(func(value: float) -> void:
+		_set_weather_probability_from_editor(probability_id, value)
+	)
+	_weather_probability_sliders[probability_id] = slider
+	_bottom_content.add_child(slider)
+
+
+func _set_weather_probability_from_editor(probability_id: String, value: float) -> void:
+	var selected_value := clampf(value, 0.0, 1.0)
+	var clear_probability := _weather_clear_probability
+	var rain_probability := _weather_rain_probability
+	var eclipse_probability := _weather_eclipse_probability
+	match probability_id:
+		"clear": clear_probability = selected_value
+		"rain": rain_probability = selected_value
+		"eclipse": eclipse_probability = selected_value
+		_: return
+
+	var remaining := 1.0 - selected_value
+	if probability_id == "clear":
+		var other_total := rain_probability + eclipse_probability
+		if other_total <= 0.0001:
+			rain_probability = remaining
+			eclipse_probability = 0.0
+		else:
+			rain_probability = remaining * rain_probability / other_total
+			eclipse_probability = remaining * eclipse_probability / other_total
+	elif probability_id == "rain":
+		var other_total := clear_probability + eclipse_probability
+		if other_total <= 0.0001:
+			clear_probability = remaining
+			eclipse_probability = 0.0
+		else:
+			clear_probability = remaining * clear_probability / other_total
+			eclipse_probability = remaining * eclipse_probability / other_total
+	else:
+		var other_total := clear_probability + rain_probability
+		if other_total <= 0.0001:
+			clear_probability = remaining
+			rain_probability = 0.0
+		else:
+			clear_probability = remaining * clear_probability / other_total
+			rain_probability = remaining * rain_probability / other_total
+
+	_weather_clear_probability = clear_probability
+	_weather_rain_probability = rain_probability
+	_weather_eclipse_probability = eclipse_probability
+	_sync_weather_probability_controls()
+	_apply_weather_probability_properties()
+
+
+func _sync_weather_probability_controls() -> void:
+	var values := {
+		"clear": _weather_clear_probability,
+		"rain": _weather_rain_probability,
+		"eclipse": _weather_eclipse_probability,
+	}
+	var labels := {
+		"clear": "晴天概率",
+		"rain": "雨天概率",
+		"eclipse": "日食概率（每天）",
+	}
+	for probability_id in values.keys():
+		var probability := float(values[probability_id])
+		var slider := _weather_probability_sliders.get(probability_id) as HSlider
+		if slider != null:
+			slider.set_value_no_signal(probability)
+		var label := _weather_probability_labels.get(probability_id) as Label
+		if label != null:
+			label.text = "%s：%.0f%%" % [labels[probability_id], probability * 100.0]
+	if _weather_probability_total_label != null:
+		var total := _weather_clear_probability + _weather_rain_probability + _weather_eclipse_probability
+		_weather_probability_total_label.text = "概率合计：%.0f%%" % (total * 100.0)
+
+
+func _apply_weather_probability_properties() -> void:
+	if is_instance_valid(_weather_system):
+		_set_property_if_present(_weather_system, "clear_weather_probability", _weather_clear_probability)
+		_set_property_if_present(_weather_system, "rain_weather_probability", _weather_rain_probability)
+		_set_property_if_present(_weather_system, "eclipse_weather_probability", _weather_eclipse_probability)
+		# Keep old serialized fields synchronized for maps saved by older editor builds.
+		_set_property_if_present(_weather_system, "rain_cycle_probability", _weather_rain_probability)
+		_set_property_if_present(_weather_system, "eclipse_daily_probability", _weather_eclipse_probability)
+	if is_instance_valid(_map_root):
+		_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
+
+
 func _add_neutral_crop_generator_controls() -> void:
 	var heading := Label.new()
 	heading.text = "Neutral Crop Generator Settings"
@@ -1483,7 +1649,7 @@ func _add_farmland_controls() -> void:
 
 func _add_ai_configuration_controls() -> void:
 	var explanation := Label.new()
-	explanation.text = "地图 AI 是可选规则：没有配置时不会生成任何 AI。AI 由房主/本地权威生成；合作客户端只接收同步结果。"
+	explanation.text = "地图 AI 是可选规则：普通 AI 配置不包含 Zombie。Zombie 使用独立生成器，不加入 Squad；由房主/本地权威生成，合作客户端只接收同步结果。"
 	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(explanation)
 
@@ -1520,6 +1686,7 @@ func _add_ai_configuration_controls() -> void:
 		_bottom_content.add_child(empty_label)
 		_bottom_content.add_child(HSeparator.new())
 		_add_squad_generator_controls()
+		_add_zombie_generator_controls()
 		return
 	if _selected_ai_index < 0 or _selected_ai_index >= _ai_configurations.size():
 		_selected_ai_index = 0
@@ -1599,6 +1766,7 @@ func _add_ai_configuration_controls() -> void:
 	_bottom_content.add_child(hint)
 	_bottom_content.add_child(HSeparator.new())
 	_add_squad_generator_controls()
+	_add_zombie_generator_controls()
 
 
 func _add_squad_generator_controls() -> void:
@@ -1767,6 +1935,200 @@ func _add_squad_generator_controls() -> void:
 	hint.text = "青色标记表示生成区域，黄色圆柱表示共享 target。游戏运行时两种编辑器外观都会隐藏，但 target 的 Node3D 会保留。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
+
+
+func _add_zombie_generator_controls() -> void:
+	var heading := Label.new()
+	heading.text = "僵尸生成器"
+	heading.add_theme_font_size_override("font_size", 20)
+	_bottom_content.add_child(heading)
+
+	var explanation := Label.new()
+	explanation.text = "每个生成器按间隔一次生成一个僵尸，不检查上一个僵尸是否死亡。天气和时间条件不满足时跳过本次生成。"
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(explanation)
+
+	var generators := _get_editor_zombie_generators()
+	if _selected_zombie_generator_index >= generators.size():
+		_selected_zombie_generator_index = generators.size() - 1
+	var list_row := HBoxContainer.new()
+	list_row.add_child(_make_label("生成器"))
+	var list_option := OptionButton.new()
+	list_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for index in range(generators.size()):
+		var generator := generators[index]
+		list_option.add_item("%02d  %s · %s · %s" % [
+			index + 1,
+			str(generator.get("generator_id")),
+			"女性" if str(generator.get("zombie_gender")) == "female" else "男性",
+			str(generator.get("weather_condition")),
+		])
+	list_option.disabled = generators.is_empty()
+	if _selected_zombie_generator_index >= 0:
+		list_option.select(_selected_zombie_generator_index)
+	list_option.item_selected.connect(func(index: int) -> void:
+		_selected_zombie_generator_index = index
+		_refresh_bottom_dock()
+	)
+	list_row.add_child(list_option)
+	var place_button := Button.new()
+	place_button.text = "+ 放置僵尸生成器"
+	place_button.pressed.connect(func() -> void:
+		_ai_placement_mode = "zombie_generator"
+		_set_status("僵尸生成器放置模式：在地图上左键确定生成点")
+	)
+	list_row.add_child(place_button)
+	_bottom_content.add_child(list_row)
+
+	if generators.is_empty():
+		var empty := Label.new()
+		empty.text = "当前没有僵尸生成器。点击“放置僵尸生成器”，然后在地图上选择生成点。"
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(empty)
+		return
+	if _selected_zombie_generator_index < 0:
+		_selected_zombie_generator_index = 0
+	var generator := generators[_selected_zombie_generator_index]
+
+	var gender_row := HBoxContainer.new()
+	gender_row.add_child(_make_label("僵尸外观"))
+	var gender_option := OptionButton.new()
+	gender_option.add_item("男性僵尸")
+	gender_option.add_item("女性僵尸")
+	gender_option.select(1 if str(generator.get("zombie_gender")) == "female" else 0)
+	gender_option.item_selected.connect(func(index: int) -> void:
+		_record_zombie_generator_property(
+			generator, "zombie_gender", "female" if index == 1 else "male", "Change Zombie Gender"
+		)
+	)
+	gender_row.add_child(gender_option)
+	_bottom_content.add_child(gender_row)
+
+	var weather_row := HBoxContainer.new()
+	weather_row.add_child(_make_label("天气条件"))
+	var weather_option := OptionButton.new()
+	var weather_entries := [
+		{"id": "any", "label": "任意天气"},
+		{"id": "clear", "label": "晴天"},
+		{"id": "rain", "label": "雨天"},
+		{"id": "eclipse", "label": "日食"},
+	]
+	for value in weather_entries:
+		var item := value as Dictionary
+		weather_option.add_item(str(item["label"]))
+		weather_option.set_item_metadata(weather_option.item_count - 1, str(item["id"]))
+		if str(generator.get("weather_condition")) == str(item["id"]):
+			weather_option.select(weather_option.item_count - 1)
+	weather_option.item_selected.connect(func(index: int) -> void:
+		_record_zombie_generator_property(
+			generator, "weather_condition", str(weather_option.get_item_metadata(index)), "Change Zombie Weather"
+		)
+	)
+	weather_row.add_child(weather_option)
+	_bottom_content.add_child(weather_row)
+
+	_add_zombie_generator_spin(
+		generator, "开始时间 (小时)", "time_start_hour", 0.0, 24.0, 0.25
+	)
+	_add_zombie_generator_spin(
+		generator, "结束时间 (小时)", "time_end_hour", 0.0, 24.0, 0.25
+	)
+	_add_zombie_generator_spin(
+		generator, "生成间隔 (秒)", "spawn_interval_seconds", 1.0, 86400.0, 1.0
+	)
+	_add_zombie_generator_spin(
+		generator, "首次延迟 (秒)", "initial_spawn_delay", 0.0, 86400.0, 1.0
+	)
+
+	var delete_button := Button.new()
+	delete_button.text = "删除当前僵尸生成器"
+	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.pressed.connect(_delete_selected_zombie_generator)
+	_bottom_content.add_child(delete_button)
+
+	var hint := Label.new()
+	hint.text = "时间使用 0–24 小时；开始时间大于结束时间时表示跨午夜。生成器由地图场景保存，合作客户端不自行生成。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_zombie_generator_spin(
+	generator: Node3D,
+	label_text: String,
+	property_name: String,
+	minimum: float,
+	maximum: float,
+	step: float
+) -> void:
+	var row := HBoxContainer.new()
+	row.add_child(_make_label(label_text))
+	var spin := SpinBox.new()
+	spin.min_value = minimum
+	spin.max_value = maximum
+	spin.step = step
+	spin.value = clampf(float(generator.get(property_name)), minimum, maximum)
+	spin.value_changed.connect(func(value: float) -> void:
+		_record_zombie_generator_property(generator, property_name, value, "Edit Zombie Generator")
+	)
+	row.add_child(spin)
+	_bottom_content.add_child(row)
+
+
+func _get_editor_zombie_generators() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if _spawns_root == null:
+		return result
+	for child in _spawns_root.get_children():
+		if not child is Node3D:
+			continue
+		if str((child as Node3D).get_meta("map_editor_spawn_kind", "")) == "zombie_generator":
+			result.append(child as Node3D)
+	return result
+
+
+func _record_zombie_generator_property(
+	generator: Node3D, property_name: String, value: Variant, action_name: String
+) -> void:
+	if not is_instance_valid(generator):
+		return
+	var before: Variant = generator.get(property_name)
+	if before == value:
+		return
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_zombie_generator_property.bind(generator, property_name, value))
+	_undo_redo.add_undo_method(_apply_zombie_generator_property.bind(generator, property_name, before))
+	_undo_redo.commit_action()
+
+
+func _apply_zombie_generator_property(
+	generator: Node3D, property_name: String, value: Variant
+) -> void:
+	if not is_instance_valid(generator):
+		return
+	generator.set(property_name, value)
+	if _tool_mode == ToolMode.AI:
+		_refresh_bottom_dock()
+
+
+func _delete_selected_zombie_generator() -> void:
+	var generators := _get_editor_zombie_generators()
+	if _selected_zombie_generator_index < 0 or _selected_zombie_generator_index >= generators.size():
+		return
+	var generator := generators[_selected_zombie_generator_index]
+	var record := _serialize_editor_object(generator)
+	_undo_redo.create_action("Delete Zombie Generator")
+	_undo_redo.add_do_method(_apply_zombie_object_change.bind([], [record]))
+	_undo_redo.add_undo_method(_apply_zombie_object_change.bind([record], []))
+	_undo_redo.commit_action()
+	_selected_zombie_generator_index = mini(
+		_selected_zombie_generator_index, _get_editor_zombie_generators().size() - 1
+	)
+
+
+func _apply_zombie_object_change(records_to_restore: Array, records_to_remove: Array) -> void:
+	_apply_object_change(records_to_restore, records_to_remove)
+	if _tool_mode == ToolMode.AI:
+		_refresh_bottom_dock()
 
 
 func _ai_type_label(ai_type: String) -> String:
@@ -2004,6 +2366,14 @@ func _add_vehicle_placement_controls() -> void:
 			_rebuild_building_preview()
 		)
 		_bottom_content.add_child(harvest_reel_toggle)
+		var roof_headlights_toggle := CheckBox.new()
+		roof_headlights_toggle.text = "安装车顶大灯升级（射程和亮度为原车灯 2 倍）"
+		roof_headlights_toggle.button_pressed = _selected_vehicle_roof_headlights_installed
+		roof_headlights_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_roof_headlights_installed = enabled
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(roof_headlights_toggle)
 		_add_vehicle_color_option_row(
 			"车身颜色",
 			_selected_vehicle_body_color,
@@ -2596,6 +2966,13 @@ func _add_farm_base_vehicle_object_inspector_controls() -> void:
 		_set_vehicle_object_property("harvest_reel_installed", enabled)
 	)
 	_bottom_content.add_child(harvest_reel_toggle)
+	var roof_headlights_toggle := CheckBox.new()
+	roof_headlights_toggle.text = "安装车顶大灯升级（射程和亮度为原车灯 2 倍）"
+	roof_headlights_toggle.button_pressed = bool(_get_property_or(vehicle, "roof_headlights_installed", false))
+	roof_headlights_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("roof_headlights_installed", enabled)
+	)
+	_bottom_content.add_child(roof_headlights_toggle)
 	var passenger_seat_row := HBoxContainer.new()
 	passenger_seat_row.add_child(_make_label("平台乘客座椅"))
 	var passenger_seat_option := OptionButton.new()
@@ -2616,7 +2993,7 @@ func _add_farm_base_vehicle_object_inspector_controls() -> void:
 	_bottom_content.add_child(passenger_seat_row)
 
 	var hint := Label.new()
-	hint.text = "修改会立即更新当前车辆；每辆 FarmBaseVehicle 都可以独立设置普通/加固版本、队伍、颜色、0–2 个平台乘客座椅、后置车载机枪、氮气加速和收割滚筒。收割滚筒只有载具移动时才旋转并收割。默认未安装收割滚筒。"
+	hint.text = "修改会立即更新当前车辆；每辆 FarmBaseVehicle 都可以独立设置普通/加固版本、队伍、颜色、0–2 个平台乘客座椅、后置车载机枪、氮气加速、收割滚筒和车顶大灯。收割滚筒只有载具移动时才旋转并收割；默认未安装车顶大灯。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
@@ -2891,6 +3268,8 @@ func _apply_object_property_by_uuid(uuid: String, property_name: String, value: 
 		node.call("set_platform_passenger_seat_count", int(value))
 	elif property_name == "harvest_reel_installed" and node.has_method("set_harvest_reel_installed"):
 		node.call("set_harvest_reel_installed", bool(value))
+	elif property_name == "roof_headlights_installed" and node.has_method("set_roof_headlights_installed"):
+		node.call("set_roof_headlights_installed", bool(value))
 	else:
 		node.set(property_name, value)
 	if node.has_method("refresh_visuals"):
@@ -3116,6 +3495,7 @@ func _select_vehicle_asset(asset: Dictionary) -> void:
 	if str(asset.get("path", "")) != FARM_BASE_VEHICLE_PATH:
 		_selected_vehicle_platform_seat_count = 0
 		_selected_vehicle_harvest_reel_installed = false
+		_selected_vehicle_roof_headlights_installed = false
 	_building_preview_yaw = 0.0
 	_rebuild_building_preview()
 	_refresh_bottom_dock()
@@ -3252,7 +3632,9 @@ func _prepare_thumbnail_scene(node: Node) -> void:
 	if node is Light3D:
 		(node as Light3D).visible = false
 	if node is Camera3D:
-		(node as Camera3D).current = false
+		var camera := node as Camera3D
+		camera.current = false
+		camera.process_mode = Node.PROCESS_MODE_DISABLED
 	if node is GPUParticles3D:
 		(node as GPUParticles3D).emitting = false
 	if node is WorldEnvironment:
@@ -3532,6 +3914,78 @@ func _on_strength_changed(value: float) -> void:
 	_strength_label.text = "Strength: %.2f" % value
 
 
+func _get_weather_editor_config() -> Dictionary:
+	return {
+		"clear_weather_probability": _weather_clear_probability,
+		"rain_weather_probability": _weather_rain_probability,
+		"eclipse_weather_probability": _weather_eclipse_probability,
+		"rain_intensity": _weather_rain_intensity,
+	}
+
+
+func _apply_weather_editor_property(property_name: String, value: Variant) -> void:
+	match property_name:
+		"clear_weather_probability":
+			_weather_clear_probability = clampf(float(value), 0.0, 1.0)
+		"rain_weather_probability":
+			_weather_rain_probability = clampf(float(value), 0.0, 1.0)
+		"eclipse_weather_probability":
+			_weather_eclipse_probability = clampf(float(value), 0.0, 1.0)
+		"rain_intensity":
+			_weather_rain_intensity = clampf(float(value), 0.1, 1.0)
+		_:
+			return
+	if is_instance_valid(_weather_system):
+		_set_property_if_present(_weather_system, property_name, value)
+	if is_instance_valid(_map_root):
+		_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
+
+
+func _apply_weather_editor_config(config: Dictionary) -> void:
+	if config.is_empty():
+		return
+	var old_rain_probability := float(config.get("rain_cycle_probability", _weather_rain_probability))
+	var old_eclipse_probability := float(config.get("eclipse_daily_probability", _weather_eclipse_probability))
+	_weather_clear_probability = clampf(
+		float(config.get("clear_weather_probability", 1.0 - old_rain_probability - old_eclipse_probability)),
+		0.0,
+		1.0
+	)
+	_weather_rain_probability = clampf(
+		float(config.get("rain_weather_probability", old_rain_probability)),
+		0.0,
+		1.0
+	)
+	_weather_eclipse_probability = clampf(
+		float(config.get("eclipse_weather_probability", old_eclipse_probability)),
+		0.0,
+		1.0
+	)
+	_weather_rain_intensity = clampf(
+		float(config.get("rain_intensity", _weather_rain_intensity)),
+		0.1,
+		1.0
+	)
+	_normalize_weather_editor_probabilities()
+	if is_instance_valid(_weather_system):
+		_apply_weather_probability_properties()
+		_set_property_if_present(_weather_system, "rain_intensity", _weather_rain_intensity)
+	if is_instance_valid(_map_root):
+		_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
+
+
+func _normalize_weather_editor_probabilities() -> void:
+	var total := _weather_clear_probability + _weather_rain_probability + _weather_eclipse_probability
+	if total <= 0.0001:
+		_weather_clear_probability = 1.0
+		_weather_rain_probability = 0.0
+		_weather_eclipse_probability = 0.0
+		return
+	_weather_clear_probability /= total
+	_weather_rain_probability /= total
+	_weather_eclipse_probability /= total
+
+
 func _select_tool(mode: ToolMode) -> void:
 	if _tool_mode == ToolMode.ROAD and mode != ToolMode.ROAD:
 		_finish_active_road()
@@ -3559,6 +4013,7 @@ func _select_tool(mode: ToolMode) -> void:
 		_selected_vehicle_reinforced_variant = false
 		_selected_vehicle_nitro_boost_installed = false
 		_selected_vehicle_harvest_reel_installed = false
+		_selected_vehicle_roof_headlights_installed = false
 	elif mode == ToolMode.BUILDING and str(_selected_building_asset.get("placement_category", "")) == "vehicle":
 		_selected_building_asset = _building_assets[0].duplicate(true) if not _building_assets.is_empty() else {}
 	_set_road_edit_visuals_visible(mode == ToolMode.ROAD)
@@ -3854,6 +4309,7 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.OBJECT_EDIT: return "Object Edit"
 		ToolMode.ROAD: return "Roads"
 		ToolMode.WATER: return "Water Bodies"
+		ToolMode.WEATHER: return "Weather System"
 		_: return "Unavailable"
 
 
@@ -4321,6 +4777,7 @@ func _press_tool_shortcut(mode: ToolMode) -> void:
 
 
 func _process(delta: float) -> void:
+	_ensure_editor_camera_current()
 	_update_free_camera(delta)
 	if (
 		_boundary_warning_label != null
@@ -4335,6 +4792,13 @@ func _process(delta: float) -> void:
 		_end_stroke()
 	if _object_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_end_object_transform_drag()
+
+
+func _ensure_editor_camera_current() -> void:
+	if not is_instance_valid(_editor_camera) or not _editor_camera.is_inside_tree():
+		return
+	if not _editor_camera.current:
+		_editor_camera.make_current()
 
 
 func _physics_process(delta: float) -> void:
@@ -4760,6 +5224,10 @@ func create_new_map(
 	_reset_water_editor_state()
 	_clear_selected_map_object()
 	_clear_building_preview()
+	_weather_clear_probability = DEFAULT_CLEAR_WEATHER_PROBABILITY
+	_weather_rain_probability = DEFAULT_RAIN_WEATHER_PROBABILITY
+	_weather_rain_intensity = DEFAULT_RAIN_INTENSITY
+	_weather_eclipse_probability = DEFAULT_ECLIPSE_WEATHER_PROBABILITY
 
 	if is_instance_valid(_map_root):
 		var previous_map = _map_root
@@ -4826,6 +5294,7 @@ func create_new_map(
 	_ai_configurations = []
 	_selected_ai_index = -1
 	_selected_squad_spawner_index = -1
+	_selected_zombie_generator_index = -1
 	_selected_squad_member_index = 0
 	_ai_placement_mode = ""
 	_clear_map_icon()
@@ -4843,6 +5312,7 @@ func create_new_map(
 	_map_root.set_meta("farmwar_terrain_winding_version", 2)
 	_map_root.set_meta("farmwar_editor_generated", true)
 	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
+	_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
 	add_child(_map_root)
 
 	_create_environment_skeleton()
@@ -5079,6 +5549,12 @@ func _create_environment_skeleton() -> void:
 	if weather_scene != null:
 		_weather_system = weather_scene.instantiate()
 		_weather_system.name = "WeatherSystem"
+		_set_property_if_present(_weather_system, "clear_weather_probability", _weather_clear_probability)
+		_set_property_if_present(_weather_system, "rain_weather_probability", _weather_rain_probability)
+		_set_property_if_present(_weather_system, "eclipse_weather_probability", _weather_eclipse_probability)
+		_set_property_if_present(_weather_system, "rain_cycle_probability", _weather_rain_probability)
+		_set_property_if_present(_weather_system, "rain_intensity", _weather_rain_intensity)
+		_set_property_if_present(_weather_system, "eclipse_daily_probability", _weather_eclipse_probability)
 		_weather_system.process_mode = Node.PROCESS_MODE_DISABLED
 		_map_root.add_child(_weather_system)
 
@@ -6454,6 +6930,8 @@ func _apply_ai_squad_brush(center: Vector3) -> void:
 			_place_enemy_squad_spawner(center)
 		"squad_target":
 			_place_selected_squad_target(center)
+		"zombie_generator":
+			_place_zombie_generator(center)
 
 
 func _place_enemy_squad_spawner(center: Vector3) -> void:
@@ -6485,6 +6963,42 @@ func _place_enemy_squad_spawner(center: Vector3) -> void:
 	_stroke_placed_once = true
 	_ai_placement_mode = ""
 	_set_status("已放置小队生成器 %s" % spawner.spawner_id)
+	_refresh_bottom_dock()
+
+
+func _place_zombie_generator(center: Vector3) -> void:
+	var packed := _load_resource_or_null(ZOMBIE_GENERATOR_PATH) as PackedScene
+	if packed == null:
+		_set_status("Missing ZombieGenerator scene")
+		return
+	var generator := packed.instantiate() as Node3D
+	if generator == null:
+		return
+	var sequence := int(_next_spawn_id)
+	generator.name = "ZombieGenerator_%03d" % sequence
+	_set_property_if_present(generator, "generator_id", "%s_zombie_%03d" % [_map_id.to_snake_case(), sequence])
+	_set_property_if_present(generator, "zombie_gender", "male")
+	_set_property_if_present(generator, "weather_condition", "any")
+	_set_property_if_present(generator, "time_start_hour", 0.0)
+	_set_property_if_present(generator, "time_end_hour", 24.0)
+	_set_property_if_present(generator, "spawn_interval_seconds", 60.0)
+	_set_property_if_present(generator, "initial_spawn_delay", 0.0)
+	generator.process_mode = Node.PROCESS_MODE_DISABLED
+	generator.set_meta("map_editor_category", "spawn")
+	generator.set_meta("map_editor_spawn_kind", "zombie_generator")
+	generator.set_meta("map_editor_asset_path", ZOMBIE_GENERATOR_PATH)
+	generator.set_meta("map_editor_uuid", _new_editor_uuid("zombie_generator"))
+	generator.set_meta("map_editor_align_mode", "upright")
+	generator.set_meta("map_editor_ground_offset", 0.05)
+	_spawns_root.add_child(generator)
+	_place_node_on_terrain(generator, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+	_add_spawn_editor_marker(generator, Color(0.74, 0.25, 0.95, 1.0))
+	_stroke_added_objects.append(_serialize_editor_object(generator))
+	_next_spawn_id += 1
+	_selected_zombie_generator_index = _get_editor_zombie_generators().find(generator)
+	_stroke_placed_once = true
+	_ai_placement_mode = ""
+	_set_status("已放置僵尸生成器 %s" % str(generator.get("generator_id")))
 	_refresh_bottom_dock()
 
 
@@ -6939,6 +7453,7 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"reinforced_variant",
 		"nitro_boost_installed",
 		"harvest_reel_installed",
+		"roof_headlights_installed",
 		"tool_owner",
 		"auto_respawn",
 		"respawn_seconds",
@@ -6950,6 +7465,12 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"target_marker_id",
 		"spawn_on_ready",
 		"target_id",
+		"zombie_gender",
+		"weather_condition",
+		"time_start_hour",
+		"time_end_hour",
+		"spawn_interval_seconds",
+		"enabled",
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
@@ -6985,6 +7506,8 @@ func _apply_object_change(
 	_restore_object_records(records_to_restore)
 	_rebuild_resource_multimeshes_deferred()
 	_rebuild_power_wires()
+	if _tool_mode == ToolMode.AI:
+		_refresh_bottom_dock()
 
 
 func _remove_object_records(records: Array) -> void:
@@ -7065,6 +7588,8 @@ func _restore_object_records(records: Array) -> void:
 			node.free()
 			continue
 		target_root.add_child(node)
+		if category == "vehicle":
+			_disable_editor_vehicle_cameras(node)
 
 		var properties = record.get("properties", {}) as Dictionary
 		for property_name_value in properties.keys():
@@ -7081,6 +7606,8 @@ func _restore_object_records(records: Array) -> void:
 				_add_spawn_editor_marker(node, Color(1.0, 0.88, 0.08, 1.0))
 			elif spawn_kind == "wild_animal":
 				_add_spawn_editor_marker(node, Color(0.2, 0.75, 1.0, 1.0))
+			elif spawn_kind == "zombie_generator":
+				_add_spawn_editor_marker(node, Color(0.74, 0.25, 0.95, 1.0))
 			elif spawn_kind == "team_red":
 				_add_spawn_editor_marker(node, Color(0.95, 0.2, 0.2, 1.0))
 			elif spawn_kind == "team_blue":
@@ -7226,6 +7753,7 @@ func _apply_building_placement(center: Vector3) -> void:
 		_set_property_if_present(instance, "reinforced_variant", _selected_vehicle_reinforced_variant)
 		_set_property_if_present(instance, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
 		_set_property_if_present(instance, "harvest_reel_installed", _selected_vehicle_harvest_reel_installed)
+		_set_property_if_present(instance, "roof_headlights_installed", _selected_vehicle_roof_headlights_installed)
 		if instance.has_method("refresh_visuals"):
 			instance.call("refresh_visuals")
 	instance.set_meta("map_editor_align_mode", "upright")
@@ -7235,6 +7763,8 @@ func _apply_building_placement(center: Vector3) -> void:
 	if bool(wall_snap.get("active", false)):
 		placement_center = wall_snap.get("position", center) as Vector3
 	_buildings_root.add_child(instance)
+	if is_vehicle:
+		_disable_editor_vehicle_cameras(instance)
 	_place_map_object_at_terrain(instance, Vector2(placement_center.x, placement_center.z), _building_preview_yaw, false, building_ground_offset)
 	var validation = _validate_building_node(
 		instance,
@@ -7272,6 +7802,7 @@ func _rebuild_building_preview() -> void:
 		_set_property_if_present(preview, "reinforced_variant", _selected_vehicle_reinforced_variant)
 		_set_property_if_present(preview, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
 		_set_property_if_present(preview, "harvest_reel_installed", _selected_vehicle_harvest_reel_installed)
+		_set_property_if_present(preview, "roof_headlights_installed", _selected_vehicle_roof_headlights_installed)
 		if preview.has_method("refresh_visuals"):
 			preview.call("refresh_visuals")
 	_prepare_editor_preview_scene(preview)
@@ -7286,7 +7817,25 @@ func _rebuild_building_preview() -> void:
 		preview.set_meta("map_editor_asset_path", path)
 	add_child(preview)
 	_building_preview = preview
+	_disable_editor_vehicle_cameras(preview)
 	_update_building_preview_from_latest_hit()
+
+
+func _disable_editor_vehicle_cameras(node: Node) -> void:
+	if node == null:
+		return
+	_disable_editor_vehicle_cameras_recursive(node)
+	if is_instance_valid(_editor_camera) and _editor_camera.is_inside_tree():
+		_editor_camera.make_current()
+
+
+func _disable_editor_vehicle_cameras_recursive(node: Node) -> void:
+	if node is Camera3D:
+		var camera := node as Camera3D
+		camera.current = false
+		camera.process_mode = Node.PROCESS_MODE_DISABLED
+	for child in node.get_children():
+		_disable_editor_vehicle_cameras_recursive(child)
 
 
 func _prepare_editor_preview_scene(node: Node) -> void:
@@ -8726,6 +9275,7 @@ func _update_map_metadata_before_save() -> void:
 	_map_root.set_meta("surface_default_id", _get_default_surface_id())
 	_map_root.set_meta("manual_grass", _manual_grass)
 	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
+	_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
 	_map_root.set_meta("integrated_systems", [
 		"explicit_ground_static_body",
 		"dynamic_navigation_chunk_grid_64m",
@@ -8753,6 +9303,7 @@ func _update_map_metadata_before_save() -> void:
 		"static_defense_facilities",
 		"enemy_squad_generators",
 		"persistent_squad_target_points",
+		"zombie_generators",
 	])
 
 
@@ -8818,6 +9369,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"depth": int(_map_size.y),
 		},
 		"template": template_name,
+		"weather": _get_weather_editor_config(),
 		"scene": "%s.tscn" % _map_id,
 		"terrain": {
 			"vertex_spacing": vertex_spacing,
@@ -8853,6 +9405,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"ai_configuration": _ai_configurations.duplicate(true),
 			"ai_count": _ai_configurations.size(),
 			"squad_generator_count": _get_editor_squad_spawners().size(),
+			"zombie_generator_count": _get_editor_zombie_generators().size(),
 		},
 		"features": {
 			"building_placement_enabled": true,
@@ -8862,9 +9415,12 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"farmland_editor_enabled": true,
 			"neutral_crop_generators_enabled": true,
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
+			"weather_settings_enabled": is_instance_valid(_weather_system),
+			"eclipse_weather_enabled": true,
 			"size_aware_far_scenery": true,
 			"water_bodies_enabled": true,
 			"enemy_squad_generators_enabled": true,
+			"zombie_generators_enabled": true,
 		},
 	}
 
@@ -9125,9 +9681,11 @@ func open_map_package(manifest_path: String) -> void:
 	var map_id_value = str(manifest.get("map_id", display_name_value))
 	var version_value = str(manifest.get("version", default_map_version))
 	var terrain_data = manifest.get("terrain", {}) as Dictionary
+	var weather_config := manifest.get("weather", {}) as Dictionary
 	vertex_spacing = maxf(0.25, float(terrain_data.get("vertex_spacing", vertex_spacing)))
 
 	create_new_map(display_name_value, map_size_value, template_value, map_id_value, version_value)
+	_apply_weather_editor_config(weather_config)
 	_ai_configurations = configured_ai_value.duplicate(true) if configured_ai_value is Array else []
 	_selected_ai_index = 0 if not _ai_configurations.is_empty() else -1
 	if _map_root != null:
@@ -9139,6 +9697,7 @@ func open_map_package(manifest_path: String) -> void:
 	_load_manual_grass_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("manual_grass", "manual_grass.dat"))))
 	_load_editor_objects_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("editor_objects", EDITOR_OBJECTS_FILE_NAME))))
 	_selected_squad_spawner_index = 0 if not _get_editor_squad_spawners().is_empty() else -1
+	_selected_zombie_generator_index = 0 if not _get_editor_zombie_generators().is_empty() else -1
 	_selected_squad_member_index = 0
 	_recalculate_loaded_object_counters()
 	_load_roads_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("roads", ROADS_FILE_NAME))))
@@ -11055,6 +11614,9 @@ func _set_property_if_present(object: Object, property_name: String, value: Vari
 			return
 		if property_name == "harvest_reel_installed" and object.has_method("set_harvest_reel_installed"):
 			object.call("set_harvest_reel_installed", bool(value))
+			return
+		if property_name == "roof_headlights_installed" and object.has_method("set_roof_headlights_installed"):
+			object.call("set_roof_headlights_installed", bool(value))
 			return
 		if property_name == "platform_passenger_seat_count" and object.has_method("set_platform_passenger_seat_count"):
 			object.call("set_platform_passenger_seat_count", int(value))

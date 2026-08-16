@@ -323,6 +323,9 @@ func _create_pending_player() -> GamePlayer:
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	add_child(player)
 	player.apply_loadout_selection(selection)
+	var saved_ammo_states: Variant = selection.get("weapon_ammo_states", {})
+	if saved_ammo_states is Dictionary and not (saved_ammo_states as Dictionary).is_empty():
+		player.apply_weapon_ammo_states_snapshot(saved_ammo_states as Dictionary)
 	if selection.has("position") and selection["position"] is Vector3:
 		player.global_position = selection["position"]
 	else:

@@ -79,6 +79,7 @@ static var _defending_count: Dictionary = {}
 
 # --- 状态 ---
 var state: int = AIState.THINK
+var interest_sleeping := false
 var current_tool_index: int = -1  # local_tools 索引
 var held_tool: Node3D
 var target_plot: Node3D
@@ -247,6 +248,8 @@ func _json_to_vector3(value: Variant, fallback: Vector3) -> Vector3:
 # ===========================================================================
 
 func _physics_process(delta: float) -> void:
+	if interest_sleeping:
+		return
 	_update_timers(delta)
 	_update_combat_status(delta)
 
@@ -281,6 +284,30 @@ func _physics_process(delta: float) -> void:
 
 	_update_state(delta)
 	_update_movement(delta)
+
+
+func can_enter_interest_sleep() -> bool:
+	return not is_dead
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if is_dead:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		rubber_knockback = Vector3.ZERO
+		target_plot = null
+		target_player = null
+		target_bullet = null
+		movement_target = INVALID_POSITION
+		_play_body_animation(&"IdleTool" if is_instance_valid(held_tool) else &"Idle", 0.08)
+		return
+	interest_sleeping = false
+	if is_dead:
+		return
+	velocity = Vector3.ZERO
+	_schedule_think(0.1)
 
 
 func _update_timers(delta: float) -> void:
@@ -2076,7 +2103,10 @@ func impact(effect: String, strength: float, attacker_team: String = "") -> void
 		return
 	if not attacker_team.is_empty() and attacker_team == team_id:
 		return
-	_take_damage(strength * 0.5)  # 直接伤害
+	var damage := strength * 0.5
+	if eff == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
+	_take_damage(damage)
 	if is_dead:
 		return
 	match eff:

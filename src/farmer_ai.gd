@@ -204,6 +204,7 @@ var shotgun_tool_id := ""
 
 var current_hp := 0.0
 var state: int = AIState.THINK
+var interest_sleeping := false
 var pending_task: int = FarmTask.NONE
 var target_tile: Node3D
 var combat_target: Node3D
@@ -256,7 +257,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if state == AIState.DEAD:
+	if interest_sleeping or state == AIState.DEAD:
 		return
 
 	if (
@@ -290,7 +291,7 @@ func _physics_process(delta: float) -> void:
 func _create_required_runtime_nodes() -> void:
 	# 与现有 GamePlayer / AIPlayer 的实体和受击层保持一致。
 	collision_layer = 8
-	collision_mask = 519
+	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL
 
 	head = _ensure_node3d(self, "Head")
 	head.position = Vector3(0.0, 1.7080579, -0.45418245)
@@ -2130,6 +2131,8 @@ func impact(
 	var damage := maxf(0.0, strength)
 	if effect == "explosion":
 		damage *= explosion_damage_multiplier
+	elif effect.to_lower() == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
 
 	var horizontal := Vector3(hit_direction.x, 0.0, hit_direction.z)
 	if horizontal.length_squared() > 0.001:
@@ -2239,7 +2242,7 @@ func _respawn_at_team_spawn() -> void:
 	was_on_floor = true
 	state = AIState.THINK
 	collision_layer = 8
-	collision_mask = 519
+	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL
 	if main_collision_shape != null:
 		main_collision_shape.set_deferred("disabled", false)
 	if hit_collision_shape != null:
@@ -2278,6 +2281,31 @@ func get_network_state() -> Dictionary:
 		"respawn_left": 0.0,
 		"state": int(state),
 	}
+
+
+func can_enter_interest_sleep() -> bool:
+	return state != AIState.DEAD
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if state == AIState.DEAD:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		knockback_velocity = Vector3.ZERO
+		combat_target = null
+		movement_target = INVALID_POSITION
+		_play_body_animation(&"IdleTool" if is_instance_valid(held_tool) else &"Idle", 0.08)
+		_update_health_label()
+		return
+	interest_sleeping = false
+	if state == AIState.DEAD:
+		return
+	state = AIState.THINK
+	velocity = Vector3.ZERO
+	combat_target = null
+	movement_target = INVALID_POSITION
 
 
 func apply_network_state(data: Dictionary) -> void:

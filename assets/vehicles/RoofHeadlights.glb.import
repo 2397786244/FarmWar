@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cyc0cp5gs10ra"
-path="res://.godot/imported/FTF_Advanced_LightweightChassis.glb-d44f4a7ee637240d451dffcfffa76ad8.scn"
+uid="uid://c4ys2naadprjv"
+path="res://.godot/imported/RoofHeadlights.glb-edef81f8aee31e352b91ce41804255f2.scn"
 
 [deps]
 
-source_file="res://assets/other_items/industrials/FTF_Advanced_LightweightChassis.glb"
-dest_files=["res://.godot/imported/FTF_Advanced_LightweightChassis.glb-d44f4a7ee637240d451dffcfffa76ad8.scn"]
+source_file="res://assets/vehicles/RoofHeadlights.glb"
+dest_files=["res://.godot/imported/RoofHeadlights.glb-edef81f8aee31e352b91ce41804255f2.scn"]
 
 [params]
 

@@ -139,6 +139,10 @@ var _server_authority_simulation := false
 var _last_server_input_seq := 0
 var _pending_network_inputs: Array[Dictionary] = []
 var _pending_authority_snapshot: Dictionary = {}
+var _local_remote_runtime_enabled := false
+var _local_remote_process_before := true
+var _local_remote_physics_before := true
+var _local_remote_input_before := true
 var _electronics_disabled_remaining := 0.0
 var _flame_remaining := 0.0
 var _flame_damage_per_second := 0.0
@@ -324,7 +328,17 @@ func simulate_authoritative_remote_input(input_frame: Dictionary, delta: float) 
 		_update_health_label()
 		return
 	power_on = true
-	rotation.y = float(input_frame.get("yaw", rotation.y))
+	# listen-server 房主的权威节点同时就是本地操作者看到的节点。
+	# GameAuthority 的 physics tick 早于 GamePlayer._physics_process()，
+	# 如果这里无条件写入上一帧 input_frame 的 yaw，就会在房主提交本帧
+	# 鼠标输入之前把刚由 _input() 改过的 yaw 覆盖掉，导致水平旋转看起来
+	# 完全没有响应。房主本地节点保留 _input() 写入的 yaw；它仍然继续
+	# 使用权威移动模拟，并在 GameAuthority tick 末尾把当前 yaw 写回状态。
+	# 远端玩家的服务器节点以及专用服务器节点仍然使用网络 yaw。
+	var preserve_local_listen_server_yaw := _remote_control_active \
+		and GameAuthority.is_local_interaction_authority()
+	if not preserve_local_listen_server_yaw:
+		rotation.y = float(input_frame.get("yaw", rotation.y))
 	var move = input_frame.get("move", Vector2.ZERO)
 	if not move is Vector2:
 		move = Vector2.ZERO
@@ -456,15 +470,21 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	var reconciled_position := global_position
 	var reconciled_velocity := velocity
 	var reconciled_yaw := rotation.y
+	# Yaw is rendered locally from mouse input, just like CameraPivot pitch.
+	# The server still receives and simulates this yaw, but a position correction
+	# must not pull the local camera/body back to an older snapshot yaw.  If there
+	# are unacknowledged frames, the replayed yaw is the newest local prediction;
+	# otherwise the already-rendered yaw is the confirmed local presentation.
+	var local_first_yaw := reconciled_yaw if not _pending_network_inputs.is_empty() else rendered_yaw
 	var correction_distance := rendered_position.distance_to(reconciled_position)
 	if correction_distance >= HARD_CORRECTION_DISTANCE:
 		global_position = reconciled_position
 		velocity = reconciled_velocity
-		rotation.y = reconciled_yaw
+		rotation.y = local_first_yaw
 	elif correction_distance >= SOFT_CORRECTION_DISTANCE:
 		global_position = rendered_position.lerp(reconciled_position, CORRECTION_BLEND)
 		velocity = rendered_velocity.lerp(reconciled_velocity, CORRECTION_BLEND)
-		rotation.y = lerp_angle(rendered_yaw, reconciled_yaw, CORRECTION_BLEND)
+		rotation.y = local_first_yaw
 	else:
 		global_position = rendered_position
 		velocity = rendered_velocity
@@ -516,10 +536,7 @@ func begin_remote_control() -> void:
 
 	power_on = true
 	_remote_control_active = true
-	# 网络复制视觉节点可能曾经被统一的 presentation runtime 关闭过输入；
-	# 成为本地遥控设备后必须重新打开本节点的输入和相机维护过程。
-	set_process(true)
-	set_process_input(true)
+	set_local_remote_control_runtime(true)
 
 	_start_control_mode()
 
@@ -533,6 +550,33 @@ func end_remote_control() -> void:
 
 func is_remote_control_active() -> bool:
 	return _remote_control_active
+
+
+## 只给当前操作者的本地控制镜像使用。
+##
+## 网络视觉代理仍由 MultiplayerWorldReplicator 关闭脚本处理；操作者端
+## 即使使用的是复制出来的设备节点，也必须恢复根节点的输入、普通处理和
+## 本地预测物理。服务器权威节点由 set_server_authority_simulation() 关闭
+## 物理，避免 listen server 同时运行第二套物理模拟。
+func set_local_remote_control_runtime(enabled: bool) -> void:
+	if enabled:
+		if not _local_remote_runtime_enabled:
+			_local_remote_process_before = is_processing()
+			_local_remote_physics_before = is_physics_processing()
+			_local_remote_input_before = is_processing_input()
+			_local_remote_runtime_enabled = true
+		set_process(true)
+		set_physics_process(not _server_authority_simulation and not GameAuthority.is_server_authority())
+		set_process_input(true)
+		return
+	if not _local_remote_runtime_enabled:
+		return
+	_local_remote_runtime_enabled = false
+	set_process(_local_remote_process_before)
+	set_physics_process(
+		_local_remote_physics_before if not _server_authority_simulation and not GameAuthority.is_server_authority() else false
+	)
+	set_process_input(_local_remote_input_before)
 
 
 func set_remote_receiver(receiver: Node3D) -> void:
@@ -590,6 +634,7 @@ func stop() -> void:
 		return
 
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	power_on = true
 	velocity = Vector3.ZERO
 
@@ -856,7 +901,10 @@ func impact(
 		return true
 	if strength <= 0.0:
 		return false
-	_apply_damage(strength)
+	var damage := strength
+	if last_effect == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
+	_apply_damage(damage)
 	if current_hp <= 0.0:
 		remote_signal_lost.emit()
 		call_deferred("queue_free")

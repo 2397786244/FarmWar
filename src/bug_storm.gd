@@ -23,7 +23,7 @@ class_name BugStorm
 ## - 每次 tick 时执行 DamageCast.force_shapecast_update()
 ## - 遍历 DamageCast.get_collision_count()
 ## - 取 collider
-## - 对合法目标执行 target.impact("bug", bug_strength, source_team)
+## - 对合法目标执行 target.impact("bug_storm", bug_strength, source_team)
 ##
 ## 说明：
 ## - FarmTile 的 PlantProtector 免疫逻辑仍应放在 FarmTile.impact("bug", ...) 内部。
@@ -57,7 +57,7 @@ enum StormState {
 ## 每隔多久执行一次 ShapeCast3D 检查，并对命中的目标施加 bug。
 @export_range(0.1, 5.0, 0.1) var tick_interval: float = 1.0
 
-## 传给 impact("bug", bug_strength, source_team) 的强度。
+## 传给 impact("bug_storm", bug_strength, source_team) 的强度。
 @export var bug_strength: float = 1.0
 
 ## 用于视觉缩放、粒子范围和药雾距离检测。
@@ -229,9 +229,16 @@ func _setup_damage_cast() -> void:
 	damage_cast.enabled = true
 	damage_cast.target_position = Vector3.ZERO
 	damage_cast.collide_with_bodies = true
-	# FarmTile is on layer 64 (Land). Keep this explicit so runtime-created
-	# server storms cannot inherit an editor-side mask that only finds players.
-	damage_cast.collision_mask = 64
+	# FarmTile is on layer 64. Include character, tool and wild-animal body
+	# layers so every AI representation, wildlife and Zombies can reach the same
+	# impact("bug_storm", ...) path. Target-side team filtering remains in
+	# _is_valid_bug_target(); this only selects physical query candidates.
+	damage_cast.collision_mask = (
+		GameAuthority.COLLISION_LAYER_FARM_TILE
+		| GameAuthority.COLLISION_LAYER_CHARACTER
+		| GameAuthority.COLLISION_LAYER_TOOL
+		| GameAuthority.COLLISION_LAYER_WILD_ANIMAL
+	)
 	if damage_cast.shape is SphereShape3D:
 		var area_shape := (damage_cast.shape as SphereShape3D).duplicate() as SphereShape3D
 		area_shape.radius = effect_distance
@@ -512,7 +519,7 @@ func _set_visual_alpha(alpha: float) -> void:
 	_fog_material.albedo_color = color
 
 
-## 作用：每个 tick 主动执行 ShapeCast3D，获取 collider 并对合法目标调用 impact("bug", ...)。
+## 作用：每个 tick 主动执行 ShapeCast3D，获取 collider 并对合法目标调用 impact("bug_storm", ...)。
 func _apply_bug_tick() -> void:
 	# A multiplayer client owns only the replicated visual. FarmTile.impact()
 	# must be executed by the dedicated authority so the resulting tile delta is
@@ -533,7 +540,7 @@ func _apply_bug_tick() -> void:
 
 		target.call(
 			"impact",
-			"bug",
+			"bug_storm",
 			bug_strength,
 			source_team
 		)
@@ -606,17 +613,34 @@ func _resolve_bug_target_from_collider(collider_node: Node) -> Node:
 	var depth := 0
 
 	while cursor != null and depth < 4:
-		if (
-			cursor is FarmTile
-			or cursor is GamePlayer
-			or cursor is AIPlayer
-			or cursor.has_method("impact")
-		):
+		if cursor is FarmTile:
+			return cursor
+
+		if cursor is GamePlayer:
+			var server_proxy := _get_server_player_proxy(cursor as GamePlayer)
+			return server_proxy if server_proxy != null else cursor
+
+		if cursor is AIPlayer or cursor.has_method("impact"):
 			return cursor
 
 		cursor = cursor.get_parent()
 		depth += 1
 
+	return null
+
+
+## Listen server 同时有 GamePlayer 表现节点和 ServerPlayerPhysicsBody。
+## 虫云必须把命中统一转换到服务器代理，否则可能漏伤害或同一玩家出现
+## 两个碰撞体导致重复结算。
+func _get_server_player_proxy(player: GamePlayer) -> Node:
+	if player == null or not GameAuthority.is_server_authority():
+		return null
+	var peer_id := int(player.get("authority_peer_id"))
+	if peer_id <= 0:
+		return null
+	var proxy: Variant = GameAuthority.player_physics_nodes.get(peer_id, null)
+	if proxy is Node and is_instance_valid(proxy) and proxy.has_method("impact"):
+		return proxy as Node
 	return null
 
 
@@ -636,7 +660,8 @@ func _is_valid_bug_target(node: Node) -> bool:
 
 	if not affect_friendly:
 		var target_team := _get_combat_team(node)
-		if not target_team.is_empty() and target_team == source_team:
+		if not source_team.is_empty() and not target_team.is_empty() \
+				and target_team.to_lower() == source_team.to_lower():
 			return false
 
 	return true
@@ -761,14 +786,15 @@ func _get_combat_team(node: Node) -> String:
 	if node == null:
 		return ""
 
-	if node is AIPlayer:
-		return str(node.get("team_id"))
-
-	if node is GamePlayer:
-		return str(node.get("team"))
-
 	if node is FarmTile:
 		return str(node.get("land_owner"))
+
+	if node.has_method("get_combat_team"):
+		return str(node.call("get_combat_team"))
+
+	for property_name in ["team_id", "team", "tool_owner", "owner_team", "land_owner"]:
+		if _has_property(node, property_name):
+			return str(node.get(property_name))
 
 	return ""
 

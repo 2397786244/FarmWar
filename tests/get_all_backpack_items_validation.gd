@@ -19,7 +19,7 @@ func _run() -> void:
 	ids.append_array(_ids_from_dictionary_config("res://data/ingredient_definitions.json", "ingredients"))
 	ids.append_array(_ids_from_dictionary_config("res://data/dish_definitions.json", "dishes"))
 	ids.append_array(["cargo_crate_small", "cargo_crate_medium", "cargo_crate_large"])
-	_check(ids.size() == 123, "all 123 configured backpack item IDs are discovered")
+	_check(ids.size() == 124, "all 124 configured backpack item IDs are discovered")
 	for index in range(ids.size()):
 		var peer_id := 20000 + index
 		authority.call("register_or_update_player", peer_id, {

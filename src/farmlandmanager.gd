@@ -2,6 +2,7 @@ extends Node
 
 const SPATIAL_BUCKET_SIZE := 16.0
 const INVALID_CLEANUP_INTERVAL := 30.0
+const CROP_GENERATION_GLOBAL_BUDGET_PER_FRAME := 32
 
 var all_lands: Array[FarmTile] = []
 var lands_record: Dictionary = {
@@ -27,6 +28,8 @@ var _claimable_lands: Dictionary = {}
 var _active_lands: Dictionary = {}
 var _spatial_buckets: Dictionary = {}
 var _tile_bucket_by_id: Dictionary = {}
+var _crop_generation_budget_frame := -1
+var _crop_generation_budget_used := 0
 
 
 func _physics_process(delta: float) -> void:
@@ -147,6 +150,30 @@ func get_plots_in_radius(world_position: Vector3, radius: float) -> Array:
 				if is_instance_valid(tile) and tile.global_position.distance_squared_to(world_position) <= radius_squared:
 					result.append(tile)
 	return result
+
+
+func try_consume_crop_generation_budget() -> bool:
+	var current_frame := Engine.get_process_frames()
+	if current_frame != _crop_generation_budget_frame:
+		_crop_generation_budget_frame = current_frame
+		_crop_generation_budget_used = 0
+	if _crop_generation_budget_used >= CROP_GENERATION_GLOBAL_BUDGET_PER_FRAME:
+		return false
+	_crop_generation_budget_used += 1
+	return true
+
+
+func get_crop_generation_budget_usage() -> Dictionary:
+	var current_frame := Engine.get_process_frames()
+	if current_frame != _crop_generation_budget_frame:
+		return {
+			"used": 0,
+			"limit": CROP_GENERATION_GLOBAL_BUDGET_PER_FRAME,
+		}
+	return {
+		"used": _crop_generation_budget_used,
+		"limit": CROP_GENERATION_GLOBAL_BUDGET_PER_FRAME,
+	}
 
 
 func resolve_farm_tile(collider: Object, shape_index: int = -1) -> FarmTile:

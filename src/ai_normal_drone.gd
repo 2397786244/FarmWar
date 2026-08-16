@@ -50,6 +50,8 @@ enum AttackMode {
 @export var squad_support_bomb_interval := 2.0
 
 var target_player: CharacterBody3D
+var interest_sleeping := false
+var _interest_previous_operator_defensive_hold := false
 var target_refresh_timer := 0.0
 var destroyed_emitted := false
 var signal_lost_emitted := false
@@ -207,6 +209,8 @@ func get_console_debug_status() -> String:
 
 
 func _physics_process(delta: float) -> void:
+	if interest_sleeping:
+		return
 	# AI 行为与投弹仅由本地/服务器权威执行；客户端只接收权威状态，
 	# 不能再生成一枚未登记到 GameAuthority 的本地 BoomBullet。
 	if GameAuthority.is_client_proxy():
@@ -251,6 +255,27 @@ func _physics_process(delta: float) -> void:
 			_update_farm_bombardment(delta)
 		AttackMode.SQUAD_SUPPORT_BOMBARDMENT:
 			_update_squad_support_bombardment(delta)
+
+
+func can_enter_interest_sleep() -> bool:
+	return not destroyed_emitted
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if destroyed_emitted:
+			return
+		interest_sleeping = true
+		_interest_previous_operator_defensive_hold = operator_defensive_hold
+		operator_defensive_hold = true
+		velocity = Vector3.ZERO
+		target_player = null
+		return
+	interest_sleeping = false
+	if destroyed_emitted:
+		return
+	operator_defensive_hold = _interest_previous_operator_defensive_hold
+	velocity = Vector3.ZERO
 
 
 func _update_player_hunt(delta: float) -> void:

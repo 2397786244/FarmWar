@@ -1470,6 +1470,9 @@ func _apply_local_spawn_state(player: GamePlayer) -> void:
 	var saved_slots: Variant = local_selection.get("backpack_slot_items", null)
 	if saved_slots is Array and not (saved_slots as Array).is_empty():
 		player.apply_cargo_backpack_slots(saved_slots as Array)
+	var saved_ammo_states: Variant = local_selection.get("weapon_ammo_states", {})
+	if saved_ammo_states is Dictionary and not (saved_ammo_states as Dictionary).is_empty():
+		player.apply_weapon_ammo_states_snapshot(saved_ammo_states as Dictionary)
 	if local_selection.has("current_hp"):
 		player.server_hp = clampf(float(local_selection.get("current_hp", 200.0)), 0.0, 200.0)
 		if player.has_method("_update_health_ui"):

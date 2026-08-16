@@ -76,16 +76,15 @@ func is_ammo_loaded() -> bool:
 
 func get_held_item_info_text(item: Dictionary, definition: Dictionary) -> String:
 	var tool_name := str(definition.get("name", definition.get("short", "弩")))
-	return "%s\n%d / %d" % [
+	return "%s\n%d" % [
 		tool_name,
 		int(item.get("ammo_in_mag", 0)),
-		int(item.get("reserve_ammo", 0)),
 	]
 
 
 func play_muzzle_visual() -> void:
 	# The crossbow has no muzzle flash. Remote shots still hide the loaded bolt
-	# and use the same small recoil presentation as the local shot.
+	# and use the same profile-based recoil presentation as the local shot.
 	set_ammo_loaded(false)
 	_play_recoil()
 
@@ -180,6 +179,9 @@ func _play_recoil() -> void:
 	if not is_instance_valid(model):
 		return
 	var tween := create_tween()
-	model.position = model_rest_position + Vector3(0.0, 0.025, 0.07)
-	tween.tween_property(model, "position", model_rest_position, 0.12) \
+	var recoil_offset := CombatBalance.get_model_recoil_offset(profile_id)
+	model.position = model_rest_position + recoil_offset
+	tween.tween_property(
+		model, "position", model_rest_position, CombatBalance.MODEL_RECOIL_DURATION
+	) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)

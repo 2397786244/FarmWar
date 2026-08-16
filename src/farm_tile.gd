@@ -69,8 +69,21 @@ var fertilizer_blocked := false
 
 func _ready() -> void:
 	add_to_group("farm_tiles")
+	get_crop_visual_manager(true)
 	Farmlandmanager.register_land(self)
 	_update_owner_visual(false)
+
+
+func get_crop_visual_manager(create_if_missing := true) -> FarmCropVisualManager:
+	if create_if_missing:
+		return FarmCropVisualManager.get_or_create_for_node(self)
+	return FarmCropVisualManager.find_for_node(self)
+
+
+func _register_crop_visuals() -> void:
+	var manager := get_crop_visual_manager(true)
+	if manager != null:
+		manager.register_tile_crops(self)
 
 
 func prepare_for_batched_visual(generator: Node, instance_index: int) -> void:
@@ -85,6 +98,9 @@ func prepare_for_batched_visual(generator: Node, instance_index: int) -> void:
 
 
 func _exit_tree() -> void:
+	var crop_visual_manager := get_crop_visual_manager(false)
+	if crop_visual_manager != null:
+		crop_visual_manager.unregister_tile_crops(self)
 	var manager := get_node_or_null("/root/Farmlandmanager")
 	if manager != null:
 		manager.unregister_land(self)
@@ -172,7 +188,7 @@ func impact(
 
 	last_effect = effect.to_lower()
 
-	if last_effect in ["flame","freeze","lightening","bug"]:  # 如果
+	if last_effect in ["flame","freeze","lightening","bug","bug_storm"]:  # 如果
 		if get_tile_property("immune"):  # 如果被保护，免疫，那么下面的不会执行
 			return true	
 			
@@ -188,7 +204,7 @@ func impact(
 		"lightening":
 			# 植物的HP为100，刚好等于雷击的伤害，所以通常不会到这里
 			pass
-		"bug":
+		"bug", "bug_storm":
 			# 停止生长，并且持续扣血
 			bug_effects = true  # 停止生长并且bugeffects的时候就会持续扣血，直到虫灾消失并且受到虫灾影响的作物被摧毁重新种植之后
 			apply_authoritative_fertilizer(1.0, true)
@@ -364,12 +380,17 @@ func _spawn_harvest_visual(
 func _remove_crop_at(crop_index: int) -> void:
 	if crop_index < 0 or crop_index >= plant_children.size():
 		return
+	var crop_visual_manager := get_crop_visual_manager(false)
+	if crop_visual_manager != null:
+		crop_visual_manager.unregister_tile_crops(self)
 	var crop := plant_children[crop_index]
 	if is_instance_valid(crop):
 		crop.queue_free()
 	plant_children.remove_at(crop_index)
 	if crop_index < crop_positions.size():
 		crop_positions.remove_at(crop_index)
+	if crop_visual_manager != null and not plant_children.is_empty():
+		crop_visual_manager.register_tile_crops(self)
 
 ## setting_player是放置者的节点，可以是AIPlayer也可以是GamePlayer
 func setting_tool(tool_name: String, tool_owner: String, setting_player: CharacterBody3D = null, placement_yaw := 0.0) -> bool:
@@ -527,6 +548,7 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 	if plant_children.is_empty():
 		_clear_crop()
 		return false
+	_register_crop_visuals()
 	if not allow_neutral:
 		claim_land(tool_owner)
 	else:
@@ -583,6 +605,8 @@ func apply_authoritative_plant(
 		plant_children.append(crop)
 		crop_positions.append(crop_position)
 	var planted := not plant_children.is_empty()
+	if planted:
+		_register_crop_visuals()
 	_notify_manager_state_changed()
 	return planted
 
@@ -809,6 +833,10 @@ func is_empty() -> bool:
 
 func ensure_crop_visuals_visible() -> void:
 	visible = true
+	var crop_visual_manager := get_crop_visual_manager(false)
+	if crop_visual_manager != null:
+		crop_visual_manager.ensure_tile_registered(self)
+		return
 	for crop_value: Variant in plant_children:
 		if crop_value is Node3D and is_instance_valid(crop_value):
 			(crop_value as Node3D).visible = true
@@ -861,6 +889,9 @@ func _tick_burn(delta: float) -> void:
 
 
 func _clear_crop() -> void:
+	var crop_visual_manager := get_crop_visual_manager(false)
+	if crop_visual_manager != null:
+		crop_visual_manager.unregister_tile_crops(self)
 	for crop in plant_children:
 		if is_instance_valid(crop):
 			crop.queue_free()

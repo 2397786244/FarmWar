@@ -7,7 +7,7 @@ class_name MedievalShieldTool
 ## legacy local projectile queries.
 const TOOL_ID := "medieval_shield"
 const DEFAULT_MAX_HP := 1000.0
-const SHIELD_COLLISION_LAYER := 128
+const SHIELD_COLLISION_LAYER := GameAuthority.COLLISION_LAYER_TOOL
 
 @export var tool_owner: String = ""
 

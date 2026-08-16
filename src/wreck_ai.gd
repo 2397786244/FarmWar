@@ -187,6 +187,7 @@ var anti_air_placed := false
 
 var current_hp: float = 0.0
 var state: int = AIState.THINK
+var interest_sleeping := false
 var think_timer := 0.0
 var state_timer := 0.0
 var jump_timer := 0.0
@@ -250,7 +251,7 @@ func _ready() -> void:
 func _create_required_runtime_nodes() -> void:
 	# Preserve the collision setup from the supplied tscn.
 	collision_layer = 8
-	collision_mask = 519
+	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL
 
 	head = _ensure_node3d(self, "Head")
 	head.position = Vector3(0.0, 1.7080579, -0.45418245)
@@ -616,7 +617,7 @@ func _update_tool_cooldowns(delta: float) -> void:
 # ------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
-	if state == AIState.DEAD:
+	if interest_sleeping or state == AIState.DEAD:
 		return
 
 	# 农田未初始化时，AI 不建造、不攻击、不巡逻离开出生点。
@@ -634,6 +635,31 @@ func _physics_process(delta: float) -> void:
 
 	_update_state(delta)
 	_update_movement(delta)
+
+
+func can_enter_interest_sleep() -> bool:
+	return state != AIState.DEAD
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if state == AIState.DEAD:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		rubber_knockback = Vector3.ZERO
+		target_player = null
+		movement_target = INVALID_POSITION
+		_play_body_animation(&"IdleTool" if is_instance_valid(held_tool) else &"Idle", 0.08)
+		_update_health_label()
+		return
+	interest_sleeping = false
+	if state == AIState.DEAD:
+		return
+	state = AIState.THINK
+	velocity = Vector3.ZERO
+	target_player = null
+	movement_target = INVALID_POSITION
 
 
 func _update_farm_waiting(delta: float) -> void:
@@ -1914,6 +1940,8 @@ func impact(
 				12.0,
 				damage * 0.12
 			)
+	elif effect.to_lower() == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
 
 	else:
 		receive_bullet_hit(hit_direction, minf(10.0, damage * 0.35), attacker_team)

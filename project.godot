@@ -45,6 +45,10 @@ window/stretch/aspect="expand"
 
 project/assembly_name="FarmWar"
 
+[editor]
+
+run/main_run_args="--remote-yaw-smoke"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godotsteam/plugin.cfg")

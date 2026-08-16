@@ -59,6 +59,17 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:multiplayer_test:%s" % DEFAULT_MAP_VERSION,
 	},
+	{
+		"map_id": "coop_test",
+		"display_name": "coop test",
+		"scene_path": "res://worlds/coop_test/coop_test.tscn",
+		"icon_path": "res://worlds/coop_test/map_icon.png",
+		"loading_images_directory": "",
+		"size": Vector2i(256, 256),
+		"source": "builtin",
+		"map_version": DEFAULT_MAP_VERSION,
+		"map_hash": "builtin:coop_test:%s" % DEFAULT_MAP_VERSION,
+	},
 ]
 
 

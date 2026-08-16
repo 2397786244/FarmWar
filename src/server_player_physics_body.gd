@@ -33,6 +33,33 @@ func get_combat_team() -> String:
 	return str(state.get("team", ""))
 
 
+func impact(effect: String, strength: float, attacker_team: String = "") -> bool:
+	## Dedicated/listen server 的玩家代理也必须走统一的 impact 入口。
+	## BugStorm 的 ShapeCast 只会把实际碰撞代理交给这里，不能依赖
+	## GamePlayer 表现节点在服务器上同步扣血。
+	if not (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
+		return false
+	if effect.strip_edges().to_lower() != "bug_storm" or strength <= 0.0:
+		return false
+	var state := _authority_state()
+	if state.is_empty() or float(state.get("respawn_left", 0.0)) > 0.0:
+		return false
+	var target_team := str(state.get("team", ""))
+	if not attacker_team.is_empty() \
+			and not target_team.is_empty() \
+			and target_team.to_lower() == attacker_team.to_lower():
+		return false
+	return GameAuthority._damage_player(
+		peer_id,
+		CombatBalance.get_bug_storm_impact_damage(strength),
+		0.0,
+		Vector3.ZERO,
+		attacker_team,
+		effect,
+		0
+	)
+
+
 func get_network_state() -> Dictionary:
 	var state := _authority_state()
 	var respawn_left := float(state.get("respawn_left", 0.0))

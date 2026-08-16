@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://dcd5x63fpnd61" path="res://src/farm_base_vehicle.gd" id="3_farm_script"]
 [ext_resource type="PackedScene" uid="uid://cg64eo5swasp0" path="res://assets/vehicles/VehicleNitroBoost.glb" id="4_nitro_visual"]
 [ext_resource type="PackedScene" uid="uid://m6b8jcmywmfr" path="res://assets/vehicles/PlatformSeat.glb" id="5_platform_seat"]
+[ext_resource type="PackedScene" uid="uid://c4ys2naadprjv" path="res://assets/vehicles/RoofHeadlights.glb" id="6_y5nrb"]
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_453vp"]
 points = PackedVector3Array(1.035523, 1.442143, 2.1927865, 1.3441548, 2.2649193, 2.1927865, 1.3441548, 2.2649193, 1.8843259, 0.0071430206, 2.2649193, 2.1927865, 0.0071430206, 1.9562976, 1.8843259, 1.3441548, 1.442143, 1.9871728, 0.0071430206, 2.0591447, 2.2956738, 1.3441548, 2.1619916, 2.2956738, 0.0071430206, 2.2649193, 1.8843259, 1.3441548, 1.442143, 2.1927865, 1.3441548, 1.9562976, 1.8843259, 1.035523, 1.442143, 1.9871728, 0.0071430206, 1.9562976, 2.1927865, 1.3441548, 2.0591447, 2.2956738, 0.0071430206, 2.1619916, 2.2956738)
@@ -254,3 +255,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8598714, 0)
 
 [node name="HarvestReelPos" type="Marker3D" parent="." unique_id=1384221720]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0006473, -3.1728063)
+
+[node name="RoofHeadlights" type="Marker3D" parent="." unique_id=1002570547]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 2.720129, -1.8300221)
+
+[node name="RoofHeadlights" parent="RoofHeadlights" unique_id=1474708287 instance=ExtResource("6_y5nrb")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09826851, 0)
+visible = false

@@ -1,6 +1,9 @@
 extends RefCounted
 class_name CombatBalance
 
+const BUG_STORM_DAMAGE_MULTIPLIER := 10.0
+const MODEL_RECOIL_DURATION := 0.12
+
 ## Authoritative combat defaults. Scene export values may override these at
 ## runtime, but GameAuthority must never carry a second set of literals.
 const PROFILES := {
@@ -21,38 +24,54 @@ const PROFILES := {
 	"rubber_revolver": {
 		"range": 60.0, "damage": 30.0, "knockback": 30.0,
 		"visual_speed": 90.0, "visual_lifetime": 0.6666667,
+		"camera_recoil_strength": 0.045, "camera_recoil_duration": 0.16,
+		"model_recoil_y": 0.042, "model_recoil_z": 0.104,
 	},
 	"flame_gun": {
 		"range": 100.0, "damage": 50.0, "knockback": 10.0,
 		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
+		"camera_recoil_strength": 0.026, "camera_recoil_duration": 0.13,
+		"model_recoil_y": 0.028, "model_recoil_z": 0.070,
 	},
 	"freeze_gun": {
 		"range": 100.0, "damage": 50.0, "knockback": 10.0,
 		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
+		"camera_recoil_strength": 0.026, "camera_recoil_duration": 0.13,
+		"model_recoil_y": 0.028, "model_recoil_z": 0.070,
 	},
 	"nail_gun": {
 		"range": 80.0, "damage": 20.0, "knockback": 15.0,
 		"visual_speed": 120.0, "visual_lifetime": 0.6666667,
+		"camera_recoil_strength": 0.030, "camera_recoil_duration": 0.12,
+		"model_recoil_y": 0.024, "model_recoil_z": 0.060,
 	},
 	"suppressed_pistol": {
 		"range": 100.0, "damage": 30.0, "knockback": 20.0,
 		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.020, "camera_recoil_duration": 0.11,
+		"model_recoil_y": 0.020, "model_recoil_z": 0.050,
 	},
 	"shotgun": {
 		"range": 60.0, "damage": 60.0, "knockback": 30.0,
 		"visual_speed": 100.0, "visual_lifetime": 0.6,
 		"bullet_count": 6, "spread_degrees": 2.0,
+		"camera_recoil_strength": 0.085, "camera_recoil_duration": 0.22,
+		"model_recoil_y": 0.068, "model_recoil_z": 0.170,
 	},
 	"hunting_rifle": {
 		"range": 150.0, "damage": 100.0, "knockback": 20.0,
 		"visual_speed": 120.0, "visual_lifetime": 1.25,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.075, "camera_recoil_duration": 0.20,
+		"model_recoil_y": 0.056, "model_recoil_z": 0.150,
 	},
 	"crossbow": {
 		"range": 120.0, "damage": 80.0, "knockback": 20.0,
 		"visual_speed": 90.0, "visual_lifetime": 1.3333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.060, "camera_recoil_duration": 0.18,
+		"model_recoil_y": 0.048, "model_recoil_z": 0.130,
 	},
 	"long_spear": {
 		"damage": 20.0, "reach": 2.4, "default_tip_distance": 1.35,
@@ -72,35 +91,49 @@ const PROFILES := {
 		"range": 120.0, "damage": 45.0, "knockback": 18.0,
 		"visual_speed": 120.0, "visual_lifetime": 1.0,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.040, "camera_recoil_duration": 0.13,
+		"model_recoil_y": 0.036, "model_recoil_z": 0.090,
 	},
 	"mpx": {
 		"range": 100.0, "damage": 30.0, "knockback": 18.0,
 		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.028, "camera_recoil_duration": 0.11,
+		"model_recoil_y": 0.026, "model_recoil_z": 0.064,
 	},
 	"future_m4": {
 		"range": 120.0, "damage": 48.0, "knockback": 20.0,
 		"visual_speed": 140.0, "visual_lifetime": 0.8571429,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.045, "camera_recoil_duration": 0.13,
+		"model_recoil_y": 0.040, "model_recoil_z": 0.100,
 	},
 	"future_mpx": {
 		"range": 100.0, "damage": 35.0, "knockback": 18.0,
 		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.032, "camera_recoil_duration": 0.11,
+		"model_recoil_y": 0.030, "model_recoil_z": 0.074,
 	},
 	"ar15": {
 		"range": 120.0, "damage": 55.0, "knockback": 20.0,
 		"visual_speed": 120.0, "visual_lifetime": 1.0,
 		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.055, "camera_recoil_duration": 0.17,
+		"model_recoil_y": 0.044, "model_recoil_z": 0.110,
 	},
 	"medicine_pistol": {
 		"range": 60.0, "heal_amount": 50.0,
 		"visual_speed": 48.0, "visual_lifetime": 2.0, "cooldown": 30.0,
+		"camera_recoil_strength": 0.015, "camera_recoil_duration": 0.10,
+		"model_recoil_y": 0.012, "model_recoil_z": 0.030,
 	},
 	"tranquilizer_pistol": {
 		"range": 60.0, "damage": 5.0, "cooldown": 30.0,
 		"visual_speed": 48.0, "visual_lifetime": 2.0,
 		"effect_duration": 8.0, "flash_cycle": 2.0, "darkness_alpha": 0.82,
+		"camera_recoil_strength": 0.018, "camera_recoil_duration": 0.11,
+		"model_recoil_y": 0.016, "model_recoil_z": 0.040,
 	},
 	"wand": {"range": 80.0, "damage": 100.0},
 	"wreck": {"projectile_speed": 30.0, "damage": 200.0, "radius": 12.0},
@@ -121,6 +154,8 @@ const PROFILES := {
 		"area_length": 16.0, "area_width": 8.0, "area_height": 0.8,
 		"area_lifetime": 10.0, "area_fade_time": 2.0, "area_tick_interval": 0.25,
 		"spicy_duration": 2.0, "spicy_dps": 5.0,
+		"camera_recoil_strength": 0.018, "camera_recoil_duration": 0.12,
+		"model_recoil_y": 0.016, "model_recoil_z": 0.040,
 	},
 	"fertilizer": {"range": 10.0, "growth_multiplier": 2.0},
 	"eater": {"range": 10.0, "mature_plot_limit": 20, "projectile_limit": 2},
@@ -259,6 +294,19 @@ const ELECTRONIC_STATUS := {
 static func get_float(profile: String, key: String, fallback: float = 0.0) -> float:
 	var values: Dictionary = PROFILES.get(profile, {})
 	return float(values.get(key, fallback))
+
+
+static func get_model_recoil_offset(profile: String) -> Vector3:
+	var values: Dictionary = PROFILES.get(profile, {})
+	return Vector3(
+		0.0,
+		float(values.get("model_recoil_y", 0.025)),
+		float(values.get("model_recoil_z", 0.07))
+	)
+
+
+static func get_bug_storm_impact_damage(strength: float) -> float:
+	return maxf(0.0, strength) * BUG_STORM_DAMAGE_MULTIPLIER
 
 
 static func get_int(profile: String, key: String, fallback: int = 0) -> int:

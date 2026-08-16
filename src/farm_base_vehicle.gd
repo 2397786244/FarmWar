@@ -18,6 +18,14 @@ const HEADLIGHT_ENERGY := 15.0
 const HEADLIGHT_RANGE := 12.0
 const HEADLIGHT_ANGLE := 60.0
 const HEADLIGHT_ATTENUATION := 1.35
+const ROOF_HEADLIGHTS_SCENE := preload("res://assets/vehicles/RoofHeadlights.glb")
+const ROOF_HEADLIGHT_MOUNT_NODE_NAME := "RoofHeadlights"
+const ROOF_HEADLIGHT_VISUAL_NODE_NAME := "RoofHeadlights"
+const ROOF_HEADLIGHT_GLOW_NAMES := ["Glow_Left", "Glow_Right"]
+const ROOF_HEADLIGHT_LIGHT_NAMES := ["RoofHeadlightLight_Left", "RoofHeadlightLight_Right"]
+const ROOF_HEADLIGHT_ENERGY := HEADLIGHT_ENERGY * 1.6
+const ROOF_HEADLIGHT_RANGE := 30.0
+const ROOF_HEADLIGHT_ANGLE := 35.0
 const BODY_MESH_NODE_NAME := "FTF_Vehicle_ModularFarmBase_Black_6_5m_Static"
 const BASE_MESH_SCENE_PATH := "res://assets/vehicles/ModularFarmBaseVehicle.glb"
 const REINFORCED_MESH_SCENE_PATH := "res://assets/vehicles/ModularFarmBaseVehicle_Defend.glb"
@@ -55,12 +63,16 @@ const NITRO_BOOST_VISUAL_NODE_NAME := "VehicleNitroBoost"
 @export var reinforced_variant := false
 @export var nitro_boost_installed := false
 @export var harvest_reel_installed := false
+@export var roof_headlights_installed := false
 
 var headlights_on := false
 var brake_lights_on := false
 var _brake_glows: Array[Node3D] = []
 var _headlight_glows: Array[Node3D] = []
 var _headlight_lights: Array[SpotLight3D] = []
+var _roof_headlights_visual: Node3D
+var _roof_headlight_glows: Array[Node3D] = []
+var _roof_headlight_lights: Array[SpotLight3D] = []
 var _platform_machine_gun: VehicleBaseMachineGun
 var _platform_interaction_area: VehiclePlatformInteractionArea
 var _platform_passenger_interaction_area: VehiclePlatformInteractionArea
@@ -87,6 +99,7 @@ func _ready() -> void:
 	set_platform_machine_gun_installed(platform_machine_gun_installed)
 	set_nitro_boost_installed(nitro_boost_installed)
 	set_harvest_reel_installed(harvest_reel_installed)
+	set_roof_headlights_installed(roof_headlights_installed)
 	_platform_passenger_seat_runtime_ready = true
 
 
@@ -99,6 +112,7 @@ func refresh_visuals() -> void:
 	set_platform_machine_gun_installed(platform_machine_gun_installed)
 	set_nitro_boost_installed(nitro_boost_installed)
 	set_harvest_reel_installed(harvest_reel_installed)
+	set_roof_headlights_installed(roof_headlights_installed)
 
 
 func set_reinforced_variant(enabled: bool) -> void:
@@ -288,6 +302,7 @@ func _ensure_mesh_variant() -> void:
 	_cache_visual_nodes()
 	_cache_glow_nodes()
 	_cache_headlight_lights()
+	_cache_roof_headlights()
 	_set_headlights(headlights_on)
 	_set_brake_lights(brake_lights_on)
 
@@ -407,6 +422,131 @@ func get_harvest_reel() -> HarvestReel:
 		return _harvest_reel
 	_harvest_reel = find_child(HARVEST_REEL_NODE_NAME, true, false) as HarvestReel
 	return _harvest_reel
+
+
+## RoofHeadlights is an optional FarmBaseVehicle upgrade. The authored
+## visual is kept below the recursive RoofHeadlights marker and remains hidden
+## until the upgrade is installed.
+func set_roof_headlights_installed(installed: bool) -> void:
+	roof_headlights_installed = installed
+	var visual := _ensure_roof_headlights_visual()
+	if visual == null:
+		return
+	_cache_roof_headlights()
+	_set_roof_headlights_visuals(headlights_on)
+
+
+func install_roof_headlights() -> Node3D:
+	roof_headlights_installed = true
+	var visual := _ensure_roof_headlights_visual()
+	if visual == null:
+		return null
+	_cache_roof_headlights()
+	_set_roof_headlights_visuals(headlights_on)
+	return visual
+
+
+func remove_roof_headlights() -> void:
+	roof_headlights_installed = false
+	_cache_roof_headlights()
+	_set_roof_headlights_visuals(false)
+
+
+func get_roof_headlights() -> Node3D:
+	if is_instance_valid(_roof_headlights_visual):
+		return _roof_headlights_visual
+	var mount := find_child(ROOF_HEADLIGHT_MOUNT_NODE_NAME, true, false) as Marker3D
+	if mount == null:
+		return null
+	_roof_headlights_visual = mount.find_child(
+		ROOF_HEADLIGHT_VISUAL_NODE_NAME,
+		true,
+		false
+	) as Node3D
+	return _roof_headlights_visual
+
+
+func _ensure_roof_headlights_visual() -> Node3D:
+	var existing := get_roof_headlights()
+	if existing != null:
+		return existing
+	var mount := find_child(ROOF_HEADLIGHT_MOUNT_NODE_NAME, true, false) as Marker3D
+	if mount == null:
+		push_error("FarmBaseVehicle: missing recursive %s marker." % ROOF_HEADLIGHT_MOUNT_NODE_NAME)
+		return null
+	var visual := ROOF_HEADLIGHTS_SCENE.instantiate() as Node3D
+	if visual == null:
+		push_error("FarmBaseVehicle: failed to instantiate RoofHeadlights visual.")
+		return null
+	visual.name = ROOF_HEADLIGHT_VISUAL_NODE_NAME
+	mount.add_child(visual)
+	visual.transform = Transform3D.IDENTITY
+	_roof_headlights_visual = visual
+	return visual
+
+
+func _cache_roof_headlights() -> void:
+	_roof_headlight_glows.clear()
+	_roof_headlight_lights.clear()
+	var visual := get_roof_headlights()
+	_roof_headlights_visual = visual
+	if visual == null:
+		return
+	# Prefer the authored Mesh wrapper when one exists. The current imported
+	# RoofHeadlights GLB has its model root directly below the scene root, so
+	# use the visual as the recursive search root in that valid layout too.
+	var mesh := visual.find_child("Mesh", true, false) as Node3D
+	var glow_search_root: Node = mesh if mesh != null else visual
+	for index in range(ROOF_HEADLIGHT_GLOW_NAMES.size()):
+		var glow := glow_search_root.find_child(
+			ROOF_HEADLIGHT_GLOW_NAMES[index],
+			true,
+			false
+		) as Node3D
+		if glow == null:
+			push_warning("FarmBaseVehicle: missing RoofHeadlights glow %s." % ROOF_HEADLIGHT_GLOW_NAMES[index])
+			continue
+		_roof_headlight_glows.append(glow)
+		var light_name: String = ROOF_HEADLIGHT_LIGHT_NAMES[index]
+		var light := glow.find_child(light_name, true, false) as SpotLight3D
+		if light == null:
+			light = SpotLight3D.new()
+			light.name = light_name
+			glow.add_child(light)
+		# SpotLight3D emits along local -Z. Place each light just in front of
+		# its Glow, then explicitly aim that -Z axis at the vehicle's -Z front
+		# direction instead of relying on the imported GLB's local orientation.
+		if is_inside_tree() and glow.is_inside_tree():
+			var vehicle_front := -global_transform.basis.z.normalized()
+			light.global_position = glow.global_position + vehicle_front * 0.2
+			light.global_basis = Basis.looking_at(vehicle_front, Vector3.UP)
+		else:
+			# The preview is configured before it enters the scene tree. Its
+			# authored mount points +Z toward the vehicle's -Z front, and the
+			# ready-time pass reapplies the explicit global orientation.
+			light.position = Vector3(0.0, 0.0, 0.2)
+			light.rotation = Vector3(0.0, PI, 0.0)
+		light.light_color = Color(1.0, 0.97, 0.88, 1.0)
+		light.light_energy = ROOF_HEADLIGHT_ENERGY
+		light.light_indirect_energy = 0.0
+		light.spot_range = ROOF_HEADLIGHT_RANGE
+		light.spot_attenuation = HEADLIGHT_ATTENUATION
+		light.spot_angle = ROOF_HEADLIGHT_ANGLE
+		light.shadow_enabled = false
+		light.visible = false
+		_roof_headlight_lights.append(light)
+
+
+func _set_roof_headlights_visuals(headlight_switch_enabled: bool) -> void:
+	var visual := get_roof_headlights()
+	if visual != null:
+		visual.visible = roof_headlights_installed
+	var enabled := roof_headlights_installed and headlight_switch_enabled
+	_set_glow_nodes_visible(_roof_headlight_glows, enabled)
+	for light in _roof_headlight_lights:
+		if is_instance_valid(light):
+			light.visible = enabled
+			light.light_energy = ROOF_HEADLIGHT_ENERGY if enabled else 0.0
 
 
 func set_nitro_boost_installed(installed: bool) -> void:
@@ -656,6 +796,7 @@ func get_network_state() -> Dictionary:
 	state["platform_passenger_seat_count"] = platform_passenger_seat_count
 	state["nitro_boost_installed"] = nitro_boost_installed
 	state["harvest_reel_installed"] = harvest_reel_installed
+	state["roof_headlights_installed"] = roof_headlights_installed
 	var nitro := get_nitro_boost()
 	state["nitro_boost_active"] = nitro != null and nitro.is_boost_active()
 	state["nitro_boost"] = {
@@ -715,6 +856,7 @@ func apply_network_state(state: Dictionary) -> void:
 	if machine_gun != null and machine_gun_value is Dictionary:
 		machine_gun.apply_network_state(machine_gun_value as Dictionary)
 	set_harvest_reel_installed(bool(state.get("harvest_reel_installed", harvest_reel_installed)))
+	set_roof_headlights_installed(bool(state.get("roof_headlights_installed", roof_headlights_installed)))
 
 
 func _normalize_legacy_hp_state(state: Dictionary) -> Dictionary:
@@ -811,6 +953,7 @@ func _set_headlights(enabled: bool) -> void:
 		if is_instance_valid(light):
 			light.visible = enabled
 			light.light_energy = HEADLIGHT_ENERGY if enabled else 0.0
+	_set_roof_headlights_visuals(enabled)
 
 
 func _set_brake_lights(enabled: bool) -> void:

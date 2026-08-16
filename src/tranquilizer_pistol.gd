@@ -76,6 +76,9 @@ func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 
 func _play_recoil() -> void:
 	var tween := create_tween()
-	model.position = model_rest_position + Vector3(0.0, 0.025, 0.07)
-	tween.tween_property(model, "position", model_rest_position, 0.12) \
+	var recoil_offset := CombatBalance.get_model_recoil_offset(PROFILE_ID)
+	model.position = model_rest_position + recoil_offset
+	tween.tween_property(
+		model, "position", model_rest_position, CombatBalance.MODEL_RECOIL_DURATION
+	) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)

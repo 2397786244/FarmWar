@@ -141,6 +141,10 @@ var _last_server_input_seq := 0
 var _last_authoritative_jump_seq := 0
 var _pending_network_inputs: Array[Dictionary] = []
 var _pending_authority_snapshot: Dictionary = {}
+var _local_remote_runtime_enabled := false
+var _local_remote_process_before := true
+var _local_remote_physics_before := true
+var _local_remote_input_before := true
 var _electronics_disabled_remaining := 0.0
 var _flame_remaining := 0.0
 var _flame_damage_per_second := 0.0
@@ -203,6 +207,7 @@ func begin_remote_control() -> void:
 
 	var was_remote_control_active := _remote_control_active
 	_remote_control_active = true
+	set_local_remote_control_runtime(true)
 
 	_start_control_mode()
 
@@ -214,6 +219,30 @@ func end_remote_control() -> void:
 
 func is_remote_control_active() -> bool:
 	return _remote_control_active
+
+
+## 只给当前操作者的本地控制镜像使用。
+## 非操作者视觉代理继续由 MultiplayerWorldReplicator 保持关闭；服务器
+## 权威节点不会因为本地控制而重新启用自己的第二套物理模拟。
+func set_local_remote_control_runtime(enabled: bool) -> void:
+	if enabled:
+		if not _local_remote_runtime_enabled:
+			_local_remote_process_before = is_processing()
+			_local_remote_physics_before = is_physics_processing()
+			_local_remote_input_before = is_processing_input()
+			_local_remote_runtime_enabled = true
+		set_process(true)
+		set_physics_process(not _server_authority_simulation and not GameAuthority.is_server_authority())
+		set_process_input(true)
+		return
+	if not _local_remote_runtime_enabled:
+		return
+	_local_remote_runtime_enabled = false
+	set_process(_local_remote_process_before)
+	set_physics_process(
+		_local_remote_physics_before if not _server_authority_simulation and not GameAuthority.is_server_authority() else false
+	)
+	set_process_input(_local_remote_input_before)
 
 
 func set_remote_receiver(receiver: Node3D) -> void:
@@ -258,6 +287,7 @@ func stop() -> void:
 		return
 
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	velocity = Vector3.ZERO
 	_capture_retry_frames = 0
 
@@ -296,6 +326,14 @@ func _restore_player_mouse_capture() -> void:
 
 func _process(delta: float) -> void:
 	_tick_electronic_status(delta)
+	# The authoritative listen-server node has its physics process disabled and
+	# advances movement from GameAuthority._simulate_remote_devices(). Keep the
+	# primary cooldown in _process so the local host HUD and input gate continue
+	# to advance in that mode as well as on a cooperative client.
+	_primary_action_cooldown_left = maxf(
+		0.0,
+		_primary_action_cooldown_left - delta
+	)
 	if _capture_retry_frames <= 0:
 		return
 
@@ -348,10 +386,6 @@ func _physics_process(delta: float) -> void:
 	_jump_cooldown_left = maxf(
 		0.0,
 		_jump_cooldown_left - delta
-	)
-	_primary_action_cooldown_left = maxf(
-		0.0,
-		_primary_action_cooldown_left - delta
 	)
 	if not _pending_authority_snapshot.is_empty():
 		var authority_snapshot := _pending_authority_snapshot
@@ -454,7 +488,13 @@ func simulate_authoritative_remote_input(input_frame: Dictionary, _delta: float)
 		move_and_slide()
 		return
 	_jump_cooldown_left = maxf(0.0, _jump_cooldown_left - NETWORK_SIMULATION_DELTA)
-	rotation.y = float(input_frame.get("yaw", rotation.y))
+	# 与 NormalDrone 相同：listen-server 房主的权威节点就是本地操控
+	# 节点，不能在玩家提交本帧鼠标输入前被旧 yaw 覆盖。远端客户端
+	# 在服务器上的权威节点仍按网络输入设置 yaw。
+	var preserve_local_listen_server_yaw := _remote_control_active \
+		and GameAuthority.is_local_interaction_authority()
+	if not preserve_local_listen_server_yaw:
+		rotation.y = float(input_frame.get("yaw", rotation.y))
 	var move_value: Variant = input_frame.get("move", Vector2.ZERO)
 	var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
 	_simulate_ground_motion(move, NETWORK_SIMULATION_DELTA)
@@ -522,15 +562,19 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	var reconciled_position := global_position
 	var reconciled_velocity := velocity
 	var reconciled_yaw := rotation.y
+	# Keep yaw local-first during network position reconciliation.  The server
+	# remains authoritative for simulation and receives the same yaw input, but
+	# an older snapshot must not override the mouse-driven body orientation.
+	var local_first_yaw := reconciled_yaw if not _pending_network_inputs.is_empty() else rendered_yaw
 	var correction_distance := rendered_position.distance_to(reconciled_position)
 	if correction_distance >= HARD_CORRECTION_DISTANCE:
 		global_position = reconciled_position
 		velocity = reconciled_velocity
-		rotation.y = reconciled_yaw
+		rotation.y = local_first_yaw
 	elif correction_distance >= SOFT_CORRECTION_DISTANCE:
 		global_position = rendered_position.lerp(reconciled_position, CORRECTION_BLEND)
 		velocity = rendered_velocity.lerp(reconciled_velocity, CORRECTION_BLEND)
-		rotation.y = lerp_angle(rendered_yaw, reconciled_yaw, CORRECTION_BLEND)
+		rotation.y = local_first_yaw
 	else:
 		global_position = rendered_position
 		velocity = rendered_velocity
@@ -917,6 +961,7 @@ func _destroy_mouse(effect: String, attacker_team: String) -> void:
 
 	_destroyed = true
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	velocity = Vector3.ZERO
 
 	collision_layer = 0

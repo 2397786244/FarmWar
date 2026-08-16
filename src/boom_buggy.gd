@@ -149,6 +149,10 @@ var _server_authority_simulation := false
 var _last_server_input_seq := 0
 var _pending_network_inputs: Array[Dictionary] = []
 var _pending_authority_snapshot: Dictionary = {}
+var _local_remote_runtime_enabled := false
+var _local_remote_process_before := true
+var _local_remote_physics_before := true
+var _local_remote_input_before := true
 var _electronics_disabled_remaining := 0.0
 var _flame_remaining := 0.0
 var _flame_damage_per_second := 0.0
@@ -370,6 +374,7 @@ func begin_remote_control(receiver: Node3D = null) -> void:
 
 	var was_remote_control_active: bool = _remote_control_active
 	_remote_control_active = true
+	set_local_remote_control_runtime(true)
 
 	_start_control_mode()
 
@@ -386,6 +391,7 @@ func stop() -> void:
 		return
 
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	velocity = Vector3.ZERO
 	_capture_retry_frames = 0
 
@@ -398,6 +404,30 @@ func stop() -> void:
 
 func is_remote_control_active() -> bool:
 	return _remote_control_active
+
+
+## 只给当前操作者的本地控制镜像使用。
+## 服务器权威节点通过 _server_authority_simulation 保持物理关闭；非操作者
+## 的视觉代理不会调用这个接口，因此不会重新获得本地输入。
+func set_local_remote_control_runtime(enabled: bool) -> void:
+	if enabled:
+		if not _local_remote_runtime_enabled:
+			_local_remote_process_before = is_processing()
+			_local_remote_physics_before = is_physics_processing()
+			_local_remote_input_before = is_processing_input()
+			_local_remote_runtime_enabled = true
+		set_process(true)
+		set_physics_process(not _server_authority_simulation and not GameAuthority.is_server_authority())
+		set_process_input(true)
+		return
+	if not _local_remote_runtime_enabled:
+		return
+	_local_remote_runtime_enabled = false
+	set_process(_local_remote_process_before)
+	set_physics_process(
+		_local_remote_physics_before if not _server_authority_simulation and not GameAuthority.is_server_authority() else false
+	)
+	set_process_input(_local_remote_input_before)
 
 
 ## 设置当前连接小车的遥控终端；用于距离信号强度和掉线判定。
@@ -488,6 +518,7 @@ func _handle_remote_link_lost() -> void:
 		return
 
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	velocity = Vector3.ZERO
 	_capture_retry_frames = 0
 
@@ -672,7 +703,16 @@ func simulate_authoritative_remote_input(input_frame: Dictionary, _delta: float)
 	if is_electronics_disabled():
 		_apply_idle_physics(NETWORK_SIMULATION_DELTA)
 		return
-	rotation.y = float(input_frame.get("yaw", rotation.y))
+	# 与 NormalDrone / SmallMouse 的房主权威链路保持一致：listen-server
+	# 的权威 BoomBuggy 节点同时就是房主正在看的本地控制节点。GameAuthority
+	# 的物理 tick 先于 GamePlayer 提交本帧鼠标输入，如果这里无条件写入
+	# 上一帧的 yaw，就会覆盖 BoomBuggy._input() 刚刚产生的本地旋转，导致
+	# Camera 看起来完全无法左右转动。房主保留本地 yaw；远端玩家和专用
+	# 服务器仍使用网络输入的 yaw。
+	var preserve_local_listen_server_yaw := _remote_control_active \
+		and GameAuthority.is_local_interaction_authority()
+	if not preserve_local_listen_server_yaw:
+		rotation.y = float(input_frame.get("yaw", rotation.y))
 	var move_value: Variant = input_frame.get("move", Vector2.ZERO)
 	var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
 	_simulate_drive(move, NETWORK_SIMULATION_DELTA)
@@ -930,6 +970,7 @@ func trigger_explosion(reason: String = "manual") -> bool:
 
 	var had_remote_control: bool = _remote_control_active
 	_remote_control_active = false
+	set_local_remote_control_runtime(false)
 	_capture_retry_frames = 0
 
 	if buggy_camera != null:

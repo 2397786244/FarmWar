@@ -51,6 +51,7 @@ var current_hp := 1000.0
 var home_position := Vector3.ZERO
 var home_generator: Node = null
 var state: State = State.IDLE
+var interest_sleeping := false
 var target_peer_id := 0
 var target_livestock: FarmLivestock = null
 var destroyed := false
@@ -110,6 +111,8 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if network_proxy or not (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
 		return
+	if interest_sleeping:
+		return
 	_state_elapsed += delta
 	_target_scan_left -= delta
 	_avoidance_left = maxf(0.0, _avoidance_left - delta)
@@ -148,6 +151,29 @@ func _physics_process(delta: float) -> void:
 			_update_rest(delta)
 		State.FLEE:
 			_update_flee(delta)
+
+
+func can_enter_interest_sleep() -> bool:
+	return not destroyed and state != State.DEAD
+
+
+func set_interest_sleeping(value: bool) -> void:
+	if value:
+		if destroyed or state == State.DEAD:
+			return
+		interest_sleeping = true
+		velocity = Vector3.ZERO
+		target_peer_id = 0
+		target_livestock = null
+		_set_state(State.IDLE, true)
+		_play_animation(&"Idle")
+		_update_health_label()
+		return
+	interest_sleeping = false
+	if destroyed or state == State.DEAD:
+		return
+	_set_state(State.IDLE, true)
+	_target_scan_left = 0.0
 
 
 func impact(effect: String, strength: float, _attacker_team: String = "") -> bool:
@@ -193,7 +219,10 @@ func impact(effect: String, strength: float, _attacker_team: String = "") -> boo
 			pass
 		_:
 			pass
-	_apply_damage(strength)
+	var damage := strength
+	if normalized_effect == "bug_storm":
+		damage = CombatBalance.get_bug_storm_impact_damage(strength)
+	_apply_damage(damage)
 	_update_labeled_outline()
 	return true
 
