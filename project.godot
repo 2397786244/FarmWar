@@ -33,6 +33,7 @@ SteamService="*res://src/steam_service.gd"
 CooperativeSession="*res://src/cooperative_session.gd"
 NetworkSession="*res://src/world_network_session.gd"
 GameMapRegistry="*res://src/game_map_registry.gd"
+DisplaySettings="*res://src/display_settings.gd"
 
 [display]
 

@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://07g5rm3lknj4" path="res://src/shop_page.gd" id="2_monf5"]
 [ext_resource type="Shader" uid="uid://bryjrcv7otfeo" path="res://src/drone_camera.gdshader" id="3_aypkh"]
 [ext_resource type="Shader" uid="uid://o1bustn4vy8k" path="res://src/remote_lq.gdshader" id="4_hhoun"]
+[ext_resource type="Shader" uid="uid://c5srhv0rd4b27" path="res://src/world_post_process.gdshader" id="19_world_post"]
 [ext_resource type="PackedScene" path="res://ui/player_backpack.tscn" id="5_backpack"]
 [ext_resource type="PackedScene" path="res://ui/event_task_hud.tscn" id="6_event_task_hud"]
 [ext_resource type="PackedScene" path="res://ui/ingredient_pickup_page.tscn" id="7_ingredient_pickup"]
@@ -104,6 +105,28 @@ shader_parameter/tear_strength = 0.025
 shader_parameter/packet_loss_amount = 0.800000038
 shader_parameter/blackout_amount = 0.48
 shader_parameter/vignette_strength = 0.42
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_world_post"]
+shader = ExtResource("19_world_post")
+shader_parameter/effect_strength = 1.0
+shader_parameter/brightness = 1.0
+shader_parameter/contrast = 1.05
+shader_parameter/saturation = 1.08
+shader_parameter/grade_strength = 0.18
+shader_parameter/shadow_tint = Color(0.97, 0.99, 1.02, 1)
+shader_parameter/highlight_tint = Color(1.02, 0.99, 0.95, 1)
+shader_parameter/sharpen_strength = 0.12
+shader_parameter/vignette_strength = 0.1
+shader_parameter/vignette_start = 1.5
+shader_parameter/vignette_end = 1.95
+shader_parameter/motion_blur_enabled = 1.0
+shader_parameter/motion_blur_strength = 0.22
+shader_parameter/motion_blur_amount = 0.0
+shader_parameter/soft_glow_enabled = 1.0
+shader_parameter/soft_glow_strength = 0.24
+shader_parameter/soft_glow_threshold = 0.72
+shader_parameter/chromatic_aberration_enabled = 1.0
+shader_parameter/chromatic_aberration_strength = 0.16
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_sod_crop"]
 radius = 1.5
@@ -384,6 +407,16 @@ debug_color = Color(0.798857, 0.22852543, 0.87126714, 0.41960785)
 
 [node name="EffectLayer" type="CanvasLayer" parent="." unique_id=1313000976]
 layer = 10
+
+[node name="WorldPostProcess" type="ColorRect" parent="EffectLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+material = SubResource("ShaderMaterial_world_post")
 
 [node name="RemoteEffect" type="ColorRect" parent="EffectLayer" unique_id=1725743387]
 visible = false

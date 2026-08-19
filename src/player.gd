@@ -3,7 +3,9 @@ class_name GamePlayer
 
 @onready var camera = $Head/Camera3D
 @onready var Head = $Head
+@onready var world_post_process: ColorRect = $EffectLayer/WorldPostProcess
 const SPEED := 5.0
+const MOTION_BLUR_SPEED_THRESHOLD := 6.0
 const JUMP_VELOCITY := 3.0
 const PRONE_SPEED_MULTIPLIER := 0.4
 const SWIM_HORIZONTAL_SPEED := 3.5
@@ -230,6 +232,10 @@ var remote_camera_shake_time := 0.0
 var remote_camera_shake_strength := 0.0
 var remote_camera_shake_duration := 0.2
 var remote_camera_rest_position := Vector3.ZERO
+var _post_process_previous_camera: Camera3D
+var _post_process_previous_basis := Basis.IDENTITY
+var _post_process_blur_amount := 0.0
+var _post_process_camera_initialized := false
 var big_mouth_capture_remaining := 0.0
 var big_mouth_pull_remaining := 0.0
 var big_mouth_anchor := Vector3.ZERO
@@ -1564,6 +1570,7 @@ func _ready() -> void:
 	if is_remote_proxy:
 		_disable_remote_proxy_runtime()
 	else:
+		_apply_saved_display_settings()
 		_disable_legacy_tool_ui()
 		_create_hotbar()
 		if is_instance_valid(event_task_hud):
@@ -1604,10 +1611,18 @@ func _ready() -> void:
 		game_exit_dialog.exit_requested.connect(_exit_game)
 		if game_exit_dialog.has_method("set_save_game_visible"):
 			game_exit_dialog.set_save_game_visible(CooperativeSession.is_active() and CooperativeSession.is_host())
+		if game_exit_dialog.has_method("bind_player"):
+			game_exit_dialog.call("bind_player", self)
 		remote_device_panel.visible = false
 		$SubViewport/ShopPage.closed.connect(_on_shop_page_closed)
 		if _has_any_equipped_tool():
 			_select_tool(0, true)
+
+
+func _apply_saved_display_settings() -> void:
+	var display_settings := get_node_or_null("/root/DisplaySettings")
+	if is_instance_valid(display_settings) and display_settings.has_method("apply_to_player"):
+		display_settings.call("apply_to_player", self)
 
 
 func activate_local_runtime() -> void:
@@ -1897,6 +1912,12 @@ func _disable_remote_proxy_runtime() -> void:
 	var ui := get_node_or_null("SubViewport")
 	if ui is CanvasLayer:
 		ui.visible = false
+	# CanvasLayer effects are viewport-wide. Remote proxy instances share the
+	# player scene but must never contribute a second copy of the local screen
+	# post-process (or any local-only overlay) to the multiplayer viewport.
+	var effect_layer := get_node_or_null("EffectLayer") as CanvasLayer
+	if effect_layer != null:
+		effect_layer.visible = false
 
 
 func _close_active_ui_for_escape() -> bool:
@@ -2021,7 +2042,11 @@ func _input(event: InputEvent) -> void:
 		swim_dive_input_held = event.is_pressed()
 	if game_exit_dialog.is_open():
 		if event.is_action_pressed("esc", false):
-			_close_game_exit_dialog()
+			var settings_was_closed := false
+			if game_exit_dialog.has_method("handle_escape"):
+				settings_was_closed = bool(game_exit_dialog.call("handle_escape"))
+			if not settings_was_closed:
+				_close_game_exit_dialog()
 			_suppress_esc_mouse_release = true
 			get_viewport().set_input_as_handled()
 		return
@@ -4114,6 +4139,7 @@ func _process(delta: float) -> void:
 	if CooperativeSession.is_host() and _interaction_runtime_needs_restore():
 		activate_local_runtime()
 	_ensure_local_camera_ownership()
+	_update_world_post_process(delta)
 	_update_prone_presentation(delta)
 	_tick_status_effects(delta)
 	_update_health_ui()
@@ -4262,6 +4288,84 @@ func _ensure_local_camera_ownership() -> void:
 	if not camera.current:
 		print("[CameraOwnership] Restoring local player camera for peer=%d" % authority_peer_id)
 		camera.make_current()
+
+
+func _get_active_post_process_camera() -> Camera3D:
+	if vehicle_is_active and is_instance_valid(active_vehicle):
+		var vehicle_camera := active_vehicle.get_driving_camera()
+		if is_instance_valid(vehicle_camera):
+			return vehicle_camera
+	if is_instance_valid(camera):
+		return camera as Camera3D
+	return get_viewport().get_camera_3d()
+
+
+func _update_world_post_process(delta: float) -> void:
+	if not is_instance_valid(world_post_process):
+		return
+	var material := world_post_process.material as ShaderMaterial
+	if material == null:
+		return
+
+	# Menus, remote feeds, and respawn presentation should remain perfectly
+	# stable. The post-process itself is still active for the color grade/glow.
+	var presentation_blocked: bool = is_respawning or remote_is_active or is_ladder_climbing \
+			or (is_instance_valid(game_exit_dialog) and game_exit_dialog.is_open()) \
+			or (is_instance_valid(match_end_page) and match_end_page.visible) \
+			or _chat_input_captures_gameplay()
+	if presentation_blocked:
+		_post_process_blur_amount = 0.0
+		_post_process_camera_initialized = false
+		material.set_shader_parameter("motion_blur_amount", 0.0)
+		return
+
+	var active_camera := _get_active_post_process_camera()
+	if not is_instance_valid(active_camera):
+		_post_process_blur_amount = 0.0
+		_post_process_camera_initialized = false
+		material.set_shader_parameter("motion_blur_amount", 0.0)
+		return
+
+	var current_basis := active_camera.global_transform.basis
+	var turn_activity := 0.0
+	if not _post_process_camera_initialized or _post_process_previous_camera != active_camera:
+		_post_process_camera_initialized = true
+		_post_process_previous_camera = active_camera
+		_post_process_previous_basis = current_basis
+	else:
+		var previous_forward := (-_post_process_previous_basis.z).normalized()
+		var current_forward := (-current_basis.z).normalized()
+		var forward_dot := clampf(previous_forward.dot(current_forward), -1.0, 1.0)
+		var turn_speed := acos(forward_dot) / maxf(delta, 0.0001)
+		# A quick mouse turn or a fast vehicle camera orbit enters gradually,
+		# preventing small hand movements from producing constant blur.
+		turn_activity = smoothstep(deg_to_rad(120.0), deg_to_rad(300.0), turn_speed)
+	var camera_shake_activity := 1.0 if camera_shake_time > 0.0 \
+			or vehicle_camera_shake_time > 0.0 else 0.0
+	var camera_activity := maxf(turn_activity, camera_shake_activity)
+
+	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
+	var speed_activity := 0.0
+	if vehicle_is_active and is_instance_valid(active_vehicle):
+		var vehicle_speed := absf(active_vehicle.current_speed)
+		if vehicle_speed >= MOTION_BLUR_SPEED_THRESHOLD:
+			speed_activity = 1.0
+	else:
+		if horizontal_speed >= MOTION_BLUR_SPEED_THRESHOLD:
+			speed_activity = 1.0
+
+	var target_amount := maxf(camera_activity, speed_activity)
+	if is_weapon_aiming:
+		# Keep aiming readable while preserving a small sense of movement.
+		target_amount *= 0.55
+	_post_process_blur_amount = lerpf(
+		_post_process_blur_amount,
+		target_amount,
+		1.0 - exp(-14.0 * maxf(delta, 0.0))
+	)
+	material.set_shader_parameter("motion_blur_amount", _post_process_blur_amount)
+	_post_process_previous_camera = active_camera
+	_post_process_previous_basis = current_basis
 
 
 func _use_fist() -> void:

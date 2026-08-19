@@ -8,11 +8,11 @@ radius = 0.34
 height = 1.7
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3jpuy"]
-radius = 0.38
+radius = 0.45
 height = 1.6
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_1sqv4"]
-radius = 0.3
+radius = 0.35
 
 [node name="Zombie" type="CharacterBody3D" unique_id=1505287608]
 collision_layer = 8
@@ -31,7 +31,7 @@ collision_layer = 0
 collision_mask = 32
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1923519291]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0.06133032)
 shape = SubResource("CapsuleShape3D_3jpuy")
 
 [node name="Head3D" type="Area3D" parent="." unique_id=1673039004]
@@ -40,4 +40,5 @@ collision_layer = 0
 collision_mask = 32
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Head3D" unique_id=477099173]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.06449342, 0.049507022)
 shape = SubResource("SphereShape3D_1sqv4")

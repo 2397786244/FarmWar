@@ -7,6 +7,7 @@ signal session_failed(message: String)
 signal world_bootstrap_received(world: Dictionary, selection: Dictionary)
 signal peer_joined(peer_id: int, selection: Dictionary)
 signal peer_left(peer_id: int)
+signal connection_latency_updated(peer_id: int, rtt_ms: float)
 
 const MODE_NONE := "none"
 const MODE_HOST := "host"
@@ -20,6 +21,9 @@ const WORLD_SAVE_INTERVAL_SECONDS := 10.0
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const FARM_RESTORE_WAIT_FRAMES := 120
 const DROPPED_ITEM_RECONCILE_INTERVAL_SECONDS := 3.0
+const CLIENT_CONNECTION_TIMEOUT_SECONDS := 30.0
+const RTT_PROBE_INTERVAL_SECONDS := 2.0
+const RTT_LOG_INTERVAL_SECONDS := 5.0
 const UNRELIABLE_ACTION_TYPES := {
 	"player_input": true,
 	"remote_input": true,
@@ -50,6 +54,14 @@ var client_world_state_received := false
 var client_spawn_position_received := false
 var client_world_ready_sent := false
 var client_bootstrap_completing := false
+var client_connection_elapsed := 0.0
+var client_transport_ready := false
+var rtt_probe_accumulator := 0.0
+var rtt_probe_sequence := 0
+var rtt_probe_sent_msec: Dictionary = {}
+var peer_rtt_ms: Dictionary = {}
+var last_rtt_ms := 0.0
+var rtt_last_log_msec := 0
 
 
 func is_active() -> bool:
@@ -64,6 +76,22 @@ func is_client() -> bool:
 	return mode == MODE_CLIENT
 
 
+func is_transport_connected() -> bool:
+	return _is_client_transport_connected() if is_client() else is_active()
+
+
+func get_last_rtt_ms() -> float:
+	return last_rtt_ms
+
+
+func get_peer_rtt_ms(peer_id: int) -> float:
+	return float(peer_rtt_ms.get(peer_id, 0.0))
+
+
+func get_peer_rtt_snapshot() -> Dictionary:
+	return peer_rtt_ms.duplicate(true)
+
+
 func get_death_drop_mode() -> String:
 	var configured := str(active_world.get("death_drop_mode", "save")).to_lower()
 	return configured if configured in ["all", "random", "save"] else "save"
@@ -75,6 +103,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_process_client_transport(delta)
+	_process_rtt_probes(delta)
 	if not is_host() or world_loading or not authority_ready:
 		return
 	world_save_accumulator += delta
@@ -239,6 +269,7 @@ func join_hosted_world() -> bool:
 	peer = steam_peer
 	multiplayer.multiplayer_peer = peer
 	mode = MODE_CLIENT
+	_begin_client_connection_tracking()
 	_set_pve_event_system_enabled(false)
 	active_world = world.duplicate(true)
 	world_state_restored = false
@@ -295,6 +326,7 @@ func stop_session() -> void:
 	client_spawn_position_received = false
 	client_world_ready_sent = false
 	client_bootstrap_completing = false
+	_reset_client_connection_tracking()
 	if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
 		MapLoading.cancel_loading()
 	_set_pve_event_system_enabled(true)
@@ -349,12 +381,86 @@ func _connect_authority_signals() -> void:
 		GameAuthority.team_chat_message_ready.connect(_broadcast_team_chat_message)
 
 
+func _begin_client_connection_tracking() -> void:
+	client_connection_elapsed = 0.0
+	client_transport_ready = false
+	rtt_probe_accumulator = 0.0
+	rtt_probe_sequence = 0
+	rtt_probe_sent_msec.clear()
+	peer_rtt_ms.clear()
+	last_rtt_ms = 0.0
+	rtt_last_log_msec = 0
+
+
+func _reset_client_connection_tracking() -> void:
+	client_connection_elapsed = 0.0
+	client_transport_ready = false
+	rtt_probe_accumulator = 0.0
+	rtt_probe_sent_msec.clear()
+	peer_rtt_ms.clear()
+	last_rtt_ms = 0.0
+	rtt_last_log_msec = 0
+
+
+func _process_client_transport(delta: float) -> void:
+	if not is_client() or peer == null or client_transport_ready:
+		return
+	var connection_status := peer.get_connection_status()
+	if connection_status == MultiplayerPeer.CONNECTION_CONNECTED:
+		# The normal connected_to_server signal should call this path, but the
+		# status check also covers Steam callbacks that arrive one frame later.
+		_on_connected_to_host()
+		return
+	client_connection_elapsed += delta
+	if client_connection_elapsed >= CLIENT_CONNECTION_TIMEOUT_SECONDS:
+		_fail_client_connection(
+			"Steam P2P 连接超时（30 秒），本次连接已释放；仍在当前 Lobby，可重新点击“进入合作世界”。"
+		)
+
+
+func _process_rtt_probes(delta: float) -> void:
+	if not is_client() or not client_transport_ready or not _is_client_transport_connected():
+		return
+	rtt_probe_accumulator += delta
+	if rtt_probe_accumulator < RTT_PROBE_INTERVAL_SECONDS:
+		return
+	rtt_probe_accumulator = 0.0
+	_send_rtt_probe()
+
+
+func _send_rtt_probe() -> void:
+	if not _is_client_transport_connected():
+		return
+	rtt_probe_sequence += 1
+	var probe_id := rtt_probe_sequence
+	rtt_probe_sent_msec[probe_id] = Time.get_ticks_msec()
+	if rtt_probe_sent_msec.size() > 16:
+		rtt_probe_sent_msec.erase(rtt_probe_sequence - 16)
+	request_rtt_probe.rpc_id(1, probe_id)
+
+
+func _is_client_transport_connected() -> bool:
+	return is_client() and peer != null \
+			and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+func _fail_client_connection(message: String) -> void:
+	if not is_client():
+		return
+	stop_session()
+	session_failed.emit(message)
+
+
 func _on_connected_to_host() -> void:
-	if is_client():
-		var local_peer_id := multiplayer.get_unique_id()
-		if local_peer_id > 0:
-			local_selection["peer_id"] = local_peer_id
-		request_join_world.rpc_id(1, _make_join_request())
+	if not is_client() or client_transport_ready or not _is_client_transport_connected():
+		return
+	client_transport_ready = true
+	client_connection_elapsed = 0.0
+	print("[CooperativeSession] Steam P2P connected to host")
+	var local_peer_id := multiplayer.get_unique_id()
+	if local_peer_id > 0:
+		local_selection["peer_id"] = local_peer_id
+	request_join_world.rpc_id(1, _make_join_request())
 
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -379,14 +485,12 @@ func _on_peer_disconnected(peer_id: int) -> void:
 
 func _on_connection_failed() -> void:
 	if is_client():
-		session_failed.emit("无法连接 Steam 房主。")
-		stop_session()
+		_fail_client_connection("无法连接 Steam 房主；本次连接已释放，仍在当前 Lobby，可重新尝试。")
 
 
 func _on_server_disconnected() -> void:
 	if is_client():
-		session_failed.emit("Steam 房主已离开合作世界。")
-		stop_session()
+		_fail_client_connection("Steam 房主已离开合作世界；本次连接已释放。")
 
 
 func _make_join_token() -> String:
@@ -688,7 +792,10 @@ func _finalize_join_request(sender_id: int, session: Dictionary) -> void:
 
 
 func submit_action(action_type: String, payload: Dictionary = {}) -> void:
-	if not is_client():
+	# create_client() returns before Steam P2P has reached CONNECTED. Input can
+	# already be produced by the local player during that window, so never call
+	# rpc_id() against a peer that is still connecting or has been released.
+	if not _is_client_transport_connected():
 		return
 	if action_type == "ingredient_action" and str(payload.get("station_kind", "")) == "cargo_car":
 		CARGO_CAR_DEBUG.log(
@@ -699,6 +806,52 @@ func submit_action(action_type: String, payload: Dictionary = {}) -> void:
 		request_unreliable_game_action.rpc_id(1, action_type, payload)
 	else:
 		request_reliable_game_action.rpc_id(1, action_type, payload)
+
+
+@rpc("any_peer", "call_remote", "unreliable", 6)
+func request_rtt_probe(probe_id: int) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not _is_connected_remote_peer(sender_id):
+		return
+	receive_rtt_probe_response.rpc_id(sender_id, probe_id)
+
+
+@rpc("authority", "call_remote", "unreliable", 6)
+func receive_rtt_probe_response(probe_id: int) -> void:
+	if not is_client():
+		return
+	var sent_value: Variant = rtt_probe_sent_msec.get(probe_id, null)
+	if sent_value == null:
+		return
+	rtt_probe_sent_msec.erase(probe_id)
+	last_rtt_ms = maxf(0.0, float(Time.get_ticks_msec() - int(sent_value)))
+	peer_rtt_ms[1] = last_rtt_ms
+	connection_latency_updated.emit(1, last_rtt_ms)
+	if Time.get_ticks_msec() - rtt_last_log_msec >= int(RTT_LOG_INTERVAL_SECONDS * 1000.0):
+		rtt_last_log_msec = Time.get_ticks_msec()
+		print("[CooperativeRTT] client -> host Steam P2P RTT: %.1f ms" % last_rtt_ms)
+	if _is_client_transport_connected():
+		report_rtt_probe.rpc_id(1, probe_id, last_rtt_ms)
+
+
+@rpc("any_peer", "call_remote", "unreliable", 6)
+func report_rtt_probe(probe_id: int, rtt_ms: float) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not _is_connected_remote_peer(sender_id):
+		return
+	var measured_rtt := clampf(rtt_ms, 0.0, 60000.0)
+	peer_rtt_ms[sender_id] = measured_rtt
+	connection_latency_updated.emit(sender_id, measured_rtt)
+	if Time.get_ticks_msec() - rtt_last_log_msec >= int(RTT_LOG_INTERVAL_SECONDS * 1000.0):
+		rtt_last_log_msec = Time.get_ticks_msec()
+		print(
+			"[CooperativeRTT] host <- peer=%d Steam P2P RTT reported by client: %.1f ms (probe=%d)"
+			% [sender_id, measured_rtt, probe_id]
+		)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered", 0)

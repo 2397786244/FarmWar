@@ -90,9 +90,9 @@
   },
   "version": "2.0.0",
   "weather": {
-    "clear_weather_probability": 0.2,
-    "eclipse_weather_probability": 0.0685714285714286,
+    "clear_weather_probability": 0.92,
+    "eclipse_weather_probability": 0.00685714285714286,
     "rain_intensity": 0.82,
-    "rain_weather_probability": 0.731428571428571
+    "rain_weather_probability": 0.0731428571428571
   }
 }

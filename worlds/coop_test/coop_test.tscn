@@ -1615,7 +1615,7 @@ roughness = 0.98
 script = ExtResource("32_5n7k7")
 surfaces = Array[ExtResource("33_ljio5")]([SubResource("Resource_que2d"), SubResource("Resource_vbhbm"), SubResource("Resource_vono2"), SubResource("Resource_5mq1k")])
 
-[node name="coop_test" type="Node3D" unique_id=1044711447]
+[node name="coop_test" type="Node3D" unique_id=900474025]
 script = ExtResource("1_34jx1")
 loading_map_name = "coop_test"
 metadata/farmwar_map_format_version = 5
@@ -1628,10 +1628,10 @@ metadata/farmwar_terrain_winding_version = 2
 metadata/farmwar_editor_generated = true
 metadata/farmwar_ai_configuration = []
 metadata/farmwar_weather_configuration = {
-"clear_weather_probability": 0.20000000000000007,
-"eclipse_weather_probability": 0.06857142857142863,
+"clear_weather_probability": 0.92,
+"eclipse_weather_probability": 0.006857142857142861,
 "rain_intensity": 0.82,
-"rain_weather_probability": 0.7314285714285712
+"rain_weather_probability": 0.0731428571428571
 }
 metadata/terrain_origin = Vector2(-128, -128)
 metadata/terrain_vertex_spacing = 1.0
@@ -1681,100 +1681,100 @@ metadata/manual_grass = {
 }
 metadata/integrated_systems = ["explicit_ground_static_body", "dynamic_navigation_chunk_grid_64m", "dynamic_height_terrain", "terrain_foundation_and_skirt", "surface_mask", "manual_grass_multimesh", "continuous_curve_roads", "water_bodies", "day_night_gameplay_only", "weather_system", "cloud_system", "size_aware_far_scenery", "tree_resource_multimesh", "giant_crop_spawns", "wild_animal_spawns", "independent_red_blue_team_spawns", "building_content_browser", "building_placement", "object_transform_editor", "farmland_field_generator", "neutral_crop_generator", "facility_catalog", "static_kitchen_facilities", "static_defense_facilities", "enemy_squad_generators", "persistent_squad_target_points", "zombie_generators"]
 
-[node name="Sun" type="DirectionalLight3D" parent="." unique_id=2087314902]
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=604344870]
 transform = Transform3D(0.36321625, -0.810538, 0.45945856, 0, 0.49313745, 0.8699514, -0.9317049, -0.3159805, 0.17911553, 0, 0, 0)
 light_color = Color(1, 0.95, 0.82, 1)
 light_energy = 1.1428902
 shadow_enabled = true
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1493978932]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1146806548]
 environment = SubResource("Environment_dgmyc")
 
-[node name="DynamicNavigationChunkGrid" type="Node3D" parent="." unique_id=1589349440]
+[node name="DynamicNavigationChunkGrid" type="Node3D" parent="." unique_id=523808323]
 script = ExtResource("2_ed0sg")
 ground_source_root_path = NodePath("../Ground/Grass")
 
-[node name="NavigationRegion_00_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1062125913]
+[node name="NavigationRegion_00_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=222267122]
 navigation_mesh = SubResource("NavigationMesh_df6ts")
 metadata/navigation_chunk_coordinate = Vector2i(0, 0)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_01_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=448264844]
+[node name="NavigationRegion_01_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=292687692]
 navigation_mesh = SubResource("NavigationMesh_upbdg")
 metadata/navigation_chunk_coordinate = Vector2i(1, 0)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_02_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1507621793]
+[node name="NavigationRegion_02_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1865476830]
 navigation_mesh = SubResource("NavigationMesh_qdheh")
 metadata/navigation_chunk_coordinate = Vector2i(2, 0)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_03_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=2039807470]
+[node name="NavigationRegion_03_00" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=2119638073]
 navigation_mesh = SubResource("NavigationMesh_cqjy8")
 metadata/navigation_chunk_coordinate = Vector2i(3, 0)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_00_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1179120036]
+[node name="NavigationRegion_00_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=2007515131]
 navigation_mesh = SubResource("NavigationMesh_unwc7")
 metadata/navigation_chunk_coordinate = Vector2i(0, 1)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_01_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1533375267]
+[node name="NavigationRegion_01_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=584583263]
 navigation_mesh = SubResource("NavigationMesh_kd6yy")
 metadata/navigation_chunk_coordinate = Vector2i(1, 1)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_02_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=2024667810]
+[node name="NavigationRegion_02_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1299689931]
 navigation_mesh = SubResource("NavigationMesh_awwv2")
 metadata/navigation_chunk_coordinate = Vector2i(2, 1)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_03_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1221830428]
+[node name="NavigationRegion_03_01" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1631693983]
 navigation_mesh = SubResource("NavigationMesh_8saj3")
 metadata/navigation_chunk_coordinate = Vector2i(3, 1)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_00_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1765917122]
+[node name="NavigationRegion_00_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=710638800]
 navigation_mesh = SubResource("NavigationMesh_rje53")
 metadata/navigation_chunk_coordinate = Vector2i(0, 2)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_01_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=965671429]
+[node name="NavigationRegion_01_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1656792006]
 navigation_mesh = SubResource("NavigationMesh_lotgq")
 metadata/navigation_chunk_coordinate = Vector2i(1, 2)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_02_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=315603360]
+[node name="NavigationRegion_02_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=795444232]
 navigation_mesh = SubResource("NavigationMesh_r08jh")
 metadata/navigation_chunk_coordinate = Vector2i(2, 2)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_03_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1344860367]
+[node name="NavigationRegion_03_02" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=124005366]
 navigation_mesh = SubResource("NavigationMesh_ui822")
 metadata/navigation_chunk_coordinate = Vector2i(3, 2)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_00_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=15650055]
+[node name="NavigationRegion_00_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=76753707]
 navigation_mesh = SubResource("NavigationMesh_3i7in")
 metadata/navigation_chunk_coordinate = Vector2i(0, 3)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_01_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1190754673]
+[node name="NavigationRegion_01_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1008215568]
 navigation_mesh = SubResource("NavigationMesh_ghdir")
 metadata/navigation_chunk_coordinate = Vector2i(1, 3)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_02_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=1300326236]
+[node name="NavigationRegion_02_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=713264243]
 navigation_mesh = SubResource("NavigationMesh_4s60v")
 metadata/navigation_chunk_coordinate = Vector2i(2, 3)
 metadata/navigation_chunk_size = 64.0
 
-[node name="NavigationRegion_03_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=2051967070]
+[node name="NavigationRegion_03_03" type="NavigationRegion3D" parent="DynamicNavigationChunkGrid" unique_id=244351954]
 navigation_mesh = SubResource("NavigationMesh_iurw5")
 metadata/navigation_chunk_coordinate = Vector2i(3, 3)
 metadata/navigation_chunk_size = 64.0
 
-[node name="CloudSystem" type="Node3D" parent="." unique_id=1139827274 instance=ExtResource("3_jd4gr")]
+[node name="CloudSystem" type="Node3D" parent="." unique_id=1200280885 instance=ExtResource("3_jd4gr")]
 script = ExtResource("4_cjdpf")
 large_tower_scene = ExtResource("5_fau1q")
 long_wispy_scene = ExtResource("6_5p0cp")
@@ -1783,1184 +1783,1184 @@ small_puff_scene = ExtResource("8_xtcjv")
 coverage_size = Vector2(1024, 1024)
 cloud_visibility_distance = 500.0
 
-[node name="DayNightSystem" type="Node3D" parent="." unique_id=433753656 instance=ExtResource("9_xk658")]
+[node name="DayNightSystem" type="Node3D" parent="." unique_id=1835974469 instance=ExtResource("9_xk658")]
 script = ExtResource("10_ngfal")
 initial_hour = 10.0
 
-[node name="WeatherSystem" type="Node3D" parent="." unique_id=796276075 instance=ExtResource("11_8rvav")]
+[node name="WeatherSystem" type="Node3D" parent="." unique_id=1606493598 instance=ExtResource("11_8rvav")]
 script = ExtResource("12_tqm1i")
-clear_weather_probability = 0.20000000000000007
-rain_weather_probability = 0.7314285714285712
-eclipse_weather_probability = 0.06857142857142863
-rain_cycle_probability = 0.7314285714285712
-eclipse_daily_probability = 0.06857142857142863
+clear_weather_probability = 0.92
+rain_weather_probability = 0.0731428571428571
+eclipse_weather_probability = 0.006857142857142861
+rain_cycle_probability = 0.0731428571428571
+eclipse_daily_probability = 0.006857142857142861
 
-[node name="Ground" type="StaticBody3D" parent="." unique_id=1705619517]
+[node name="Ground" type="StaticBody3D" parent="." unique_id=34383666]
 collision_mask = 14334
 metadata/farmwar_editor_terrain = true
 
-[node name="Grass" type="Node3D" parent="Ground" unique_id=1330673005]
+[node name="Grass" type="Node3D" parent="Ground" unique_id=970321326]
 
-[node name="TerrainChunk_0_0" type="Node3D" parent="Ground/Grass" unique_id=1112084844]
+[node name="TerrainChunk_0_0" type="Node3D" parent="Ground/Grass" unique_id=1084631632]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -112)
 metadata/chunk_coordinate = Vector2i(0, 0)
 metadata/start_sample = Vector2i(0, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_0" unique_id=1834480927]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_0" unique_id=481815311]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_pgd86")
 
-[node name="TerrainChunk_1_0" type="Node3D" parent="Ground/Grass" unique_id=2061532059]
+[node name="TerrainChunk_1_0" type="Node3D" parent="Ground/Grass" unique_id=1414037425]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -112)
 metadata/chunk_coordinate = Vector2i(1, 0)
 metadata/start_sample = Vector2i(32, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_0" unique_id=1708512769]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_0" unique_id=1653440978]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_anrsh")
 
-[node name="TerrainChunk_2_0" type="Node3D" parent="Ground/Grass" unique_id=538814076]
+[node name="TerrainChunk_2_0" type="Node3D" parent="Ground/Grass" unique_id=1583820213]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -112)
 metadata/chunk_coordinate = Vector2i(2, 0)
 metadata/start_sample = Vector2i(64, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_0" unique_id=1496212582]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_0" unique_id=2007013052]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_pa2j3")
 
-[node name="TerrainChunk_3_0" type="Node3D" parent="Ground/Grass" unique_id=1483319888]
+[node name="TerrainChunk_3_0" type="Node3D" parent="Ground/Grass" unique_id=2054473124]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -112)
 metadata/chunk_coordinate = Vector2i(3, 0)
 metadata/start_sample = Vector2i(96, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_0" unique_id=1552462440]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_0" unique_id=1435364075]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_5ug8k")
 
-[node name="TerrainChunk_4_0" type="Node3D" parent="Ground/Grass" unique_id=1991315771]
+[node name="TerrainChunk_4_0" type="Node3D" parent="Ground/Grass" unique_id=811701424]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -112)
 metadata/chunk_coordinate = Vector2i(4, 0)
 metadata/start_sample = Vector2i(128, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_0" unique_id=707537121]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_0" unique_id=576601883]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_lb5ef")
 
-[node name="TerrainChunk_5_0" type="Node3D" parent="Ground/Grass" unique_id=1675048431]
+[node name="TerrainChunk_5_0" type="Node3D" parent="Ground/Grass" unique_id=1319276263]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -112)
 metadata/chunk_coordinate = Vector2i(5, 0)
 metadata/start_sample = Vector2i(160, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_0" unique_id=221535647]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_0" unique_id=456572198]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_7gmsx")
 
-[node name="TerrainChunk_6_0" type="Node3D" parent="Ground/Grass" unique_id=2091244783]
+[node name="TerrainChunk_6_0" type="Node3D" parent="Ground/Grass" unique_id=1036848747]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -112)
 metadata/chunk_coordinate = Vector2i(6, 0)
 metadata/start_sample = Vector2i(192, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_0" unique_id=718769200]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_0" unique_id=1217771316]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_s6n1q")
 
-[node name="TerrainChunk_7_0" type="Node3D" parent="Ground/Grass" unique_id=1732331774]
+[node name="TerrainChunk_7_0" type="Node3D" parent="Ground/Grass" unique_id=270689389]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -112)
 metadata/chunk_coordinate = Vector2i(7, 0)
 metadata/start_sample = Vector2i(224, 0)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_0" unique_id=930136264]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_0" unique_id=1090112165]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_8gc0m")
 
-[node name="TerrainChunk_0_1" type="Node3D" parent="Ground/Grass" unique_id=1459943476]
+[node name="TerrainChunk_0_1" type="Node3D" parent="Ground/Grass" unique_id=1949399076]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -80)
 metadata/chunk_coordinate = Vector2i(0, 1)
 metadata/start_sample = Vector2i(0, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_1" unique_id=543898021]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_1" unique_id=1275415872]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_r5jd1")
 
-[node name="TerrainChunk_1_1" type="Node3D" parent="Ground/Grass" unique_id=1303499155]
+[node name="TerrainChunk_1_1" type="Node3D" parent="Ground/Grass" unique_id=1520463832]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -80)
 metadata/chunk_coordinate = Vector2i(1, 1)
 metadata/start_sample = Vector2i(32, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_1" unique_id=992608269]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_1" unique_id=1355058043]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_ml3tb")
 
-[node name="TerrainChunk_2_1" type="Node3D" parent="Ground/Grass" unique_id=472802160]
+[node name="TerrainChunk_2_1" type="Node3D" parent="Ground/Grass" unique_id=1314192248]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -80)
 metadata/chunk_coordinate = Vector2i(2, 1)
 metadata/start_sample = Vector2i(64, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_1" unique_id=1202259828]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_1" unique_id=926400190]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_gvomb")
 
-[node name="TerrainChunk_3_1" type="Node3D" parent="Ground/Grass" unique_id=100999746]
+[node name="TerrainChunk_3_1" type="Node3D" parent="Ground/Grass" unique_id=1797309800]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -80)
 metadata/chunk_coordinate = Vector2i(3, 1)
 metadata/start_sample = Vector2i(96, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_1" unique_id=1586453741]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_1" unique_id=2008428649]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_kg2nx")
 
-[node name="TerrainChunk_4_1" type="Node3D" parent="Ground/Grass" unique_id=767274250]
+[node name="TerrainChunk_4_1" type="Node3D" parent="Ground/Grass" unique_id=631958979]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -80)
 metadata/chunk_coordinate = Vector2i(4, 1)
 metadata/start_sample = Vector2i(128, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_1" unique_id=94882713]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_1" unique_id=476604303]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_h5t76")
 
-[node name="TerrainChunk_5_1" type="Node3D" parent="Ground/Grass" unique_id=438717920]
+[node name="TerrainChunk_5_1" type="Node3D" parent="Ground/Grass" unique_id=1279545754]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -80)
 metadata/chunk_coordinate = Vector2i(5, 1)
 metadata/start_sample = Vector2i(160, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_1" unique_id=2015768644]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_1" unique_id=1019938048]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_qte66")
 
-[node name="TerrainChunk_6_1" type="Node3D" parent="Ground/Grass" unique_id=969920427]
+[node name="TerrainChunk_6_1" type="Node3D" parent="Ground/Grass" unique_id=765755445]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -80)
 metadata/chunk_coordinate = Vector2i(6, 1)
 metadata/start_sample = Vector2i(192, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_1" unique_id=1916753073]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_1" unique_id=83432835]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_vrb8u")
 
-[node name="TerrainChunk_7_1" type="Node3D" parent="Ground/Grass" unique_id=969885198]
+[node name="TerrainChunk_7_1" type="Node3D" parent="Ground/Grass" unique_id=1315368773]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -80)
 metadata/chunk_coordinate = Vector2i(7, 1)
 metadata/start_sample = Vector2i(224, 32)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_1" unique_id=2077890304]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_1" unique_id=1742076798]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_iay6o")
 
-[node name="TerrainChunk_0_2" type="Node3D" parent="Ground/Grass" unique_id=556198577]
+[node name="TerrainChunk_0_2" type="Node3D" parent="Ground/Grass" unique_id=976027143]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -48)
 metadata/chunk_coordinate = Vector2i(0, 2)
 metadata/start_sample = Vector2i(0, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_2" unique_id=1165811718]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_2" unique_id=1998390778]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_1bn1i")
 
-[node name="TerrainChunk_1_2" type="Node3D" parent="Ground/Grass" unique_id=2028398085]
+[node name="TerrainChunk_1_2" type="Node3D" parent="Ground/Grass" unique_id=755333368]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -48)
 metadata/chunk_coordinate = Vector2i(1, 2)
 metadata/start_sample = Vector2i(32, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_2" unique_id=1430107720]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_2" unique_id=1251288758]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_yot2j")
 
-[node name="TerrainChunk_2_2" type="Node3D" parent="Ground/Grass" unique_id=1299397458]
+[node name="TerrainChunk_2_2" type="Node3D" parent="Ground/Grass" unique_id=1513778137]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -48)
 metadata/chunk_coordinate = Vector2i(2, 2)
 metadata/start_sample = Vector2i(64, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_2" unique_id=1715913536]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_2" unique_id=1668305594]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_b6qdf")
 
-[node name="TerrainChunk_3_2" type="Node3D" parent="Ground/Grass" unique_id=268543208]
+[node name="TerrainChunk_3_2" type="Node3D" parent="Ground/Grass" unique_id=301873741]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -48)
 metadata/chunk_coordinate = Vector2i(3, 2)
 metadata/start_sample = Vector2i(96, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_2" unique_id=859170217]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_2" unique_id=1908601701]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_jc6ta")
 
-[node name="TerrainChunk_4_2" type="Node3D" parent="Ground/Grass" unique_id=1075309038]
+[node name="TerrainChunk_4_2" type="Node3D" parent="Ground/Grass" unique_id=1436958585]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -48)
 metadata/chunk_coordinate = Vector2i(4, 2)
 metadata/start_sample = Vector2i(128, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_2" unique_id=1842270155]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_2" unique_id=380515802]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_kcwgx")
 
-[node name="TerrainChunk_5_2" type="Node3D" parent="Ground/Grass" unique_id=778479244]
+[node name="TerrainChunk_5_2" type="Node3D" parent="Ground/Grass" unique_id=1653562972]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -48)
 metadata/chunk_coordinate = Vector2i(5, 2)
 metadata/start_sample = Vector2i(160, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_2" unique_id=1469424221]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_2" unique_id=1897681598]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_upm6s")
 
-[node name="TerrainChunk_6_2" type="Node3D" parent="Ground/Grass" unique_id=697814558]
+[node name="TerrainChunk_6_2" type="Node3D" parent="Ground/Grass" unique_id=388652931]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -48)
 metadata/chunk_coordinate = Vector2i(6, 2)
 metadata/start_sample = Vector2i(192, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_2" unique_id=587067505]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_2" unique_id=1661273208]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_u5mpb")
 
-[node name="TerrainChunk_7_2" type="Node3D" parent="Ground/Grass" unique_id=1588350128]
+[node name="TerrainChunk_7_2" type="Node3D" parent="Ground/Grass" unique_id=913934324]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -48)
 metadata/chunk_coordinate = Vector2i(7, 2)
 metadata/start_sample = Vector2i(224, 64)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_2" unique_id=286114166]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_2" unique_id=2034232241]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_xwd3d")
 
-[node name="TerrainChunk_0_3" type="Node3D" parent="Ground/Grass" unique_id=1471478878]
+[node name="TerrainChunk_0_3" type="Node3D" parent="Ground/Grass" unique_id=137535591]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -16)
 metadata/chunk_coordinate = Vector2i(0, 3)
 metadata/start_sample = Vector2i(0, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_3" unique_id=1365382533]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_3" unique_id=548542385]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_qatml")
 
-[node name="TerrainChunk_1_3" type="Node3D" parent="Ground/Grass" unique_id=1907935769]
+[node name="TerrainChunk_1_3" type="Node3D" parent="Ground/Grass" unique_id=558765299]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -16)
 metadata/chunk_coordinate = Vector2i(1, 3)
 metadata/start_sample = Vector2i(32, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_3" unique_id=1567079429]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_3" unique_id=1581010420]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_ly0vy")
 
-[node name="TerrainChunk_2_3" type="Node3D" parent="Ground/Grass" unique_id=1130740009]
+[node name="TerrainChunk_2_3" type="Node3D" parent="Ground/Grass" unique_id=1952614371]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -16)
 metadata/chunk_coordinate = Vector2i(2, 3)
 metadata/start_sample = Vector2i(64, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_3" unique_id=962542598]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_3" unique_id=1936344697]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_o53bc")
 
-[node name="TerrainChunk_3_3" type="Node3D" parent="Ground/Grass" unique_id=2052743423]
+[node name="TerrainChunk_3_3" type="Node3D" parent="Ground/Grass" unique_id=819589127]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -16)
 metadata/chunk_coordinate = Vector2i(3, 3)
 metadata/start_sample = Vector2i(96, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_3" unique_id=1006703190]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_3" unique_id=867714150]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_533jx")
 
-[node name="TerrainChunk_4_3" type="Node3D" parent="Ground/Grass" unique_id=1772311814]
+[node name="TerrainChunk_4_3" type="Node3D" parent="Ground/Grass" unique_id=2017437630]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -16)
 metadata/chunk_coordinate = Vector2i(4, 3)
 metadata/start_sample = Vector2i(128, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_3" unique_id=837809615]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_3" unique_id=799483989]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_n0mtl")
 
-[node name="TerrainChunk_5_3" type="Node3D" parent="Ground/Grass" unique_id=5753538]
+[node name="TerrainChunk_5_3" type="Node3D" parent="Ground/Grass" unique_id=1555686]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -16)
 metadata/chunk_coordinate = Vector2i(5, 3)
 metadata/start_sample = Vector2i(160, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_3" unique_id=1591573656]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_3" unique_id=1136834237]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_rfnvv")
 
-[node name="TerrainChunk_6_3" type="Node3D" parent="Ground/Grass" unique_id=737091599]
+[node name="TerrainChunk_6_3" type="Node3D" parent="Ground/Grass" unique_id=231927850]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -16)
 metadata/chunk_coordinate = Vector2i(6, 3)
 metadata/start_sample = Vector2i(192, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_3" unique_id=1485599816]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_3" unique_id=1886775890]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_1se36")
 
-[node name="TerrainChunk_7_3" type="Node3D" parent="Ground/Grass" unique_id=322906059]
+[node name="TerrainChunk_7_3" type="Node3D" parent="Ground/Grass" unique_id=620765671]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -16)
 metadata/chunk_coordinate = Vector2i(7, 3)
 metadata/start_sample = Vector2i(224, 96)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_3" unique_id=312473993]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_3" unique_id=998659971]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_blmy1")
 
-[node name="TerrainChunk_0_4" type="Node3D" parent="Ground/Grass" unique_id=618407220]
+[node name="TerrainChunk_0_4" type="Node3D" parent="Ground/Grass" unique_id=170521665]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 16)
 metadata/chunk_coordinate = Vector2i(0, 4)
 metadata/start_sample = Vector2i(0, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_4" unique_id=951918446]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_4" unique_id=1476298761]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_0gprm")
 
-[node name="TerrainChunk_1_4" type="Node3D" parent="Ground/Grass" unique_id=316126945]
+[node name="TerrainChunk_1_4" type="Node3D" parent="Ground/Grass" unique_id=1169661929]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 16)
 metadata/chunk_coordinate = Vector2i(1, 4)
 metadata/start_sample = Vector2i(32, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_4" unique_id=1168614332]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_4" unique_id=628257659]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_q48lo")
 
-[node name="TerrainChunk_2_4" type="Node3D" parent="Ground/Grass" unique_id=1970254565]
+[node name="TerrainChunk_2_4" type="Node3D" parent="Ground/Grass" unique_id=777060173]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 16)
 metadata/chunk_coordinate = Vector2i(2, 4)
 metadata/start_sample = Vector2i(64, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_4" unique_id=1864142054]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_4" unique_id=1269221596]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_w55nu")
 
-[node name="TerrainChunk_3_4" type="Node3D" parent="Ground/Grass" unique_id=1565779415]
+[node name="TerrainChunk_3_4" type="Node3D" parent="Ground/Grass" unique_id=125508087]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 16)
 metadata/chunk_coordinate = Vector2i(3, 4)
 metadata/start_sample = Vector2i(96, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_4" unique_id=854379010]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_4" unique_id=921412497]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_nx5nk")
 
-[node name="TerrainChunk_4_4" type="Node3D" parent="Ground/Grass" unique_id=2059131199]
+[node name="TerrainChunk_4_4" type="Node3D" parent="Ground/Grass" unique_id=1995902050]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 16)
 metadata/chunk_coordinate = Vector2i(4, 4)
 metadata/start_sample = Vector2i(128, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_4" unique_id=947846239]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_4" unique_id=1194599508]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_us6bj")
 
-[node name="TerrainChunk_5_4" type="Node3D" parent="Ground/Grass" unique_id=2140591450]
+[node name="TerrainChunk_5_4" type="Node3D" parent="Ground/Grass" unique_id=613686807]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 16)
 metadata/chunk_coordinate = Vector2i(5, 4)
 metadata/start_sample = Vector2i(160, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_4" unique_id=1085102962]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_4" unique_id=872372412]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_na208")
 
-[node name="TerrainChunk_6_4" type="Node3D" parent="Ground/Grass" unique_id=1557926261]
+[node name="TerrainChunk_6_4" type="Node3D" parent="Ground/Grass" unique_id=777726356]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 16)
 metadata/chunk_coordinate = Vector2i(6, 4)
 metadata/start_sample = Vector2i(192, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_4" unique_id=1678823654]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_4" unique_id=444225388]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_7c2y7")
 
-[node name="TerrainChunk_7_4" type="Node3D" parent="Ground/Grass" unique_id=1958485336]
+[node name="TerrainChunk_7_4" type="Node3D" parent="Ground/Grass" unique_id=1336061843]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 16)
 metadata/chunk_coordinate = Vector2i(7, 4)
 metadata/start_sample = Vector2i(224, 128)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_4" unique_id=1912850291]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_4" unique_id=450232029]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_aucm4")
 
-[node name="TerrainChunk_0_5" type="Node3D" parent="Ground/Grass" unique_id=1603194821]
+[node name="TerrainChunk_0_5" type="Node3D" parent="Ground/Grass" unique_id=288541780]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 48)
 metadata/chunk_coordinate = Vector2i(0, 5)
 metadata/start_sample = Vector2i(0, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_5" unique_id=1429092481]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_5" unique_id=591641226]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_uxa13")
 
-[node name="TerrainChunk_1_5" type="Node3D" parent="Ground/Grass" unique_id=1665909730]
+[node name="TerrainChunk_1_5" type="Node3D" parent="Ground/Grass" unique_id=1059010641]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 48)
 metadata/chunk_coordinate = Vector2i(1, 5)
 metadata/start_sample = Vector2i(32, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_5" unique_id=1973612396]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_5" unique_id=1377245045]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_ae3qf")
 
-[node name="TerrainChunk_2_5" type="Node3D" parent="Ground/Grass" unique_id=1464671970]
+[node name="TerrainChunk_2_5" type="Node3D" parent="Ground/Grass" unique_id=857455215]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 48)
 metadata/chunk_coordinate = Vector2i(2, 5)
 metadata/start_sample = Vector2i(64, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_5" unique_id=544504379]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_5" unique_id=471625481]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_7ccwf")
 
-[node name="TerrainChunk_3_5" type="Node3D" parent="Ground/Grass" unique_id=929329374]
+[node name="TerrainChunk_3_5" type="Node3D" parent="Ground/Grass" unique_id=434782978]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 48)
 metadata/chunk_coordinate = Vector2i(3, 5)
 metadata/start_sample = Vector2i(96, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_5" unique_id=477084125]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_5" unique_id=1660303641]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_72etu")
 
-[node name="TerrainChunk_4_5" type="Node3D" parent="Ground/Grass" unique_id=1500423631]
+[node name="TerrainChunk_4_5" type="Node3D" parent="Ground/Grass" unique_id=891400302]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 48)
 metadata/chunk_coordinate = Vector2i(4, 5)
 metadata/start_sample = Vector2i(128, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_5" unique_id=1450255432]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_5" unique_id=1996414024]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_d533g")
 
-[node name="TerrainChunk_5_5" type="Node3D" parent="Ground/Grass" unique_id=2141082423]
+[node name="TerrainChunk_5_5" type="Node3D" parent="Ground/Grass" unique_id=1712505753]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 48)
 metadata/chunk_coordinate = Vector2i(5, 5)
 metadata/start_sample = Vector2i(160, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_5" unique_id=1271534928]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_5" unique_id=281324770]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_b6unu")
 
-[node name="TerrainChunk_6_5" type="Node3D" parent="Ground/Grass" unique_id=1318148497]
+[node name="TerrainChunk_6_5" type="Node3D" parent="Ground/Grass" unique_id=611046254]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 48)
 metadata/chunk_coordinate = Vector2i(6, 5)
 metadata/start_sample = Vector2i(192, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_5" unique_id=1955129414]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_5" unique_id=1859230603]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_kyxal")
 
-[node name="TerrainChunk_7_5" type="Node3D" parent="Ground/Grass" unique_id=1786904367]
+[node name="TerrainChunk_7_5" type="Node3D" parent="Ground/Grass" unique_id=614576884]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 48)
 metadata/chunk_coordinate = Vector2i(7, 5)
 metadata/start_sample = Vector2i(224, 160)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_5" unique_id=1080065004]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_5" unique_id=439881677]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_ergcs")
 
-[node name="TerrainChunk_0_6" type="Node3D" parent="Ground/Grass" unique_id=75733666]
+[node name="TerrainChunk_0_6" type="Node3D" parent="Ground/Grass" unique_id=165315814]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 80)
 metadata/chunk_coordinate = Vector2i(0, 6)
 metadata/start_sample = Vector2i(0, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_6" unique_id=1548106221]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_6" unique_id=1258980650]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_vtm2x")
 
-[node name="TerrainChunk_1_6" type="Node3D" parent="Ground/Grass" unique_id=2101264207]
+[node name="TerrainChunk_1_6" type="Node3D" parent="Ground/Grass" unique_id=824183947]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 80)
 metadata/chunk_coordinate = Vector2i(1, 6)
 metadata/start_sample = Vector2i(32, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_6" unique_id=454749782]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_6" unique_id=305154258]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_3rxq2")
 
-[node name="TerrainChunk_2_6" type="Node3D" parent="Ground/Grass" unique_id=1174426242]
+[node name="TerrainChunk_2_6" type="Node3D" parent="Ground/Grass" unique_id=989802248]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 80)
 metadata/chunk_coordinate = Vector2i(2, 6)
 metadata/start_sample = Vector2i(64, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_6" unique_id=877175023]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_6" unique_id=1706863074]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_jf5lj")
 
-[node name="TerrainChunk_3_6" type="Node3D" parent="Ground/Grass" unique_id=2019977117]
+[node name="TerrainChunk_3_6" type="Node3D" parent="Ground/Grass" unique_id=152701961]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 80)
 metadata/chunk_coordinate = Vector2i(3, 6)
 metadata/start_sample = Vector2i(96, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_6" unique_id=1462313972]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_6" unique_id=220354542]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_5im7s")
 
-[node name="TerrainChunk_4_6" type="Node3D" parent="Ground/Grass" unique_id=1129297505]
+[node name="TerrainChunk_4_6" type="Node3D" parent="Ground/Grass" unique_id=1882794901]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 80)
 metadata/chunk_coordinate = Vector2i(4, 6)
 metadata/start_sample = Vector2i(128, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_6" unique_id=1884711196]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_6" unique_id=463341040]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_giwu0")
 
-[node name="TerrainChunk_5_6" type="Node3D" parent="Ground/Grass" unique_id=413200777]
+[node name="TerrainChunk_5_6" type="Node3D" parent="Ground/Grass" unique_id=61091136]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 80)
 metadata/chunk_coordinate = Vector2i(5, 6)
 metadata/start_sample = Vector2i(160, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_6" unique_id=1041261069]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_6" unique_id=184446807]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_xx61x")
 
-[node name="TerrainChunk_6_6" type="Node3D" parent="Ground/Grass" unique_id=1580775571]
+[node name="TerrainChunk_6_6" type="Node3D" parent="Ground/Grass" unique_id=275338169]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 80)
 metadata/chunk_coordinate = Vector2i(6, 6)
 metadata/start_sample = Vector2i(192, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_6" unique_id=1637147166]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_6" unique_id=1273139893]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_qd1ct")
 
-[node name="TerrainChunk_7_6" type="Node3D" parent="Ground/Grass" unique_id=568595520]
+[node name="TerrainChunk_7_6" type="Node3D" parent="Ground/Grass" unique_id=1285918927]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 80)
 metadata/chunk_coordinate = Vector2i(7, 6)
 metadata/start_sample = Vector2i(224, 192)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_6" unique_id=156584538]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_6" unique_id=562481514]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_kdb12")
 
-[node name="TerrainChunk_0_7" type="Node3D" parent="Ground/Grass" unique_id=684382411]
+[node name="TerrainChunk_0_7" type="Node3D" parent="Ground/Grass" unique_id=62013517]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 112)
 metadata/chunk_coordinate = Vector2i(0, 7)
 metadata/start_sample = Vector2i(0, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_7" unique_id=195275311]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_0_7" unique_id=636602394]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_7e727")
 
-[node name="TerrainChunk_1_7" type="Node3D" parent="Ground/Grass" unique_id=319117259]
+[node name="TerrainChunk_1_7" type="Node3D" parent="Ground/Grass" unique_id=499281748]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 112)
 metadata/chunk_coordinate = Vector2i(1, 7)
 metadata/start_sample = Vector2i(32, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_7" unique_id=174919210]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_1_7" unique_id=774814564]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_qbih3")
 
-[node name="TerrainChunk_2_7" type="Node3D" parent="Ground/Grass" unique_id=966998036]
+[node name="TerrainChunk_2_7" type="Node3D" parent="Ground/Grass" unique_id=654603258]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 112)
 metadata/chunk_coordinate = Vector2i(2, 7)
 metadata/start_sample = Vector2i(64, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_7" unique_id=1025887272]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_2_7" unique_id=1337319169]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_x08iy")
 
-[node name="TerrainChunk_3_7" type="Node3D" parent="Ground/Grass" unique_id=1843884512]
+[node name="TerrainChunk_3_7" type="Node3D" parent="Ground/Grass" unique_id=1500859875]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 112)
 metadata/chunk_coordinate = Vector2i(3, 7)
 metadata/start_sample = Vector2i(96, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_7" unique_id=1333229794]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_3_7" unique_id=1001126648]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_ncvob")
 
-[node name="TerrainChunk_4_7" type="Node3D" parent="Ground/Grass" unique_id=960949617]
+[node name="TerrainChunk_4_7" type="Node3D" parent="Ground/Grass" unique_id=269215126]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 112)
 metadata/chunk_coordinate = Vector2i(4, 7)
 metadata/start_sample = Vector2i(128, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_7" unique_id=1495267902]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_4_7" unique_id=1758224475]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_mi553")
 
-[node name="TerrainChunk_5_7" type="Node3D" parent="Ground/Grass" unique_id=1867576554]
+[node name="TerrainChunk_5_7" type="Node3D" parent="Ground/Grass" unique_id=804964724]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 112)
 metadata/chunk_coordinate = Vector2i(5, 7)
 metadata/start_sample = Vector2i(160, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_7" unique_id=1433206541]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_5_7" unique_id=312677856]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_25rnl")
 
-[node name="TerrainChunk_6_7" type="Node3D" parent="Ground/Grass" unique_id=796381157]
+[node name="TerrainChunk_6_7" type="Node3D" parent="Ground/Grass" unique_id=2080977297]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 112)
 metadata/chunk_coordinate = Vector2i(6, 7)
 metadata/start_sample = Vector2i(192, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_7" unique_id=1804170406]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_6_7" unique_id=292261736]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_pdk6s")
 
-[node name="TerrainChunk_7_7" type="Node3D" parent="Ground/Grass" unique_id=2048289452]
+[node name="TerrainChunk_7_7" type="Node3D" parent="Ground/Grass" unique_id=30993824]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 112)
 metadata/chunk_coordinate = Vector2i(7, 7)
 metadata/start_sample = Vector2i(224, 224)
 metadata/cell_size = Vector2i(32, 32)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_7" unique_id=1675894592]
+[node name="Mesh" type="MeshInstance3D" parent="Ground/Grass/TerrainChunk_7_7" unique_id=2073937130]
 material_override = SubResource("ShaderMaterial_dytt3")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_lr6wt")
 
-[node name="TerrainCollision_0_0" type="CollisionShape3D" parent="Ground" unique_id=1536424348]
+[node name="TerrainCollision_0_0" type="CollisionShape3D" parent="Ground" unique_id=1605112649]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -112)
 shape = SubResource("HeightMapShape3D_gcrx0")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_0" type="CollisionShape3D" parent="Ground" unique_id=231600802]
+[node name="TerrainCollision_1_0" type="CollisionShape3D" parent="Ground" unique_id=424151206]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -112)
 shape = SubResource("HeightMapShape3D_u1kex")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_0" type="CollisionShape3D" parent="Ground" unique_id=1090890873]
+[node name="TerrainCollision_2_0" type="CollisionShape3D" parent="Ground" unique_id=230864738]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -112)
 shape = SubResource("HeightMapShape3D_m5cci")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_0" type="CollisionShape3D" parent="Ground" unique_id=756692731]
+[node name="TerrainCollision_3_0" type="CollisionShape3D" parent="Ground" unique_id=517138836]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -112)
 shape = SubResource("HeightMapShape3D_hsqxr")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_0" type="CollisionShape3D" parent="Ground" unique_id=1762889504]
+[node name="TerrainCollision_4_0" type="CollisionShape3D" parent="Ground" unique_id=1608109572]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -112)
 shape = SubResource("HeightMapShape3D_0sogm")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_0" type="CollisionShape3D" parent="Ground" unique_id=910295111]
+[node name="TerrainCollision_5_0" type="CollisionShape3D" parent="Ground" unique_id=1639714264]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -112)
 shape = SubResource("HeightMapShape3D_d6m8y")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_0" type="CollisionShape3D" parent="Ground" unique_id=951376464]
+[node name="TerrainCollision_6_0" type="CollisionShape3D" parent="Ground" unique_id=829121129]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -112)
 shape = SubResource("HeightMapShape3D_b0hod")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_0" type="CollisionShape3D" parent="Ground" unique_id=852091836]
+[node name="TerrainCollision_7_0" type="CollisionShape3D" parent="Ground" unique_id=439246938]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -112)
 shape = SubResource("HeightMapShape3D_niec6")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_1" type="CollisionShape3D" parent="Ground" unique_id=495917623]
+[node name="TerrainCollision_0_1" type="CollisionShape3D" parent="Ground" unique_id=1921958545]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -80)
 shape = SubResource("HeightMapShape3D_ip5km")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_1" type="CollisionShape3D" parent="Ground" unique_id=1494720689]
+[node name="TerrainCollision_1_1" type="CollisionShape3D" parent="Ground" unique_id=2146791850]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -80)
 shape = SubResource("HeightMapShape3D_j03qg")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_1" type="CollisionShape3D" parent="Ground" unique_id=1100952735]
+[node name="TerrainCollision_2_1" type="CollisionShape3D" parent="Ground" unique_id=880394606]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -80)
 shape = SubResource("HeightMapShape3D_7u0t3")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_1" type="CollisionShape3D" parent="Ground" unique_id=2115029491]
+[node name="TerrainCollision_3_1" type="CollisionShape3D" parent="Ground" unique_id=1755267454]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -80)
 shape = SubResource("HeightMapShape3D_se38w")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_1" type="CollisionShape3D" parent="Ground" unique_id=1242154551]
+[node name="TerrainCollision_4_1" type="CollisionShape3D" parent="Ground" unique_id=1275718214]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -80)
 shape = SubResource("HeightMapShape3D_1ejm8")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_1" type="CollisionShape3D" parent="Ground" unique_id=1673939147]
+[node name="TerrainCollision_5_1" type="CollisionShape3D" parent="Ground" unique_id=53746709]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -80)
 shape = SubResource("HeightMapShape3D_h3522")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_1" type="CollisionShape3D" parent="Ground" unique_id=1792146344]
+[node name="TerrainCollision_6_1" type="CollisionShape3D" parent="Ground" unique_id=899554236]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -80)
 shape = SubResource("HeightMapShape3D_o82y3")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_1" type="CollisionShape3D" parent="Ground" unique_id=1063570873]
+[node name="TerrainCollision_7_1" type="CollisionShape3D" parent="Ground" unique_id=975900986]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -80)
 shape = SubResource("HeightMapShape3D_nkvo8")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_2" type="CollisionShape3D" parent="Ground" unique_id=2040241782]
+[node name="TerrainCollision_0_2" type="CollisionShape3D" parent="Ground" unique_id=98341029]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -48)
 shape = SubResource("HeightMapShape3D_p687p")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_2" type="CollisionShape3D" parent="Ground" unique_id=2091656668]
+[node name="TerrainCollision_1_2" type="CollisionShape3D" parent="Ground" unique_id=529275861]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -48)
 shape = SubResource("HeightMapShape3D_4wulv")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_2" type="CollisionShape3D" parent="Ground" unique_id=1444988040]
+[node name="TerrainCollision_2_2" type="CollisionShape3D" parent="Ground" unique_id=129881541]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -48)
 shape = SubResource("HeightMapShape3D_d1kfc")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_2" type="CollisionShape3D" parent="Ground" unique_id=1161057168]
+[node name="TerrainCollision_3_2" type="CollisionShape3D" parent="Ground" unique_id=213767319]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -48)
 shape = SubResource("HeightMapShape3D_x2865")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_2" type="CollisionShape3D" parent="Ground" unique_id=1525514094]
+[node name="TerrainCollision_4_2" type="CollisionShape3D" parent="Ground" unique_id=562276543]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -48)
 shape = SubResource("HeightMapShape3D_xoj7g")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_2" type="CollisionShape3D" parent="Ground" unique_id=388193500]
+[node name="TerrainCollision_5_2" type="CollisionShape3D" parent="Ground" unique_id=573466067]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -48)
 shape = SubResource("HeightMapShape3D_joxhm")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_2" type="CollisionShape3D" parent="Ground" unique_id=1992823366]
+[node name="TerrainCollision_6_2" type="CollisionShape3D" parent="Ground" unique_id=1443341347]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -48)
 shape = SubResource("HeightMapShape3D_qrxyu")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_2" type="CollisionShape3D" parent="Ground" unique_id=552590529]
+[node name="TerrainCollision_7_2" type="CollisionShape3D" parent="Ground" unique_id=1932024935]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -48)
 shape = SubResource("HeightMapShape3D_pvt7n")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_3" type="CollisionShape3D" parent="Ground" unique_id=275586007]
+[node name="TerrainCollision_0_3" type="CollisionShape3D" parent="Ground" unique_id=314255899]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -16)
 shape = SubResource("HeightMapShape3D_bdwc4")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_3" type="CollisionShape3D" parent="Ground" unique_id=1558659186]
+[node name="TerrainCollision_1_3" type="CollisionShape3D" parent="Ground" unique_id=1797208278]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -16)
 shape = SubResource("HeightMapShape3D_5wuu0")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_3" type="CollisionShape3D" parent="Ground" unique_id=1550064717]
+[node name="TerrainCollision_2_3" type="CollisionShape3D" parent="Ground" unique_id=717098883]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -16)
 shape = SubResource("HeightMapShape3D_l1y7c")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_3" type="CollisionShape3D" parent="Ground" unique_id=971945818]
+[node name="TerrainCollision_3_3" type="CollisionShape3D" parent="Ground" unique_id=329828751]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -16)
 shape = SubResource("HeightMapShape3D_t61fx")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_3" type="CollisionShape3D" parent="Ground" unique_id=780540248]
+[node name="TerrainCollision_4_3" type="CollisionShape3D" parent="Ground" unique_id=438721154]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, -16)
 shape = SubResource("HeightMapShape3D_i3e3c")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_3" type="CollisionShape3D" parent="Ground" unique_id=1743137441]
+[node name="TerrainCollision_5_3" type="CollisionShape3D" parent="Ground" unique_id=491405183]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, -16)
 shape = SubResource("HeightMapShape3D_lwop7")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_3" type="CollisionShape3D" parent="Ground" unique_id=215926630]
+[node name="TerrainCollision_6_3" type="CollisionShape3D" parent="Ground" unique_id=932430892]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, -16)
 shape = SubResource("HeightMapShape3D_q71pk")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_3" type="CollisionShape3D" parent="Ground" unique_id=365176561]
+[node name="TerrainCollision_7_3" type="CollisionShape3D" parent="Ground" unique_id=920116164]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, -16)
 shape = SubResource("HeightMapShape3D_1valq")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_4" type="CollisionShape3D" parent="Ground" unique_id=1192083601]
+[node name="TerrainCollision_0_4" type="CollisionShape3D" parent="Ground" unique_id=232197185]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 16)
 shape = SubResource("HeightMapShape3D_xcdx8")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_4" type="CollisionShape3D" parent="Ground" unique_id=1521533466]
+[node name="TerrainCollision_1_4" type="CollisionShape3D" parent="Ground" unique_id=1586681765]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 16)
 shape = SubResource("HeightMapShape3D_tdqsp")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_4" type="CollisionShape3D" parent="Ground" unique_id=1118452758]
+[node name="TerrainCollision_2_4" type="CollisionShape3D" parent="Ground" unique_id=1377087415]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 16)
 shape = SubResource("HeightMapShape3D_y73ca")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_4" type="CollisionShape3D" parent="Ground" unique_id=1678763210]
+[node name="TerrainCollision_3_4" type="CollisionShape3D" parent="Ground" unique_id=1914318293]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 16)
 shape = SubResource("HeightMapShape3D_2txk2")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_4" type="CollisionShape3D" parent="Ground" unique_id=960630093]
+[node name="TerrainCollision_4_4" type="CollisionShape3D" parent="Ground" unique_id=602964335]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 16)
 shape = SubResource("HeightMapShape3D_gx5a7")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_4" type="CollisionShape3D" parent="Ground" unique_id=947651104]
+[node name="TerrainCollision_5_4" type="CollisionShape3D" parent="Ground" unique_id=193646628]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 16)
 shape = SubResource("HeightMapShape3D_rxk1h")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_4" type="CollisionShape3D" parent="Ground" unique_id=200071433]
+[node name="TerrainCollision_6_4" type="CollisionShape3D" parent="Ground" unique_id=1896752791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 16)
 shape = SubResource("HeightMapShape3D_7tksf")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_4" type="CollisionShape3D" parent="Ground" unique_id=2047270888]
+[node name="TerrainCollision_7_4" type="CollisionShape3D" parent="Ground" unique_id=1641329279]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 16)
 shape = SubResource("HeightMapShape3D_xe3da")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_5" type="CollisionShape3D" parent="Ground" unique_id=2018089646]
+[node name="TerrainCollision_0_5" type="CollisionShape3D" parent="Ground" unique_id=855767543]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 48)
 shape = SubResource("HeightMapShape3D_sgk2u")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_5" type="CollisionShape3D" parent="Ground" unique_id=231896463]
+[node name="TerrainCollision_1_5" type="CollisionShape3D" parent="Ground" unique_id=1593772373]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 48)
 shape = SubResource("HeightMapShape3D_h62jj")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_5" type="CollisionShape3D" parent="Ground" unique_id=743330096]
+[node name="TerrainCollision_2_5" type="CollisionShape3D" parent="Ground" unique_id=4049966]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 48)
 shape = SubResource("HeightMapShape3D_wh6ja")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_5" type="CollisionShape3D" parent="Ground" unique_id=645115807]
+[node name="TerrainCollision_3_5" type="CollisionShape3D" parent="Ground" unique_id=23146117]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 48)
 shape = SubResource("HeightMapShape3D_nnpvn")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_5" type="CollisionShape3D" parent="Ground" unique_id=1541993339]
+[node name="TerrainCollision_4_5" type="CollisionShape3D" parent="Ground" unique_id=168122372]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 48)
 shape = SubResource("HeightMapShape3D_ueesy")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_5" type="CollisionShape3D" parent="Ground" unique_id=43546273]
+[node name="TerrainCollision_5_5" type="CollisionShape3D" parent="Ground" unique_id=2030599705]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 48)
 shape = SubResource("HeightMapShape3D_tys56")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_5" type="CollisionShape3D" parent="Ground" unique_id=75591738]
+[node name="TerrainCollision_6_5" type="CollisionShape3D" parent="Ground" unique_id=1883041735]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 48)
 shape = SubResource("HeightMapShape3D_eil4q")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_5" type="CollisionShape3D" parent="Ground" unique_id=739886315]
+[node name="TerrainCollision_7_5" type="CollisionShape3D" parent="Ground" unique_id=739270317]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 48)
 shape = SubResource("HeightMapShape3D_ao47o")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_6" type="CollisionShape3D" parent="Ground" unique_id=1848327718]
+[node name="TerrainCollision_0_6" type="CollisionShape3D" parent="Ground" unique_id=336039010]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 80)
 shape = SubResource("HeightMapShape3D_tqo8b")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_6" type="CollisionShape3D" parent="Ground" unique_id=1401512017]
+[node name="TerrainCollision_1_6" type="CollisionShape3D" parent="Ground" unique_id=230581211]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 80)
 shape = SubResource("HeightMapShape3D_bto3t")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_6" type="CollisionShape3D" parent="Ground" unique_id=1553750685]
+[node name="TerrainCollision_2_6" type="CollisionShape3D" parent="Ground" unique_id=1126855452]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 80)
 shape = SubResource("HeightMapShape3D_kc2up")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_6" type="CollisionShape3D" parent="Ground" unique_id=1035924192]
+[node name="TerrainCollision_3_6" type="CollisionShape3D" parent="Ground" unique_id=62444387]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 80)
 shape = SubResource("HeightMapShape3D_2kk0x")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_6" type="CollisionShape3D" parent="Ground" unique_id=2138769857]
+[node name="TerrainCollision_4_6" type="CollisionShape3D" parent="Ground" unique_id=42257737]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 80)
 shape = SubResource("HeightMapShape3D_mfl14")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_6" type="CollisionShape3D" parent="Ground" unique_id=1883931761]
+[node name="TerrainCollision_5_6" type="CollisionShape3D" parent="Ground" unique_id=1963027107]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 80)
 shape = SubResource("HeightMapShape3D_inkwj")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_6" type="CollisionShape3D" parent="Ground" unique_id=1995614442]
+[node name="TerrainCollision_6_6" type="CollisionShape3D" parent="Ground" unique_id=298733369]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 80)
 shape = SubResource("HeightMapShape3D_xpxou")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_6" type="CollisionShape3D" parent="Ground" unique_id=714157532]
+[node name="TerrainCollision_7_6" type="CollisionShape3D" parent="Ground" unique_id=1930088886]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 80)
 shape = SubResource("HeightMapShape3D_rjjjs")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_0_7" type="CollisionShape3D" parent="Ground" unique_id=221508387]
+[node name="TerrainCollision_0_7" type="CollisionShape3D" parent="Ground" unique_id=1591462261]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 112)
 shape = SubResource("HeightMapShape3D_e0k45")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_1_7" type="CollisionShape3D" parent="Ground" unique_id=961942062]
+[node name="TerrainCollision_1_7" type="CollisionShape3D" parent="Ground" unique_id=1418380269]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 112)
 shape = SubResource("HeightMapShape3D_e7rf0")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_2_7" type="CollisionShape3D" parent="Ground" unique_id=1696299486]
+[node name="TerrainCollision_2_7" type="CollisionShape3D" parent="Ground" unique_id=2033960715]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, 112)
 shape = SubResource("HeightMapShape3D_5auhd")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_3_7" type="CollisionShape3D" parent="Ground" unique_id=1506487553]
+[node name="TerrainCollision_3_7" type="CollisionShape3D" parent="Ground" unique_id=2038070581]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 112)
 shape = SubResource("HeightMapShape3D_km25m")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_4_7" type="CollisionShape3D" parent="Ground" unique_id=357864331]
+[node name="TerrainCollision_4_7" type="CollisionShape3D" parent="Ground" unique_id=914120111]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 112)
 shape = SubResource("HeightMapShape3D_54k3g")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_5_7" type="CollisionShape3D" parent="Ground" unique_id=1892245719]
+[node name="TerrainCollision_5_7" type="CollisionShape3D" parent="Ground" unique_id=1226463367]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48, 0, 112)
 shape = SubResource("HeightMapShape3D_34mgi")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_6_7" type="CollisionShape3D" parent="Ground" unique_id=1584051121]
+[node name="TerrainCollision_6_7" type="CollisionShape3D" parent="Ground" unique_id=639551830]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 112)
 shape = SubResource("HeightMapShape3D_rgkvn")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="TerrainCollision_7_7" type="CollisionShape3D" parent="Ground" unique_id=1100307185]
+[node name="TerrainCollision_7_7" type="CollisionShape3D" parent="Ground" unique_id=643193341]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 112, 0, 112)
 shape = SubResource("HeightMapShape3D_6arnk")
 debug_color = Color(0.91, 0.19, 0.58, 0.35)
 
-[node name="SafetyFloorCollision" type="CollisionShape3D" parent="Ground" unique_id=471681823]
+[node name="SafetyFloorCollision" type="CollisionShape3D" parent="Ground" unique_id=616023469]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -46, 0)
 shape = SubResource("BoxShape3D_rqoiq")
 debug_color = Color(0.91, 0.19, 0.58, 0.25)
 
-[node name="GroundBase" type="MeshInstance3D" parent="Ground" unique_id=1130213951]
+[node name="GroundBase" type="MeshInstance3D" parent="Ground" unique_id=61036193]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -46, 0)
 visible = false
 material_override = SubResource("StandardMaterial3D_3xik7")
 cast_shadow = 0
 mesh = SubResource("BoxMesh_kx44d")
 
-[node name="TerrainFoundation" type="Node3D" parent="." unique_id=772756898]
+[node name="TerrainFoundation" type="Node3D" parent="." unique_id=1552966634]
 
-[node name="TerrainEdgeSkirt" type="MeshInstance3D" parent="TerrainFoundation" unique_id=380590344]
+[node name="TerrainEdgeSkirt" type="MeshInstance3D" parent="TerrainFoundation" unique_id=561093665]
 material_override = SubResource("StandardMaterial3D_3xik7")
 cast_shadow = 0
 mesh = SubResource("ArrayMesh_3e1u7")
 
-[node name="MapBoundaryWalls" type="Node3D" parent="." unique_id=1220976456]
+[node name="MapBoundaryWalls" type="Node3D" parent="." unique_id=2125293532]
 
-[node name="NorthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=2042680115]
+[node name="NorthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=1846369209]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25, -129)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/NorthWall" unique_id=1945965506]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/NorthWall" unique_id=1037019171]
 shape = SubResource("BoxShape3D_3ygxf")
 
-[node name="SouthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=1105022016]
+[node name="SouthWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=356071632]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25, 129)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/SouthWall" unique_id=1581123862]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/SouthWall" unique_id=1828608108]
 shape = SubResource("BoxShape3D_1fqo2")
 
-[node name="WestWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=746007704]
+[node name="WestWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=998212726]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -129, 25, 0)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/WestWall" unique_id=166506233]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/WestWall" unique_id=647345034]
 shape = SubResource("BoxShape3D_u5twn")
 
-[node name="EastWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=857888063]
+[node name="EastWall" type="StaticBody3D" parent="MapBoundaryWalls" unique_id=1581350305]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 129, 25, 0)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/EastWall" unique_id=1376102348]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MapBoundaryWalls/EastWall" unique_id=2110354404]
 shape = SubResource("BoxShape3D_er171")
 
-[node name="SurfaceAreas" type="Node3D" parent="." unique_id=344477205]
+[node name="SurfaceAreas" type="Node3D" parent="." unique_id=1366415012]
 
-[node name="Roads" type="Node3D" parent="." unique_id=1823087270]
+[node name="Roads" type="Node3D" parent="." unique_id=513178329]
 
-[node name="WaterBodies" type="Node3D" parent="." unique_id=746488316]
+[node name="WaterBodies" type="Node3D" parent="." unique_id=864553665]
 
-[node name="ManualGrass" type="Node3D" parent="." unique_id=2095808581]
+[node name="ManualGrass" type="Node3D" parent="." unique_id=1376837844]
 
-[node name="Tall_0_3" type="Node3D" parent="ManualGrass" unique_id=1741176077]
+[node name="Tall_0_3" type="Node3D" parent="ManualGrass" unique_id=1568829995]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -16)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_3" unique_id=701116754]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_3" unique_id=1397764506]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_f8bks")
 
-[node name="Tall_0_4" type="Node3D" parent="ManualGrass" unique_id=2129106272]
+[node name="Tall_0_4" type="Node3D" parent="ManualGrass" unique_id=40038168]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 16)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_4" unique_id=574916563]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_4" unique_id=1831051157]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_400us")
 
-[node name="Tall_0_5" type="Node3D" parent="ManualGrass" unique_id=1262925300]
+[node name="Tall_0_5" type="Node3D" parent="ManualGrass" unique_id=1582870237]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, 48)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_5" unique_id=2088407161]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_5" unique_id=1949850689]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_742bk")
 
-[node name="Tall_1_5" type="Node3D" parent="ManualGrass" unique_id=849068780]
+[node name="Tall_1_5" type="Node3D" parent="ManualGrass" unique_id=1462301817]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 48)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_5" unique_id=1436338414]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_5" unique_id=87014960]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_d4gph")
 
-[node name="Tall_1_4" type="Node3D" parent="ManualGrass" unique_id=645847568]
+[node name="Tall_1_4" type="Node3D" parent="ManualGrass" unique_id=1468642162]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, 16)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_4" unique_id=501218927]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_4" unique_id=232590728]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_3rldl")
 
-[node name="Tall_1_3" type="Node3D" parent="ManualGrass" unique_id=1645343329]
+[node name="Tall_1_3" type="Node3D" parent="ManualGrass" unique_id=1675023512]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -16)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_3" unique_id=679703469]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_3" unique_id=1615504321]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_83das")
 
-[node name="Tall_0_2" type="Node3D" parent="ManualGrass" unique_id=715528326]
+[node name="Tall_0_2" type="Node3D" parent="ManualGrass" unique_id=829257194]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -48)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_2" unique_id=860815087]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_2" unique_id=1834489451]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_6b0dg")
 
-[node name="Tall_0_1" type="Node3D" parent="ManualGrass" unique_id=2142763824]
+[node name="Tall_0_1" type="Node3D" parent="ManualGrass" unique_id=1372857678]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -112, 0, -80)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_1" unique_id=711539382]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_0_1" unique_id=105943424]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_frit1")
 
-[node name="Tall_1_2" type="Node3D" parent="ManualGrass" unique_id=1103781731]
+[node name="Tall_1_2" type="Node3D" parent="ManualGrass" unique_id=1619850226]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0, -48)
 
-[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_2" unique_id=955378282]
+[node name="Mesh_0" type="MultiMeshInstance3D" parent="ManualGrass/Tall_1_2" unique_id=109262688]
 extra_cull_margin = 2.0
 visibility_range_end = 120.0
 multimesh = SubResource("MultiMesh_n26m0")
 
-[node name="Trees" type="Node3D" parent="." unique_id=1330935426]
+[node name="Trees" type="Node3D" parent="." unique_id=124536833]
 
-[node name="Pine Yellow_0003" type="StaticBody3D" parent="Trees" unique_id=431131601 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0003" type="StaticBody3D" parent="Trees" unique_id=225114693 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(1.0744923, 0, -0.10646543, 0, 1.079754, 0, 0.10646543, 0, 1.0744923, -97.65142, 0.52, -2.7284722)
 collision_layer = 128
 collision_mask = 32
@@ -3592,7 +3592,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0004" type="StaticBody3D" parent="Trees" unique_id=971915289 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0004" type="StaticBody3D" parent="Trees" unique_id=1120498790 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.667666, 0, 0.7717614, 0, 1.020487, 0, -0.7717614, 0, 0.667666, -98.55559, 0.52, 8.339587)
 collision_layer = 128
 collision_mask = 32
@@ -4224,7 +4224,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0005" type="StaticBody3D" parent="Trees" unique_id=895922256 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0005" type="StaticBody3D" parent="Trees" unique_id=1449829372 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.8439517, 0, 0.42220375, 0, 0.94366866, 0, -0.42220375, 0, 0.8439517, -88.739136, 0.52, 3.9423776)
 collision_layer = 128
 collision_mask = 32
@@ -4856,7 +4856,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0006" type="StaticBody3D" parent="Trees" unique_id=311033786 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0006" type="StaticBody3D" parent="Trees" unique_id=1582333123 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.72209656, 0, 0.60673213, 0, 0.94315815, 0, -0.60673213, 0, 0.72209656, -91.54814, 0.52, 15.946107)
 collision_layer = 128
 collision_mask = 32
@@ -5488,7 +5488,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0007" type="StaticBody3D" parent="Trees" unique_id=1394593128 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0007" type="StaticBody3D" parent="Trees" unique_id=1085547787 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.44125274, 0, 0.8503413, 0, 0.9580106, 0, -0.8503413, 0, -0.44125274, -87.895, 0.52, 21.603613)
 collision_layer = 128
 collision_mask = 32
@@ -6120,7 +6120,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0008" type="StaticBody3D" parent="Trees" unique_id=982748580 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0008" type="StaticBody3D" parent="Trees" unique_id=441049092 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.10972644, 0, 0.9436271, 0, 0.94998527, 0, -0.9436271, 0, -0.10972644, -100.92299, 0.52, 22.92921)
 collision_layer = 128
 collision_mask = 32
@@ -6752,7 +6752,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0009" type="StaticBody3D" parent="Trees" unique_id=1667429666 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0009" type="StaticBody3D" parent="Trees" unique_id=749131763 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.348947, 0, 0.9157671, 0, 0.9799966, 0, -0.9157671, 0, -0.348947, -103.29356, 0.52, 14.591987)
 collision_layer = 128
 collision_mask = 32
@@ -7384,7 +7384,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0010" type="StaticBody3D" parent="Trees" unique_id=1291115653 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0010" type="StaticBody3D" parent="Trees" unique_id=631001613 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.8617692, 0, 0.33284882, 0, 0.9238152, 0, -0.33284882, 0, -0.8617692, -110.370834, 0.52, 8.745722)
 collision_layer = 128
 collision_mask = 32
@@ -8016,7 +8016,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0011" type="StaticBody3D" parent="Trees" unique_id=1442923542 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0011" type="StaticBody3D" parent="Trees" unique_id=778921383 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.86352783, 0, -0.5634399, 0, 1.0310892, 0, 0.5634399, 0, 0.86352783, -108.52792, 0.52, -9.237424)
 collision_layer = 128
 collision_mask = 32
@@ -8648,7 +8648,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0012" type="StaticBody3D" parent="Trees" unique_id=346325857 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0012" type="StaticBody3D" parent="Trees" unique_id=44844107 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.64357543, 0, 0.8105972, 0, 1.0350155, 0, -0.8105972, 0, -0.64357543, -110.71541, 0.52, -15.10848)
 collision_layer = 128
 collision_mask = 32
@@ -9280,7 +9280,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0013" type="StaticBody3D" parent="Trees" unique_id=2089945624 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0013" type="StaticBody3D" parent="Trees" unique_id=732318148 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.7403788, 0, -0.7091344, 0, 1.0251987, 0, 0.7091344, 0, 0.7403788, -106.33971, 0.52, 2.1423812)
 collision_layer = 128
 collision_mask = 32
@@ -9912,7 +9912,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0014" type="StaticBody3D" parent="Trees" unique_id=834648220 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0014" type="StaticBody3D" parent="Trees" unique_id=1744195216 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.4625205, 0, 0.93074447, 0, 1.0393317, 0, -0.93074447, 0, -0.4625205, -119.671005, 0.52, -7.997835)
 collision_layer = 128
 collision_mask = 32
@@ -10544,7 +10544,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0015" type="StaticBody3D" parent="Trees" unique_id=5480116 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0015" type="StaticBody3D" parent="Trees" unique_id=843250895 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.35793728, 0, -0.848874, 0, 0.9212524, 0, 0.848874, 0, -0.35793728, -107.018486, 0.52, -12.565882)
 collision_layer = 128
 collision_mask = 32
@@ -11176,7 +11176,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0016" type="StaticBody3D" parent="Trees" unique_id=1435965615 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0016" type="StaticBody3D" parent="Trees" unique_id=885403793 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.78490245, 0, -0.6786536, 0, 1.0376139, 0, 0.6786536, 0, -0.78490245, -103.50608, 0.52, -21.887646)
 collision_layer = 128
 collision_mask = 32
@@ -11808,7 +11808,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0017" type="StaticBody3D" parent="Trees" unique_id=2042418481 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0017" type="StaticBody3D" parent="Trees" unique_id=1600172987 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.71686447, 0, -0.6277497, 0, 0.9528716, 0, 0.6277497, 0, -0.71686447, -98.89226, 0.52, -18.526304)
 collision_layer = 128
 collision_mask = 32
@@ -12440,7 +12440,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0018" type="StaticBody3D" parent="Trees" unique_id=1848471691 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0018" type="StaticBody3D" parent="Trees" unique_id=1257707351 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.40563414, 0, -0.88684124, 0, 0.97520584, 0, 0.88684124, 0, 0.40563414, -88.91226, 0.52, -12.528011)
 collision_layer = 128
 collision_mask = 32
@@ -13072,7 +13072,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0019" type="StaticBody3D" parent="Trees" unique_id=1444533061 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0019" type="StaticBody3D" parent="Trees" unique_id=1255222296 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.79985553, 0, -0.5681981, 0, 0.98113096, 0, 0.5681981, 0, 0.79985553, -99.088684, 0.52, -32.788113)
 collision_layer = 128
 collision_mask = 32
@@ -13704,7 +13704,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0020" type="StaticBody3D" parent="Trees" unique_id=229757250 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0020" type="StaticBody3D" parent="Trees" unique_id=1920804763 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.59951276, 0, 0.8921498, 0, 1.0748706, 0, -0.8921498, 0, -0.59951276, -111.58964, 0.52, -37.36567)
 collision_layer = 128
 collision_mask = 32
@@ -14336,7 +14336,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0021" type="StaticBody3D" parent="Trees" unique_id=2097530708 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0021" type="StaticBody3D" parent="Trees" unique_id=233126924 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.97234267, 0, 0.22975977, 0, 0.99911946, 0, -0.22975977, 0, -0.97234267, -116.218025, 0.52, -34.97843)
 collision_layer = 128
 collision_mask = 32
@@ -14968,7 +14968,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0022" type="StaticBody3D" parent="Trees" unique_id=1302199556 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0022" type="StaticBody3D" parent="Trees" unique_id=1893905363 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.23236051, 0, 0.9566823, 0, 0.984496, 0, -0.9566823, 0, -0.23236051, -116.640495, 0.52, -23.553238)
 collision_layer = 128
 collision_mask = 32
@@ -15600,7 +15600,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0023" type="StaticBody3D" parent="Trees" unique_id=406005577 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0023" type="StaticBody3D" parent="Trees" unique_id=1348191060 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.07125022, 0, 0.9753314, 0, 0.9779305, 0, -0.9753314, 0, 0.07125022, -103.07727, 0.52, -42.478973)
 collision_layer = 128
 collision_mask = 32
@@ -16232,7 +16232,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0024" type="StaticBody3D" parent="Trees" unique_id=766427585 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0024" type="StaticBody3D" parent="Trees" unique_id=1121244123 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.7760971, 0, 0.7037237, 0, 1.047642, 0, -0.7037237, 0, -0.7760971, -100.17144, 0.52, -60.452145)
 collision_layer = 128
 collision_mask = 32
@@ -16864,7 +16864,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0025" type="StaticBody3D" parent="Trees" unique_id=132933499 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0025" type="StaticBody3D" parent="Trees" unique_id=1909556113 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.951633, 0, -0.1676141, 0, 0.9662814, 0, 0.1676141, 0, -0.951633, -106.995964, 0.52, -60.444904)
 collision_layer = 128
 collision_mask = 32
@@ -17496,7 +17496,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0026" type="StaticBody3D" parent="Trees" unique_id=1655819774 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0026" type="StaticBody3D" parent="Trees" unique_id=215408591 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.9521962, 0, -0.24634589, 0, 0.98354656, 0, 0.24634589, 0, -0.9521962, -102.961494, 0.52, -55.625317)
 collision_layer = 128
 collision_mask = 32
@@ -18128,7 +18128,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0027" type="StaticBody3D" parent="Trees" unique_id=1524279531 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0027" type="StaticBody3D" parent="Trees" unique_id=1755128515 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.92394006, 0, 0.38877672, 0, 1.0024034, 0, -0.38877672, 0, -0.92394006, -102.23176, 0.52, -58.84803)
 collision_layer = 128
 collision_mask = 32
@@ -18760,7 +18760,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0028" type="StaticBody3D" parent="Trees" unique_id=1774421232 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0028" type="StaticBody3D" parent="Trees" unique_id=1465984474 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.69831353, 0, 0.62899846, 0, 0.93983024, 0, -0.62899846, 0, -0.69831353, -111.3493, 0.52, -90.98748)
 collision_layer = 128
 collision_mask = 32
@@ -19392,7 +19392,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0029" type="StaticBody3D" parent="Trees" unique_id=1395023976 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0029" type="StaticBody3D" parent="Trees" unique_id=1330999277 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.6790408, 0, -0.7910075, 0, 1.0424919, 0, 0.7910075, 0, -0.6790408, -113.160934, 0.52, -76.136)
 collision_layer = 128
 collision_mask = 32
@@ -20024,7 +20024,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0030" type="StaticBody3D" parent="Trees" unique_id=38426640 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0030" type="StaticBody3D" parent="Trees" unique_id=167901964 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.43646803, 0, -0.81014085, 0, 0.92023504, 0, 0.81014085, 0, -0.43646803, -110.332436, 0.52, -71.270515)
 collision_layer = 128
 collision_mask = 32
@@ -20656,7 +20656,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0031" type="StaticBody3D" parent="Trees" unique_id=918526812 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0031" type="StaticBody3D" parent="Trees" unique_id=1597703449 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.3349134, 0, -0.88694626, 0, 0.9480721, 0, 0.88694626, 0, -0.3349134, -102.99775, 0.52, -77.20655)
 collision_layer = 128
 collision_mask = 32
@@ -21288,7 +21288,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0032" type="StaticBody3D" parent="Trees" unique_id=298265006 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0032" type="StaticBody3D" parent="Trees" unique_id=1821934664 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.9541221, 0, 0.46196467, 0, 1.0600756, 0, -0.46196467, 0, 0.9541221, -110.23153, 0.52, -87.04146)
 collision_layer = 128
 collision_mask = 32
@@ -21920,7 +21920,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0033" type="StaticBody3D" parent="Trees" unique_id=1759790634 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0033" type="StaticBody3D" parent="Trees" unique_id=1358356783 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.9239943, 0, 0.0716724, 0, 0.92676985, 0, -0.0716724, 0, -0.9239943, -105.85938, 0.52, -78.23009)
 collision_layer = 128
 collision_mask = 32
@@ -22552,7 +22552,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0034" type="StaticBody3D" parent="Trees" unique_id=334229046 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0034" type="StaticBody3D" parent="Trees" unique_id=1985279265 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.93713665, 0, 0.51281244, 0, 1.0682704, 0, -0.51281244, 0, 0.93713665, -120.921524, 0.52, -68.37152)
 collision_layer = 128
 collision_mask = 32
@@ -23184,7 +23184,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0035" type="StaticBody3D" parent="Trees" unique_id=646520285 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0035" type="StaticBody3D" parent="Trees" unique_id=597703645 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.93935895, 0, 0.45923886, 0, 1.0456077, 0, -0.45923886, 0, 0.93935895, -113.67583, 0.52, -58.123516)
 collision_layer = 128
 collision_mask = 32
@@ -23816,7 +23816,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0036" type="StaticBody3D" parent="Trees" unique_id=2133076320 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0036" type="StaticBody3D" parent="Trees" unique_id=1986235667 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.7695615, 0, 0.7283631, 0, 1.0595932, 0, -0.7283631, 0, 0.7695615, -114.734955, 0.52, -60.45485)
 collision_layer = 128
 collision_mask = 32
@@ -24448,7 +24448,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0037" type="StaticBody3D" parent="Trees" unique_id=339184054 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0037" type="StaticBody3D" parent="Trees" unique_id=152552125 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(-0.69542533, 0, -0.71598047, 0, 0.9981205, 0, 0.71598047, 0, -0.69542533, -119.87912, 0.52, -52.851315)
 collision_layer = 128
 collision_mask = 32
@@ -25080,7 +25080,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0038" type="StaticBody3D" parent="Trees" unique_id=121487738 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0038" type="StaticBody3D" parent="Trees" unique_id=1986931423 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.20896624, 0, 0.92427796, 0, 0.94760567, 0, -0.92427796, 0, 0.20896624, -114.14536, 0.52, -57.917397)
 collision_layer = 128
 collision_mask = 32
@@ -25712,7 +25712,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0039" type="StaticBody3D" parent="Trees" unique_id=1537245194 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0039" type="StaticBody3D" parent="Trees" unique_id=759215710 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.5352883, 0, 0.87237096, 0, 1.023506, 0, -0.87237096, 0, 0.5352883, -111.22542, 0.52, -55.040363)
 collision_layer = 128
 collision_mask = 32
@@ -26344,7 +26344,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0040" type="StaticBody3D" parent="Trees" unique_id=866876752 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0040" type="StaticBody3D" parent="Trees" unique_id=517961582 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(1.0160656, 0, 0.2977822, 0, 1.0588028, 0, -0.2977822, 0, 1.0160656, -118.8784, 0.52, -41.150124)
 collision_layer = 128
 collision_mask = 32
@@ -26976,7 +26976,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0041" type="StaticBody3D" parent="Trees" unique_id=1926221186 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0041" type="StaticBody3D" parent="Trees" unique_id=24553549 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.3015049, 0, 0.9483872, 0, 0.99516, 0, -0.9483872, 0, 0.3015049, -97.48535, 0.52, -69.464264)
 collision_layer = 128
 collision_mask = 32
@@ -27608,7 +27608,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_AutumnYellow_8m/TrunkDarkSide")
 }]
 
-[node name="Pine Yellow_0042" type="StaticBody3D" parent="Trees" unique_id=1428131084 instance=ExtResource("15_fh4qh")]
+[node name="Pine Yellow_0042" type="StaticBody3D" parent="Trees" unique_id=935465475 instance=ExtResource("15_fh4qh")]
 transform = Transform3D(0.074231885, 0, 1.0212939, 0, 1.023988, 0, -1.0212939, 0, 0.074231885, -103.03968, 0.52, -63.87942)
 collision_layer = 128
 collision_mask = 32
@@ -28872,7 +28872,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0044" type="StaticBody3D" parent="Trees" unique_id=1940082461 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0044" type="StaticBody3D" parent="Trees" unique_id=592851695 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.6113543, 0, -0.8585053, 0, 1.053938, 0, 0.8585053, 0, 0.6113543, -97.276505, 0.52, -42.322926)
 collision_layer = 128
 collision_mask = 32
@@ -29504,7 +29504,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0045" type="StaticBody3D" parent="Trees" unique_id=840407103 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0045" type="StaticBody3D" parent="Trees" unique_id=1785729171 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-0.46630648, 0, 0.8889216, 0, 1.0038044, 0, -0.8889216, 0, -0.46630648, -97.874954, 0.52, -31.18833)
 collision_layer = 128
 collision_mask = 32
@@ -30136,7 +30136,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0046" type="StaticBody3D" parent="Trees" unique_id=1492992111 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0046" type="StaticBody3D" parent="Trees" unique_id=474329534 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.43069324, 0, -0.96494675, 0, 1.0567019, 0, 0.96494675, 0, 0.43069324, -94.25815, 0.52, -22.383734)
 collision_layer = 128
 collision_mask = 32
@@ -30768,7 +30768,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0047" type="StaticBody3D" parent="Trees" unique_id=985450449 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0047" type="StaticBody3D" parent="Trees" unique_id=412732951 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-0.9405105, 0, -0.2915305, 0, 0.9846573, 0, 0.2915305, 0, -0.9405105, -93.18573, 0.52, -16.916998)
 collision_layer = 128
 collision_mask = 32
@@ -31400,7 +31400,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0048" type="StaticBody3D" parent="Trees" unique_id=153076289 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0048" type="StaticBody3D" parent="Trees" unique_id=376036198 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.6620233, 0, -0.7249549, 0, 0.9817507, 0, 0.7249549, 0, 0.6620233, -90.34608, 0.52, -2.142845)
 collision_layer = 128
 collision_mask = 32
@@ -32032,7 +32032,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0049" type="StaticBody3D" parent="Trees" unique_id=1170108185 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0049" type="StaticBody3D" parent="Trees" unique_id=897754871 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.6166767, 0, 0.73501426, 0, 0.9594457, 0, -0.73501426, 0, 0.6166767, -93.47329, 0.52, 7.6886864)
 collision_layer = 128
 collision_mask = 32
@@ -32664,7 +32664,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0050" type="StaticBody3D" parent="Trees" unique_id=728779628 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0050" type="StaticBody3D" parent="Trees" unique_id=1895193423 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-0.7734733, 0, -0.7470066, 0, 1.0753045, 0, 0.7470066, 0, -0.7734733, -86.99661, 0.52, 16.470564)
 collision_layer = 128
 collision_mask = 32
@@ -33296,7 +33296,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0051" type="StaticBody3D" parent="Trees" unique_id=1785718441 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0051" type="StaticBody3D" parent="Trees" unique_id=657596030 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.78256834, 0, 0.49417546, 0, 0.9255391, 0, -0.49417546, 0, 0.78256834, -94.094894, 0.52, 27.869232)
 collision_layer = 128
 collision_mask = 32
@@ -33928,7 +33928,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0052" type="StaticBody3D" parent="Trees" unique_id=1146415227 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0052" type="StaticBody3D" parent="Trees" unique_id=818944179 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-1.0048816, 0, 0.06683293, 0, 1.0071017, 0, -0.06683293, 0, -1.0048816, -98.190575, 0.52, 37.081005)
 collision_layer = 128
 collision_mask = 32
@@ -34560,7 +34560,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0053" type="StaticBody3D" parent="Trees" unique_id=1648442359 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0053" type="StaticBody3D" parent="Trees" unique_id=1961395236 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(0.16012198, 0, 1.0087994, 0, 1.0214281, 0, -1.0087994, 0, 0.16012198, -107.52302, 0.52, 44.194603)
 collision_layer = 128
 collision_mask = 32
@@ -35192,7 +35192,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0054" type="StaticBody3D" parent="Trees" unique_id=946762606 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0054" type="StaticBody3D" parent="Trees" unique_id=1754188397 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-0.53946435, 0, 0.91637665, 0, 1.0633757, 0, -0.91637665, 0, -0.53946435, -111.80764, 0.52, 28.610695)
 collision_layer = 128
 collision_mask = 32
@@ -35824,7 +35824,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Pine_0055" type="StaticBody3D" parent="Trees" unique_id=960799756 instance=ExtResource("17_vq2g1")]
+[node name="Pine_0055" type="StaticBody3D" parent="Trees" unique_id=348728093 instance=ExtResource("17_vq2g1")]
 transform = Transform3D(-0.1835076, 0, -0.9861194, 0, 1.0030485, 0, 0.9861194, 0, -0.1835076, -105.86181, 0.52, 30.898476)
 collision_layer = 128
 collision_mask = 32
@@ -36456,7 +36456,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Pine_NoiseLeaf_8m/TrunkDarkSide")
 }]
 
-[node name="Ores" type="Node3D" parent="." unique_id=1995172307]
+[node name="Ores" type="Node3D" parent="." unique_id=565534167]
 
 [node name="Redwhite Mushroom_0056" type="StaticBody3D" parent="Ores" unique_id=1757348936 instance=ExtResource("18_yyl52")]
 transform = Transform3D(0.19004591, 0, 1.0475, 0, 1.0646002, 0, -1.0475, 0, 0.19004591, -93.62106, 0.52, -27.868725)
@@ -36489,7 +36489,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Mushroom_RedWhite_Natural/FTF_Nature_Mushroom_RedWhite_Natural_StaticMesh")
 }]
 
-[node name="Redwhite Mushroom_0057" type="StaticBody3D" parent="Ores" unique_id=1894565611 instance=ExtResource("18_yyl52")]
+[node name="Redwhite Mushroom_0057" type="StaticBody3D" parent="Ores" unique_id=561148339 instance=ExtResource("18_yyl52")]
 transform = Transform3D(-0.7517887, 0, -0.7608895, 0, 1.0696443, 0, 0.7608895, 0, -0.7517887, -99.31779, 0.52, -24.78535)
 collision_layer = 16384
 collision_mask = 32
@@ -36520,7 +36520,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Mushroom_RedWhite_Natural/FTF_Nature_Mushroom_RedWhite_Natural_StaticMesh")
 }]
 
-[node name="Redwhite Mushroom_0058" type="StaticBody3D" parent="Ores" unique_id=111504365 instance=ExtResource("18_yyl52")]
+[node name="Redwhite Mushroom_0058" type="StaticBody3D" parent="Ores" unique_id=19681538 instance=ExtResource("18_yyl52")]
 transform = Transform3D(-0.23752211, 0, -0.96382165, 0, 0.99265754, 0, 0.96382165, 0, -0.23752211, -103.91585, 0.52, -32.01058)
 collision_layer = 16384
 collision_mask = 32
@@ -36551,7 +36551,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Mushroom_RedWhite_Natural/FTF_Nature_Mushroom_RedWhite_Natural_StaticMesh")
 }]
 
-[node name="Redwhite Mushroom_0059" type="StaticBody3D" parent="Ores" unique_id=1651142895 instance=ExtResource("18_yyl52")]
+[node name="Redwhite Mushroom_0059" type="StaticBody3D" parent="Ores" unique_id=843708724 instance=ExtResource("18_yyl52")]
 transform = Transform3D(0.7807039, 0, 0.6070908, 0, 0.988968, 0, -0.6070908, 0, 0.7807039, -101.867744, 0.52, -44.308544)
 collision_layer = 16384
 collision_mask = 32
@@ -36582,7 +36582,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Mushroom_RedWhite_Natural/FTF_Nature_Mushroom_RedWhite_Natural_StaticMesh")
 }]
 
-[node name="Redwhite Mushroom_0060" type="StaticBody3D" parent="Ores" unique_id=1517868382 instance=ExtResource("18_yyl52")]
+[node name="Redwhite Mushroom_0060" type="StaticBody3D" parent="Ores" unique_id=494712665 instance=ExtResource("18_yyl52")]
 transform = Transform3D(0.94140303, 0, -0.2357252, 0, 0.9704669, 0, 0.2357252, 0, 0.94140303, -109.62252, 0.52, -39.343166)
 collision_layer = 16384
 collision_mask = 32
@@ -36613,7 +36613,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Nature_Mushroom_RedWhite_Natural/FTF_Nature_Mushroom_RedWhite_Natural_StaticMesh")
 }]
 
-[node name="Redwhite Mushroom_0061" type="StaticBody3D" parent="Ores" unique_id=1911944577 instance=ExtResource("18_yyl52")]
+[node name="Redwhite Mushroom_0061" type="StaticBody3D" parent="Ores" unique_id=812897304 instance=ExtResource("18_yyl52")]
 transform = Transform3D(0.3442906, 0, 0.98617685, 0, 1.0445482, 0, -0.98617685, 0, 0.3442906, -104.99915, 0.52, -35.317158)
 collision_layer = 16384
 collision_mask = 32
@@ -36695,7 +36695,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Resource_CopperOre_Node/OreVeinUpper")
 }]
 
-[node name="Copper Ore_0063" type="StaticBody3D" parent="Ores" unique_id=969174840 instance=ExtResource("20_yq4pd")]
+[node name="Copper Ore_0063" type="StaticBody3D" parent="Ores" unique_id=1983515767 instance=ExtResource("20_yq4pd")]
 transform = Transform3D(0.244062, 0, -0.99095726, 0, 1.0205697, 0, 0.99095726, 0, 0.244062, -101.600655, 0.52, -63.83212)
 collision_layer = 16384
 collision_mask = 32
@@ -36746,7 +36746,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Resource_CopperOre_Node/OreVeinUpper")
 }]
 
-[node name="Copper Ore_0064" type="StaticBody3D" parent="Ores" unique_id=209173687 instance=ExtResource("20_yq4pd")]
+[node name="Copper Ore_0064" type="StaticBody3D" parent="Ores" unique_id=1064308648 instance=ExtResource("20_yq4pd")]
 transform = Transform3D(-0.70263094, 0, -0.7597893, 0, 1.0348767, 0, 0.7597893, 0, -0.70263094, -103.74083, 0.52, -55.60561)
 collision_layer = 16384
 collision_mask = 32
@@ -36797,7 +36797,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Resource_CopperOre_Node/OreVeinUpper")
 }]
 
-[node name="Copper Ore_0065" type="StaticBody3D" parent="Ores" unique_id=844267489 instance=ExtResource("20_yq4pd")]
+[node name="Copper Ore_0065" type="StaticBody3D" parent="Ores" unique_id=2071532331 instance=ExtResource("20_yq4pd")]
 transform = Transform3D(-0.04619527, 0, -0.94530314, 0, 0.9464312, 0, 0.94530314, 0, -0.04619527, -110.34911, 0.52, -54.32018)
 collision_layer = 16384
 collision_mask = 32
@@ -36848,7 +36848,7 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Resource_CopperOre_Node/OreVeinUpper")
 }]
 
-[node name="Copper Ore_0066" type="StaticBody3D" parent="Ores" unique_id=2021631818 instance=ExtResource("20_yq4pd")]
+[node name="Copper Ore_0066" type="StaticBody3D" parent="Ores" unique_id=961163181 instance=ExtResource("20_yq4pd")]
 transform = Transform3D(-0.57146686, 0, -0.87217903, 0, 1.0427227, 0, 0.87217903, 0, -0.57146686, -106.85471, 0.52, -87.005516)
 collision_layer = 16384
 collision_mask = 32
@@ -36899,11 +36899,11 @@ metadata/forest_multimesh_bindings = [{
 "source_path": NodePath("Mesh/FTF_Resource_CopperOre_Node/OreVeinUpper")
 }]
 
-[node name="GroundRocks" type="Node3D" parent="." unique_id=2132426742]
+[node name="GroundRocks" type="Node3D" parent="." unique_id=503519811]
 
-[node name="SpawnPoints" type="Node3D" parent="." unique_id=1164672085]
+[node name="SpawnPoints" type="Node3D" parent="." unique_id=1548944781]
 
-[node name="RedTeamSpawn" type="Marker3D" parent="SpawnPoints" unique_id=1451548306 instance=ExtResource("21_jhx2y")]
+[node name="RedTeamSpawn" type="Marker3D" parent="SpawnPoints" unique_id=1124050724 instance=ExtResource("21_jhx2y")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -83.762856, 0.55, -35.193596)
 script = ExtResource("22_viwi7")
 spawn_point_id = "red_spawn_01"
@@ -36915,7 +36915,7 @@ metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
 metadata/map_editor_spawn_kind = "team_red"
 
-[node name="_Marker3D_2537" type="Marker3D" parent="SpawnPoints" unique_id=1712163507 instance=ExtResource("21_jhx2y")]
+[node name="_Marker3D_2537" type="Marker3D" parent="SpawnPoints" unique_id=2089698342 instance=ExtResource("21_jhx2y")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -53.850243, 0.55, -34.417595)
 script = ExtResource("22_viwi7")
 spawn_point_id = "red_spawn_02"
@@ -36927,7 +36927,7 @@ metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
 metadata/map_editor_spawn_kind = "team_red"
 
-[node name="BlueTeamSpawn" type="Marker3D" parent="SpawnPoints" unique_id=2013075180 instance=ExtResource("21_jhx2y")]
+[node name="BlueTeamSpawn" type="Marker3D" parent="SpawnPoints" unique_id=1312203982 instance=ExtResource("21_jhx2y")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -56.665894, 0.55, 51.912323)
 script = ExtResource("22_viwi7")
 team = "blue"
@@ -36940,7 +36940,7 @@ metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
 metadata/map_editor_spawn_kind = "team_blue"
 
-[node name="_Marker3D_2538" type="Marker3D" parent="SpawnPoints" unique_id=664403590 instance=ExtResource("21_jhx2y")]
+[node name="_Marker3D_2538" type="Marker3D" parent="SpawnPoints" unique_id=1530774884 instance=ExtResource("21_jhx2y")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.138433, 0.55, 54.455353)
 script = ExtResource("22_viwi7")
 team = "blue"
@@ -36953,53 +36953,53 @@ metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
 metadata/map_editor_spawn_kind = "team_blue"
 
-[node name="ZombieGenerator_005" type="Marker3D" parent="SpawnPoints" unique_id=10330915 instance=ExtResource("23_4hq1x")]
+[node name="ZombieGenerator_005" type="Marker3D" parent="SpawnPoints" unique_id=425496084 instance=ExtResource("23_4hq1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -62.62047, 0.55, -16.189816)
 script = ExtResource("24_gwp2d")
 generator_id = "coop_test_zombie_005"
-metadata/map_editor_category = "spawn"
-metadata/map_editor_spawn_kind = "zombie_generator"
-metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_uuid = "zombie_generator_127230475_801150222"
+metadata/map_editor_category = "spawn"
+metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
+metadata/map_editor_spawn_kind = "zombie_generator"
 
-[node name="ZombieGenerator_006" type="Marker3D" parent="SpawnPoints" unique_id=252150045 instance=ExtResource("23_4hq1x")]
+[node name="ZombieGenerator_006" type="Marker3D" parent="SpawnPoints" unique_id=1227573468 instance=ExtResource("23_4hq1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -51.695927, 0.55, -15.652367)
 script = ExtResource("24_gwp2d")
 generator_id = "coop_test_zombie_006"
 zombie_gender = "female"
-metadata/map_editor_category = "spawn"
-metadata/map_editor_spawn_kind = "zombie_generator"
-metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_uuid = "zombie_generator_143860431_185442469"
+metadata/map_editor_category = "spawn"
+metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
+metadata/map_editor_spawn_kind = "zombie_generator"
 
-[node name="ZombieGenerator_007" type="Marker3D" parent="SpawnPoints" unique_id=941035695 instance=ExtResource("23_4hq1x")]
+[node name="ZombieGenerator_007" type="Marker3D" parent="SpawnPoints" unique_id=865145878 instance=ExtResource("23_4hq1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -77.41568, 0.55, -15.299198)
 script = ExtResource("24_gwp2d")
 generator_id = "coop_test_zombie_007"
-metadata/map_editor_category = "spawn"
-metadata/map_editor_spawn_kind = "zombie_generator"
-metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_uuid = "zombie_generator_152230426_1602469074"
+metadata/map_editor_category = "spawn"
+metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
+metadata/map_editor_spawn_kind = "zombie_generator"
 
-[node name="ZombieGenerator_008" type="Marker3D" parent="SpawnPoints" unique_id=1845666472 instance=ExtResource("23_4hq1x")]
+[node name="ZombieGenerator_008" type="Marker3D" parent="SpawnPoints" unique_id=1640600623 instance=ExtResource("23_4hq1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -71.241104, 0.55, -23.483982)
 script = ExtResource("24_gwp2d")
 generator_id = "coop_test_zombie_008"
 zombie_gender = "female"
-metadata/map_editor_category = "spawn"
-metadata/map_editor_spawn_kind = "zombie_generator"
-metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_uuid = "zombie_generator_158764842_3610333974"
+metadata/map_editor_category = "spawn"
+metadata/map_editor_asset_path = "res://buildings/auxiliary/ZombieGenerator.tscn"
 metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.05
+metadata/map_editor_spawn_kind = "zombie_generator"
 
-[node name="Buildings" type="Node3D" parent="." unique_id=1232614818]
+[node name="Buildings" type="Node3D" parent="." unique_id=2124078396]
 
 [node name="Farm Base Vehicle_0002" type="CharacterBody3D" parent="Buildings" unique_id=1326490675 instance=ExtResource("25_sayhm")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -34.919037, 0.50333333, 8.224838)
@@ -37019,9 +37019,9 @@ metadata/map_can_overlap_water = false
 metadata/dynamic_building_navigation_obstacle = true
 metadata/dynamic_building_navigation_scanned = true
 
-[node name="FarmFields" type="Node3D" parent="." unique_id=2117083701]
+[node name="FarmFields" type="Node3D" parent="." unique_id=1739219875]
 
-[node name="FarmField_0001" type="Node3D" parent="FarmFields" unique_id=863252692]
+[node name="FarmField_0001" type="Node3D" parent="FarmFields" unique_id=975756558]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -74.511566, 0.52, -9.490437)
 script = ExtResource("28_udybx")
 field_label = "editor_field_0001"
@@ -37033,12 +37033,12 @@ metadata/map_editor_asset_path = "res://src/farm_field_generator.gd"
 metadata/map_editor_align_mode = "upright"
 metadata/map_editor_ground_offset = 0.02
 
-[node name="PowerWires" type="Node3D" parent="." unique_id=379656758]
+[node name="PowerWires" type="Node3D" parent="." unique_id=44967952]
 
-[node name="TreeForestManager" type="Node3D" parent="." unique_id=725938084]
+[node name="TreeForestManager" type="Node3D" parent="." unique_id=1771591151]
 script = ExtResource("29_t6l6h")
 
-[node name="FarSceneryRing" type="Node3D" parent="." unique_id=597655930]
+[node name="FarSceneryRing" type="Node3D" parent="." unique_id=1141138788]
 script = ExtResource("30_bry0n")
 far_ground_size = Vector2(1792, 1792)
 inner_tree_half_extent = 200.0
@@ -37050,7 +37050,7 @@ surface_palette_lookup = SubResource("ImageTexture_crb8b")
 far_grass_inner_half_extent = 136.0
 far_grass_outer_half_extent = 336.0
 
-[node name="TerrainSurfaceBaker" type="Node3D" parent="." unique_id=797838556]
+[node name="TerrainSurfaceBaker" type="Node3D" parent="." unique_id=142444866]
 script = ExtResource("31_fk0pq")
 palette = SubResource("Resource_tdnfy")
 target_mesh = NodePath("../Ground/Grass/TerrainChunk_0_0/Mesh")

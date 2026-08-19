@@ -14177,6 +14177,10 @@ func get_bytes_received_per_second() -> int:
 
 
 func get_peer_rtt_ms(peer_id: int) -> float:
+	if CooperativeSession.is_host():
+		return CooperativeSession.get_peer_rtt_ms(peer_id)
+	if CooperativeSession.is_client() and peer_id == NetworkSession.get_unique_peer_id():
+		return CooperativeSession.get_last_rtt_ms()
 	if NetworkSession.is_client() and peer_id == NetworkSession.get_unique_peer_id():
 		return NetworkSession.get_last_rtt_ms()
 	return 0.0

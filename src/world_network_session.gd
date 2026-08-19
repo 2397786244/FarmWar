@@ -56,6 +56,8 @@ func get_unique_peer_id() -> int:
 
 
 func get_last_rtt_ms() -> float:
+	if CooperativeSession.is_client():
+		return CooperativeSession.get_last_rtt_ms()
 	return MultiplayerNetwork.get_last_rtt_ms()
 
 

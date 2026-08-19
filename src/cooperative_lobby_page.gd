@@ -20,6 +20,7 @@ var profile_label: Label
 var invite_button: Button
 var loadout_button: Button
 var enter_world_button: Button
+var leave_lobby_button: Button
 var members_label: Label
 var members_list: VBoxContainer
 var loadout_holder: Control
@@ -168,9 +169,9 @@ func _build_interface() -> void:
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 14)
 	root.add_child(footer)
-	var leave_button := _make_button("离开合作 Lobby")
-	leave_button.pressed.connect(_on_leave_pressed)
-	footer.add_child(leave_button)
+	leave_lobby_button = _make_button("离开合作 Lobby")
+	leave_lobby_button.pressed.connect(_on_leave_pressed)
+	footer.add_child(leave_lobby_button)
 	var map_notice := Label.new()
 	map_notice.text = "房主启动 Redpine County 后，可通过 Steam Overlay 邀请好友；好友完成首次角色选择后可进入同一世界。"
 	map_notice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -188,6 +189,8 @@ func _refresh() -> void:
 	var profile := CooperativeWorldStorage.get_local_profile(world_id, SteamService.steam_id)
 	var is_host := SteamService.is_current_lobby_host()
 	invite_button.disabled = not is_host
+	if is_instance_valid(leave_lobby_button):
+		leave_lobby_button.disabled = enter_world_in_progress
 	if profile.is_empty():
 		profile_label.text = "尚未建立该世界的个人档案。请先选择角色和初始道具。"
 		loadout_button.visible = true
@@ -271,6 +274,7 @@ func _on_enter_world_pressed() -> void:
 	var is_host := SteamService.is_current_lobby_host()
 	enter_world_in_progress = true
 	enter_world_button.disabled = true
+	leave_lobby_button.disabled = true
 	enter_world_button.text = HOST_STARTING_WORLD_TEXT if is_host else CLIENT_JOINING_WORLD_TEXT
 	enter_world_button.modulate = Color(0.65, 0.70, 0.75, 1.0)
 	status_label.text = "正在启动合作世界，请稍候。" if is_host else "正在建立 Steam P2P 连接并加入合作世界，请稍候。"
