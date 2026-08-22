@@ -27,6 +27,7 @@ func emit_visual_only() -> void:
 
 
 func _emit_bullet(visual_only: bool) -> void:
+	play_muzzle_visual()
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
 	var bullet := BULLET_SCENE.instantiate() as TranquilizerBullet
@@ -37,7 +38,11 @@ func _emit_bullet(visual_only: bool) -> void:
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
 	bullet.run(muzzle.global_position, _get_center_screen_direction(shooter), tool_owner, shooter)
+
+
+func play_muzzle_visual(firepower: float = -1.0) -> void:
 	muzzle_flash.restart()
+	muzzle_flash.emitting = true
 	_play_recoil()
 
 

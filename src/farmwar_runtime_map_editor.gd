@@ -1,15 +1,15 @@
-## FarmWar Runtime Map Editor V9 - single script prototype
+## Harvest Operation Runtime Map Editor V9 - single script prototype
 ## Target: Godot 4.6.x
 ## Usage:
-##   1. Copy this file to the FarmWar project, for example:
-##      res://src/editor/farmwar_runtime_map_editor.gd
+##   1. Copy this file to the Harvest Operation project, for example:
+##      res://src/editor/harvest_operation_runtime_map_editor.gd
 ##   2. Create an empty Node3D scene and attach this script to its root.
 ##   3. Run the scene. All editor nodes and UI are created at runtime.
 ##
 ## Implemented tools:
 ##   - Create a new map with a configurable size.
 ##   - Free-fly editor camera.
-##   - Terrain raise/lower, smooth and flatten brushes.
+##   - Terrain raise/lower, smooth, flatten and slope/ramp brushes.
 ##   - Surface-mask paint compatible with terrain_surface.gdshader.
 ##   - Explicit Ground StaticBody3D with chunked height collisions.
 
@@ -17,8 +17,8 @@
 ##     palette-derived default ground, safety floor and terrain edge skirt.
 ##   - Runtime-editable surface palette: add, rename, recolor and remove surfaces.
 ##   - Manual grass brush using chunked MultiMesh (independent of surface color).
-##   - Place existing FarmWar tree scenes.
-##   - Place existing FarmWar ore scenes.
+##   - Place existing Harvest Operation tree scenes.
+##   - Place existing Harvest Operation ore scenes.
 ##   - Place collision-free roadside rock decoration scenes.
 ##   - Place drivable vehicle scenes from the Vehicles asset category.
 ##   - Place giant-crop and wild-animal spawn points.
@@ -27,7 +27,7 @@
 ##   - Unified object selection with runtime XYZ move gizmo, three-axis rotation,
 ##     non-uniform XYZ scale, uniform scale, duplicate and delete for buildings,
 ##     trees, ores and spawn points.
-##   - FarmWar map skeleton: fixed editor daylight, environment, clouds,
+##   - Harvest Operation map skeleton: fixed editor daylight, environment, clouds,
 ##     navigation, roads root, surface-area root, terrain baker, boundaries,
 ##     size-aware far scenery, TreeForestManager and manual grass.
 ##   - DayNightSystem is present in the packed gameplay map but disabled while
@@ -44,7 +44,7 @@
 ##   - Save generated map scene and authoritative editor data under user://maps/.
 ##
 extends Node3D
-class_name FarmWarRuntimeMapEditor
+class_name HarvestOperationRuntimeMapEditor
 
 
 enum ToolMode {
@@ -85,6 +85,7 @@ enum HeightMode {
 	RAISE_LOWER,
 	SMOOTH,
 	FLATTEN,
+	SLOPE_RAMP,
 }
 
 enum TemplateMode {
@@ -99,6 +100,11 @@ const SURFACE_PALETTE_SCRIPT_PATH = "res://src/terrain/terrain_surface_palette.g
 const SURFACE_DEFINITION_SCRIPT_PATH = "res://src/terrain/terrain_surface_definition.gd"
 const ROAD_SCRIPT_PATH = "res://src/terrain/road_path_3d.gd"
 const ROAD_TYPE_RAIL = 4
+const ROAD_CENTER_LINE_NONE = 0
+const ROAD_CENTER_LINE_CONTINUOUS = 1
+const ROAD_CENTER_LINE_DASHED = 2
+const ROAD_CENTER_LINE_WHITE = 0
+const ROAD_CENTER_LINE_YELLOW = 1
 const TREE_FOREST_MANAGER_PATH = "res://src/tree_forest_manager.gd"
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
@@ -121,11 +127,64 @@ const SQUAD_TARGET_POINT_PATH = "res://buildings/SquadTargetPoint.tscn"
 const ZOMBIE_GENERATOR_PATH = "res://buildings/auxiliary/ZombieGenerator.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
+const PROMOTIONAL_DUMMY_SPAWN_KIND := "promotional_dummy"
+const PROMOTIONAL_DUMMY_CHARACTER_META := "promotional_dummy_character_id"
+const PROMOTIONAL_DUMMY_ANIMATION_META := "promotional_dummy_animation"
+const PROMOTIONAL_DUMMY_WEAPON_META := "promotional_dummy_weapon_id"
+const PROMOTIONAL_DUMMY_AUTO_FIRE_META := "promotional_dummy_continuous_fire"
+const PROMOTIONAL_DUMMY_TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
+const PROMOTIONAL_DUMMY_FIRE_CONTROLLER_SCRIPT_PATH := "res://src/promotional_dummy_fire_controller.gd"
 const FARM_FIELD_GENERATOR_SCRIPT_PATH = "res://src/farm_field_generator.gd"
 const FARM_FIELD_TILE_SPACING := 2.2
 const POWER_POLE_PATH = "res://buildings/auxiliary/PowerPole.tscn"
 const POWER_WIRE_SCRIPT_PATH = "res://src/power_wire_3d.gd"
 const POWER_WIRE_ROOT_NAME = "PowerWires"
+
+const PROMOTIONAL_DUMMY_CHARACTERS := [
+	{"id": "farmer", "label": "Farmer", "path": "res://assets/characters/Farmer_Red.glb"},
+	{"id": "cook", "label": "Cook", "path": "res://assets/characters/Cook_Red.glb"},
+	{"id": "guard", "label": "Guard", "path": "res://assets/characters/Guard_Red.glb"},
+	{"id": "mage", "label": "Mage", "path": "res://assets/characters/Mage_Red.glb"},
+	{"id": "engineer", "label": "Engineer", "path": "res://assets/characters/Engineer_Red.glb"},
+	{"id": "apothecary", "label": "Apothecary", "path": "res://assets/characters/Apothecary_Red.glb"},
+	{"id": "assistant", "label": "Assistant", "path": "res://assets/characters/Assistant_Red.glb"},
+	{"id": "trickster", "label": "Trickster", "path": "res://assets/characters/Trickster_Red.glb"},
+	{"id": "prospector", "label": "Prospector", "path": "res://assets/characters/Prospector_Red.glb"},
+	{"id": "rider", "label": "Rider", "path": "res://assets/characters/Rider_Red.glb"},
+	{"id": "future_warrior", "label": "FutureWarrior", "path": "res://assets/characters/FutureWarrior.glb"},
+	{"id": "future_engineer", "label": "FutureEngineer", "path": "res://assets/characters/FutureEngineer.glb"},
+	{"id": "bandit", "label": "Bandit", "path": "res://assets/characters/Bandit.glb"},
+	{"id": "zombie_male", "label": "Zombie Male", "path": "res://assets/characters/ZombieMale.glb"},
+	{"id": "zombie_female", "label": "Zombie Female", "path": "res://assets/characters/ZombieFemale.glb"},
+]
+
+const PROMOTIONAL_DUMMY_WEAPONS := [
+	{"id": "nailgun", "player_tool_id": "nail_gun", "label": "Nailgun", "path": "res://character/weapons/NailGun.tscn"},
+	{"id": "future_mpx", "player_tool_id": "future_mpx", "label": "FutureMPX", "path": "res://character/weapons/FutureMPX.tscn"},
+	{"id": "future_m4", "player_tool_id": "future_m4", "label": "FutureM4", "path": "res://character/weapons/FutureM4.tscn"},
+	{"id": "mpx", "player_tool_id": "mpx", "label": "MPX", "path": "res://character/weapons/MPX.tscn"},
+	{"id": "m4", "player_tool_id": "m4", "label": "M4", "path": "res://character/weapons/M4.tscn"},
+	{"id": "shotgun", "player_tool_id": "shotgun", "label": "Shotgun", "path": "res://character/weapons/Shotgun.tscn"},
+	{"id": "sproutblaster", "player_tool_id": "sprout_blaster", "label": "SproutBlaster", "path": "res://character/weapons/SproutBlaster.tscn"},
+	{"id": "suppressed_pistol", "player_tool_id": "suppressed_pistol", "label": "Suppressed Pistol", "path": "res://character/weapons/SuppressedPistol.tscn"},
+	{"id": "", "label": "Empty Hands", "path": ""},
+]
+
+const PROMOTIONAL_DUMMY_WEAPON_GRIP_SCALE := {
+	"nailgun": Vector3(0.5, 0.5, 0.5),
+	"future_mpx": Vector3(0.8, 0.8, 0.8),
+	"future_m4": Vector3(0.8, 0.8, 0.8),
+	"mpx": Vector3(0.8, 0.8, 0.8),
+	"m4": Vector3(0.8, 0.8, 0.8),
+	"shotgun": Vector3(0.3, 0.3, 0.3),
+	"sproutblaster": Vector3.ONE,
+	"suppressed_pistol": Vector3(0.3, 0.3, 0.3),
+}
+
+const PROMOTIONAL_DUMMY_WEAPON_GRIP_ROTATION := Vector3(0.0, 180.0, 180.0)
+const PROMOTIONAL_DUMMY_RIGHT_HAND_GRIP_OFFSET := Vector3(0.22, -0.25, 0.55)
+const PROMOTIONAL_DUMMY_RIGHT_ELBOW_POLE_OFFSET := Vector3(0.62, 0.08, -0.18)
+const PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS := [&"Walk", &"ToolUseRight"]
 const MAP_ICON_FILE_NAME = "map_icon.png"
 const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
 const ROADS_FILE_NAME = "roads.dat"
@@ -414,6 +473,11 @@ var _selected_spawn_kind = "giant_crop"
 var _selected_team_spawn_team := "red"
 var _selected_auxiliary_kind := "message_area"
 var _selected_neutral_crop_id := "wheat"
+var _selected_promotional_dummy_character_id := "farmer"
+var _selected_promotional_dummy_animation := ""
+var _selected_promotional_dummy_weapon_id := "future_m4"
+var _selected_promotional_dummy_continuous_fire := false
+var _promotional_player_tool_definitions_by_id: Dictionary = {}
 var _neutral_crop_area_size := Vector2(16.0, 16.0)
 var _neutral_crop_respawn_interval := 120.0
 var _neutral_crop_initial_delay := 0.0
@@ -438,6 +502,11 @@ var _placement_timer = 0.0
 var _stroke_active = false
 var _stroke_placed_once = false
 var _flatten_target_height = 0.0
+var _slope_start_position := Vector2.ZERO
+var _slope_start_height := 0.0
+var _slope_end_position := Vector2.ZERO
+var _slope_end_height := 0.0
+var _slope_has_start := false
 var _latest_hit = {}
 var _rng = RandomNumberGenerator.new()
 var _next_object_id = 1
@@ -535,6 +604,11 @@ var _road_drag_before: Dictionary = {}
 var _road_type = 1
 var _road_width_override = 0.0
 var _road_vertical_offset = 0.06
+var _road_center_line_mode = ROAD_CENTER_LINE_CONTINUOUS
+var _road_center_line_color = ROAD_CENTER_LINE_WHITE
+var _road_center_line_width = 0.12
+var _road_center_line_dash_length = 3.0
+var _road_center_line_gap_length = 6.0
 var _road_edit_visual_root: Node3D
 var _road_marker_root: Node3D
 var _road_centerline: MeshInstance3D
@@ -545,6 +619,11 @@ var _road_list_option: OptionButton
 var _road_type_option: OptionButton
 var _road_width_spin: SpinBox
 var _road_offset_spin: SpinBox
+var _road_center_line_mode_option: OptionButton
+var _road_center_line_color_option: OptionButton
+var _road_center_line_width_spin: SpinBox
+var _road_center_line_dash_length_spin: SpinBox
+var _road_center_line_gap_length_spin: SpinBox
 var _road_finish_button: Button
 var _road_delete_point_button: Button
 var _road_conform_button: Button
@@ -742,7 +821,7 @@ func _build_top_bar() -> void:
 	rows.add_child(primary_row)
 
 	var title = Label.new()
-	title.text = "FarmWar Runtime Map Editor"
+	title.text = "Harvest Operation Runtime Map Editor"
 	title.custom_minimum_size.x = 220.0
 	primary_row.add_child(title)
 
@@ -791,14 +870,14 @@ func _build_top_bar() -> void:
 
 	var open_button = Button.new()
 	open_button.text = "Open Map"
-	open_button.tooltip_text = "Open a saved FarmWar map package by selecting map.json."
+	open_button.tooltip_text = "Open a saved Harvest Operation map package by selecting map.json."
 	open_button.pressed.connect(_request_open_map)
 	primary_row.add_child(open_button)
 
 	var return_button = Button.new()
 	return_button.name = "ReturnToMainMenuButton"
 	return_button.text = "返回主界面"
-	return_button.tooltip_text = "返回 FarmWar 主界面。"
+	return_button.tooltip_text = "返回 Harvest Operation 主界面。"
 	return_button.custom_minimum_size = Vector2(148.0, 42.0)
 	return_button.add_theme_font_size_override("font_size", 18)
 	return_button.add_theme_color_override("font_color", Color.WHITE)
@@ -1145,6 +1224,7 @@ func _add_height_mode_buttons() -> void:
 		{"label": "Raise / Lower", "mode": HeightMode.RAISE_LOWER},
 		{"label": "Smooth", "mode": HeightMode.SMOOTH},
 		{"label": "Flatten", "mode": HeightMode.FLATTEN},
+		{"label": "Slope / Ramp", "mode": HeightMode.SLOPE_RAMP},
 	]:
 		var button = Button.new()
 		button.text = entry["label"]
@@ -1155,7 +1235,11 @@ func _add_height_mode_buttons() -> void:
 		_bottom_content.add_child(button)
 
 	var hint = Label.new()
-	hint.text = "Raise/Lower: hold Shift to lower. Flatten samples the height where each stroke begins."
+	hint.text = (
+		"Raise/Lower: hold Shift to lower. Flatten samples the height where each stroke begins. "
+		+ "Slope/Ramp: drag from the start point to the end point; the end height comes from the terrain under the cursor."
+	)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
 
@@ -1285,7 +1369,7 @@ func _add_asset_buttons(assets: Array) -> void:
 		_bottom_content.add_child(button)
 
 	var hint = Label.new()
-	hint.text = "LMB places complete FarmWar interaction scenes. Shift+LMB erases items inside the brush."
+	hint.text = "LMB places complete Harvest Operation interaction scenes. Shift+LMB erases items inside the brush."
 	_bottom_content.add_child(hint)
 
 
@@ -1330,6 +1414,7 @@ func _add_auxiliary_buttons() -> void:
 		{"label": "Message Area", "kind": "message_area"},
 		{"label": "Power Pole", "kind": "power_pole"},
 		{"label": "Neutral Crop Generator", "kind": "neutral_crop_generator"},
+		{"label": "Promotional Dummy", "kind": PROMOTIONAL_DUMMY_SPAWN_KIND},
 	]:
 		var button := Button.new()
 		button.text = str(entry["label"])
@@ -1343,10 +1428,103 @@ func _add_auxiliary_buttons() -> void:
 		_bottom_content.add_child(button)
 	if _selected_auxiliary_kind == "neutral_crop_generator":
 		_add_neutral_crop_generator_controls()
+	elif _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND:
+		_add_promotional_dummy_controls()
 	var hint := Label.new()
-	hint.text = "左键放置辅助物体。Message Area 可在 Inspector 设置提示；Power Pole 会按放置顺序与相邻电线杆生成两条下垂黑色电线；Neutral Crop Generator 会在无归属空 FarmTile 上按单一周期生成作物。Shift+左键删除。"
+	hint.text = "左键放置辅助物体。Message Area 可在 Inspector 设置提示；Power Pole 会按放置顺序与相邻电线杆生成电线；Neutral Crop Generator 会在空 FarmTile 上生成作物；Promotional Dummy 使用角色 GLB、玩家武器 TSCN 和循环动画，可选视觉 Continuous Fire，不参与移动、伤害或 AI。Shift+左键删除。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
+
+
+func _add_promotional_dummy_controls() -> void:
+	var heading := Label.new()
+	heading.text = "Promotional Dummy Settings"
+	_bottom_content.add_child(heading)
+
+	var character_row := HBoxContainer.new()
+	character_row.add_child(_make_label("Character"))
+	var character_option := OptionButton.new()
+	for entry_value in PROMOTIONAL_DUMMY_CHARACTERS:
+		var entry := entry_value as Dictionary
+		character_option.add_item(str(entry.get("label", entry.get("id", "Character"))))
+		character_option.set_item_metadata(character_option.item_count - 1, str(entry.get("id", "")))
+		if str(entry.get("id", "")) == _selected_promotional_dummy_character_id:
+			character_option.select(character_option.item_count - 1)
+	character_option.item_selected.connect(func(index: int) -> void:
+		_selected_promotional_dummy_character_id = str(character_option.get_item_metadata(index))
+		var selected_definition := _get_promotional_character_definition(
+			_selected_promotional_dummy_character_id
+		)
+		_selected_promotional_dummy_animation = _get_default_promotional_animation(selected_definition)
+		if not _promotional_character_supports_tool_use_right(selected_definition):
+			_selected_promotional_dummy_weapon_id = ""
+			_selected_promotional_dummy_continuous_fire = false
+		_refresh_bottom_dock()
+	)
+	character_row.add_child(character_option)
+	_bottom_content.add_child(character_row)
+
+	var character_definition := _get_promotional_character_definition(_selected_promotional_dummy_character_id)
+	var animation_names := _get_promotional_animation_names(str(character_definition.get("path", "")))
+	if _selected_promotional_dummy_animation.is_empty() \
+			or not animation_names.has(_selected_promotional_dummy_animation):
+		_selected_promotional_dummy_animation = _get_default_promotional_animation(character_definition)
+	var animation_row := HBoxContainer.new()
+	animation_row.add_child(_make_label("Loop Animation"))
+	var animation_option := OptionButton.new()
+	for animation_name in animation_names:
+		animation_option.add_item(animation_name)
+		if animation_name == _selected_promotional_dummy_animation:
+			animation_option.select(animation_option.item_count - 1)
+	if animation_names.is_empty():
+		animation_option.add_item("No animation found")
+		animation_option.disabled = true
+	else:
+		animation_option.item_selected.connect(func(index: int) -> void:
+			_selected_promotional_dummy_animation = animation_option.get_item_text(index)
+		)
+	animation_row.add_child(animation_option)
+	_bottom_content.add_child(animation_row)
+
+	var can_hold_weapon := _promotional_character_supports_tool_use_right(character_definition)
+	if not can_hold_weapon:
+		_selected_promotional_dummy_weapon_id = ""
+		_selected_promotional_dummy_continuous_fire = false
+	var weapon_row := HBoxContainer.new()
+	weapon_row.add_child(_make_label("Right-hand Weapon"))
+	var weapon_option := OptionButton.new()
+	for entry_value in PROMOTIONAL_DUMMY_WEAPONS:
+		var entry := entry_value as Dictionary
+		weapon_option.add_item(str(entry.get("label", entry.get("id", "Weapon"))))
+		weapon_option.set_item_metadata(weapon_option.item_count - 1, str(entry.get("id", "")))
+		if str(entry.get("id", "")) == _selected_promotional_dummy_weapon_id:
+			weapon_option.select(weapon_option.item_count - 1)
+	weapon_option.item_selected.connect(func(index: int) -> void:
+		_selected_promotional_dummy_weapon_id = str(weapon_option.get_item_metadata(index))
+		if _selected_promotional_dummy_weapon_id.is_empty():
+			_selected_promotional_dummy_continuous_fire = false
+		_refresh_bottom_dock()
+	)
+	weapon_option.disabled = not can_hold_weapon
+	weapon_row.add_child(weapon_option)
+	_bottom_content.add_child(weapon_row)
+
+	var continuous_fire_check := CheckButton.new()
+	continuous_fire_check.text = "Continuous Fire"
+	continuous_fire_check.button_pressed = _selected_promotional_dummy_continuous_fire
+	continuous_fire_check.disabled = not can_hold_weapon or _selected_promotional_dummy_weapon_id.is_empty()
+	continuous_fire_check.toggled.connect(func(value: bool) -> void:
+		if continuous_fire_check.disabled:
+			_selected_promotional_dummy_continuous_fire = false
+		else:
+			_selected_promotional_dummy_continuous_fire = value
+	)
+	_bottom_content.add_child(continuous_fire_check)
+
+	var loop_hint := Label.new()
+	loop_hint.text = "仅显示 Walk/ToolUseRight。拥有 ToolUseRight 的角色可在 Walk 和 ToolUseRight 中持有右手武器；僵尸只显示 Walk 并固定为空手。武器使用与玩家相同的 TSCN、握持缩放和枪口视觉；Continuous Fire 只播放视觉开火，不产生伤害。"
+	loop_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(loop_hint)
 
 
 func _add_weather_controls() -> void:
@@ -2788,6 +2966,8 @@ func _add_object_edit_controls() -> void:
 		_add_message_area_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_neutral_crop_generator(_selected_map_object):
 		_add_neutral_crop_generator_inspector_controls()
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_promotional_dummy(_selected_map_object):
+		_add_promotional_dummy_inspector_controls()
 
 	if is_instance_valid(_selected_map_object) and _is_farmland(_selected_map_object):
 		_add_farmland_inspector_controls()
@@ -3175,6 +3355,284 @@ func _set_neutral_crop_generator_property(property_name: String, value: Variant)
 	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
 	_undo_redo.commit_action(false)
 	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _add_promotional_dummy_inspector_controls() -> void:
+	var dummy := _selected_map_object
+	_normalize_promotional_dummy_metadata(dummy)
+	var heading := Label.new()
+	heading.text = "Promotional Dummy Inspector"
+	_bottom_content.add_child(heading)
+
+	var character_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	var character_row := HBoxContainer.new()
+	character_row.add_child(_make_label("Character"))
+	var character_option := OptionButton.new()
+	for entry_value in PROMOTIONAL_DUMMY_CHARACTERS:
+		var entry := entry_value as Dictionary
+		character_option.add_item(str(entry.get("label", entry.get("id", "Character"))))
+		character_option.set_item_metadata(character_option.item_count - 1, str(entry.get("id", "")))
+		if str(entry.get("id", "")) == character_id:
+			character_option.select(character_option.item_count - 1)
+	character_option.item_selected.connect(func(index: int) -> void:
+		_set_promotional_dummy_property(
+			PROMOTIONAL_DUMMY_CHARACTER_META,
+			str(character_option.get_item_metadata(index))
+		)
+	)
+	character_row.add_child(character_option)
+	_bottom_content.add_child(character_row)
+
+	var character_definition := _get_promotional_character_definition(character_id)
+	var animation_names := _get_promotional_animation_names(str(character_definition.get("path", "")))
+	var animation_name := str(dummy.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
+	if animation_name.is_empty() or not animation_names.has(animation_name):
+		animation_name = _get_default_promotional_animation(character_definition)
+	var animation_row := HBoxContainer.new()
+	animation_row.add_child(_make_label("Loop Animation"))
+	var animation_option := OptionButton.new()
+	for name_value in animation_names:
+		var name := str(name_value)
+		animation_option.add_item(name)
+		if name == animation_name:
+			animation_option.select(animation_option.item_count - 1)
+	if animation_names.is_empty():
+		animation_option.add_item("No animation found")
+		animation_option.disabled = true
+	else:
+		animation_option.item_selected.connect(func(index: int) -> void:
+			_set_promotional_dummy_property(
+				PROMOTIONAL_DUMMY_ANIMATION_META,
+				animation_option.get_item_text(index)
+			)
+		)
+	animation_row.add_child(animation_option)
+	_bottom_content.add_child(animation_row)
+
+	var can_hold_weapon := _promotional_character_supports_tool_use_right(character_definition)
+	var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+	if not can_hold_weapon:
+		weapon_id = ""
+	var weapon_row := HBoxContainer.new()
+	weapon_row.add_child(_make_label("Right-hand Weapon"))
+	var weapon_option := OptionButton.new()
+	for entry_value in PROMOTIONAL_DUMMY_WEAPONS:
+		var entry := entry_value as Dictionary
+		weapon_option.add_item(str(entry.get("label", entry.get("id", "Weapon"))))
+		weapon_option.set_item_metadata(weapon_option.item_count - 1, str(entry.get("id", "")))
+		if str(entry.get("id", "")) == weapon_id:
+			weapon_option.select(weapon_option.item_count - 1)
+	weapon_option.item_selected.connect(func(index: int) -> void:
+		_set_promotional_dummy_property(
+			PROMOTIONAL_DUMMY_WEAPON_META,
+			str(weapon_option.get_item_metadata(index))
+		)
+	)
+	weapon_option.disabled = not can_hold_weapon
+	weapon_row.add_child(weapon_option)
+	_bottom_content.add_child(weapon_row)
+
+	var continuous_fire_check := CheckButton.new()
+	continuous_fire_check.text = "Continuous Fire"
+	continuous_fire_check.button_pressed = bool(dummy.get_meta(
+		PROMOTIONAL_DUMMY_AUTO_FIRE_META,
+		false
+	)) and not weapon_id.is_empty()
+	continuous_fire_check.disabled = weapon_id.is_empty() or not can_hold_weapon
+	continuous_fire_check.toggled.connect(func(value: bool) -> void:
+		_set_promotional_dummy_property(PROMOTIONAL_DUMMY_AUTO_FIRE_META, value)
+	)
+	_bottom_content.add_child(continuous_fire_check)
+
+	var hint := Label.new()
+	hint.text = "只允许 Walk/ToolUseRight 循环动画；没有 ToolUseRight 的角色不能持枪。武器复用玩家 TSCN、握持缩放、枪口粒子与火舌。Continuous Fire 只播放视觉开火，不产生伤害或网络事件。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _set_promotional_dummy_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_promotional_dummy(_selected_map_object):
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	if property_name == PROMOTIONAL_DUMMY_AUTO_FIRE_META:
+		var before_auto_fire := bool(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_AUTO_FIRE_META,
+			false
+		))
+		var weapon_id := str(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_WEAPON_META,
+			""
+		))
+		var next_auto_fire := bool(value) and not weapon_id.is_empty()
+		if before_auto_fire == next_auto_fire:
+			return
+		_undo_redo.create_action("Edit Promotional Dummy")
+		_undo_redo.add_do_method(
+			_apply_promotional_dummy_auto_fire_property.bind(uuid, next_auto_fire)
+		)
+		_undo_redo.add_undo_method(
+			_apply_promotional_dummy_auto_fire_property.bind(uuid, before_auto_fire)
+		)
+		_undo_redo.commit_action(false)
+		_apply_promotional_dummy_auto_fire_property(uuid, next_auto_fire)
+		return
+
+	var next_value := str(value)
+	if property_name == PROMOTIONAL_DUMMY_CHARACTER_META \
+			or property_name == PROMOTIONAL_DUMMY_WEAPON_META:
+		var before_character := str(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_CHARACTER_META,
+			"farmer"
+		))
+		var before_animation := str(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_ANIMATION_META,
+			""
+		))
+		var before_weapon := str(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_WEAPON_META,
+			"future_m4"
+		))
+		var before_auto_fire := bool(_selected_map_object.get_meta(
+			PROMOTIONAL_DUMMY_AUTO_FIRE_META,
+			false
+		))
+		var next_character := before_character
+		var next_animation := before_animation
+		var next_weapon := before_weapon
+		if property_name == PROMOTIONAL_DUMMY_CHARACTER_META:
+			next_character = next_value
+		else:
+			next_weapon = next_value
+
+		var next_definition := _get_promotional_character_definition(next_character)
+		var next_animation_names := _get_promotional_animation_names(
+			str(next_definition.get("path", ""))
+		)
+		if not next_animation_names.has(next_animation):
+			next_animation = _get_default_promotional_animation(next_definition)
+		if not _promotional_character_supports_tool_use_right(next_definition) \
+				or not _promotional_weapon_id_is_valid(next_weapon):
+			next_weapon = ""
+		var next_auto_fire := before_auto_fire and not next_weapon.is_empty()
+		if before_character == next_character \
+				and before_animation == next_animation \
+				and before_weapon == next_weapon \
+				and before_auto_fire == next_auto_fire:
+			return
+		_undo_redo.create_action("Edit Promotional Dummy")
+		_undo_redo.add_do_method(
+			_apply_promotional_dummy_configuration.bind(
+				uuid,
+				next_character,
+				next_animation,
+				next_weapon,
+				next_auto_fire
+			)
+		)
+		_undo_redo.add_undo_method(
+			_apply_promotional_dummy_configuration.bind(
+				uuid,
+				before_character,
+				before_animation,
+				before_weapon,
+				before_auto_fire
+			)
+		)
+		_undo_redo.commit_action(false)
+		_apply_promotional_dummy_configuration(
+			uuid,
+			next_character,
+			next_animation,
+			next_weapon,
+			next_auto_fire
+		)
+		return
+
+	var before: Variant = _selected_map_object.get_meta(property_name, "")
+	var normalized_value := next_value
+	if property_name == PROMOTIONAL_DUMMY_ANIMATION_META:
+		var animation_definition := _get_promotional_character_definition(str(
+			_selected_map_object.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer")
+		))
+		var names := _get_promotional_animation_names(str(animation_definition.get("path", "")))
+		if not names.has(normalized_value):
+			normalized_value = _get_default_promotional_animation(animation_definition)
+	if str(before) == normalized_value:
+		return
+	_undo_redo.create_action("Edit Promotional Dummy")
+	_undo_redo.add_do_method(_apply_promotional_dummy_property.bind(uuid, property_name, normalized_value))
+	_undo_redo.add_undo_method(_apply_promotional_dummy_property.bind(uuid, property_name, str(before)))
+	_undo_redo.commit_action(false)
+	_apply_promotional_dummy_property(uuid, property_name, normalized_value)
+
+
+func _apply_promotional_dummy_property(uuid: String, property_name: String, value: String) -> void:
+	var node := _find_editor_object_by_uuid(uuid)
+	if node == null or not _is_promotional_dummy(node):
+		return
+	var character_id := str(node.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	var animation_name := str(node.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
+	var weapon_id := str(node.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, "future_m4"))
+	var continuous_fire := bool(node.get_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false))
+	match property_name:
+		PROMOTIONAL_DUMMY_CHARACTER_META:
+			character_id = value
+		PROMOTIONAL_DUMMY_ANIMATION_META:
+			animation_name = value
+		PROMOTIONAL_DUMMY_WEAPON_META:
+			weapon_id = value
+	_apply_promotional_dummy_configuration(
+		uuid,
+		character_id,
+		animation_name,
+		weapon_id,
+		continuous_fire
+	)
+
+
+func _apply_promotional_dummy_auto_fire_property(uuid: String, value: bool) -> void:
+	var node := _find_editor_object_by_uuid(uuid)
+	if node == null or not _is_promotional_dummy(node):
+		return
+	var weapon_id := str(node.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+	var enabled := value and not weapon_id.is_empty()
+	node.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, enabled)
+	_configure_promotional_dummy_fire_controller(node)
+	if node == _selected_map_object and _tool_mode == ToolMode.OBJECT_EDIT:
+		_refresh_bottom_dock()
+
+
+func _apply_promotional_dummy_configuration(
+	uuid: String,
+	character_id: String,
+	animation_name: String,
+	weapon_id: String,
+	continuous_fire := false
+) -> void:
+	var node := _find_editor_object_by_uuid(uuid)
+	if node == null or not _is_promotional_dummy(node):
+		return
+	var definition := _get_promotional_character_definition(character_id)
+	var names := _get_promotional_animation_names(str(definition.get("path", "")))
+	if not names.has(animation_name):
+		animation_name = _get_default_promotional_animation(definition)
+	if not _promotional_character_supports_tool_use_right(definition) \
+			or not _promotional_weapon_id_is_valid(weapon_id):
+		weapon_id = ""
+	continuous_fire = continuous_fire and not weapon_id.is_empty()
+	node.set_meta(PROMOTIONAL_DUMMY_CHARACTER_META, character_id)
+	node.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, animation_name)
+	node.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, weapon_id)
+	node.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, continuous_fire)
+	node.set_meta("map_editor_asset_path", str(definition.get("path", "")))
+	_rebuild_promotional_dummy_visual(node)
+	if node == _selected_map_object:
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+		if _tool_mode == ToolMode.OBJECT_EDIT:
+			_refresh_bottom_dock()
 
 
 func _add_farmland_inspector_controls() -> void:
@@ -3742,8 +4200,52 @@ func _add_road_buttons() -> void:
 	_road_offset_spin.value_changed.connect(_on_road_offset_changed)
 	_bottom_content.add_child(_road_offset_spin)
 
+	_bottom_content.add_child(_make_label("Center Line"))
+	_road_center_line_mode_option = OptionButton.new()
+	_road_center_line_mode_option.add_item("None", ROAD_CENTER_LINE_NONE)
+	_road_center_line_mode_option.add_item("Continuous", ROAD_CENTER_LINE_CONTINUOUS)
+	_road_center_line_mode_option.add_item("Dashed", ROAD_CENTER_LINE_DASHED)
+	_road_center_line_mode_option.select(clampi(_road_center_line_mode, ROAD_CENTER_LINE_NONE, ROAD_CENTER_LINE_DASHED))
+	_road_center_line_mode_option.item_selected.connect(_on_road_center_line_mode_selected)
+	_bottom_content.add_child(_road_center_line_mode_option)
+
+	_bottom_content.add_child(_make_label("Center Line Color"))
+	_road_center_line_color_option = OptionButton.new()
+	_road_center_line_color_option.add_item("White", ROAD_CENTER_LINE_WHITE)
+	_road_center_line_color_option.add_item("Yellow", ROAD_CENTER_LINE_YELLOW)
+	_road_center_line_color_option.select(clampi(_road_center_line_color, ROAD_CENTER_LINE_WHITE, ROAD_CENTER_LINE_YELLOW))
+	_road_center_line_color_option.item_selected.connect(_on_road_center_line_color_selected)
+	_bottom_content.add_child(_road_center_line_color_option)
+
+	_bottom_content.add_child(_make_label("Center Line Width"))
+	_road_center_line_width_spin = SpinBox.new()
+	_road_center_line_width_spin.min_value = 0.03
+	_road_center_line_width_spin.max_value = 0.5
+	_road_center_line_width_spin.step = 0.01
+	_road_center_line_width_spin.value = _road_center_line_width
+	_road_center_line_width_spin.value_changed.connect(_on_road_center_line_width_changed)
+	_bottom_content.add_child(_road_center_line_width_spin)
+
+	_bottom_content.add_child(_make_label("Dash Length"))
+	_road_center_line_dash_length_spin = SpinBox.new()
+	_road_center_line_dash_length_spin.min_value = 0.5
+	_road_center_line_dash_length_spin.max_value = 10.0
+	_road_center_line_dash_length_spin.step = 0.1
+	_road_center_line_dash_length_spin.value = _road_center_line_dash_length
+	_road_center_line_dash_length_spin.value_changed.connect(_on_road_center_line_dash_length_changed)
+	_bottom_content.add_child(_road_center_line_dash_length_spin)
+
+	_bottom_content.add_child(_make_label("Dash Gap"))
+	_road_center_line_gap_length_spin = SpinBox.new()
+	_road_center_line_gap_length_spin.min_value = 0.5
+	_road_center_line_gap_length_spin.max_value = 15.0
+	_road_center_line_gap_length_spin.step = 0.1
+	_road_center_line_gap_length_spin.value = _road_center_line_gap_length
+	_road_center_line_gap_length_spin.value_changed.connect(_on_road_center_line_gap_length_changed)
+	_bottom_content.add_child(_road_center_line_gap_length_spin)
+
 	var hint = Label.new()
-	hint.text = "New Road or New Rail, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. RailTrack uses the 12m model with overlapping pieces to keep bends closed."
+	hint.text = "New Road or New Rail, then click the terrain to add points. Enter/Finish completes it. Select a yellow point and drag it along the terrain. Blue center guide is editor-only; road center lines are saved with the road. RailTrack uses the 12m model with overlapping pieces to keep bends closed."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size.x = 0.0
 	_bottom_content.add_child(hint)
@@ -3761,6 +4263,19 @@ func _update_road_control_states() -> void:
 		_road_conform_button.disabled = _selected_road == null
 	if _road_delete_button != null:
 		_road_delete_button.disabled = _selected_road == null
+	var center_line_disabled = _selected_road == null or _road_type == ROAD_TYPE_RAIL
+	if _road_center_line_mode_option != null:
+		_road_center_line_mode_option.disabled = center_line_disabled
+	if _road_center_line_color_option != null:
+		_road_center_line_color_option.disabled = (
+			center_line_disabled or _road_center_line_mode == ROAD_CENTER_LINE_NONE or _road_center_line_mode == ROAD_CENTER_LINE_DASHED
+		)
+	if _road_center_line_width_spin != null:
+		_road_center_line_width_spin.editable = not (center_line_disabled or _road_center_line_mode == ROAD_CENTER_LINE_NONE)
+	if _road_center_line_dash_length_spin != null:
+		_road_center_line_dash_length_spin.editable = not (center_line_disabled or _road_center_line_mode != ROAD_CENTER_LINE_DASHED)
+	if _road_center_line_gap_length_spin != null:
+		_road_center_line_gap_length_spin.editable = not (center_line_disabled or _road_center_line_mode != ROAD_CENTER_LINE_DASHED)
 
 
 func _add_water_buttons() -> void:
@@ -4779,6 +5294,7 @@ func _press_tool_shortcut(mode: ToolMode) -> void:
 func _process(delta: float) -> void:
 	_ensure_editor_camera_current()
 	_update_free_camera(delta)
+	_update_promotional_dummy_presentations()
 	if (
 		_boundary_warning_label != null
 		and _boundary_warning_label.visible
@@ -4792,6 +5308,20 @@ func _process(delta: float) -> void:
 		_end_stroke()
 	if _object_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_end_object_transform_drag()
+
+
+func _update_promotional_dummy_presentations() -> void:
+	if not is_instance_valid(_buildings_root):
+		return
+	for child in _buildings_root.get_children():
+		var dummy := child as Node3D
+		if not _is_promotional_dummy(dummy):
+			continue
+		var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+		if not weapon_id.is_empty() and dummy.get_node_or_null(
+			"PromotionalDummyFireController"
+		) == null:
+			_configure_promotional_dummy_fire_controller(dummy)
 
 
 func _ensure_editor_camera_current() -> void:
@@ -4857,7 +5387,15 @@ func _physics_process(delta: float) -> void:
 	if _tool_mode != ToolMode.FARMLAND:
 		_update_contact_brush(hit_position)
 	if _tool_mode == ToolMode.TERRAIN:
-		_update_height_boundary()
+		if (
+			_stroke_active
+			and _stroke_tool_mode == ToolMode.TERRAIN
+			and _height_mode == HeightMode.SLOPE_RAMP
+			and _slope_has_start
+		):
+			_update_slope_ramp_preview(hit_position)
+		else:
+			_update_height_boundary()
 	else:
 		_set_height_boundary_visible(false)
 
@@ -4940,6 +5478,7 @@ func _begin_stroke() -> void:
 	_placement_timer = 0.0
 	_stroke_height_before.clear()
 	if _stroke_tool_mode == ToolMode.TERRAIN:
+		_slope_has_start = false
 		_height_contour_points.clear()
 		_height_contour_delta = 0.0
 		_set_height_boundary_visible(false)
@@ -4947,6 +5486,17 @@ func _begin_stroke() -> void:
 		# contour layer underneath it so the same region never renders duplicate
 		# outlines while it is being sculpted.
 		_set_persistent_height_contour_visible(false)
+		if _height_mode == HeightMode.SLOPE_RAMP and not _latest_hit.is_empty():
+			_slope_start_position = Vector2(
+				(_latest_hit.get("position", Vector3.ZERO) as Vector3).x,
+				(_latest_hit.get("position", Vector3.ZERO) as Vector3).z,
+			)
+			_slope_start_height = get_terrain_height_world(_slope_start_position)
+			_slope_end_position = _slope_start_position
+			_slope_end_height = _slope_start_height
+			_slope_has_start = true
+	else:
+		_slope_has_start = false
 	_stroke_surface_before.clear()
 	_stroke_grass_before.clear()
 	_stroke_added_objects.clear()
@@ -4983,6 +5533,7 @@ func _end_stroke() -> void:
 	_stroke_grass_before.clear()
 	_stroke_added_objects.clear()
 	_stroke_removed_objects.clear()
+	_slope_has_start = false
 
 
 func _undo_last_action() -> void:
@@ -5038,6 +5589,97 @@ func _update_contact_brush(center: Vector3) -> void:
 	# The original brush ring remains a terrain-following cursor preview. The
 	# height-change contour is rendered separately from actual changed samples.
 	_brush_preview.visible = true
+
+
+func _update_slope_ramp_endpoint(center: Vector3) -> void:
+	if not _slope_has_start:
+		return
+	_slope_end_position = Vector2(center.x, center.z)
+	_slope_end_height = clampf(
+		get_terrain_height_world(_slope_end_position),
+		minimum_terrain_height,
+		maximum_terrain_height,
+	)
+
+
+func _slope_ramp_height_at(world_xz: Vector2) -> float:
+	if not _slope_has_start:
+		return get_terrain_height_world(world_xz)
+	var segment := _slope_end_position - _slope_start_position
+	var segment_length_squared := segment.length_squared()
+	var amount_along := 0.0
+	if segment_length_squared > 0.000001:
+		amount_along = clampf(
+			(world_xz - _slope_start_position).dot(segment) / segment_length_squared,
+			0.0,
+			1.0,
+		)
+	return lerpf(_slope_start_height, _slope_end_height, amount_along)
+
+
+func _update_slope_ramp_preview(center: Vector3) -> void:
+	if _height_boundary_mesh == null or _height_boundary_material == null:
+		return
+	_update_slope_ramp_endpoint(center)
+
+	_height_boundary_mesh.clear_surfaces()
+	var segment := _slope_end_position - _slope_start_position
+	var segment_length := segment.length()
+	var perpendicular := Vector2.ZERO
+	if segment_length > 0.001:
+		perpendicular = Vector2(-segment.y, segment.x).normalized() * _brush_radius
+
+	var boundary_color := Color(0.78, 0.35, 1.0, 0.98)
+	if _slope_end_height - _slope_start_height > 0.001:
+		boundary_color = Color(1.0, 0.38, 0.12, 0.98)
+	elif _slope_end_height - _slope_start_height < -0.001:
+		boundary_color = Color(0.20, 0.52, 1.0, 0.98)
+	_height_boundary_material.albedo_color = boundary_color
+
+	if segment_length <= 0.001:
+		_height_boundary_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, _height_boundary_material)
+		for index in range(33):
+			var angle := TAU * float(index) / 32.0
+			var point: Vector2 = _slope_start_position + Vector2(cos(angle), sin(angle)) * _brush_radius
+			_height_boundary_mesh.surface_add_vertex(Vector3(
+				point.x,
+				_slope_start_height + 0.14,
+				point.y,
+			))
+		_height_boundary_mesh.surface_end()
+		_set_height_boundary_visible(true)
+		return
+
+	var outline_points := [
+		_slope_start_position + perpendicular,
+		_slope_end_position + perpendicular,
+		_slope_end_position - perpendicular,
+		_slope_start_position - perpendicular,
+		_slope_start_position + perpendicular,
+	]
+	_height_boundary_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, _height_boundary_material)
+	for point in outline_points:
+		_height_boundary_mesh.surface_add_vertex(Vector3(
+			point.x,
+			_slope_ramp_height_at(point) + 0.14,
+			point.y,
+		))
+	_height_boundary_mesh.surface_end()
+
+	_height_boundary_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _height_boundary_material)
+	for pair in [
+		[_slope_start_position, _slope_end_position],
+		[_slope_start_position + perpendicular, _slope_start_position - perpendicular],
+		[_slope_end_position + perpendicular, _slope_end_position - perpendicular],
+	]:
+		for point in pair:
+			_height_boundary_mesh.surface_add_vertex(Vector3(
+				point.x,
+				_slope_ramp_height_at(point) + 0.14,
+				point.y,
+			))
+	_height_boundary_mesh.surface_end()
+	_set_height_boundary_visible(true)
 
 
 func _set_height_boundary_visible(value: bool) -> void:
@@ -5186,7 +5828,7 @@ func _update_height_boundary() -> void:
 
 
 # -----------------------------------------------------------------------------
-# New map and FarmWar map skeleton
+# New map and Harvest Operation map skeleton
 # -----------------------------------------------------------------------------
 
 func _create_map_from_ui() -> void:
@@ -5279,7 +5921,7 @@ func create_new_map(
 		false,
 		Image.FORMAT_RGBA8
 	)
-	# FarmWar mask encoding: R=base ID, G=overlay ID, B=blend. A is unused
+	# Harvest Operation mask encoding: R=base ID, G=overlay ID, B=blend. A is unused
 	# by the terrain shader, but keep it opaque for exported PNG inspection.
 	_surface_mask_image.fill(Color(default_encoded, default_encoded, 0.0, 1.0))
 	_surface_mask_texture = ImageTexture.create_from_image(_surface_mask_image)
@@ -5472,7 +6114,7 @@ func _create_terrain_material() -> void:
 	_terrain_material = ShaderMaterial.new()
 	var source_shader = _load_resource_or_null(TERRAIN_SHADER_PATH) as Shader
 	if source_shader == null:
-		push_error("FarmWar map editor: missing terrain shader: %s" % TERRAIN_SHADER_PATH)
+		push_error("Harvest Operation map editor: missing terrain shader: %s" % TERRAIN_SHADER_PATH)
 		return
 
 	# Use the same single-sided receiver as Creston. The generated index order
@@ -5560,7 +6202,7 @@ func _create_environment_skeleton() -> void:
 
 
 func _create_map_content_roots() -> void:
-	# Match the existing FarmWar map skeleton: one explicit Ground StaticBody3D
+	# Match the existing Harvest Operation map skeleton: one explicit Ground StaticBody3D
 	# owns all terrain collision shapes, while chunk meshes are grouped below it.
 	_ground_body = StaticBody3D.new()
 	_ground_body.name = "Ground"
@@ -5752,7 +6394,7 @@ func _new_child_node3d(parent: Node, name_value: String) -> Node3D:
 
 func _create_terrain_chunks() -> void:
 	if _ground_body == null or _terrain_root == null:
-		push_error("FarmWar map editor: Ground StaticBody3D was not created.")
+		push_error("Harvest Operation map editor: Ground StaticBody3D was not created.")
 		return
 
 	var cell_count_x = _sample_width - 1
@@ -5796,7 +6438,7 @@ func _create_terrain_chunks() -> void:
 			chunk_root.add_child(mesh_instance)
 
 			# CollisionShape3D is a direct child of the one explicit Ground
-			# StaticBody3D, matching the existing FarmWar map structure.
+			# StaticBody3D, matching the existing Harvest Operation map structure.
 			var collision = CollisionShape3D.new()
 			collision.name = "TerrainCollision_%d_%d" % [chunk_x, chunk_z]
 			collision.position = chunk_position
@@ -5823,13 +6465,13 @@ func _create_terrain_chunks() -> void:
 
 func _verify_terrain_mesh_visibility() -> void:
 	if _ground_body == null:
-		push_error("FarmWar map editor: Ground StaticBody3D is missing.")
+		push_error("Harvest Operation map editor: Ground StaticBody3D is missing.")
 		return
 	if _terrain_chunks.is_empty():
-		push_error("FarmWar map editor: no terrain chunks were generated.")
+		push_error("Harvest Operation map editor: no terrain chunks were generated.")
 		return
 	if _terrain_material == null or _terrain_material.shader == null:
-		push_error("FarmWar map editor: terrain material/shader is unavailable.")
+		push_error("Harvest Operation map editor: terrain material/shader is unavailable.")
 		return
 	var first_coordinate = _terrain_chunks.keys()[0] as Vector2i
 	var first_chunk = _terrain_chunks[first_coordinate] as Node3D
@@ -5839,7 +6481,7 @@ func _verify_terrain_mesh_visibility() -> void:
 		null
 	) as CollisionShape3D
 	if first_mesh_instance == null or first_mesh_instance.mesh == null:
-		push_error("FarmWar map editor: first terrain chunk has no visible mesh.")
+		push_error("Harvest Operation map editor: first terrain chunk has no visible mesh.")
 	elif first_mesh_instance.mesh.get_surface_count() > 0:
 		var arrays = first_mesh_instance.mesh.surface_get_arrays(0)
 		var vertices = arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
@@ -5849,10 +6491,10 @@ func _verify_terrain_mesh_visibility() -> void:
 			var normal_index: int = indices[0]
 			if normals.size() <= normal_index or normals[normal_index].dot(Vector3.UP) <= 0.0:
 				push_error(
-					"FarmWar map editor: terrain vertex normal faces downward."
+					"Harvest Operation map editor: terrain vertex normal faces downward."
 				)
 	if first_collision == null or first_collision.shape == null:
-		push_error("FarmWar map editor: first terrain chunk has no collision shape.")
+		push_error("Harvest Operation map editor: first terrain chunk has no collision shape.")
 
 
 func _rebuild_terrain_chunk(coordinate: Vector2i, update_collision: bool) -> void:
@@ -5965,6 +6607,10 @@ func _rebuild_terrain_chunk_collision(
 
 
 func _apply_height_brush(center: Vector3, delta: float) -> void:
+	if _height_mode == HeightMode.SLOPE_RAMP:
+		_apply_slope_ramp(center, delta)
+		return
+
 	var bounds = _sample_bounds_for_brush(center, _brush_radius, 1)
 	if bounds.size.x <= 0 or bounds.size.y <= 0:
 		return
@@ -6015,6 +6661,64 @@ func _apply_height_brush(center: Vector3, delta: float) -> void:
 			next_value = clampf(next_value, minimum_terrain_height, maximum_terrain_height)
 			if not is_equal_approx(next_value, current):
 				var sample_id = _sample_index(x, z)
+				if not _stroke_height_before.has(sample_id):
+					_stroke_height_before[sample_id] = current
+				_set_height_sample(x, z, next_value)
+				changed = true
+
+	if changed:
+		_refresh_height_change_contour()
+		_rebuild_chunks_for_sample_rect(bounds)
+		if _rect_touches_terrain_edge(bounds):
+			_rebuild_terrain_skirt()
+
+
+func _apply_slope_ramp(center: Vector3, delta: float) -> void:
+	if not _slope_has_start:
+		return
+
+	_update_slope_ramp_endpoint(center)
+	var bounds := _sample_bounds_for_slope_ramp(
+		_slope_start_position,
+		_slope_end_position,
+		_brush_radius,
+		1,
+	)
+	if bounds.size.x <= 0 or bounds.size.y <= 0:
+		return
+
+	var segment := _slope_end_position - _slope_start_position
+	var segment_length_squared := segment.length_squared()
+	var changed := false
+	for z in range(bounds.position.y, bounds.end.y):
+		for x in range(bounds.position.x, bounds.end.x):
+			var sample_world := Vector2(
+				_terrain_origin.x + float(x) * vertex_spacing,
+				_terrain_origin.y + float(z) * vertex_spacing,
+			)
+			var amount_along := 0.0
+			if segment_length_squared > 0.000001:
+				amount_along = clampf(
+					(sample_world - _slope_start_position).dot(segment) / segment_length_squared,
+					0.0,
+					1.0,
+				)
+			var closest_point := _slope_start_position + segment * amount_along
+			var distance := sample_world.distance_to(closest_point)
+			if distance > _brush_radius:
+				continue
+
+			var falloff := _smooth_falloff(distance, _brush_radius)
+			var current := _get_height_sample(x, z)
+			var target := lerpf(_slope_start_height, _slope_end_height, amount_along)
+			var blend := clampf(_brush_strength * 0.35 * delta * falloff, 0.0, 1.0)
+			var next_value := clampf(
+				lerpf(current, target, blend),
+				minimum_terrain_height,
+				maximum_terrain_height,
+			)
+			if not is_equal_approx(next_value, current):
+				var sample_id := _sample_index(x, z)
 				if not _stroke_height_before.has(sample_id):
 					_stroke_height_before[sample_id] = current
 				_set_height_sample(x, z, next_value)
@@ -6176,6 +6880,23 @@ func _sample_bounds_for_brush(center: Vector3, radius: float, padding: int = 0) 
 	return Rect2i(min_x, min_z, max_x - min_x + 1, max_z - min_z + 1)
 
 
+func _sample_bounds_for_slope_ramp(
+	start: Vector2,
+	finish: Vector2,
+	radius: float,
+	padding: int = 0,
+) -> Rect2i:
+	var minimum_world := start.min(finish) - Vector2.ONE * radius
+	var maximum_world := start.max(finish) + Vector2.ONE * radius
+	var minimum := _world_to_sample_float(minimum_world)
+	var maximum := _world_to_sample_float(maximum_world)
+	var min_x := clampi(floori(minimum.x) - padding, 0, _sample_width - 1)
+	var min_z := clampi(floori(minimum.y) - padding, 0, _sample_depth - 1)
+	var max_x := clampi(ceili(maximum.x) + padding, 0, _sample_width - 1)
+	var max_z := clampi(ceili(maximum.y) + padding, 0, _sample_depth - 1)
+	return Rect2i(min_x, min_z, max_x - min_x + 1, max_z - min_z + 1)
+
+
 func _calculate_height_normal(x: int, z: int) -> Vector3:
 	var left = _get_height_sample(x - 1, z)
 	var right = _get_height_sample(x + 1, z)
@@ -6315,7 +7036,7 @@ func _smooth_falloff(distance: float, radius: float) -> float:
 
 
 # -----------------------------------------------------------------------------
-# FarmWar surface-mask paint
+# Harvest Operation surface-mask paint
 # -----------------------------------------------------------------------------
 
 func _apply_surface_brush(center: Vector3, delta: float) -> void:
@@ -6723,7 +7444,7 @@ func _get_grass_mesh_components(scene_path: String) -> Array:
 	var result: Array = []
 	var packed = _load_resource_or_null(scene_path) as PackedScene
 	if packed == null:
-		push_warning("FarmWar map editor: grass scene not found: %s" % scene_path)
+		push_warning("Harvest Operation map editor: grass scene not found: %s" % scene_path)
 		return result
 	var source_root = packed.instantiate() as Node3D
 	if source_root == null:
@@ -7261,24 +7982,47 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		asset_path = POWER_POLE_PATH
 	elif _selected_auxiliary_kind == "neutral_crop_generator":
 		asset_path = NEUTRAL_CROP_GENERATOR_PATH
+	elif _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND:
+		asset_path = str(_get_promotional_character_definition(_selected_promotional_dummy_character_id).get("path", ""))
 	var packed := _load_resource_or_null(asset_path) as PackedScene
-	if packed == null:
+	if packed == null and _selected_auxiliary_kind != PROMOTIONAL_DUMMY_SPAWN_KIND:
 		_set_status("Missing auxiliary scene: %s" % asset_path)
 		return
-	var instance := packed.instantiate() as Node3D
+	var instance: Node3D
+	if _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND:
+		instance = _create_promotional_dummy_node(
+			_selected_promotional_dummy_character_id,
+			_selected_promotional_dummy_animation,
+			_selected_promotional_dummy_weapon_id,
+			_selected_promotional_dummy_continuous_fire
+		)
+	else:
+		instance = packed.instantiate() as Node3D
 	if instance == null:
 		_set_status("Auxiliary root is not Node3D: %s" % asset_path)
 		return
 	var is_power_pole := _selected_auxiliary_kind == "power_pole"
 	var is_neutral_crop_generator := _selected_auxiliary_kind == "neutral_crop_generator"
+	var is_promotional_dummy := _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND
 	instance.name = ("PowerPole" if is_power_pole else "MessageArea") + "_%04d" % _next_object_id
 	if is_neutral_crop_generator:
 		instance.name = "NeutralCropGenerator_%04d" % _next_object_id
+	if is_promotional_dummy:
+		instance.name = "PromotionalDummy_%04d" % _next_object_id
 	instance.set_meta("map_editor_category", "auxiliary")
 	instance.set_meta("map_editor_asset_path", asset_path)
 	instance.set_meta("map_editor_uuid", _new_editor_uuid("auxiliary"))
 	instance.set_meta("map_editor_align_mode", "upright")
-	instance.set_meta("map_editor_ground_offset", 0.0 if is_power_pole else 0.02)
+	instance.set_meta("map_editor_ground_offset", 0.0 if is_power_pole or is_promotional_dummy else 0.02)
+	if is_promotional_dummy:
+		instance.set_meta("map_editor_spawn_kind", PROMOTIONAL_DUMMY_SPAWN_KIND)
+		instance.set_meta(PROMOTIONAL_DUMMY_CHARACTER_META, _selected_promotional_dummy_character_id)
+		instance.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, _selected_promotional_dummy_animation)
+		instance.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, _selected_promotional_dummy_weapon_id)
+		instance.set_meta(
+			PROMOTIONAL_DUMMY_AUTO_FIRE_META,
+			_selected_promotional_dummy_continuous_fire
+		)
 	if is_neutral_crop_generator:
 		_set_property_if_present(instance, "generator_id", "neutral_crop_%03d" % _next_object_id)
 		_set_property_if_present(instance, "crop_id", _selected_neutral_crop_id)
@@ -7291,6 +8035,8 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 	var placement_yaw := _rng.randf_range(-PI, PI) if is_power_pole else 0.0
 	if is_power_pole:
 		_place_map_object_at_terrain(instance, Vector2(center.x, center.z), placement_yaw, false, 0.0)
+	elif is_promotional_dummy:
+		_place_node_on_terrain(instance, Vector2(center.x, center.z), 0.0, 1.0, 0.0)
 	else:
 		_place_node_on_terrain(instance, Vector2(center.x, center.z), placement_yaw, 1.0, 0.02)
 	if is_neutral_crop_generator and instance.has_method("refresh_visuals"):
@@ -7303,6 +8049,8 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		_set_status("Placed Power Pole; adjacent poles now show two live wires")
 	elif is_neutral_crop_generator:
 		_set_status("Placed Neutral Crop Generator; crops will be generated when the map loads")
+	elif is_promotional_dummy:
+		_set_status("Placed Promotional Dummy; edit its animation and weapon in Object Transform")
 	else:
 		_set_status("Placed MessageArea; use Transform Objects to edit its Inspector")
 
@@ -7319,6 +8067,441 @@ func _is_neutral_crop_generator(node: Node3D) -> bool:
 		return false
 	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
 	return asset_path == NEUTRAL_CROP_GENERATOR_PATH or node.scene_file_path == NEUTRAL_CROP_GENERATOR_PATH
+
+
+func _is_promotional_dummy(node: Node3D) -> bool:
+	if node == null:
+		return false
+	return str(node.get_meta("map_editor_spawn_kind", "")) == PROMOTIONAL_DUMMY_SPAWN_KIND
+
+
+func _get_promotional_character_definition(character_id: String) -> Dictionary:
+	for entry_value in PROMOTIONAL_DUMMY_CHARACTERS:
+		var entry := entry_value as Dictionary
+		if str(entry.get("id", "")) == character_id:
+			return entry
+	return PROMOTIONAL_DUMMY_CHARACTERS[0] as Dictionary
+
+
+func _get_promotional_weapon_definition(weapon_id: String) -> Dictionary:
+	for entry_value in PROMOTIONAL_DUMMY_WEAPONS:
+		var entry := entry_value as Dictionary
+		if str(entry.get("id", "")) == weapon_id:
+			var result := entry.duplicate(true)
+			var player_tool_id := str(result.get("player_tool_id", weapon_id))
+			_ensure_promotional_player_tool_definitions()
+			var player_definition := _promotional_player_tool_definitions_by_id.get(
+				player_tool_id,
+			{}
+		) as Dictionary
+			if not player_definition.is_empty():
+				for property_name in [
+					"path",
+					"grip_position",
+					"grip_rotation",
+					"grip_scale",
+					"left_hand_grip_offset",
+					"cooldown",
+					"category",
+					"two_handed",
+				]:
+					if player_definition.has(property_name):
+						result[property_name] = player_definition[property_name]
+			return result
+	return PROMOTIONAL_DUMMY_WEAPONS[0] as Dictionary
+
+
+func _ensure_promotional_player_tool_definitions() -> void:
+	if not _promotional_player_tool_definitions_by_id.is_empty():
+		return
+	if not FileAccess.file_exists(PROMOTIONAL_DUMMY_TOOL_CONFIG_PATH):
+		push_warning(
+			"Promotional dummy could not read player tool definitions: %s"
+			% PROMOTIONAL_DUMMY_TOOL_CONFIG_PATH
+		)
+		return
+	var file := FileAccess.open(PROMOTIONAL_DUMMY_TOOL_CONFIG_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not parsed is Dictionary:
+		return
+	var tools_value: Variant = (parsed as Dictionary).get("tools", [])
+	if not tools_value is Array:
+		return
+	for source_value in tools_value as Array:
+		if not source_value is Dictionary:
+			continue
+		var definition := (source_value as Dictionary).duplicate(true)
+		var tool_id := str(definition.get("id", ""))
+		if tool_id.is_empty():
+			continue
+		definition["grip_position"] = _promotional_vector3(
+			definition.get("grip_position", []),
+			Vector3.ZERO
+		)
+		definition["grip_rotation"] = _promotional_vector3(
+			definition.get("grip_rotation", []),
+			Vector3.ZERO
+		)
+		definition["grip_scale"] = _promotional_vector3(
+			definition.get("grip_scale", []),
+			Vector3.ONE
+		)
+		if definition.has("left_hand_grip_offset"):
+			definition["left_hand_grip_offset"] = _promotional_vector3(
+				definition.get("left_hand_grip_offset", []),
+				Vector3.ZERO
+			)
+		_promotional_player_tool_definitions_by_id[tool_id] = definition
+
+
+func _promotional_vector3(value: Variant, fallback: Vector3) -> Vector3:
+	if value is Array:
+		var values := value as Array
+		if values.size() >= 3:
+			return Vector3(
+				float(values[0]),
+				float(values[1]),
+				float(values[2])
+			)
+	return fallback
+
+
+func _promotional_weapon_id_is_valid(weapon_id: String) -> bool:
+	for entry_value in PROMOTIONAL_DUMMY_WEAPONS:
+		var entry := entry_value as Dictionary
+		if str(entry.get("id", "")) == weapon_id:
+			return true
+	return false
+
+
+func _promotional_animation_name_for(
+	names: PackedStringArray,
+	preferred_name: String
+) -> String:
+	for name in names:
+		if str(name).to_lower() == preferred_name.to_lower():
+			return str(name)
+	return ""
+
+
+func _get_promotional_animation_names(character_path: String) -> PackedStringArray:
+	var source_names := PackedStringArray()
+	var packed := _load_resource_or_null(character_path) as PackedScene
+	if packed == null:
+		return source_names
+	var character := packed.instantiate() as Node3D
+	if character == null:
+		return source_names
+	var animation_player := character.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if animation_player != null:
+		for library_name in animation_player.get_animation_library_list():
+			var library := animation_player.get_animation_library(library_name)
+			if library == null:
+				continue
+			for animation_name in library.get_animation_list():
+				var name := str(animation_name)
+				if not source_names.has(name):
+					source_names.append(name)
+	character.free()
+	var result := PackedStringArray()
+	for allowed_name in PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS:
+		var source_name := _promotional_animation_name_for(source_names, str(allowed_name))
+		if not source_name.is_empty():
+			result.append(source_name)
+	return result
+
+
+func _promotional_character_supports_tool_use_right(character_definition: Dictionary) -> bool:
+	return _promotional_animation_name_for(
+		_get_promotional_animation_names(str(character_definition.get("path", ""))),
+		"ToolUseRight"
+	) != ""
+
+
+func _get_default_promotional_animation(character_definition: Dictionary) -> String:
+	var names := _get_promotional_animation_names(str(character_definition.get("path", "")))
+	for preferred in ["Walk", "ToolUseRight"]:
+		var animation_name := _promotional_animation_name_for(names, preferred)
+		if not animation_name.is_empty():
+			return animation_name
+	return str(names[0]) if not names.is_empty() else ""
+
+
+func _normalize_promotional_dummy_metadata(dummy: Node3D) -> void:
+	if dummy == null or not _is_promotional_dummy(dummy):
+		return
+	var character_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	var definition := _get_promotional_character_definition(character_id)
+	var animation_names := _get_promotional_animation_names(str(definition.get("path", "")))
+	var animation_name := str(dummy.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
+	if not animation_names.has(animation_name):
+		animation_name = _get_default_promotional_animation(definition)
+	var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, "future_m4"))
+	if not _promotional_character_supports_tool_use_right(definition) \
+			or not _promotional_weapon_id_is_valid(weapon_id):
+		weapon_id = ""
+	var continuous_fire := bool(dummy.get_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false))
+	if weapon_id.is_empty():
+		continuous_fire = false
+	dummy.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, animation_name)
+	dummy.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, weapon_id)
+	dummy.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, continuous_fire)
+
+
+func _add_promotional_dummy_right_arm_ik(
+	dummy: Node3D,
+	character: Node3D,
+	skeleton: Skeleton3D,
+	weapon_enabled: bool
+) -> void:
+	var upper_arm_index := skeleton.find_bone("UpperArm.R")
+	var forearm_index := skeleton.find_bone("Forearm.R")
+	var hand_index := skeleton.find_bone("Hand.R")
+	if upper_arm_index < 0 or forearm_index < 0 or hand_index < 0:
+		push_warning("Promotional dummy character is missing right-arm IK bones: %s" % character.name)
+		return
+	var skeleton_frame := skeleton.global_transform if skeleton.is_inside_tree() else character.transform * skeleton.transform
+	var shoulder_world := skeleton_frame * skeleton.get_bone_global_pose(upper_arm_index)
+	var hand_world := skeleton_frame * skeleton.get_bone_global_pose(hand_index)
+	var side_direction := hand_world.origin - shoulder_world.origin
+	side_direction.y = 0.0
+	if side_direction.length_squared() < 0.001:
+		side_direction = Vector3.LEFT
+	else:
+		side_direction = side_direction.normalized()
+	var character_basis := character.global_transform.basis if character.is_inside_tree() else character.transform.basis
+	var presentation_forward := character_basis.z.normalized()
+	if presentation_forward.length_squared() < 0.001:
+		presentation_forward = Vector3.FORWARD
+
+	var right_hand_target := Marker3D.new()
+	right_hand_target.name = "RightHandIKTarget"
+	dummy.add_child(right_hand_target)
+	var right_hand_target_position := shoulder_world.origin \
+		+ side_direction * PROMOTIONAL_DUMMY_RIGHT_HAND_GRIP_OFFSET.x \
+		+ Vector3.UP * PROMOTIONAL_DUMMY_RIGHT_HAND_GRIP_OFFSET.y \
+		+ presentation_forward * PROMOTIONAL_DUMMY_RIGHT_HAND_GRIP_OFFSET.z
+	right_hand_target.position = _promotional_dummy_to_local_position(
+		dummy,
+		right_hand_target_position
+	)
+
+	var right_elbow_pole := Marker3D.new()
+	right_elbow_pole.name = "RightElbowPole"
+	dummy.add_child(right_elbow_pole)
+	var right_elbow_pole_position := shoulder_world.origin \
+		+ side_direction * PROMOTIONAL_DUMMY_RIGHT_ELBOW_POLE_OFFSET.x \
+		+ Vector3.UP * PROMOTIONAL_DUMMY_RIGHT_ELBOW_POLE_OFFSET.y \
+		+ presentation_forward * PROMOTIONAL_DUMMY_RIGHT_ELBOW_POLE_OFFSET.z
+	right_elbow_pole.position = _promotional_dummy_to_local_position(
+		dummy,
+		right_elbow_pole_position
+	)
+
+	var right_arm_ik := TwoBoneIK3D.new()
+	right_arm_ik.name = "PromotionalRightArmIK"
+	skeleton.add_child(right_arm_ik)
+	right_arm_ik.setting_count = 1
+	right_arm_ik.set_root_bone_name(0, "UpperArm.R")
+	right_arm_ik.set_middle_bone_name(0, "Forearm.R")
+	right_arm_ik.set_end_bone_name(0, "Hand.R")
+	right_arm_ik.set_use_virtual_end(0, false)
+	right_arm_ik.set_extend_end_bone(0, false)
+	right_arm_ik.set_pole_direction(
+		0,
+		SkeletonModifier3D.SECONDARY_DIRECTION_PLUS_X
+	)
+	right_arm_ik.set_target_node(0, right_arm_ik.get_path_to(right_hand_target))
+	right_arm_ik.set_pole_node(0, right_arm_ik.get_path_to(right_elbow_pole))
+	right_arm_ik.active = weapon_enabled
+	right_arm_ik.influence = 1.0 if weapon_enabled else 0.0
+
+
+func _promotional_dummy_to_local_position(dummy: Node3D, world_position: Vector3) -> Vector3:
+	if dummy != null and dummy.is_inside_tree():
+		return dummy.to_local(world_position)
+	return dummy.transform.affine_inverse() * world_position
+
+
+func _create_promotional_dummy_node(
+	character_id: String,
+	animation_name: String,
+	weapon_id: String,
+	continuous_fire := false
+) -> Node3D:
+	var dummy := Node3D.new()
+	dummy.set_meta("map_editor_spawn_kind", PROMOTIONAL_DUMMY_SPAWN_KIND)
+	dummy.set_meta(PROMOTIONAL_DUMMY_CHARACTER_META, character_id)
+	dummy.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, animation_name)
+	dummy.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, weapon_id)
+	dummy.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, continuous_fire)
+	var character_definition := _get_promotional_character_definition(character_id)
+	dummy.set_meta("map_editor_asset_path", str(character_definition.get("path", "")))
+	_normalize_promotional_dummy_metadata(dummy)
+	_rebuild_promotional_dummy_visual(dummy)
+	return dummy
+
+
+func _rebuild_promotional_dummy_visual(dummy: Node3D) -> void:
+	if dummy == null:
+		return
+	for child in dummy.get_children():
+		dummy.remove_child(child)
+		child.free()
+
+	var character_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	var character_definition := _get_promotional_character_definition(character_id)
+	var character_path := str(character_definition.get("path", ""))
+	_normalize_promotional_dummy_metadata(dummy)
+	var character_scene := _load_resource_or_null(character_path) as PackedScene
+	if character_scene == null:
+		push_warning("Promotional dummy character GLB missing: %s" % character_path)
+		return
+	var character := character_scene.instantiate() as Node3D
+	if character == null:
+		return
+	character.name = "CharacterGLB"
+	dummy.add_child(character)
+	for mesh_value in character.find_children("*", "MeshInstance3D", true, false):
+		(mesh_value as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+	var source_animation_player := character.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	var animation_names := _get_promotional_animation_names(character_path)
+	var animation_name := str(dummy.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
+	if animation_name.is_empty() or not animation_names.has(animation_name):
+		animation_name = _get_default_promotional_animation(character_definition)
+	dummy.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, animation_name)
+	if source_animation_player != null:
+		source_animation_player.stop()
+		source_animation_player.playback_active = false
+	_create_promotional_animation_controller(dummy, character, source_animation_player, animation_name)
+
+	var skeleton := character.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skeleton == null:
+		push_warning("Promotional dummy character has no Skeleton3D: %s" % character_path)
+		return
+
+	var hand_socket := BoneAttachment3D.new()
+	hand_socket.name = "RightHandSocket"
+	hand_socket.bone_name = "Hand.R"
+	hand_socket.use_external_skeleton = true
+	dummy.add_child(hand_socket)
+	hand_socket.external_skeleton = hand_socket.get_path_to(skeleton)
+
+	var tool_pivot := Node3D.new()
+	tool_pivot.name = "ToolPivot"
+	hand_socket.add_child(tool_pivot)
+
+	var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+	_add_promotional_dummy_right_arm_ik(
+		dummy,
+		character,
+		skeleton,
+		not weapon_id.is_empty()
+	)
+	if weapon_id.is_empty():
+		_configure_promotional_dummy_fire_controller(dummy)
+		return
+	var weapon_definition := _get_promotional_weapon_definition(weapon_id)
+	var weapon_model := _extract_promotional_weapon_model(weapon_definition)
+	if weapon_model == null:
+		push_warning("Promotional dummy weapon scene missing: %s" % weapon_id)
+		_configure_promotional_dummy_fire_controller(dummy)
+		return
+	var weapon_grip := Node3D.new()
+	weapon_grip.name = "WeaponGrip"
+	weapon_grip.position = weapon_definition.get("grip_position", Vector3.ZERO)
+	weapon_grip.rotation_degrees = weapon_definition.get(
+		"grip_rotation",
+		PROMOTIONAL_DUMMY_WEAPON_GRIP_ROTATION
+	)
+	weapon_grip.scale = weapon_definition.get(
+		"grip_scale",
+		PROMOTIONAL_DUMMY_WEAPON_GRIP_SCALE.get(weapon_id, Vector3.ONE)
+	)
+	tool_pivot.add_child(weapon_grip)
+	weapon_grip.add_child(weapon_model)
+	_configure_promotional_dummy_fire_controller(dummy)
+
+
+func _create_promotional_animation_controller(
+	dummy: Node3D,
+	character: Node3D,
+	source_animation_player: AnimationPlayer,
+	animation_name: String
+) -> void:
+	if dummy == null or character == null or source_animation_player == null or animation_name.is_empty():
+		return
+	var source_animation := _get_promotional_animation(source_animation_player, animation_name)
+	if source_animation == null:
+		return
+	var animation_controller := AnimationPlayer.new()
+	animation_controller.name = "PromotionalAnimationPlayer"
+	dummy.add_child(animation_controller)
+	animation_controller.root_node = animation_controller.get_path_to(character)
+	var animation_library := AnimationLibrary.new()
+	var local_animation := source_animation.duplicate(true) as Animation
+	local_animation.loop_mode = Animation.LOOP_LINEAR
+	animation_library.add_animation(animation_name, local_animation)
+	animation_controller.add_animation_library("", animation_library)
+	animation_controller.autoplay = animation_name
+	animation_controller.assigned_animation = animation_name
+	animation_controller.playback_active = true
+	animation_controller.play(animation_name)
+
+
+func _get_promotional_animation(animation_player: AnimationPlayer, animation_name: String) -> Animation:
+	if animation_player == null:
+		return null
+	for library_name in animation_player.get_animation_library_list():
+		var library := animation_player.get_animation_library(library_name)
+		if library != null and library.has_animation(animation_name):
+			return library.get_animation(animation_name)
+	return null
+
+
+func _extract_promotional_weapon_model(weapon_definition: Dictionary) -> Node3D:
+	var weapon_model_path := str(weapon_definition.get("path", ""))
+	var packed := _load_resource_or_null(weapon_model_path) as PackedScene
+	if packed == null:
+		return null
+	var model := packed.instantiate() as Node3D
+	if model == null:
+		return null
+	model.name = "WeaponTSCN"
+	return model
+
+
+func _configure_promotional_dummy_fire_controller(dummy: Node3D) -> void:
+	if dummy == null:
+		return
+	var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+	var controller := dummy.get_node_or_null(
+		"PromotionalDummyFireController"
+	) as Node
+	if weapon_id.is_empty():
+		if controller != null and controller.has_method("configure"):
+			controller.call("configure", false, 0.1)
+		return
+	var controller_script := _load_resource_or_null(
+		PROMOTIONAL_DUMMY_FIRE_CONTROLLER_SCRIPT_PATH
+	) as Script
+	if controller_script == null:
+		push_warning("Missing promotional dummy fire controller script")
+		return
+	if controller == null:
+		controller = Node.new()
+		controller.name = "PromotionalDummyFireController"
+		controller.set_script(controller_script)
+		dummy.add_child(controller)
+	var weapon_definition := _get_promotional_weapon_definition(weapon_id)
+	var interval := maxf(0.03, float(weapon_definition.get("cooldown", 0.1)))
+	var enabled := bool(dummy.get_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false))
+	if controller.has_method("configure"):
+		controller.call("configure", enabled, interval)
 
 
 func _is_farmland(node: Node3D) -> bool:
@@ -7369,7 +8552,7 @@ func _rebuild_power_wires() -> void:
 		return
 	var wire_script := _load_resource_or_null(POWER_WIRE_SCRIPT_PATH) as Script
 	if wire_script == null:
-		push_warning("FarmWar map editor: missing power wire script: %s" % POWER_WIRE_SCRIPT_PATH)
+		push_warning("Harvest Operation map editor: missing power wire script: %s" % POWER_WIRE_SCRIPT_PATH)
 		return
 	var wire_count := 0
 	for pole_index in range(poles.size() - 1):
@@ -7474,6 +8657,15 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
+	if _is_promotional_dummy(node):
+		_normalize_promotional_dummy_metadata(node)
+		properties[PROMOTIONAL_DUMMY_CHARACTER_META] = str(node.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+		properties[PROMOTIONAL_DUMMY_ANIMATION_META] = str(node.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
+		properties[PROMOTIONAL_DUMMY_WEAPON_META] = str(node.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
+		properties[PROMOTIONAL_DUMMY_AUTO_FIRE_META] = bool(node.get_meta(
+			PROMOTIONAL_DUMMY_AUTO_FIRE_META,
+			false
+		))
 	return record
 
 
@@ -7552,6 +8744,14 @@ func _restore_object_records(records: Array) -> void:
 			marker.set_script(script)
 			marker.process_mode = Node.PROCESS_MODE_DISABLED
 			node = marker
+		elif category == "auxiliary" and spawn_kind == PROMOTIONAL_DUMMY_SPAWN_KIND:
+			var promotional_properties := record.get("properties", {}) as Dictionary
+			node = _create_promotional_dummy_node(
+				str(promotional_properties.get(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer")),
+				str(promotional_properties.get(PROMOTIONAL_DUMMY_ANIMATION_META, "")),
+				str(promotional_properties.get(PROMOTIONAL_DUMMY_WEAPON_META, "future_m4")),
+				bool(promotional_properties.get(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false))
+			)
 		else:
 			var packed = _load_resource_or_null(asset_path) as PackedScene
 			if packed == null:
@@ -8660,13 +9860,10 @@ func _pick_editor_object_at_mouse() -> Node3D:
 	var best: Node3D = null
 	var best_score = INF
 	for candidate in _get_all_editable_objects():
-		var center = _get_object_selection_center(candidate)
-		if _editor_camera.is_position_behind(center):
-			continue
-		var screen = _editor_camera.unproject_position(center)
-		var pixel_distance = screen.distance_to(mouse_position)
+		var pixel_distance := _get_object_screen_pick_distance(candidate, mouse_position)
 		if pixel_distance > object_pick_radius_px:
 			continue
+		var center := _get_object_selection_center(candidate)
 		var score = pixel_distance + _editor_camera.global_position.distance_to(center) * 0.002
 		if score < best_score:
 			best_score = score
@@ -8708,6 +9905,45 @@ func _get_object_selection_center(node: Node3D) -> Vector3:
 	if aabb.size.length_squared() <= 0.000001:
 		return node.global_position
 	return node.to_global(aabb.get_center())
+
+
+func _get_object_screen_pick_distance(node: Node3D, mouse_position: Vector2) -> float:
+	if node == null or _editor_camera == null:
+		return INF
+	var local_aabb := _calculate_node_aabb_relative_to(node, node)
+	if local_aabb.size.length_squared() <= 0.000001:
+		var center := _get_object_selection_center(node)
+		if _editor_camera.is_position_behind(center):
+			return INF
+		return _editor_camera.unproject_position(center).distance_to(mouse_position)
+
+	var screen_min := Vector2(INF, INF)
+	var screen_max := Vector2(-INF, -INF)
+	var visible_corner_count := 0
+	for x in [0.0, 1.0]:
+		for y in [0.0, 1.0]:
+			for z in [0.0, 1.0]:
+				var local_corner := local_aabb.position + Vector3(
+					local_aabb.size.x * x,
+					local_aabb.size.y * y,
+					local_aabb.size.z * z
+				)
+				var world_corner := node.to_global(local_corner)
+				if _editor_camera.is_position_behind(world_corner):
+					continue
+				var screen_corner := _editor_camera.unproject_position(world_corner)
+				screen_min.x = minf(screen_min.x, screen_corner.x)
+				screen_min.y = minf(screen_min.y, screen_corner.y)
+				screen_max.x = maxf(screen_max.x, screen_corner.x)
+				screen_max.y = maxf(screen_max.y, screen_corner.y)
+				visible_corner_count += 1
+	if visible_corner_count == 0:
+		return INF
+	var closest_screen_point := Vector2(
+		clampf(mouse_position.x, screen_min.x, screen_max.x),
+		clampf(mouse_position.y, screen_min.y, screen_max.y)
+	)
+	return mouse_position.distance_to(closest_screen_point)
 
 
 func _select_map_object(node: Node3D) -> void:
@@ -9119,6 +10355,7 @@ func save_current_map() -> void:
 
 	_update_map_metadata_before_save()
 	_rebuild_power_wires()
+	_rebuild_all_roads_immediately()
 	var map_validation_error := _get_playable_map_validation_error()
 	if not map_validation_error.is_empty():
 		_set_status(map_validation_error)
@@ -9298,6 +10535,7 @@ func _update_map_metadata_before_save() -> void:
 		"object_transform_editor",
 		"farmland_field_generator",
 		"neutral_crop_generator",
+		"promotional_dummy_visuals",
 		"facility_catalog",
 		"static_kitchen_facilities",
 		"static_defense_facilities",
@@ -9402,6 +10640,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"defense_facility_count": _count_map_facilities("defense"),
 			"farmland_count": _farmlands_root.get_child_count(),
 			"neutral_crop_generator_count": _count_neutral_crop_generators(),
+			"promotional_dummy_count": _count_promotional_dummies(),
 			"ai_configuration": _ai_configurations.duplicate(true),
 			"ai_count": _ai_configurations.size(),
 			"squad_generator_count": _get_editor_squad_spawners().size(),
@@ -9414,6 +10653,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"building_overlap_validation_enabled": true,
 			"farmland_editor_enabled": true,
 			"neutral_crop_generators_enabled": true,
+			"promotional_dummies_enabled": true,
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
 			"weather_settings_enabled": is_instance_valid(_weather_system),
 			"eclipse_weather_enabled": true,
@@ -9472,8 +10712,8 @@ func _build_map_file_dialogs() -> void:
 	_open_map_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_open_map_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_open_map_file_dialog.use_native_dialog = true
-	_open_map_file_dialog.title = "Open FarmWar Map Package"
-	_open_map_file_dialog.filters = PackedStringArray(["map.json ; FarmWar Map Manifest"])
+	_open_map_file_dialog.title = "Open Harvest Operation Map Package"
+	_open_map_file_dialog.filters = PackedStringArray(["map.json ; Harvest Operation Map Manifest"])
 	_open_map_file_dialog.file_selected.connect(_on_open_map_manifest_selected)
 	_ui_layer.add_child(_open_map_file_dialog)
 
@@ -9701,6 +10941,7 @@ func open_map_package(manifest_path: String) -> void:
 	_selected_squad_member_index = 0
 	_recalculate_loaded_object_counters()
 	_load_roads_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("roads", ROADS_FILE_NAME))))
+	_rebuild_all_roads_immediately()
 	_load_water_bodies_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("water_bodies", WATER_BODIES_FILE_NAME))))
 	_load_map_icon_from_package(_current_map_folder, str(manifest.get("icon", "")))
 	_rebuild_loaded_map_visuals()
@@ -9742,7 +10983,7 @@ func _load_heightmap_sidecar(path: String) -> void:
 	var values = file.get_buffer(remaining).to_float32_array()
 	file.close()
 	if width != _sample_width or depth != _sample_depth or values.size() != width * depth:
-		push_warning("FarmWar map editor: heightmap dimensions do not match map.json; keeping generated terrain.")
+		push_warning("Harvest Operation map editor: heightmap dimensions do not match map.json; keeping generated terrain.")
 		return
 	vertex_spacing = spacing
 	_height_samples = values
@@ -9946,7 +11187,9 @@ func _ensure_road_edit_visuals() -> void:
 	_road_centerline = MeshInstance3D.new()
 	_road_centerline.name = "Centerline"
 	_road_centerline.mesh = _road_centerline_mesh
-	_road_centerline.material_override = _make_unshaded_material(Color(1.0, 0.82, 0.1, 1.0))
+	# Keep the editor-only guide blue so it cannot be confused with a saved
+	# yellow road center line.
+	_road_centerline.material_override = _make_unshaded_material(Color(0.25, 0.55, 1.0, 1.0))
 	_road_edit_visual_root.add_child(_road_centerline)
 
 	_road_preview_mesh = ImmediateMesh.new()
@@ -10265,6 +11508,16 @@ func _count_neutral_crop_generators() -> int:
 	return count
 
 
+func _count_promotional_dummies() -> int:
+	if _buildings_root == null:
+		return 0
+	var count := 0
+	for child in _buildings_root.get_children():
+		if child is Node3D and _is_promotional_dummy(child as Node3D):
+			count += 1
+	return count
+
+
 func _count_map_facilities(category := "") -> int:
 	if _buildings_root == null:
 		return 0
@@ -10424,6 +11677,18 @@ func _begin_new_road() -> void:
 	if _roads_root == null:
 		return
 	_finish_active_road()
+	# New ordinary roads start with a visible continuous center line. Designers
+	# can still switch the mode to None or Dashed in the road controls.
+	_road_center_line_mode = ROAD_CENTER_LINE_CONTINUOUS
+	_road_center_line_color = ROAD_CENTER_LINE_WHITE
+	_road_center_line_width = 0.12
+	_road_center_line_dash_length = 3.0
+	_road_center_line_gap_length = 6.0
+	if _road_center_line_mode_option != null:
+		for index in range(_road_center_line_mode_option.item_count):
+			if _road_center_line_mode_option.get_item_id(index) == _road_center_line_mode:
+				_road_center_line_mode_option.select(index)
+				break
 	var road = _create_road_node()
 	if road == null:
 		_set_status("Could not create road: missing %s" % ROAD_SCRIPT_PATH)
@@ -10471,6 +11736,11 @@ func _create_road_node() -> Path3D:
 	_set_property_if_present(road, "mesh_sample_spacing", road_mesh_sample_spacing)
 	_set_property_if_present(road, "max_mesh_samples", road_max_mesh_samples)
 	_set_property_if_present(road, "vertical_offset", _road_vertical_offset)
+	_set_property_if_present(road, "center_line_mode", _road_center_line_mode)
+	_set_property_if_present(road, "center_line_color", _road_center_line_color)
+	_set_property_if_present(road, "center_line_width", _road_center_line_width)
+	_set_property_if_present(road, "center_line_dash_length", _road_center_line_dash_length)
+	_set_property_if_present(road, "center_line_gap_length", _road_center_line_gap_length)
 	_set_property_if_present(road, "editor_preview_mode", true)
 	_set_property_if_present(road, "follow_terrain", true)
 	_set_property_if_present(road, "terrain_collision_mask", TERRAIN_COLLISION_LAYER)
@@ -10648,30 +11918,6 @@ func _delete_selected_road() -> void:
 	_update_road_control_states()
 
 
-func _commit_road_state_change(action_name: String, before: Dictionary, after: Dictionary) -> void:
-	if before.is_empty() or after.is_empty():
-		return
-	_undo_redo.create_action(action_name)
-	_undo_redo.add_do_method(_apply_road_record_state.bind(after))
-	_undo_redo.add_undo_method(_apply_road_record_state.bind(before))
-	_undo_redo.commit_action(false)
-
-
-func _apply_road_record_state(record: Dictionary) -> void:
-	var uuid = str(record.get("uuid", ""))
-	var road = _find_road_by_uuid(uuid)
-	if road == null:
-		_restore_road_records([record])
-		road = _find_road_by_uuid(uuid)
-	if road == null:
-		return
-	_apply_serialized_road_to_node(road, record)
-	if _selected_road != null and str(_selected_road.get_meta("map_editor_road_uuid", "")) == uuid:
-		_selected_road = road
-	_rebuild_road_edit_visuals()
-	_refresh_bottom_dock()
-
-
 func _smooth_road_curve_handles(target_curve: Curve3D) -> void:
 	if target_curve == null:
 		return
@@ -10737,13 +11983,43 @@ func _find_nearest_road(world_position: Vector3) -> Path3D:
 	return best
 
 
+func _sync_road_editor_state_from_node(road: Path3D) -> void:
+	if road == null:
+		return
+	_road_type = int(_get_property_or(road, "road_type", 1))
+	_road_width_override = float(_get_property_or(road, "width_override", 0.0))
+	_road_vertical_offset = float(_get_property_or(road, "vertical_offset", road_default_vertical_offset))
+	_road_center_line_mode = clampi(
+		int(_get_property_or(road, "center_line_mode", ROAD_CENTER_LINE_CONTINUOUS)),
+		ROAD_CENTER_LINE_NONE,
+		ROAD_CENTER_LINE_DASHED
+	)
+	_road_center_line_color = clampi(
+		int(_get_property_or(road, "center_line_color", ROAD_CENTER_LINE_WHITE)),
+		ROAD_CENTER_LINE_WHITE,
+		ROAD_CENTER_LINE_YELLOW
+	)
+	if _road_center_line_mode == ROAD_CENTER_LINE_DASHED:
+		_road_center_line_color = ROAD_CENTER_LINE_WHITE
+	_road_center_line_width = maxf(
+		0.03,
+		float(_get_property_or(road, "center_line_width", 0.12))
+	)
+	_road_center_line_dash_length = maxf(
+		0.5,
+		float(_get_property_or(road, "center_line_dash_length", 3.0))
+	)
+	_road_center_line_gap_length = maxf(
+		0.5,
+		float(_get_property_or(road, "center_line_gap_length", 6.0))
+	)
+
+
 func _select_road(road: Path3D) -> void:
 	_selected_road = road
 	_road_selected_point = -1
 	_road_drawing_active = false
-	_road_type = int(_get_property_or(road, "road_type", 1))
-	_road_width_override = float(_get_property_or(road, "width_override", 0.0))
-	_road_vertical_offset = float(_get_property_or(road, "vertical_offset", road_default_vertical_offset))
+	_sync_road_editor_state_from_node(road)
 	_refresh_bottom_dock()
 	_rebuild_road_edit_visuals()
 	_update_road_control_states()
@@ -10786,6 +12062,7 @@ func _on_road_type_selected(index: int) -> void:
 				before,
 				_serialize_road(_selected_road)
 			)
+	_update_road_control_states()
 
 
 func _on_road_width_changed(value: float) -> void:
@@ -10811,6 +12088,97 @@ func _on_road_offset_changed(value: float) -> void:
 		if not _road_drawing_active:
 			_commit_road_state_change(
 				"Change Road Height Offset",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _on_road_center_line_mode_selected(index: int) -> void:
+	if _road_center_line_mode_option == null or index < 0:
+		return
+	var mode := _road_center_line_mode_option.get_item_id(index)
+	var before: Dictionary = {}
+	if _selected_road != null:
+		before = _serialize_road(_selected_road)
+	_road_center_line_mode = clampi(mode, ROAD_CENTER_LINE_NONE, ROAD_CENTER_LINE_DASHED)
+	if _road_center_line_mode == ROAD_CENTER_LINE_DASHED:
+		_road_center_line_color = ROAD_CENTER_LINE_WHITE
+		if _road_center_line_color_option != null:
+			_road_center_line_color_option.select(ROAD_CENTER_LINE_WHITE)
+	if _selected_road != null:
+		_set_property_if_present(_selected_road, "center_line_mode", _road_center_line_mode)
+		_set_property_if_present(_selected_road, "center_line_color", _road_center_line_color)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Center Line Style",
+				before,
+				_serialize_road(_selected_road)
+			)
+	_update_road_control_states()
+
+
+func _on_road_center_line_color_selected(index: int) -> void:
+	if _road_center_line_color_option == null or index < 0:
+		return
+	var color := _road_center_line_color_option.get_item_id(index)
+	if _road_center_line_mode == ROAD_CENTER_LINE_DASHED:
+		color = ROAD_CENTER_LINE_WHITE
+	var before: Dictionary = {}
+	if _selected_road != null:
+		before = _serialize_road(_selected_road)
+	_road_center_line_color = clampi(color, ROAD_CENTER_LINE_WHITE, ROAD_CENTER_LINE_YELLOW)
+	if _road_center_line_color_option != null:
+		_road_center_line_color_option.select(_road_center_line_color)
+	if _selected_road != null:
+		_set_property_if_present(_selected_road, "center_line_color", _road_center_line_color)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Center Line Color",
+				before,
+				_serialize_road(_selected_road)
+			)
+	_update_road_control_states()
+
+
+func _on_road_center_line_width_changed(value: float) -> void:
+	_road_center_line_width = maxf(0.03, value)
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "center_line_width", _road_center_line_width)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Center Line Width",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _on_road_center_line_dash_length_changed(value: float) -> void:
+	_road_center_line_dash_length = maxf(0.5, value)
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "center_line_dash_length", _road_center_line_dash_length)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Dash Length",
+				before,
+				_serialize_road(_selected_road)
+			)
+
+
+func _on_road_center_line_gap_length_changed(value: float) -> void:
+	_road_center_line_gap_length = maxf(0.5, value)
+	if _selected_road != null:
+		var before = _serialize_road(_selected_road)
+		_set_property_if_present(_selected_road, "center_line_gap_length", _road_center_line_gap_length)
+		_rebuild_road_now(_selected_road)
+		if not _road_drawing_active:
+			_commit_road_state_change(
+				"Change Road Dash Gap",
 				before,
 				_serialize_road(_selected_road)
 			)
@@ -10935,6 +12303,37 @@ func _rebuild_all_roads_to_terrain() -> void:
 			_rebuild_road_now(child as Path3D)
 
 
+func _rebuild_all_roads_immediately() -> void:
+	if _roads_root != null:
+		for child in _roads_root.get_children():
+			if child is Path3D and child.has_method("rebuild_road"):
+				child.call("rebuild_road")
+
+
+func _commit_road_state_change(action_name: String, before: Dictionary, after: Dictionary) -> void:
+	if before.is_empty() or after.is_empty():
+		return
+	_undo_redo.create_action(action_name)
+	_undo_redo.add_do_method(_apply_road_record_state.bind(after))
+	_undo_redo.add_undo_method(_apply_road_record_state.bind(before))
+	_undo_redo.commit_action(false)
+
+
+func _apply_road_record_state(record: Dictionary) -> void:
+	var uuid = str(record.get("uuid", ""))
+	var road = _find_road_by_uuid(uuid)
+	if road == null:
+		_restore_road_records([record])
+		road = _find_road_by_uuid(uuid)
+	if road == null:
+		return
+	_apply_serialized_road_to_node(road, record)
+	if _selected_road != null and str(_selected_road.get_meta("map_editor_road_uuid", "")) == uuid:
+		_selected_road = road
+	_rebuild_road_edit_visuals()
+	_refresh_bottom_dock()
+
+
 func _serialize_road(road: Path3D) -> Dictionary:
 	var uuid = str(road.get_meta("map_editor_road_uuid", ""))
 	if uuid.is_empty():
@@ -10959,6 +12358,12 @@ func _serialize_road(road: Path3D) -> Dictionary:
 		"mesh_sample_spacing": float(_get_property_or(road, "mesh_sample_spacing", road_mesh_sample_spacing)),
 		"max_mesh_samples": int(_get_property_or(road, "max_mesh_samples", road_max_mesh_samples)),
 		"vertical_offset": float(_get_property_or(road, "vertical_offset", road_default_vertical_offset)),
+		"center_line_mode": int(_get_property_or(road, "center_line_mode", ROAD_CENTER_LINE_CONTINUOUS)),
+		"center_line_color": int(_get_property_or(road, "center_line_color", ROAD_CENTER_LINE_WHITE)),
+		"center_line_width": float(_get_property_or(road, "center_line_width", 0.12)),
+		"center_line_dash_length": float(_get_property_or(road, "center_line_dash_length", 3.0)),
+		"center_line_gap_length": float(_get_property_or(road, "center_line_gap_length", 6.0)),
+		"center_line_lift": float(_get_property_or(road, "center_line_lift", 0.02)),
 		"texture_repeat_length": float(_get_property_or(road, "texture_repeat_length", 6.0)),
 		"follow_terrain": bool(_get_property_or(road, "follow_terrain", true)),
 		"terrain_collision_mask": int(_get_property_or(road, "terrain_collision_mask", TERRAIN_COLLISION_LAYER)),
@@ -10982,6 +12387,12 @@ func _apply_serialized_road_to_node(road: Path3D, record: Dictionary) -> void:
 	_set_property_if_present(road, "mesh_sample_spacing", float(record.get("mesh_sample_spacing", road_mesh_sample_spacing)))
 	_set_property_if_present(road, "max_mesh_samples", int(record.get("max_mesh_samples", road_max_mesh_samples)))
 	_set_property_if_present(road, "vertical_offset", float(record.get("vertical_offset", road_default_vertical_offset)))
+	_set_property_if_present(road, "center_line_mode", int(record.get("center_line_mode", ROAD_CENTER_LINE_CONTINUOUS)))
+	_set_property_if_present(road, "center_line_color", int(record.get("center_line_color", ROAD_CENTER_LINE_WHITE)))
+	_set_property_if_present(road, "center_line_width", float(record.get("center_line_width", 0.12)))
+	_set_property_if_present(road, "center_line_dash_length", float(record.get("center_line_dash_length", 3.0)))
+	_set_property_if_present(road, "center_line_gap_length", float(record.get("center_line_gap_length", 6.0)))
+	_set_property_if_present(road, "center_line_lift", float(record.get("center_line_lift", 0.02)))
 	_set_property_if_present(road, "editor_preview_mode", false)
 	_set_property_if_present(road, "texture_repeat_length", float(record.get("texture_repeat_length", 6.0)))
 	_set_property_if_present(road, "follow_terrain", bool(record.get("follow_terrain", true)))
@@ -11181,7 +12592,7 @@ func _save_map_icon(folder: String) -> bool:
 		return false
 	var error = _map_icon_image.save_png(icon_path)
 	if error != OK:
-		push_error("FarmWar map editor: failed to save map icon (%d)" % error)
+		push_error("Harvest Operation map editor: failed to save map icon (%d)" % error)
 		return false
 	return true
 

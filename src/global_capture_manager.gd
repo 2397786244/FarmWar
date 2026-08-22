@@ -55,7 +55,10 @@ func capture_current_view() -> void:
 	_capture_pending = true
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(CAPTURE_DIRECTORY))
 	var path := "%s/screenshot_%s.png" % [CAPTURE_DIRECTORY, _timestamp()]
-	var image := await capture_viewport_without_ui(get_viewport())
+	# Keep the current post-process/weather/remote visual effects, but remove the
+	# local player's own body, held model, and active remote device from the
+	# captured frame.
+	var image := await capture_viewport_without_ui(get_viewport(), true)
 	var error := image.save_png(path)
 	_capture_pending = false
 	if error == OK:
@@ -64,16 +67,23 @@ func capture_current_view() -> void:
 		_show_notice("截图保存失败：%s" % error_string(error))
 
 
-func capture_viewport_without_ui(viewport: Viewport) -> Image:
+func capture_viewport_without_ui(
+	viewport: Viewport,
+	hide_local_player := false
+) -> Image:
 	var visible_ui_roots: Array[Node] = []
 	_collect_visible_ui_roots(viewport, viewport, visible_ui_roots)
 	for node in visible_ui_roots:
 		_set_ui_root_visible(node, false)
+	var hidden_player_visuals: Array[Dictionary] = []
+	if hide_local_player:
+		_hide_local_player_visuals(viewport, hidden_player_visuals)
 	await RenderingServer.frame_post_draw
 	var image := viewport.get_texture().get_image()
 	for node in visible_ui_roots:
 		if is_instance_valid(node):
 			_set_ui_root_visible(node, true)
+	_restore_capture_nodes(hidden_player_visuals)
 	return image
 
 
@@ -83,6 +93,11 @@ func _collect_visible_ui_roots(node: Node, viewport: Viewport, result: Array[Nod
 			continue
 		var child_node := child as Node
 		if child_node is CanvasLayer:
+			# EffectLayer contains the active world post-process and remote visual
+			# shaders. It is a screen effect, not UI, so it must remain enabled for
+			# screenshots to match the current game view.
+			if _is_capture_visual_effect_layer(child_node):
+				continue
 			if (child_node as CanvasLayer).visible:
 				result.append(child_node)
 			continue
@@ -91,6 +106,85 @@ func _collect_visible_ui_roots(node: Node, viewport: Viewport, result: Array[Nod
 				result.append(child_node)
 			continue
 		_collect_visible_ui_roots(child_node, viewport, result)
+
+
+func _is_capture_visual_effect_layer(node: Node) -> bool:
+	if node == null:
+		return false
+	if node.name == "EffectLayer":
+		return true
+	return node.find_child("WorldPostProcess", true, false) != null
+
+
+func _hide_local_player_visuals(
+	viewport: Viewport,
+	hidden_nodes: Array[Dictionary]
+) -> void:
+	for player in get_tree().get_nodes_in_group("human_players"):
+		if not is_instance_valid(player) or not player.is_inside_tree():
+			continue
+		var remote_proxy: Variant = player.get("is_remote_proxy")
+		if remote_proxy == null:
+			continue
+		if bool(remote_proxy):
+			continue
+		if player.get_viewport() != viewport:
+			continue
+		for node_path in [
+				"AppearanceNode",
+				"RightHandSocket/ToolPivot",
+				"TeamMarker",
+			]:
+			_hide_capture_node(player.get_node_or_null(node_path), hidden_nodes)
+
+		# When the local player is viewing a remote device, that device owns the
+		# active camera. Hide only its render tree; the Camera3D remains current and
+		# the player's EffectLayer (including RemoteEffect/RemoteLQEffect) remains
+		# visible so the saved frame matches the remote feed.
+		if bool(player.get("remote_is_active")):
+			var remote_node_value: Variant = player.get("remote_tool_node")
+			if remote_node_value is Node:
+				var remote_node := remote_node_value as Node
+				if remote_node.get_viewport() == viewport:
+					_hide_capture_node(remote_node, hidden_nodes)
+
+
+func _hide_capture_node(node: Node, hidden_nodes: Array[Dictionary]) -> void:
+	if node == null or not is_instance_valid(node) or not node.is_inside_tree():
+		return
+	if not _capture_node_is_visible(node):
+		return
+	hidden_nodes.append({
+		"node": node,
+		"visible": true,
+	})
+	_set_capture_node_visible(node, false)
+
+
+func _restore_capture_nodes(hidden_nodes: Array[Dictionary]) -> void:
+	for entry in hidden_nodes:
+		var node := entry.get("node") as Node
+		if is_instance_valid(node):
+			_set_capture_node_visible(node, bool(entry.get("visible", true)))
+
+
+func _capture_node_is_visible(node: Node) -> bool:
+	if node is CanvasLayer:
+		return (node as CanvasLayer).visible
+	if node is Control:
+		return (node as Control).visible
+	if node is Node3D:
+		return (node as Node3D).visible
+	return false
+
+
+func _set_capture_node_visible(node: Node, visible: bool) -> void:
+	if node is CanvasLayer:
+		(node as CanvasLayer).visible = visible
+	elif node is Control:
+		(node as Control).visible = visible
+	elif node is Node3D:
+		(node as Node3D).visible = visible
 
 
 func _set_ui_root_visible(node: Node, visible: bool) -> void:

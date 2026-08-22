@@ -126,7 +126,7 @@ func _start_singleplayer_map(map_definition: Dictionary) -> void:
 	GameAuthority.start_local_mode(selection)
 	GlobalVar.pending_player_selection = selection
 	MapLoading.begin_loading(
-		str(map_definition.get("display_name", "FarmWar Map")),
+		str(map_definition.get("display_name", "Harvest Operation Map")),
 		str(map_definition.get("loading_images_directory", "")),
 		"res://data/loading_tips.json"
 	)

@@ -44,6 +44,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5756228, -2.0321333)
 
 [node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1247535644]
 emitting = false
+visible = true
 amount = 30
 lifetime = 0.6
 one_shot = true

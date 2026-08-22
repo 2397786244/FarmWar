@@ -267,7 +267,7 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: int, response: 
 		cooperative_lobby_error.emit("加入 Steam 合作房间失败，响应码：%d" % response)
 		return
 	if Steam.getLobbyData(lobby_id, "game_mode") != COOPERATIVE_MODE_TAG:
-		cooperative_lobby_error.emit("该 Steam Lobby 不是 FarmWar 联机合作世界。")
+		cooperative_lobby_error.emit("该 Steam Lobby 不是 Harvest Operation 联机合作世界。")
 		Steam.leaveLobby(lobby_id)
 		return
 	var advertised_map := {

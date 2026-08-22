@@ -10,10 +10,10 @@ config_version=5
 
 [application]
 
-config/name="FarmWar"
+config/name="Harvest Operation"
 run/main_scene="uid://bi010yget6nhi"
 config/features=PackedStringArray("4.6", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://icon.png"
 
 [autoload]
 
@@ -44,7 +44,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="FarmWar"
+project/assembly_name="HarvestOperation"
 
 [editor]
 
@@ -223,4 +223,4 @@ anti_aliasing/quality/msaa_3d=2
 
 [steam]
 
-initialization/app_data/app_id=480
+initialization/app_data/app_id=5150450

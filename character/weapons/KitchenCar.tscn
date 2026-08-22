@@ -9,6 +9,8 @@
 [sub_resource type="Resource" id="VehicleSeatConfig_driver"]
 script = ExtResource("4_vehicle_seat")
 anchor_name = "DriverSeatPoint"
+occupant_rotation_degrees = Vector3(0, 180, 0)
+occupant_offset = Vector3(0, -0.5, 0)
 
 [sub_resource type="Resource" id="VehicleConfig_kitchen_car"]
 script = ExtResource("3_vehicle_config")

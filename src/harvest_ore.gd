@@ -8,6 +8,7 @@ const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd
 const NATURE_RESOURCE_LAYER := 16384
 const BULLET_LAYER := 32
 const HIT_FRAGMENT_COLOR := Color("858b90")
+const SHOW_RESOURCE_HEALTH_LABEL := false
 
 @export var resource_id := ""
 @export var resource_type := "ore"
@@ -208,5 +209,5 @@ func _emit_health_event(is_destroyed: bool) -> void:
 func _update_health_label() -> void:
 	if not is_instance_valid(health_label):
 		return
-	health_label.visible = not destroyed
+	health_label.visible = SHOW_RESOURCE_HEALTH_LABEL and not destroyed
 	health_label.text = "%d" % int(ceil(current_hp))

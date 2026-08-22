@@ -29,6 +29,7 @@ var _gun_hit_area: Area3D
 var _stand_pos: Marker3D
 var _muzzle: Marker3D
 var _muzzle_flash: GPUParticles3D
+var _muzzle_flash_visual: Node
 var _right_hand_grip: Marker3D
 var _pitch_follow_offsets: Dictionary = {}
 var _stand_offset := Transform3D.IDENTITY
@@ -52,6 +53,7 @@ func _cache_nodes() -> void:
 	_stand_pos = find_child("StandPos", true, false) as Marker3D
 	_muzzle = find_child("Muzzle", true, false) as Marker3D
 	_muzzle_flash = find_child("MuzzleFlash", true, false) as GPUParticles3D
+	_muzzle_flash_visual = find_child("MuzzleFlashVisual", true, false)
 	_right_hand_grip = find_child("RightHandGrip", true, false) as Marker3D
 	for required: Node in [_mesh, _yaw_pivot, _pitch_pivot, _base_hit_area, _gun_hit_area, _stand_pos, _muzzle, _muzzle_flash, _right_hand_grip]:
 		if required == null:
@@ -146,7 +148,11 @@ func mark_fired(now_msec := Time.get_ticks_msec()) -> void:
 
 
 func play_muzzle_flash() -> void:
-	if _muzzle_flash != null and not destroyed_state:
+	if destroyed_state:
+		return
+	if is_instance_valid(_muzzle_flash_visual) and _muzzle_flash_visual.has_method("play"):
+		_muzzle_flash_visual.call("play", DAMAGE)
+	elif _muzzle_flash != null:
 		_muzzle_flash.restart()
 		_muzzle_flash.emitting = true
 

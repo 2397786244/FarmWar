@@ -4,6 +4,7 @@ class_name FarmTile
 const NEUTRAL_COLOR := Color(0.0, 0.0, 0.0, 0.0)
 const RED_OWNER_COLOR := Color(0.94, 0.18, 0.18, 1.0)
 const BLUE_OWNER_COLOR := Color(0.16, 0.38, 1.0, 1.0)
+const SHOW_CROP_STATUS_LABEL := false
 
 ## Shared placement templates. Add a new count here before assigning it below.
 const CROP_POSITION_PATTERNS := {
@@ -532,7 +533,7 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 	burn_dps = 0.0
 	last_effect = ""
 	$Label3D.text = "0%"
-	$Label3D.visible = true
+	$Label3D.visible = SHOW_CROP_STATUS_LABEL
 
 	crop_positions.clear()
 	for crop_position: Vector3 in crop_config["positions"]:
@@ -587,7 +588,7 @@ func apply_authoritative_plant(
 	bug_effects = false
 	apply_authoritative_fertilizer(1.0, false)
 	$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-	$Label3D.visible = true
+	$Label3D.visible = SHOW_CROP_STATUS_LABEL
 	var positions: Array = crop_config["positions"]
 	if not authoritative_positions.is_empty():
 		positions = authoritative_positions
@@ -712,7 +713,7 @@ func apply_authoritative_state(state: Dictionary) -> void:
 			growth_value = clampi(next_growth, 0, 100)
 			can_harvest = next_ready
 			$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-			$Label3D.visible = true
+			$Label3D.visible = SHOW_CROP_STATUS_LABEL
 	else:
 		_clear_crop()
 		if is_instance_valid(tool_child):
@@ -762,7 +763,7 @@ func apply_authoritative_delta(delta: Dictionary) -> void:
 			growth_value = next_growth
 			can_harvest = next_ready
 			$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-			$Label3D.visible = true
+			$Label3D.visible = SHOW_CROP_STATUS_LABEL
 		current_hp = maxf(0.0, float(delta.get("current_hp", current_hp)))
 		burn_remaining = maxf(0.0, float(delta.get("burn_remaining", burn_remaining)))
 		burn_dps = maxf(0.0, float(delta.get("burn_dps", burn_dps)))
@@ -921,7 +922,7 @@ func _reset_crop_for_regrowth() -> void:
 	last_effect = ""
 	apply_authoritative_fertilizer(1.0, false)
 	plant_mode = "Plant"
-	$Label3D.visible = true
+	$Label3D.visible = SHOW_CROP_STATUS_LABEL
 	$Label3D.text = "0%"
 	_notify_manager_state_changed()
 

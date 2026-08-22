@@ -8,6 +8,7 @@ const BULLET_SCENE := preload("res://character/weapons/ColorBullet.tscn")
 
 @onready var muzzle: Marker3D = $Muzzle
 @onready var muzzle_flash: GPUParticles3D = $Muzzle/MuzzleFlash
+@onready var muzzle_flash_visual: Node = $Muzzle/MuzzleFlashVisual
 @onready var model: Node3D = $FreezeGun
 
 var is_aiming := false
@@ -27,6 +28,9 @@ func emit_visual_only() -> void:
 
 
 func _emit_bullet(visual_only: bool) -> void:
+	# The muzzle effect is local presentation and should not depend on whether
+	# a gameplay projectile can be spawned on this frame.
+	play_muzzle_visual()
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
 
@@ -43,7 +47,14 @@ func _emit_bullet(visual_only: bool) -> void:
 	bullet.max_lifetime = CombatBalance.get_float("freeze_gun", "visual_lifetime", bullet.max_lifetime)
 	bullet.run(muzzle.global_position, direction, tool_owner)
 
-	muzzle_flash.restart()
+func play_muzzle_visual(firepower: float = -1.0) -> void:
+	var effective_firepower := firepower
+	if effective_firepower <= 0.0:
+		effective_firepower = CombatBalance.get_float("freeze_gun", "damage", 50.0)
+	if is_instance_valid(muzzle_flash_visual) and muzzle_flash_visual.has_method("play"):
+		muzzle_flash_visual.call("play", effective_firepower)
+	else:
+		muzzle_flash.restart()
 	_play_recoil()
 
 

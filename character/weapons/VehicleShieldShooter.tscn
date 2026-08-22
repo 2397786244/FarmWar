@@ -35,6 +35,7 @@ gizmo_extents = 0.5
 
 [node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle"]
 emitting = false
+visible = true
 amount = 14
 lifetime = 0.16
 one_shot = true

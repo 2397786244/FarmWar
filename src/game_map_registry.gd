@@ -70,6 +70,17 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:coop_test:%s" % DEFAULT_MAP_VERSION,
 	},
+	{
+		"map_id": "xuanchuanmap",
+		"display_name": "xuanchuanmap",
+		"scene_path": "res://worlds/xuanchuanmap/xuanchuanmap.tscn",
+		"icon_path": "res://worlds/xuanchuanmap/map_icon.png",
+		"loading_images_directory": "",
+		"size": Vector2i(256, 256),
+		"source": "builtin",
+		"map_version": DEFAULT_MAP_VERSION,
+		"map_hash": "builtin:xuanchuanmap:%s" % DEFAULT_MAP_VERSION,
+	},
 ]
 
 
@@ -123,7 +134,7 @@ func get_server_map_by_package_name(package_name: String) -> Dictionary:
 func get_portable_maps_root() -> String:
 	if OS.has_feature("editor"):
 		# While developing, the editor binary is Godot itself, not the future
-		# FarmWar executable. Use the project-level maps folder as its portable
+		# Harvest Operation executable. Use the project-level maps folder as its portable
 		# equivalent; exported builds switch automatically to the executable dir.
 		return ProjectSettings.globalize_path("res://maps")
 	var executable_path := OS.get_executable_path()

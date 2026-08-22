@@ -7,6 +7,7 @@ const BULLET_SCENE := preload("res://character/weapons/SpicyBullet.tscn")
 @export var tool_owner := ""
 
 @onready var model: Node3D = $Mesh
+@onready var muzzle_flash: GPUParticles3D = $Muzzle/MuzzleFlash
 
 var model_rest_position := Vector3.ZERO
 
@@ -32,7 +33,8 @@ func emit() -> void:
 
 
 func play_muzzle_visual() -> void:
-	$Muzzle/MuzzleFlash.restart()
+	muzzle_flash.restart()
+	muzzle_flash.emitting = true
 	_play_recoil()
 
 

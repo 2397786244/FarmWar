@@ -1,0 +1,100 @@
+{
+  "content": {
+    "ai_configuration": [],
+    "ai_count": 0,
+    "building_count": 45,
+    "defense_facility_count": 0,
+    "editor_objects": "editor_objects.dat",
+    "facility_count": 0,
+    "farmland_count": 1,
+    "ground_rock_count": 14,
+    "kitchen_facility_count": 0,
+    "manual_grass": "manual_grass.dat",
+    "neutral_crop_generator_count": 2,
+    "ore_count": 11,
+    "promotional_dummy_count": 5,
+    "road_count": 1,
+    "roads": "roads.dat",
+    "spawn_count": 2,
+    "squad_generator_count": 0,
+    "tree_count": 133,
+    "water_bodies": "water_bodies.dat",
+    "water_count": 0,
+    "zombie_generator_count": 0
+  },
+  "display_name": "xuanchuanmap",
+  "features": {
+    "building_overlap_validation_enabled": true,
+    "building_placement_enabled": true,
+    "day_night_enabled_in_gameplay": true,
+    "eclipse_weather_enabled": true,
+    "enemy_squad_generators_enabled": true,
+    "farmland_editor_enabled": true,
+    "neutral_crop_generators_enabled": true,
+    "object_transform_enabled": true,
+    "promotional_dummies_enabled": true,
+    "size_aware_far_scenery": true,
+    "water_bodies_enabled": true,
+    "weather_settings_enabled": true,
+    "xyz_gizmo_enabled": true,
+    "zombie_generators_enabled": true
+  },
+  "format_version": 5,
+  "icon": "map_icon.png",
+  "map_id": "xuanchuanmap",
+  "scene": "xuanchuanmap.tscn",
+  "size": {
+    "depth": 256,
+    "width": 256
+  },
+  "surface_colors": [
+    {
+      "color": "14311b",
+      "id": 0,
+      "name": "Grass",
+      "roughness": 0.95
+    },
+    {
+      "color": "9c5f2d",
+      "id": 1,
+      "name": "Soil",
+      "roughness": 0.98
+    },
+    {
+      "color": "1f2122",
+      "id": 2,
+      "name": "Town Asphalt",
+      "roughness": 0.96
+    },
+    {
+      "color": "5e4d30",
+      "id": 3,
+      "name": "Country Gravel",
+      "roughness": 0.98
+    }
+  ],
+  "template": "creston_town",
+  "terrain": {
+    "default_surface_id": 0,
+    "heightmap": "heightmap.bin",
+    "samples": [
+      257,
+      257
+    ],
+    "surface_mask": "surface_mask.png",
+    "surface_mask_resolution": [
+      1024,
+      1024
+    ],
+    "surface_palette": "surface_palette.png",
+    "surface_palette_resource": "surface_palette.tres",
+    "vertex_spacing": 1.0
+  },
+  "version": "1.0.0",
+  "weather": {
+    "clear_weather_probability": 0.5,
+    "eclipse_weather_probability": 0.1,
+    "rain_intensity": 0.82,
+    "rain_weather_probability": 0.4
+  }
+}

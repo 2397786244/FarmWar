@@ -8,6 +8,7 @@ const BULLET_SCENE := preload("res://character/weapons/RubberBullet.tscn")
 
 @onready var muzzle: Marker3D = $Muzzle
 @onready var muzzle_flash: GPUParticles3D = $Muzzle/MuzzleFlash
+@onready var muzzle_flash_visual: Node = $Muzzle/MuzzleFlashVisual
 @onready var model: Node3D = $LowPoly_Revolver
 
 var is_aiming := false
@@ -27,6 +28,10 @@ func emit_visual_only() -> void:
 
 
 func _emit_bullet(visual_only: bool) -> void:
+	# The muzzle flash is presentation-only.  Trigger it before gameplay
+	# validation so the local first-person weapon still shows the shot when a
+	# visual-only request arrives before the authority/world state is ready.
+	play_muzzle_visual()
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
 
@@ -41,7 +46,14 @@ func _emit_bullet(visual_only: bool) -> void:
 	bullet.max_lifetime = CombatBalance.get_float("rubber_revolver", "visual_lifetime", bullet.max_lifetime)
 	bullet.run(muzzle.global_position, direction, tool_owner, shooter)
 
-	muzzle_flash.restart()
+func play_muzzle_visual(firepower: float = -1.0) -> void:
+	var effective_firepower := firepower
+	if effective_firepower <= 0.0:
+		effective_firepower = CombatBalance.get_float("rubber_revolver", "damage", 30.0)
+	if is_instance_valid(muzzle_flash_visual) and muzzle_flash_visual.has_method("play"):
+		muzzle_flash_visual.call("play", effective_firepower)
+	else:
+		muzzle_flash.restart()
 	_play_recoil()
 
 

@@ -1302,7 +1302,7 @@ func _load_active_world(selection: Dictionary) -> void:
 	world_bootstrap_generation += 1
 	authority_ready = false
 	world_loading = true
-	var map_name := str(active_world.get("map_name", "FarmWar Map"))
+	var map_name := str(active_world.get("map_name", "Harvest Operation Map"))
 	var loading_images_directory := str(active_world.get("loading_images_directory", ""))
 	if loading_images_directory.is_empty():
 		var map_id := str(active_world.get("map_id", ""))

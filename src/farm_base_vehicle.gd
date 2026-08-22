@@ -192,9 +192,9 @@ func _configure_platform_passenger_seats() -> void:
 			seat.can_drive = false
 			seat.show_occupant = true
 			seat.occupant_rotation_degrees = Vector3(0.0, 180.0, 0.0)
-			# SeatPos is authored as the exact position where the seated
-			# character's hips/butt should rest. Do not apply the old
-			# marker-relative vertical offset here.
+			# SeatPos is the authored seat contact marker. Keep the dynamic seat's
+			# specific root-to-hip offset at zero; VehicleSeatConfig applies the
+			# shared seated_position_offset to every driver and passenger seat.
 			seat.occupant_offset = Vector3.ZERO
 			_platform_passenger_seat_definitions.append(seat)
 		active_marker_count += 1

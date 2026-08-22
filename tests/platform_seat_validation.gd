@@ -49,10 +49,14 @@ func _run() -> void:
 	_check(vehicle.get_seat_anchor(2) == seat_pos_two, "passenger seat 2 uses PlatformSeat2/SeatPos as its anchor")
 	_check(
 		seat_pos_one != null
-			and vehicle.get_occupant_world_transform(1).origin.distance_to(seat_pos_one.global_position) < 0.001
+			and vehicle.get_occupant_world_transform(1).origin.distance_to(
+				seat_pos_one.global_position + seat_pos_one.global_transform.basis.orthonormalized() * Vector3(0.0, -0.4, 0.0)
+			) < 0.001
 			and seat_pos_two != null
-			and vehicle.get_occupant_world_transform(2).origin.distance_to(seat_pos_two.global_position) < 0.001,
-		"passenger character position is placed exactly at each SeatPos marker"
+			and vehicle.get_occupant_world_transform(2).origin.distance_to(
+				seat_pos_two.global_position + seat_pos_two.global_transform.basis.orthonormalized() * Vector3(0.0, -0.4, 0.0)
+			) < 0.001,
+		"passenger character position applies the shared seated lowering below each SeatPos marker"
 	)
 	var passenger_area := vehicle.find_child("PlatformPassengerInteractionArea", true, false) as VehiclePlatformInteractionArea
 	_check(

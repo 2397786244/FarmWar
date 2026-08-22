@@ -30,6 +30,12 @@ const PLAYER_AIRBORNE_VERTICAL_TOLERANCE := 0.35
 const REMOTE_INTERPOLATION_DELAY_MSEC := 100
 const REMOTE_MAX_EXTRAPOLATION_MSEC := 100
 const REMOTE_CONTROL_LOST_EFFECTIVE_SIGNAL := 0.20
+const DEBUG_CAMERA_FIRST_PERSON := 0
+const DEBUG_CAMERA_THIRD_PERSON := 1
+const DEBUG_CAMERA_SECOND_PERSON := 2
+const DEBUG_CAMERA_DISTANCE := 5.0
+const DEBUG_CAMERA_HEIGHT := 2.2
+const DEBUG_CAMERA_TARGET_HEIGHT := 1.25
 const MEDICINE_HEAL_AMOUNT := 50.0
 const PLAYER_COLLISION_LAYER := 8
 const PLAYER_COLLISION_MASK := 12943
@@ -219,7 +225,9 @@ var standing_body_collision_transform := Transform3D.IDENTITY
 var standing_hit_collision_transform := Transform3D.IDENTITY
 
 var camera_rest_position := Vector3.ZERO
+var camera_rest_rotation := Vector3.ZERO
 var camera_default_fov := 75.0
+var debug_camera_mode := DEBUG_CAMERA_FIRST_PERSON
 var rubber_knockback := Vector3.ZERO
 var camera_shake_time := 0.0
 var camera_shake_strength := 0.0
@@ -251,6 +259,10 @@ var skeleton:Skeleton3D
 @onready var left_hand_ik_target:Marker3D = $Head/LeftHandIKTarget
 @onready var right_elbow_pole:Marker3D = $RightElbowPole
 @onready var left_elbow_pole:Marker3D = $Head/LeftElbowPole
+@onready var right_leg_ik_target:Marker3D = $RightLegIKTarget
+@onready var left_leg_ik_target:Marker3D = $LeftLegIKTarget
+@onready var right_knee_pole:Marker3D = $RightKneePole
+@onready var left_knee_pole:Marker3D = $LeftKneePole
 @onready var remote_effect:ColorRect
 var action_anim_locked:bool = false
 var was_on_floor:bool = true # 记录上一帧是不是在地面上
@@ -261,10 +273,13 @@ var upper_body_look_modifiers:Array[LookAtModifier3D] = []
 var upper_body_look_weights:Array[float] = []
 var right_arm_ik:TwoBoneIK3D
 var left_arm_ik:TwoBoneIK3D
+var right_leg_ik:TwoBoneIK3D
+var left_leg_ik:TwoBoneIK3D
 var hand_aim_look:LookAtModifier3D
 var look_at_body:Node3D
 var right_hand_ik_rest_position := Vector3.ZERO
 var left_hand_ik_rest_position := Vector3.ZERO
+var vehicle_occupant_pose_active := false
 ## 当前正在远程操控
 var remote_tool_node:Node3D = null  # NormalDrone,TechDrone,SmallMouse
 var remote_is_active:bool = false
@@ -1534,6 +1549,7 @@ func _ready() -> void:
 	if not is_remote_proxy:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera_rest_position = camera.position
+	camera_rest_rotation = camera.rotation
 	camera_default_fov = camera.fov
 	standing_head_position = Head.position
 	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
@@ -1851,7 +1867,16 @@ func play_remote_tool_action(action_name: String) -> void:
 
 
 func _update_remote_locomotion_animation(previous_state: String) -> void:
-	if not is_remote_proxy or not is_instance_valid(appearance_player) or action_anim_locked:
+	if not is_remote_proxy or not is_instance_valid(appearance_player):
+		return
+	# Vehicle seating is a presentation state, not normal locomotion. Apply it
+	# after every remote snapshot so the ordinary Walk/Idle state cannot replace
+	# Carry while the proxy is seated.
+	if vehicle_is_active:
+		_enter_vehicle_occupant_pose()
+		_play_vehicle_occupant_animation()
+		return
+	if action_anim_locked:
 		return
 	if remote_locomotion_state == "air":
 		if previous_state != "air":
@@ -2195,6 +2220,12 @@ func _input(event: InputEvent) -> void:
 	if _inventory_ui_blocks_gameplay_actions():
 		_set_weapon_aiming(false)
 		return
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event.physical_keycode == KEY_F6 or event.keycode == KEY_F6):
+		if _can_toggle_debug_camera():
+			_cycle_debug_camera_mode()
+		get_viewport().set_input_as_handled()
+		return
 	
 	if mounted_machine_gun_is_active:
 		if event.is_action_pressed("interact", false):
@@ -2393,11 +2424,8 @@ func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 	var tool_id := ""
 	if current_tool_index >= 0 and current_tool_index < tool_definitions.size():
 		tool_id = str(tool_definitions[current_tool_index].get("id", ""))
-	var origin := global_position
-	var direction := -global_transform.basis.z
-	if is_instance_valid(camera):
-		origin = camera.global_position
-		direction = -camera.global_transform.basis.z
+	var origin := _get_local_aim_origin()
+	var direction := -_get_local_aim_basis().z
 	var muzzle: Node3D = null
 	if is_instance_valid(tool_node):
 		muzzle = tool_node.get_node_or_null("Muzzle") as Node3D
@@ -2900,6 +2928,11 @@ func _ensure_vehicle_camera() -> void:
 func _update_vehicle_occupant_presentation() -> void:
 	if not vehicle_is_active or not is_instance_valid(active_vehicle):
 		return
+	_enter_vehicle_occupant_pose()
+	# VehicleBase returns the player-root transform derived from the actual seat
+	# marker. Its occupant_offset plus seated_position_offset are the shared
+	# root-to-hip and seat-surface corrections, so all driver and passenger seats
+	# use the same final transform, including FarmBaseVehicle.
 	global_transform = active_vehicle.get_occupant_world_transform(active_vehicle_seat_index)
 	var appearance := get_node_or_null("AppearanceNode") as Node3D
 	var show_occupant := active_vehicle.should_show_occupant(active_vehicle_seat_index)
@@ -2909,8 +2942,25 @@ func _update_vehicle_occupant_presentation() -> void:
 		tool_node.visible = false
 	if is_instance_valid(held_item_node):
 		held_item_node.visible = false
-	if show_occupant and is_instance_valid(appearance_player):
-		appearance_player.play(&"Idle")
+	if show_occupant:
+		_play_vehicle_occupant_animation()
+
+
+func _play_vehicle_occupant_animation() -> void:
+	if not is_instance_valid(appearance_player):
+		return
+	var animation_name: StringName = &"Carry" \
+			if appearance_player.has_animation(&"Carry") else &"Idle"
+	if animation_name == &"Carry":
+		var carry_animation := appearance_player.get_animation(&"Carry")
+		if carry_animation != null:
+			# Some imported GLBs do not mark Carry as looping. Driving is a
+			# persistent state, so prevent it from falling back to Idle after one
+			# completed cycle.
+			carry_animation.loop_mode = Animation.LOOP_LINEAR
+	if appearance_player.current_animation != animation_name \
+			or not appearance_player.is_playing():
+		appearance_player.play(animation_name, 0.08)
 
 
 func _set_vehicle_player_runtime(seated: bool) -> void:
@@ -2934,6 +2984,75 @@ func _set_vehicle_player_runtime(seated: bool) -> void:
 	if hit_area != null:
 		hit_area.set_deferred("monitoring", not seated and not is_respawning and not is_remote_proxy)
 		hit_area.set_deferred("monitorable", not seated and not is_respawning and not is_remote_proxy)
+	if seated:
+		_enter_vehicle_occupant_pose()
+	else:
+		_clear_vehicle_occupant_pose()
+
+
+func _enter_vehicle_occupant_pose() -> void:
+	# A death/respawn state owns the skeleton presentation and must never be
+	# overridden by seated IK, even if the authoritative vehicle snapshot has not
+	# cleared the seat yet.
+	if not vehicle_is_active or is_respawning:
+		_clear_vehicle_occupant_pose()
+		return
+	vehicle_occupant_pose_active = true
+	action_anim_locked = false
+	if is_instance_valid(right_hand_ik_target):
+		right_hand_ik_target.position = right_hand_ik_rest_position
+	if is_instance_valid(left_hand_ik_target):
+		left_hand_ik_target.position = left_hand_ik_rest_position
+	if is_instance_valid(tool_pivot):
+		tool_pivot.transform = Transform3D.IDENTITY
+	if is_instance_valid(right_arm_ik):
+		right_arm_ik.influence = 0.0
+	if is_instance_valid(left_arm_ik):
+		left_arm_ik.influence = 0.0
+	for modifier in upper_body_look_modifiers:
+		if is_instance_valid(modifier):
+			modifier.influence = 0.0
+	if is_instance_valid(hand_aim_look):
+		hand_aim_look.influence = 0.0
+	var show_occupant := is_instance_valid(active_vehicle) \
+			and active_vehicle.should_show_occupant(active_vehicle_seat_index)
+	_set_vehicle_leg_ik_influence(1.0 if show_occupant else 0.0)
+
+
+func _clear_vehicle_occupant_pose() -> void:
+	vehicle_occupant_pose_active = false
+	_set_vehicle_leg_ik_influence(0.0)
+	if is_instance_valid(right_hand_ik_target):
+		var has_hand_visual := (
+				is_instance_valid(tool_node) and tool_node.visible
+			) or (
+				is_instance_valid(held_item_node) and held_item_node.visible
+			)
+		right_hand_ik_target.position = punch_hand_camera_offset \
+				if has_hand_visual else right_hand_ik_rest_position
+	if is_instance_valid(left_hand_ik_target):
+		left_hand_ik_target.position = left_hand_ik_rest_position
+	if is_instance_valid(tool_pivot):
+		tool_pivot.transform = Transform3D.IDENTITY
+	if is_instance_valid(right_arm_ik):
+		right_arm_ik.influence = 0.0
+	if is_instance_valid(left_arm_ik):
+		left_arm_ik.influence = 0.0
+	for modifier in upper_body_look_modifiers:
+		if is_instance_valid(modifier):
+			modifier.influence = 0.0
+	if is_instance_valid(hand_aim_look):
+		hand_aim_look.influence = 0.0
+
+
+func _set_vehicle_leg_ik_influence(value: float) -> void:
+	var normalized_value := clampf(value, 0.0, 1.0)
+	if is_instance_valid(right_leg_ik):
+		right_leg_ik.influence = normalized_value
+		right_leg_ik.active = normalized_value > 0.001
+	if is_instance_valid(left_leg_ik):
+		left_leg_ik.influence = normalized_value
+		left_leg_ik.active = normalized_value > 0.001
 
 
 func _remote_jump_just_pressed() -> bool:
@@ -3929,6 +4048,10 @@ func _consume_local_ammo_supply_box_ammo(requested: int) -> int:
 func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
 	if not is_instance_valid(tool_node) or not tool_node.has_method("emit"):
 		return
+	# Mouse input can arrive before this frame's regular process pass. Refresh
+	# the first-person pivot here so a newly aligned weapon never emits its
+	# muzzle visual at the previous BoneAttachment transform (often the feet).
+	_update_tool_camera_alignment()
 	var definition: Dictionary = tool_definitions[current_tool_index]
 	var tool_id := str(definition.get("id", ""))
 	var category := str(definition.get("category", "utility"))
@@ -3982,6 +4105,10 @@ func play_remote_tool_visual(tool_id: String, tool_index: int) -> void:
 		return
 	if tool_index >= 0 and tool_index < tool_definitions.size() and tool_index != current_tool_index:
 		_select_tool(tool_index, true)
+	# Replicated fire events can be delivered between remote interpolation ticks.
+	# Align the proxy's tool to its replicated head frame before showing the
+	# local-only muzzle visual, keeping the light/flame at the remote muzzle.
+	_update_remote_held_model_alignment()
 	if tool_id == "sprout_blaster" and is_instance_valid(tool_node) and tool_node.has_method("play_muzzle_visual"):
 		tool_node.call("play_muzzle_visual")
 	elif tool_id == "fertilizer" and is_instance_valid(tool_node) and tool_node.has_method("play_muzzle_visual"):
@@ -4139,8 +4266,9 @@ func _process(delta: float) -> void:
 	if CooperativeSession.is_host() and _interaction_runtime_needs_restore():
 		activate_local_runtime()
 	_ensure_local_camera_ownership()
-	_update_world_post_process(delta)
 	_update_prone_presentation(delta)
+	_update_debug_camera()
+	_update_world_post_process(delta)
 	_tick_status_effects(delta)
 	_update_health_ui()
 	_update_control_status_ui()
@@ -4288,6 +4416,75 @@ func _ensure_local_camera_ownership() -> void:
 	if not camera.current:
 		print("[CameraOwnership] Restoring local player camera for peer=%d" % authority_peer_id)
 		camera.make_current()
+
+
+func _can_toggle_debug_camera() -> bool:
+	return is_node_ready() \
+		and not is_remote_proxy \
+		and not is_respawning \
+		and not is_ladder_climbing \
+		and not remote_is_active \
+		and not vehicle_is_active \
+		and not mounted_machine_gun_is_active \
+		and is_instance_valid(camera)
+
+
+func _cycle_debug_camera_mode() -> void:
+	debug_camera_mode = (debug_camera_mode + 1) % 3
+	if debug_camera_mode == DEBUG_CAMERA_FIRST_PERSON:
+		# Return the same Camera3D to its original Head-relative first-person
+		# transform. Head continues to own the player's pitch in this mode.
+		camera.top_level = false
+		camera.position = camera_rest_position
+		camera.rotation = camera_rest_rotation
+		camera_shake_time = 0.0
+		camera_shake_strength = 0.0
+		camera.make_current()
+		return
+
+	# Third-person and front/"second-person" modes use the existing player.tscn
+	# Camera3D as a world-space camera. Keeping it top-level prevents Head's
+	# first-person pitch from rotating the camera offset around the player.
+	camera.top_level = true
+	camera_shake_time = 0.0
+	camera_shake_strength = 0.0
+	_update_debug_camera()
+	camera.make_current()
+
+
+func _update_debug_camera() -> void:
+	if debug_camera_mode == DEBUG_CAMERA_FIRST_PERSON or not is_instance_valid(camera):
+		return
+	var player_forward := -global_transform.basis.z
+	player_forward.y = 0.0
+	if player_forward.length_squared() < 0.001:
+		player_forward = Vector3(0.0, 0.0, -1.0)
+	else:
+		player_forward = player_forward.normalized()
+	var target := global_position + Vector3.UP * DEBUG_CAMERA_TARGET_HEIGHT
+	var camera_offset := -player_forward * DEBUG_CAMERA_DISTANCE
+	if debug_camera_mode == DEBUG_CAMERA_SECOND_PERSON:
+		# Minecraft's front-facing view: the camera is in front of the player
+		# while still looking back at the player's upper body.
+		camera_offset = player_forward * DEBUG_CAMERA_DISTANCE
+	camera.global_position = target + camera_offset + Vector3.UP * DEBUG_CAMERA_HEIGHT
+	camera.look_at(target, Vector3.UP)
+
+
+func _get_local_aim_basis() -> Basis:
+	if debug_camera_mode != DEBUG_CAMERA_FIRST_PERSON and is_instance_valid(Head):
+		return Head.global_transform.basis.orthonormalized()
+	if is_instance_valid(camera):
+		return camera.global_transform.basis.orthonormalized()
+	return global_transform.basis.orthonormalized()
+
+
+func _get_local_aim_origin() -> Vector3:
+	if debug_camera_mode != DEBUG_CAMERA_FIRST_PERSON and is_instance_valid(Head):
+		return Head.global_position
+	if is_instance_valid(camera):
+		return camera.global_position
+	return global_position + Vector3.UP * 1.4
 
 
 func _get_active_post_process_camera() -> Camera3D:
@@ -4586,13 +4783,11 @@ func _set_tool_action():
 
 
 func get_rift_book_request() -> Dictionary:
-	var direction := -global_transform.basis.z
-	if is_instance_valid(camera):
-		direction = -camera.global_transform.basis.z
+	var direction := -_get_local_aim_basis().z
 	return {
 		"tool_id": "rift_book",
 		"tool_index": current_tool_index,
-		"origin": camera.global_position if is_instance_valid(camera) else global_position + Vector3.UP * 1.4,
+		"origin": _get_local_aim_origin(),
 		"direction": direction.normalized(),
 		"player_position": global_position,
 		"carrying_item": is_instance_valid(held_item_node) and held_item_node.visible,
@@ -4601,6 +4796,9 @@ func get_rift_book_request() -> Dictionary:
 		
 func _update_player_action_animation(direction_strength:Vector2):
 	if appearance_player==null:
+		return
+	if vehicle_is_active:
+		_play_vehicle_occupant_animation()
 		return
 	if action_anim_locked:
 		return
@@ -5547,6 +5745,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 	var next_is_respawning := respawn_left > 0.0
 	var started_respawning := next_is_respawning and not is_respawning
 	if next_is_respawning:
+		_clear_vehicle_occupant_pose()
 		_set_prone_state(false)
 		spicy_remaining = 0.0
 		spicy_dps = 0.0
@@ -5609,7 +5808,14 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		action_anim_locked = false
 		landing_animation = false
 		if is_instance_valid(appearance_player):
-			appearance_player.play(&"Idle", 0.05)
+			if vehicle_is_active:
+				_play_vehicle_occupant_animation()
+			else:
+				appearance_player.play(&"Idle", 0.05)
+		if vehicle_is_active:
+			_enter_vehicle_occupant_pose()
+		else:
+			_clear_vehicle_occupant_pose()
 		if not is_remote_proxy and is_instance_valid(respawn_overlay):
 			var fade := create_tween()
 			fade.tween_property(respawn_overlay, "color:a", 0.0, 0.35)
@@ -7317,12 +7523,13 @@ func _update_tool_camera_alignment() -> void:
 			or not is_instance_valid(tool_pivot) \
 			or (not is_instance_valid(tool_node) and not is_instance_valid(held_item_node)):
 		return
+	var local_aim_basis := _get_local_aim_basis()
 	# The shield is passive, but its authored -Z face still needs the same
 	# forward alignment as a firearm. Correct its model's Y axis first, then
 	# align that corrected model to the camera frame.
 	if _current_tool_is_shield():
 		_upright_held_model(tool_node)
-		_align_held_model_to_basis(tool_node, camera.global_transform.basis)
+		_align_held_model_to_basis(tool_node, local_aim_basis)
 		return
 	# Utility tools and held items do not need camera alignment; keep the pivot
 	# neutral and continuously enforce the model's world-up correction,
@@ -7364,7 +7571,7 @@ func _update_tool_camera_alignment() -> void:
 		var preferred_up := \
 			tool_node.global_transform.basis.y.normalized()
 		if absf(ray_direction.dot(preferred_up)) > 0.98:
-			preferred_up = camera.global_transform.basis.x.normalized()
+			preferred_up = local_aim_basis.x.normalized()
 		aim_basis = Basis.looking_at(
 			ray_direction,
 			preferred_up
@@ -7380,7 +7587,7 @@ func _update_tool_camera_alignment() -> void:
 		pivot_basis.inverse() * aim_basis
 	).orthonormalized()
 	var desired_pivot_basis: Basis = (
-		camera.global_transform.basis.orthonormalized()
+		local_aim_basis
 		* aim_from_pivot.inverse()
 	).orthonormalized()
 	tool_pivot.global_transform = Transform3D(
@@ -7695,6 +7902,10 @@ func _tick_status_effects(delta: float) -> void:
 		_update_health_ui()
 
 func _update_camera_shake(delta: float) -> void:
+	if debug_camera_mode != DEBUG_CAMERA_FIRST_PERSON:
+		camera_shake_time = 0.0
+		camera_shake_strength = 0.0
+		return
 	if camera_shake_time > 0.0:
 		camera_shake_time -= delta
 		var fade := clampf(camera_shake_time / maxf(camera_shake_duration, 0.01), 0.0, 1.0)
@@ -7712,7 +7923,10 @@ func _reset_all_camera_shake() -> void:
 	# its offset. Reset every possible presentation camera so no pre-death jitter
 	# carries into the respawned first-person view.
 	if is_instance_valid(camera):
-		camera.position = camera_rest_position
+		if debug_camera_mode == DEBUG_CAMERA_FIRST_PERSON:
+			camera.position = camera_rest_position
+		else:
+			_update_debug_camera()
 	camera_shake_time = 0.0
 	camera_shake_strength = 0.0
 	camera_shake_duration = 0.22
@@ -7890,6 +8104,11 @@ func set_player_appearance(hero_name:String,team_name:String):
 		)
 	
 	_setup_upper_body_aim()
+	_setup_lower_body_ik()
+	if vehicle_is_active and not is_respawning:
+		_enter_vehicle_occupant_pose()
+	else:
+		_clear_vehicle_occupant_pose()
 	# Appearance scenes are replaced when a hero/team changes, so the x-ray
 	# overlay must be rebound to the newly instanced character meshes.
 	team_outline_visible = false
@@ -8258,6 +8477,62 @@ func _setup_upper_body_aim() -> void:
 	hand_aim_look.influence = 0.0
 
 
+func _setup_lower_body_ik() -> void:
+	right_leg_ik = _create_vehicle_leg_ik(
+		"RightLegIK",
+		"Thigh.R",
+		"Shin.R",
+		"Foot.R",
+		right_leg_ik_target,
+		right_knee_pole,
+		SkeletonModifier3D.SECONDARY_DIRECTION_PLUS_X
+	)
+	left_leg_ik = _create_vehicle_leg_ik(
+		"LeftLegIK",
+		"Thigh.L",
+		"Shin.L",
+		"Foot.L",
+		left_leg_ik_target,
+		left_knee_pole,
+		SkeletonModifier3D.SECONDARY_DIRECTION_MINUS_X
+	)
+
+
+func _create_vehicle_leg_ik(
+	node_name: String,
+	root_bone: String,
+	middle_bone: String,
+	end_bone: String,
+	target: Node3D,
+	pole: Node3D,
+	pole_direction: int
+) -> TwoBoneIK3D:
+	if not is_instance_valid(skeleton) or not is_instance_valid(target) \
+			or not is_instance_valid(pole):
+		return null
+	if skeleton.find_bone(root_bone) < 0 \
+			or skeleton.find_bone(middle_bone) < 0 \
+			or skeleton.find_bone(end_bone) < 0:
+		return null
+	var leg_ik := skeleton.find_child(node_name, false, false) as TwoBoneIK3D
+	if leg_ik == null:
+		leg_ik = TwoBoneIK3D.new()
+		leg_ik.name = node_name
+		skeleton.add_child(leg_ik)
+	leg_ik.setting_count = 1
+	leg_ik.set_root_bone_name(0, root_bone)
+	leg_ik.set_middle_bone_name(0, middle_bone)
+	leg_ik.set_end_bone_name(0, end_bone)
+	leg_ik.set_use_virtual_end(0, false)
+	leg_ik.set_extend_end_bone(0, false)
+	leg_ik.set_pole_direction(0, pole_direction)
+	leg_ik.set_target_node(0, leg_ik.get_path_to(target))
+	leg_ik.set_pole_node(0, leg_ik.get_path_to(pole))
+	leg_ik.active = false
+	leg_ik.influence = 0.0
+	return leg_ik
+
+
 func _add_upper_body_look(
 	node_name:String,
 	bone_name:String,
@@ -8295,6 +8570,9 @@ func _add_upper_body_look(
 
 func _update_upper_body_aim(delta:float) -> void:
 	if skeleton == null:
+		return
+	if vehicle_is_active:
+		_enter_vehicle_occupant_pose()
 		return
 
 	var is_punching := action_anim_locked \

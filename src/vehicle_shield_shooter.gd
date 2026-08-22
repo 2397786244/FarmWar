@@ -11,3 +11,4 @@ func emit() -> void:
 func play_muzzle_visual() -> void:
 	if is_instance_valid(muzzle_flash):
 		muzzle_flash.restart()
+		muzzle_flash.emitting = true

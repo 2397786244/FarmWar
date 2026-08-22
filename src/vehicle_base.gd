@@ -397,10 +397,15 @@ func get_occupant_world_transform(seat_index: int) -> Transform3D:
 		deg_to_rad(seat.occupant_rotation_degrees.y),
 		deg_to_rad(seat.occupant_rotation_degrees.z)
 	)
-	return seat_transform * Transform3D(
-		Basis.from_euler(occupant_rotation),
-		seat.occupant_offset
-	)
+	# Do not inherit an imported visual's scale into the player. The seat basis
+	# still supplies the vehicle's world orientation, while the offset is applied
+	# in that normalized seat-local frame so all open vehicles place the player's
+	# hips consistently.
+	var seat_basis := seat_transform.basis.orthonormalized()
+	var occupant_basis := seat_basis * Basis.from_euler(occupant_rotation)
+	var occupant_offset := seat.occupant_offset + seat.seated_position_offset
+	var occupant_origin := seat_transform.origin + seat_basis * occupant_offset
+	return Transform3D(occupant_basis, occupant_origin)
 
 
 func get_exit_position(seat_index: int = -1) -> Vector3:

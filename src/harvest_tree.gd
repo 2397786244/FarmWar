@@ -10,6 +10,7 @@ const LOG_DROP_COUNT := 4
 const FALL_DURATION := 0.8
 const FALL_SETTLE_DELAY := 0.18
 const HIT_FRAGMENT_COLOR := Color("75452b")
+const SHOW_RESOURCE_HEALTH_LABEL := false
 
 @export var tree_id := ""
 @export var resource_id := ""
@@ -288,5 +289,5 @@ func _enable_collision_nodes() -> void:
 func _update_health_label() -> void:
 	if not is_instance_valid(health_label):
 		return
-	health_label.visible = not destroyed
+	health_label.visible = SHOW_RESOURCE_HEALTH_LABEL and not destroyed
 	health_label.text = "%d" % int(ceil(current_hp))

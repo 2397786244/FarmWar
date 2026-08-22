@@ -59,7 +59,7 @@ func _build_interface() -> void:
 	add_child(box)
 
 	var title := Label.new()
-	title.text = "农场大乱斗"
+	title.text = "丰收行动"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title.add_theme_font_size_override("font_size", 58)
 	title.add_theme_color_override("font_color", COLOR_TEXT)
@@ -68,7 +68,7 @@ func _build_interface() -> void:
 	box.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "FarmWar"
+	subtitle.text = "Harvest Operation"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	subtitle.add_theme_font_size_override("font_size", 20)
 	subtitle.add_theme_color_override("font_color", COLOR_MUTED)

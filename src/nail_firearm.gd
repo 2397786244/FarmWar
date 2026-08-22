@@ -8,6 +8,7 @@ const BULLET_SCENE := preload("res://character/weapons/NailBullet.tscn")
 
 @onready var muzzle: Marker3D = $Muzzle
 @onready var muzzle_flash: GPUParticles3D = $Muzzle/MuzzleFlash
+@onready var muzzle_flash_visual: Node = get_node_or_null("Muzzle/MuzzleFlashVisual")
 @onready var model: Node3D = $Mesh
 
 var is_aiming := false
@@ -52,6 +53,9 @@ func _emit_bullets(
 	direction_override: Vector3 = Vector3.ZERO,
 	travel_distance: float = -1.0
 ) -> void:
+	# Muzzle flash and recoil are local presentation.  They must still happen
+	# for first-person visual-only shots when gameplay state is not yet valid.
+	play_muzzle_visual()
 	if tool_owner.is_empty() or profile_id.is_empty() \
 			or not is_instance_valid(GlobalVar.gameworld):
 		return
@@ -78,16 +82,20 @@ func _emit_bullets(
 			travel_distance
 		)
 
-	muzzle_flash.restart()
-	_play_recoil()
-
 
 func set_aiming(value: bool) -> void:
 	is_aiming = value
 
 
-func play_muzzle_visual() -> void:
-	muzzle_flash.restart()
+func play_muzzle_visual(firepower: float = -1.0) -> void:
+	var effective_firepower := firepower
+	if effective_firepower <= 0.0:
+		effective_firepower = CombatBalance.get_float(profile_id, "damage", 30.0)
+	if is_instance_valid(muzzle_flash_visual) and muzzle_flash_visual.has_method("play"):
+		muzzle_flash_visual.call("play", effective_firepower)
+	else:
+		muzzle_flash.restart()
+		muzzle_flash.emitting = true
 	_play_recoil()
 
 

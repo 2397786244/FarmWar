@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cmwi31uhawj5v" path="res://src/flame_gun.gd" id="1_q3oas"]
 [ext_resource type="PackedScene" uid="uid://bt52jly3wkkh1" path="res://assets/saved_glbs/flame_gun.tscn" id="2_q3oas"]
+[ext_resource type="Script" path="res://src/muzzle_flash_visual.gd" id="3_muzzle_visual"]
 
 [sub_resource type="Curve" id="Curve_q3oas"]
 _data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.22152042), 0.0, 0.0, 0, 0]
@@ -43,6 +44,7 @@ gizmo_extents = 0.5
 [node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1699981915]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.061671972)
 emitting = false
+visible = false
 amount = 30
 lifetime = 0.6
 one_shot = true
@@ -50,6 +52,11 @@ explosiveness = 1.0
 randomness = 0.5
 process_material = SubResource("ParticleProcessMaterial_q3oas")
 draw_pass_1 = SubResource("QuadMesh_q115i")
+
+[node name="MuzzleFlashVisual" type="Node3D" parent="Muzzle"]
+script = ExtResource("3_muzzle_visual")
+flash_color = Color(1, 0.16, 0.05, 1)
+flash_scale = 1.0
 
 [node name="FlameGun" parent="." unique_id=2114166248 instance=ExtResource("2_q3oas")]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.15234971, -0.033238053)

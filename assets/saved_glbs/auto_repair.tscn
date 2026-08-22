@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://bybvp3o0pmke4"]
+
+[ext_resource type="PackedScene" uid="uid://cr0as5ia8bew5" path="res://assets/buildings/AutoRepair.glb" id="1_y4i07"]
+
+[node name="AutoRepair" unique_id=731020626 instance=ExtResource("1_y4i07")]
+
+[node name="GarageDoor_Left" parent="FTF_Building_AutoRepairShop_SlopedRoof_12x9m" parent_id_path=PackedInt32Array(993633185) index="1" unique_id=731807750]
+visible = false
+
+[node name="SideDoor_Right" parent="FTF_Building_AutoRepairShop_SlopedRoof_12x9m" parent_id_path=PackedInt32Array(993633185) index="3" unique_id=1008692121]
+transform = Transform3D(-5.9604645e-08, 0, 1, 0, 1, 0, -1, 0, -5.9604645e-08, 6.12, 0, -1.1)

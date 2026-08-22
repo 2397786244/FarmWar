@@ -186,6 +186,22 @@ external_skeleton = NodePath("")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.65, 1.2, -0.1)
 gizmo_extents = 0.16
 
+[node name="RightLegIKTarget" type="Marker3D" parent="." unique_id=501916710]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, 0.1, -0.9)
+gizmo_extents = 0.1
+
+[node name="LeftLegIKTarget" type="Marker3D" parent="." unique_id=501916711]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 0.1, -0.9)
+gizmo_extents = 0.1
+
+[node name="RightKneePole" type="Marker3D" parent="." unique_id=501916712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45, 0.45, -0.25)
+gizmo_extents = 0.12
+
+[node name="LeftKneePole" type="Marker3D" parent="." unique_id=501916713]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 0.45, -0.25)
+gizmo_extents = 0.12
+
 [node name="SubViewport" type="CanvasLayer" parent="." unique_id=114640152]
 layer = 20
 

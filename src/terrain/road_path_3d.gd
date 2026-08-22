@@ -2,7 +2,7 @@
 class_name RoadPath3D
 extends Path3D
 
-## Continuous procedural road renderer for FarmWar (rebuild-loop fixed).
+## Continuous procedural road renderer for Harvest Operation (rebuild-loop fixed).
 ##
 ## Replace the project's existing res://src/terrain/road_path_3d.gd with this
 ## file. Existing RoadPath3D scenes remain compatible because the original
@@ -23,6 +23,17 @@ enum RoadType {
 	RAIL_TRACK,
 }
 
+enum CenterLineMode {
+	NONE,
+	CONTINUOUS,
+	DASHED,
+}
+
+enum CenterLineColor {
+	WHITE,
+	YELLOW,
+}
+
 const ROAD_SCENES = {
 	RoadType.ASPHALT_NARROW: preload("res://assets/environment/FTF_Road_Asphalt_Straight_4x6m.glb"),
 	RoadType.ASPHALT_WIDE: preload("res://assets/environment/FTF_Road_Asphalt_Straight_6x6m.glb"),
@@ -32,10 +43,10 @@ const ROAD_SCENES = {
 }
 
 const ROAD_WIDTHS = {
-	RoadType.ASPHALT_NARROW: 4.0,
-	RoadType.ASPHALT_WIDE: 6.0,
-	RoadType.COUNTRY_GRAVEL_NARROW: 3.0,
-	RoadType.COUNTRY_GRAVEL_WIDE: 5.0,
+	RoadType.ASPHALT_NARROW: 6.0,
+	RoadType.ASPHALT_WIDE: 12.0,
+	RoadType.COUNTRY_GRAVEL_NARROW: 5.0,
+	RoadType.COUNTRY_GRAVEL_WIDE: 10.0,
 	RoadType.RAIL_TRACK: 2.6,
 }
 
@@ -97,6 +108,43 @@ const RAIL_TRACK_SLEEPER_CENTER_HEIGHT = 0.07
 @export_range(0.0, 0.25, 0.005) var edge_drop = 0.0:
 	set(value):
 		edge_drop = value
+		_request_rebuild()
+
+@export_group("Center Line")
+@export var center_line_mode: CenterLineMode = CenterLineMode.CONTINUOUS:
+	set(value):
+		center_line_mode = clampi(int(value), CenterLineMode.NONE, CenterLineMode.DASHED)
+		if center_line_mode == CenterLineMode.DASHED:
+			center_line_color = CenterLineColor.WHITE
+		_request_rebuild()
+
+@export var center_line_color: CenterLineColor = CenterLineColor.WHITE:
+	set(value):
+		center_line_color = clampi(int(value), CenterLineColor.WHITE, CenterLineColor.YELLOW)
+		if center_line_mode == CenterLineMode.DASHED:
+			center_line_color = CenterLineColor.WHITE
+		_request_rebuild()
+
+@export_range(0.03, 0.5, 0.01) var center_line_width = 0.12:
+	set(value):
+		center_line_width = maxf(0.03, value)
+		_request_rebuild()
+
+@export_range(0.5, 10.0, 0.1) var center_line_dash_length = 3.0:
+	set(value):
+		center_line_dash_length = maxf(0.5, value)
+		_request_rebuild()
+
+@export_range(0.5, 15.0, 0.1) var center_line_gap_length = 6.0:
+	set(value):
+		center_line_gap_length = maxf(0.5, value)
+		_request_rebuild()
+
+## A small lift above the road crown prevents z-fighting without making the
+## center line visibly float above the surface.
+@export_range(0.005, 0.1, 0.005) var center_line_lift = 0.02:
+	set(value):
+		center_line_lift = maxf(0.005, value)
 		_request_rebuild()
 
 @export_group("Editor Preview")
@@ -170,6 +218,8 @@ var _mesh_instance: MeshInstance3D
 var _body: StaticBody3D
 var _collision_shape: CollisionShape3D
 var _rail_visual_root: Node3D
+var _center_line_visual_root: Node3D
+var _center_line_mesh_instance: MeshInstance3D
 var _rail_material: Material
 var _sleeper_material: Material
 var _rail_materials_loaded := false
@@ -196,7 +246,6 @@ func get_road_width() -> float:
 	if width_override > 0.01:
 		return width_override
 	return float(ROAD_WIDTHS.get(road_type, 6.0))
-
 
 func rebuild_road() -> void:
 	# Always consume the queued request first. If a deferred call arrives while
@@ -227,6 +276,7 @@ func _rebuild_road_internal() -> void:
 		_mesh_instance.mesh = null
 		_collision_shape.shape = null
 		_clear_rail_visuals()
+		_clear_center_line_visuals()
 		return
 
 	var desired_bake_interval = maxf(0.1, mesh_sample_spacing * 0.5)
@@ -237,15 +287,18 @@ func _rebuild_road_internal() -> void:
 		_mesh_instance.mesh = null
 		_collision_shape.shape = null
 		_clear_rail_visuals()
+		_clear_center_line_visuals()
 		return
 
 	if road_type == RoadType.RAIL_TRACK:
 		_mesh_instance.mesh = null
 		_collision_shape.shape = null
+		_clear_center_line_visuals()
 		_rebuild_rail_track(total_length)
 		return
 
 	_clear_rail_visuals()
+	_clear_center_line_visuals()
 
 	var width = get_road_width()
 	var half_width = width * 0.5
@@ -266,9 +319,13 @@ func _rebuild_road_internal() -> void:
 	# from these projected centers rather than from the unprojected curve.
 	var center_world: Array[Vector3] = []
 	var center_normals: Array[Vector3] = []
+	var center_tangents: Array[Vector3] = []
+	var center_rights: Array[Vector3] = []
 	var distances: Array[float] = []
 	center_world.resize(sample_count)
 	center_normals.resize(sample_count)
+	center_tangents.resize(sample_count)
+	center_rights.resize(sample_count)
 	distances.resize(sample_count)
 
 	for sample_index in range(sample_count):
@@ -310,6 +367,8 @@ func _rebuild_road_internal() -> void:
 		if right.length_squared() <= 0.000001:
 			right = Vector3.RIGHT
 		right = right.normalized()
+		center_tangents[sample_index] = tangent
+		center_rights[sample_index] = right
 
 		var raw_center = center_world[sample_index]
 		var left_guess = raw_center - right * half_width
@@ -392,6 +451,14 @@ func _rebuild_road_internal() -> void:
 	if road_material != null:
 		generated_mesh.surface_set_material(0, road_material)
 	_mesh_instance.mesh = generated_mesh
+	_rebuild_center_line(
+		total_length,
+		center_world,
+		center_normals,
+		center_tangents,
+		center_rights,
+		distances
+	)
 
 	if generate_collision:
 		var faces = PackedVector3Array()
@@ -477,6 +544,18 @@ func _ensure_nodes() -> void:
 		_rail_visual_root.name = "RailTrackVisuals"
 		add_child(_rail_visual_root, false, Node.INTERNAL_MODE_BACK)
 
+	_center_line_visual_root = get_node_or_null("CenterLineVisuals") as Node3D
+	if _center_line_visual_root == null:
+		_center_line_visual_root = Node3D.new()
+		_center_line_visual_root.name = "CenterLineVisuals"
+		add_child(_center_line_visual_root, false, Node.INTERNAL_MODE_BACK)
+	_center_line_mesh_instance = _center_line_visual_root.get_node_or_null("CenterLineMesh") as MeshInstance3D
+	if _center_line_mesh_instance == null:
+		_center_line_mesh_instance = MeshInstance3D.new()
+		_center_line_mesh_instance.name = "CenterLineMesh"
+		_center_line_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_center_line_visual_root.add_child(_center_line_mesh_instance, false, Node.INTERNAL_MODE_BACK)
+
 
 func _clear_rail_visuals() -> void:
 	if _rail_visual_root == null or not is_instance_valid(_rail_visual_root):
@@ -485,6 +564,233 @@ func _clear_rail_visuals() -> void:
 		# These are generated visual-only nodes; free immediately so a rebuild
 		# cannot briefly draw the previous rail pass underneath the new one.
 		child.free()
+
+
+func _clear_center_line_visuals() -> void:
+	if _center_line_mesh_instance == null or not is_instance_valid(_center_line_mesh_instance):
+		if _center_line_visual_root != null and is_instance_valid(_center_line_visual_root):
+			_center_line_visual_root.visible = false
+		return
+	_center_line_mesh_instance.mesh = null
+	if _center_line_visual_root != null and is_instance_valid(_center_line_visual_root):
+		_center_line_visual_root.visible = false
+
+
+func _rebuild_center_line(
+	total_length: float,
+	center_world: Array[Vector3],
+	center_normals: Array[Vector3],
+	center_tangents: Array[Vector3],
+	center_rights: Array[Vector3],
+	distances: Array[float]
+) -> void:
+	if (
+		_center_line_mesh_instance == null
+		or not is_instance_valid(_center_line_mesh_instance)
+		or center_line_mode == CenterLineMode.NONE
+		or road_type == RoadType.RAIL_TRACK
+		or total_length <= 0.001
+		or distances.size() < 2
+	):
+		return
+
+	var line_tool := SurfaceTool.new()
+	line_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	line_tool.set_material(_get_center_line_material())
+	if center_line_mode == CenterLineMode.CONTINUOUS:
+		_add_center_line_distance_strip(
+			line_tool,
+			0.0,
+			total_length,
+			center_world,
+			center_normals,
+			center_tangents,
+			center_rights,
+			distances
+		)
+	else:
+		var dash_length := maxf(0.5, center_line_dash_length)
+		var gap_length := maxf(0.5, center_line_gap_length)
+		var pattern_length := dash_length + gap_length
+		var dash_start := 0.0
+		while dash_start < total_length:
+			var dash_end := minf(dash_start + dash_length, total_length)
+			_add_center_line_distance_strip(
+				line_tool,
+				dash_start,
+				dash_end,
+				center_world,
+				center_normals,
+				center_tangents,
+				center_rights,
+				distances
+			)
+			dash_start += pattern_length
+
+	line_tool.generate_normals()
+	var generated_mesh := line_tool.commit()
+	if generated_mesh == null:
+		return
+	_center_line_mesh_instance.mesh = generated_mesh
+	_center_line_visual_root.visible = true
+
+
+func _add_center_line_distance_strip(
+	line_tool: SurfaceTool,
+	start_distance: float,
+	end_distance: float,
+	center_world: Array[Vector3],
+	center_normals: Array[Vector3],
+	center_tangents: Array[Vector3],
+	center_rights: Array[Vector3],
+	distances: Array[float]
+) -> void:
+	if end_distance - start_distance <= 0.001:
+		return
+	var strip_distances: Array[float] = [start_distance]
+	for distance in distances:
+		if distance > start_distance + 0.001 and distance < end_distance - 0.001:
+			strip_distances.append(distance)
+	strip_distances.append(end_distance)
+	for index in range(strip_distances.size() - 1):
+		var first_frame := _interpolate_center_line_frame(
+			strip_distances[index],
+			center_world,
+			center_normals,
+			center_tangents,
+			center_rights,
+			distances
+		)
+		var second_frame := _interpolate_center_line_frame(
+			strip_distances[index + 1],
+			center_world,
+			center_normals,
+			center_tangents,
+			center_rights,
+			distances
+		)
+		_add_center_line_quad(line_tool, first_frame, second_frame)
+
+
+func _interpolate_center_line_frame(
+	distance: float,
+	center_world: Array[Vector3],
+	center_normals: Array[Vector3],
+	center_tangents: Array[Vector3],
+	center_rights: Array[Vector3],
+	distances: Array[float]
+) -> Dictionary:
+	var sample_count := distances.size()
+	if sample_count == 0:
+		return {
+			"position": Vector3.ZERO,
+			"right": Vector3.RIGHT,
+		}
+	if sample_count == 1 or distance <= distances[0]:
+		return _make_center_line_frame(
+			center_world[0],
+			center_normals[0],
+			center_tangents[0],
+			center_rights[0]
+		)
+	if distance >= distances[sample_count - 1]:
+		return _make_center_line_frame(
+			center_world[sample_count - 1],
+			center_normals[sample_count - 1],
+			center_tangents[sample_count - 1],
+			center_rights[sample_count - 1]
+		)
+
+	var low := 0
+	var high := sample_count - 1
+	while low <= high:
+		var middle := (low + high) / 2
+		if distances[middle] < distance:
+			low = middle + 1
+		else:
+			high = middle - 1
+	var next_index := clampi(low, 1, sample_count - 1)
+	var previous_index := next_index - 1
+	var span := maxf(0.0001, distances[next_index] - distances[previous_index])
+	var weight := clampf(
+		(distance - distances[previous_index]) / span,
+		0.0,
+		1.0
+	)
+	var position := center_world[previous_index].lerp(center_world[next_index], weight)
+	var normal := center_normals[previous_index].lerp(center_normals[next_index], weight).normalized()
+	var tangent := center_tangents[previous_index].lerp(center_tangents[next_index], weight).normalized()
+	var right := normal.cross(tangent)
+	if right.length_squared() <= 0.000001:
+		right = center_rights[previous_index].lerp(center_rights[next_index], weight)
+	if right.length_squared() <= 0.000001:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	return _make_center_line_frame(position, normal, tangent, right)
+
+
+func _make_center_line_frame(
+	position: Vector3,
+	normal: Vector3,
+	tangent: Vector3,
+	right: Vector3
+) -> Dictionary:
+	var safe_normal := normal.normalized()
+	var safe_right := right.normalized()
+	return {
+		"position": position + safe_normal * (vertical_offset + crown_height + center_line_lift),
+		"normal": safe_normal,
+		"tangent": tangent.normalized(),
+		"right": safe_right,
+	}
+
+
+func _add_center_line_quad(
+	line_tool: SurfaceTool,
+	first_frame: Dictionary,
+	second_frame: Dictionary
+) -> void:
+	var half_width := maxf(0.015, center_line_width * 0.5)
+	var first_position := first_frame.get("position", Vector3.ZERO) as Vector3
+	var second_position := second_frame.get("position", Vector3.ZERO) as Vector3
+	var first_right := first_frame.get("right", Vector3.RIGHT) as Vector3
+	var second_right := second_frame.get("right", Vector3.RIGHT) as Vector3
+	var first_left := first_position - first_right * half_width
+	var first_outer_right := first_position + first_right * half_width
+	var second_left := second_position - second_right * half_width
+	var second_outer_right := second_position + second_right * half_width
+
+	# Keep the top face winding consistent with Godot's front-face convention.
+	# The previous order generated downward normals, so the default back-face
+	# culling removed the line when viewed from above.
+	line_tool.add_vertex(to_local(first_left))
+	line_tool.add_vertex(to_local(first_outer_right))
+	line_tool.add_vertex(to_local(second_left))
+	line_tool.add_vertex(to_local(first_outer_right))
+	line_tool.add_vertex(to_local(second_outer_right))
+	line_tool.add_vertex(to_local(second_left))
+
+
+func _get_center_line_material() -> Material:
+	var effective_color := CenterLineColor.WHITE if center_line_mode == CenterLineMode.DASHED else center_line_color
+	var cache_key := int(effective_color)
+	if _material_cache.has("center_line_%d" % cache_key):
+		return _material_cache["center_line_%d" % cache_key] as Material
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = (
+		Color(0.97, 0.97, 0.94, 1.0)
+		if effective_color == CenterLineColor.WHITE
+		else Color(1.0, 0.72, 0.08, 1.0)
+	)
+	material.roughness = 0.85
+	material.metallic = 0.0
+	material.no_depth_test = false
+	material.cull_mode = BaseMaterial3D.CULL_BACK
+	material.render_priority = 1
+	_material_cache["center_line_%d" % cache_key] = material
+	return material
 
 
 func _rebuild_rail_track(total_length: float) -> void:
@@ -774,7 +1080,6 @@ func _get_road_material() -> Material:
 
 	_material_cache[cache_key] = result
 	return result
-
 
 func _find_first_material(node: Node) -> Material:
 	if node is MeshInstance3D:

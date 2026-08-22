@@ -3,6 +3,7 @@ class_name GiantPlants
 
 const NATURE_RESOURCE_LAYER := 16384
 const CombatBalance = preload("res://src/combat_balance.gd")
+const SHOW_RESOURCE_HEALTH_LABEL := false
 @export var max_hp := 1000.0
 @export var lifetime_seconds := 300.0
 @export var resource_id := "giant_plant"
@@ -96,4 +97,5 @@ func apply_network_health(hp: float) -> void:
 
 func _update_label() -> void:
 	if health_label != null:
+		health_label.visible = SHOW_RESOURCE_HEALTH_LABEL and not destroyed
 		health_label.text = "%d" % int(ceil(current_hp))

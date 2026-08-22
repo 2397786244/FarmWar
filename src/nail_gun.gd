@@ -8,6 +8,7 @@ const BULLET_SCENE := preload("res://character/weapons/NailBullet.tscn")
 
 @onready var muzzle: Marker3D = $Muzzle
 @onready var muzzle_flash: GPUParticles3D = $Muzzle/MuzzleFlash
+@onready var muzzle_flash_visual: Node = $Muzzle/MuzzleFlashVisual
 @onready var model: Node3D = $NailGun
 
 var is_aiming := false
@@ -43,6 +44,9 @@ func _emit_bullet(
 	direction_override := Vector3.ZERO,
 	travel_distance := -1.0
 ) -> void:
+	# Keep the local first-person muzzle presentation independent from the
+	# gameplay projectile/world validation below.
+	play_muzzle_visual()
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
 
@@ -63,7 +67,14 @@ func _emit_bullet(
 			bullet.max_lifetime = minf(bullet.max_lifetime, bullet.max_distance / bullet.speed)
 	bullet.run(muzzle.global_position, direction, tool_owner)
 
-	muzzle_flash.restart()
+func play_muzzle_visual(firepower: float = -1.0) -> void:
+	var effective_firepower := firepower
+	if effective_firepower <= 0.0:
+		effective_firepower = CombatBalance.get_float("nail_gun", "damage", 20.0)
+	if is_instance_valid(muzzle_flash_visual) and muzzle_flash_visual.has_method("play"):
+		muzzle_flash_visual.call("play", effective_firepower)
+	else:
+		muzzle_flash.restart()
 	_play_recoil()
 
 

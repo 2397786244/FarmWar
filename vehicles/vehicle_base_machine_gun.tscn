@@ -2,6 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://cjrylv0johjo4" path="res://assets/vehicles/PlatformMachineGun.glb" id="1_ab3oy"]
 [ext_resource type="Script" path="res://src/vehicle_base_machine_gun.gd" id="2_script"]
+[ext_resource type="Script" path="res://src/muzzle_flash_visual.gd" id="3_muzzle_visual"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2am16"]
 radius = 0.8
@@ -77,6 +78,7 @@ gizmo_extents = 0.5
 [node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle" unique_id=1733898675]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -0.061671972)
 emitting = false
+visible = false
 amount = 10
 lifetime = 0.3
 one_shot = true
@@ -84,6 +86,11 @@ explosiveness = 1.0
 randomness = 0.5
 process_material = SubResource("ParticleProcessMaterial_2am16")
 draw_pass_1 = SubResource("QuadMesh_3m2oa")
+
+[node name="MuzzleFlashVisual" type="Node3D" parent="Muzzle"]
+script = ExtResource("3_muzzle_visual")
+flash_scale = 1.35
+flash_light_energy = 8.0
 
 [node name="RightHandGrip" type="Marker3D" parent="." unique_id=604229316]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4215739, -0.36012363)

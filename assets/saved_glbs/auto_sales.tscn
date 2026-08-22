@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://cspw35c0jfoke"]
+
+[ext_resource type="PackedScene" uid="uid://bcr80hkpqsc2s" path="res://assets/buildings/AutoSales.glb" id="1_h6imo"]
+
+[node name="AutoSales" unique_id=810357461 instance=ExtResource("1_h6imo")]
