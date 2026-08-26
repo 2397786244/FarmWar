@@ -3,6 +3,12 @@ extends Node3D
 
 const TICK_RATE := 60.0
 const SUNRISE_ALTITUDE := deg_to_rad(-0.833)
+const CLEAR_FOG_DENSITY := 0.00135
+const RAIN_FOG_DENSITY := 0.0085
+const CLEAR_FOG_LIGHT_ENERGY := 0.18
+const RAIN_FOG_LIGHT_ENERGY := 0.58
+const CLEAR_FOG_SKY_AFFECT := 0.24
+const RAIN_FOG_SKY_AFFECT := 0.76
 
 @export_group("Scene Nodes")
 @export var sun_path := NodePath("../Sun")
@@ -102,6 +108,14 @@ func get_world_clock_state() -> Dictionary:
 
 func get_current_hour() -> float:
 	return current_hour
+
+
+## Reapplies the configured initial hour immediately. The runtime map editor
+## uses this while the clock is paused so authors can preview the saved start
+## time without advancing the world clock.
+func refresh_time_of_day() -> void:
+	initial_hour = fposmod(initial_hour, 24.0)
+	_apply_time_of_day()
 
 
 func _apply_time_of_day() -> void:
@@ -278,11 +292,28 @@ func _apply_environment(altitude: float) -> void:
 	).lerp(Color(0.30, 0.38, 0.54), _rain_strength * 0.78).lerp(
 		Color(0.08, 0.11, 0.20), _eclipse_strength * 0.82
 	)
-	_environment.fog_enabled = _rain_strength > 0.01
-	_environment.fog_light_color = Color(0.12, 0.17, 0.29)
-	_environment.fog_light_energy = lerpf(0.0, 0.55, _rain_strength)
-	_environment.fog_density = lerpf(0.0, 0.006, _rain_strength)
-	_environment.fog_sky_affect = lerpf(0.0, 0.72, _rain_strength)
+	var fog_settings := _get_display_fog_settings()
+	var fog_enabled := bool(fog_settings["enabled"])
+	var fog_strength := float(fog_settings["strength"])
+	var weather_fog_factor := clampf(_rain_strength, 0.0, 1.0)
+	# Low-density fog is present even in clear weather for aerial perspective.
+	# Rain raises the density and sky contribution enough to shorten the view
+	# range while keeping nearby crops and buildings readable.
+	_environment.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	_environment.fog_enabled = fog_enabled and fog_strength > 0.001
+	_environment.fog_light_color = Color(0.36, 0.47, 0.58).lerp(
+		Color(0.22, 0.30, 0.42), weather_fog_factor
+	)
+	_environment.fog_light_energy = lerpf(
+		CLEAR_FOG_LIGHT_ENERGY, RAIN_FOG_LIGHT_ENERGY, weather_fog_factor
+	) * fog_strength
+	_environment.fog_density = lerpf(
+		CLEAR_FOG_DENSITY, RAIN_FOG_DENSITY, weather_fog_factor
+	) * fog_strength
+	_environment.fog_aerial_perspective = lerpf(0.62, 0.30, weather_fog_factor) * fog_strength
+	_environment.fog_sky_affect = lerpf(
+		CLEAR_FOG_SKY_AFFECT, RAIN_FOG_SKY_AFFECT, weather_fog_factor
+	) * fog_strength
 	if _sky_material == null:
 		return
 	var top := Color(0.008, 0.018, 0.055).lerp(
@@ -306,6 +337,20 @@ func _apply_environment(altitude: float) -> void:
 	).lerp(Color(0.62, 0.20, 0.10), twilight * 0.45).lerp(
 		Color(0.055, 0.075, 0.12), _rain_strength
 	).lerp(Color(0.07, 0.09, 0.16), _eclipse_strength * 0.78)
+
+
+func _get_display_fog_settings() -> Dictionary:
+	var display_settings := get_node_or_null("/root/DisplaySettings")
+	if display_settings != null and display_settings.has_method("get_setting"):
+		return {
+			"enabled": bool(display_settings.call("get_setting", "atmospheric_fog_enabled", true)),
+			"strength": clampf(
+				float(display_settings.call("get_setting", "atmospheric_fog_strength", 0.65)),
+				0.0,
+				1.0
+			),
+		}
+	return {"enabled": true, "strength": 0.65}
 
 
 func _create_moon() -> void:

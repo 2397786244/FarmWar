@@ -14,6 +14,10 @@ var _cooldown_remaining := 0.0
 
 
 func _ready() -> void:
+	# The map editor aligns the dummy weapon at priority 100.  Fire visuals run
+	# immediately afterward so the muzzle flash is emitted from the corrected
+	# muzzle transform in the same frame.
+	process_priority = 110
 	set_process(continuous_fire)
 
 

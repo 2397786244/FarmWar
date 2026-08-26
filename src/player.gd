@@ -1,6 +1,11 @@
 extends CharacterBody3D
 class_name GamePlayer
 
+signal computer_interface_requested(computer: ComputerTerminal)
+
+const VEHICLE_INTERACTION_OUTLINE_SCRIPT := preload("res://src/vehicle_interaction_outline.gd")
+const VEHICLE_SEAT_HUD_SCRIPT := preload("res://src/vehicle_seat_hud.gd")
+const CHOCOLATE_OS_DESKTOP_SCENE := preload("res://ui/chocolate_os_desktop.tscn")
 @onready var camera = $Head/Camera3D
 @onready var Head = $Head
 @onready var world_post_process: ColorRect = $EffectLayer/WorldPostProcess
@@ -73,6 +78,7 @@ const HANDHELD_WEAPON_TOOL_IDS := {
 const HIT_MARKER_SIZE := 52.0
 const HIT_MARKER_HOLD_SECONDS := 0.08
 const HIT_MARKER_FADE_SECONDS := 0.10
+const DEATH_ANIMATION_NAME := &"DeathFallForward"
 const TEAM_MARKER_HEIGHT := 3.15
 const TEAM_VISIBILITY_UPDATE_INTERVAL := 0.10
 const TEAM_VISIBILITY_RAY_MASK := 4099
@@ -100,6 +106,7 @@ var server_hp := PLAYER_MAX_HP
 var respawn_left := 0.0
 var is_respawning := false
 var death_respawn_duration := 0.0
+var death_animation_started := false
 var is_ladder_climbing := false
 var ladder_tower: Node3D
 var ladder_tower_id := ""
@@ -165,6 +172,7 @@ var hit_marker: Control
 var hit_marker_tween: Tween
 var last_hit_confirmation_id := 0
 var cooldown_ring: Control
+var vehicle_seat_hud: Control
 var health_root: PanelContainer
 var health_bar: ProgressBar
 var health_label: Label
@@ -182,6 +190,8 @@ var cargo_crate_storage_page: CargoCrateStoragePage
 var cargo_delivery_page: CargoDeliveryPage
 var government_notice_page: GovernmentNoticePage
 var livestock_chop_page: LivestockChopPage
+var computer_desktop: ChocolateOSDesktop
+var pending_computer_terminal: ComputerTerminal
 var control_status_detail_label: Label
 var match_timer_label: Label
 var respawn_overlay: ColorRect
@@ -293,6 +303,7 @@ var active_vehicle: VehicleBase
 var active_vehicle_id := ""
 var active_vehicle_seat_index := -1
 var vehicle_is_active := false
+var _vehicle_interaction_outline: VehicleInteractionOutline
 var mounted_machine_gun_is_active := false
 var mounted_machine_gun_vehicle_id := ""
 var mounted_machine_gun: VehicleBaseMachineGun
@@ -1567,6 +1578,7 @@ func _ready() -> void:
 		return
 	if not is_remote_proxy:
 		_ensure_placement_preview_controller()
+		_ensure_vehicle_interaction_outline()
 
 	if pending_loadout_selection.is_empty():
 		_initialize_backpack(tool_definitions.slice(0, HOTBAR_SLOT_COUNT))
@@ -1593,6 +1605,7 @@ func _ready() -> void:
 			event_task_hud.bind_player(self)
 		_create_health_ui()
 		_create_control_status_ui()
+		_create_vehicle_seat_hud()
 		_create_match_timer_ui()
 		_create_crosshair()
 		_create_interact_hint()
@@ -1619,6 +1632,10 @@ func _ready() -> void:
 		livestock_chop_page = LivestockChopPage.new()
 		livestock_chop_page.name = "LivestockChopPage"
 		$SubViewport.add_child(livestock_chop_page)
+		computer_desktop = CHOCOLATE_OS_DESKTOP_SCENE.instantiate() as ChocolateOSDesktop
+		computer_desktop.name = "ChocolateOSDesktop"
+		$SubViewport.add_child(computer_desktop)
+		computer_desktop.closed.connect(_on_computer_desktop_closed)
 		_ensure_tranquilizer_overlay()
 		team_chat_panel.bind_player(self)
 		game_exit_dialog.resume_requested.connect(_close_game_exit_dialog)
@@ -1692,7 +1709,17 @@ func _ensure_placement_preview_controller() -> void:
 	placement_preview_controller.setup(self)
 
 
+func _ensure_vehicle_interaction_outline() -> void:
+	if is_remote_proxy or is_instance_valid(_vehicle_interaction_outline):
+		return
+	_vehicle_interaction_outline = VEHICLE_INTERACTION_OUTLINE_SCRIPT.new() as VehicleInteractionOutline
+	_vehicle_interaction_outline.name = "VehicleInteractionOutline"
+	add_child(_vehicle_interaction_outline)
+	_vehicle_interaction_outline.setup(self)
+
+
 func _exit_tree() -> void:
+	_clear_vehicle_interaction_outline()
 	if is_instance_valid(placement_preview_controller):
 		placement_preview_controller.clear_selection()
 
@@ -1854,20 +1881,20 @@ func apply_remote_tool_selection(tool_index: int, tool_id := "") -> void:
 
 
 func play_remote_tool_action(action_name: String) -> void:
-	if not is_remote_proxy or is_prone or not is_instance_valid(appearance_player):
+	if not is_remote_proxy or is_prone or is_respawning or not is_instance_valid(appearance_player):
 		return
 	action_anim_locked = true
 	match action_name:
 		"shooting":
-			appearance_player.play(&"ShootOneHand", 0.05)
+			_play_character_animation(&"ShootOneHand", 0.05)
 		"melee":
-			appearance_player.play(&"PunchRight", 0.05,punch_animation_speed)
+			_play_character_animation(&"PunchRight", 0.05, punch_animation_speed)
 		_:
-			appearance_player.play(&"ToolUseRight", 0.05)
+			_play_character_animation(&"ToolUseRight", 0.05)
 
 
 func _update_remote_locomotion_animation(previous_state: String) -> void:
-	if not is_remote_proxy or not is_instance_valid(appearance_player):
+	if not is_remote_proxy or is_respawning or not is_instance_valid(appearance_player):
 		return
 	# Vehicle seating is a presentation state, not normal locomotion. Apply it
 	# after every remote snapshot so the ordinary Walk/Idle state cannot replace
@@ -1880,13 +1907,13 @@ func _update_remote_locomotion_animation(previous_state: String) -> void:
 		return
 	if remote_locomotion_state == "air":
 		if previous_state != "air":
-			appearance_player.play(&"JumpStart", 0.05)
+			_play_character_animation(&"JumpStart", 0.05)
 		elif appearance_player.current_animation != &"JumpStart":
 			_play_body_animation(&"JumpLoop", 0.05)
 		return
 	if previous_state == "air":
 		landing_animation = true
-		appearance_player.play(&"JumpLand", 0.05)
+		_play_character_animation(&"JumpLand", 0.05)
 		return
 	if landing_animation:
 		return
@@ -1946,6 +1973,10 @@ func _disable_remote_proxy_runtime() -> void:
 
 
 func _close_active_ui_for_escape() -> bool:
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		computer_desktop.close()
+		_update_crosshair_visibility()
+		return true
 	if is_instance_valid(team_chat_panel) and _chat_input_captures_gameplay():
 		team_chat_panel.close_chat()
 		_update_crosshair_visibility()
@@ -2003,7 +2034,8 @@ func _close_active_ui_for_escape() -> bool:
 
 
 func _inventory_ui_blocks_gameplay_actions() -> bool:
-	return _chat_input_captures_gameplay() \
+	return (is_instance_valid(computer_desktop) and computer_desktop.is_open()) \
+		or _chat_input_captures_gameplay() \
 		or (is_instance_valid(player_backpack) and player_backpack.is_open()) \
 		or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()) \
 		or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
@@ -2105,6 +2137,9 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if is_respawning:
+		return
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		_set_weapon_aiming(false)
 		return
 	if is_instance_valid(vehicle_upgrade_page) and vehicle_upgrade_page.has_method("is_open") \
 			and bool(vehicle_upgrade_page.call("is_open")):
@@ -2258,6 +2293,14 @@ func _input(event: InputEvent) -> void:
 			_request_vehicle_headlights_toggle()
 			get_viewport().set_input_as_handled()
 			return
+		if event is InputEventKey and event.pressed and not event.echo:
+			var requested_seat_index := _vehicle_seat_index_from_key(event.physical_keycode)
+			if requested_seat_index < 0:
+				requested_seat_index = _vehicle_seat_index_from_key(event.keycode)
+			if requested_seat_index >= 0:
+				_request_vehicle_seat_switch(requested_seat_index)
+				get_viewport().set_input_as_handled()
+				return
 		if event.is_action_pressed("interact", false):
 			_request_vehicle_exit()
 			get_viewport().set_input_as_handled()
@@ -2771,12 +2814,16 @@ func _update_mounted_machine_gun_presentation() -> void:
 		tool_node.visible = false
 	if is_instance_valid(held_item_node):
 		held_item_node.visible = false
+	if is_respawning:
+		return
 	if is_instance_valid(appearance_player) and not appearance_player.is_playing():
-		appearance_player.play(&"Idle")
+		_play_character_animation(&"Idle")
 
 
 func _set_mounted_machine_gun_runtime(active: bool) -> void:
 	_set_weapon_aiming(false)
+	if active:
+		_hide_cooldown_ring()
 	_clear_mounted_machine_gun_collision_exception()
 	if active and is_instance_valid(mounted_machine_gun):
 		var carrier := mounted_machine_gun.get_parent_vehicle()
@@ -2815,7 +2862,8 @@ func _clear_mounted_machine_gun_collision_exception() -> void:
 
 func _request_vehicle_headlights_toggle() -> void:
 	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
-			or active_vehicle_id.is_empty() or not active_vehicle.has_method("toggle_headlights"):
+			or active_vehicle_id.is_empty() or not _active_vehicle_can_toggle_headlights() \
+			or not active_vehicle.has_method("toggle_headlights"):
 		return
 	var action := {
 		"vehicle_id": active_vehicle_id,
@@ -2827,6 +2875,54 @@ func _request_vehicle_headlights_toggle() -> void:
 		GameAuthority.local_vehicle_action(authority_peer_id, action)
 	else:
 		active_vehicle.call("toggle_headlights")
+
+
+func _request_vehicle_seat_switch(target_seat_index: int) -> void:
+	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
+			or active_vehicle_id.is_empty() \
+			or not active_vehicle.is_cabin_seat(active_vehicle_seat_index) \
+			or not active_vehicle.is_cabin_seat(target_seat_index) \
+			or target_seat_index == active_vehicle_seat_index:
+		return
+	var action := {
+		"vehicle_id": active_vehicle_id,
+		"action": "switch_vehicle_seat",
+		"seat_index": target_seat_index,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
+	elif active_vehicle.switch_seat(authority_peer_id, target_seat_index):
+		apply_vehicle_session_result({
+			"ok": true,
+			"connected": true,
+			"vehicle_id": active_vehicle_id,
+			"seat_index": target_seat_index,
+			"seat_switched": true,
+			"seat_occupants": active_vehicle.get_seat_occupants(),
+		}, active_vehicle)
+
+
+func _vehicle_seat_index_from_key(key: Key) -> int:
+	match key:
+		KEY_1:
+			return 0
+		KEY_2:
+			return 1
+		KEY_3:
+			return 2
+		KEY_4:
+			return 3
+	return -1
+
+
+func _active_vehicle_can_toggle_headlights() -> bool:
+	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
+			or active_vehicle_seat_index < 0 \
+			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
+		return false
+	return active_vehicle.has_method("toggle_headlights")
 
 
 func _request_vehicle_exit() -> void:
@@ -2863,6 +2959,10 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		active_vehicle_id = active_vehicle.get_vehicle_id()
 		active_vehicle_seat_index = int(result.get("seat_index", -1))
 		vehicle_is_active = active_vehicle_seat_index >= 0
+		if bool(result.get("seat_switched", false)):
+			var occupants_value: Variant = result.get("seat_occupants", null)
+			if occupants_value is Array:
+				active_vehicle.apply_network_state({"seat_occupants": occupants_value})
 		_connect_active_vehicle_damage_signal()
 		_set_vehicle_player_runtime(true)
 		active_vehicle.reset_driving_camera_orbit()
@@ -2947,7 +3047,7 @@ func _update_vehicle_occupant_presentation() -> void:
 
 
 func _play_vehicle_occupant_animation() -> void:
-	if not is_instance_valid(appearance_player):
+	if is_respawning or not is_instance_valid(appearance_player):
 		return
 	var animation_name: StringName = &"Carry" \
 			if appearance_player.has_animation(&"Carry") else &"Idle"
@@ -2960,7 +3060,7 @@ func _play_vehicle_occupant_animation() -> void:
 			carry_animation.loop_mode = Animation.LOOP_LINEAR
 	if appearance_player.current_animation != animation_name \
 			or not appearance_player.is_playing():
-		appearance_player.play(animation_name, 0.08)
+		_play_character_animation(animation_name, 0.08)
 
 
 func _set_vehicle_player_runtime(seated: bool) -> void:
@@ -3438,7 +3538,7 @@ func _clear_fall_damage_tracking() -> void:
 
 
 func _simulate_respawning_corpse_gravity(delta: float) -> void:
-	## 远端玩家由权威快照带动；本地角色在黑屏/重生倒计时期间仍保留身体
+	## 远端玩家由权威快照带动；本地角色在第三人称死亡视角期间仍保留身体
 	## 与地面的接触，因此从梯子或空中死亡时会自然落下。
 	if is_remote_proxy:
 		return
@@ -4252,6 +4352,7 @@ func _update_prone_presentation(delta: float) -> void:
 	
 func _process(delta: float) -> void:
 	if is_remote_proxy:
+		_clear_vehicle_interaction_outline()
 		_update_remote_interpolation()
 		_update_prone_presentation(delta)
 		_update_team_visibility_timer(delta)
@@ -4272,24 +4373,41 @@ func _process(delta: float) -> void:
 	_tick_status_effects(delta)
 	_update_health_ui()
 	_update_control_status_ui()
+	_update_vehicle_seat_hud()
 	_update_match_timer_ui()
 	_update_global_score_ui()
 	_update_team_money_ui()
 	_refresh_message_area_notice()
 	_update_water_visual_effect()
 	_update_placement_preview()
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		_clear_vehicle_interaction_outline()
+		if is_instance_valid(interact_hint):
+			# Keep the computer exit instruction in the same yellow prompt area as
+			# ordinary E interactions, but above the computer overlay itself.
+			interact_hint.visible = true
+			interact_hint.text = "按 ESC退出电脑"
+			interact_hint.z_index = 120
+		_set_weapon_aiming(false)
+		_update_cooldown_ring()
+		_update_crosshair_visibility()
+		_refresh_message_area_notice()
+		return
 	if game_exit_dialog.is_open():
+		_clear_vehicle_interaction_outline()
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
 	if _chat_input_captures_gameplay():
+		_clear_vehicle_interaction_outline()
 		_cancel_gate_lockpick(true)
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
 	if is_instance_valid(match_end_page) and match_end_page.visible:
+		_clear_vehicle_interaction_outline()
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
@@ -4299,11 +4417,13 @@ func _process(delta: float) -> void:
 			or (is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open()) \
 			or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
 			or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()):
+		_clear_vehicle_interaction_outline()
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
 		_update_crosshair_visibility()
 		return
 	if is_ladder_climbing:
+		_clear_vehicle_interaction_outline()
 		if is_instance_valid(interact_hint):
 			interact_hint.visible = false
 		_set_weapon_aiming(false)
@@ -4311,6 +4431,7 @@ func _process(delta: float) -> void:
 		_update_crosshair_visibility()
 		return
 	if is_respawning:
+		_clear_vehicle_interaction_outline()
 		_cancel_gate_lockpick(true)
 		# A cooperative host owns the local presentation too.  Keep its overlay
 		# clock progressing locally while the server independently owns respawn.
@@ -4321,6 +4442,7 @@ func _process(delta: float) -> void:
 		_update_respawn_overlay()
 		return
 	if mounted_machine_gun_is_active:
+		_clear_vehicle_interaction_outline()
 		_update_mounted_machine_gun_presentation()
 		_update_upper_body_aim(delta)
 		_update_camera_shake(delta)
@@ -4328,6 +4450,7 @@ func _process(delta: float) -> void:
 		_update_crosshair_visibility()
 		return
 	if remote_is_active:
+		_clear_vehicle_interaction_outline()
 		_ensure_remote_device_camera()
 		_update_remote_camera_shake(delta)
 		_process_user_key()
@@ -4352,6 +4475,8 @@ func _process(delta: float) -> void:
 		_update_vehicle_camera_shake(delta)
 		_process_user_key()
 		_update_cooldown_ring()
+		_refresh_interact_hint()
+		_refresh_message_area_notice()
 		return
 	if remote_device_panel.visible:
 		_update_remote_device_panel()
@@ -4377,6 +4502,7 @@ func _process(delta: float) -> void:
 	_update_camera_shake(delta)
 	_update_interaction()
 	_refresh_interact_hint()
+	_update_vehicle_interaction_outline_camera()
 	# Reflow the persistent tutorial line after the actionable yellow hint has
 	# been resolved for this frame, preventing both labels from overlapping.
 	_refresh_message_area_notice()
@@ -4566,11 +4692,12 @@ func _update_world_post_process(delta: float) -> void:
 
 
 func _use_fist() -> void:
-	if is_ladder_climbing or is_prone or current_tool_index < 0 or current_tool_index >= HOTBAR_SLOT_COUNT:
+	if is_respawning or is_ladder_climbing or is_prone \
+			or current_tool_index < 0 or current_tool_index >= HOTBAR_SLOT_COUNT:
 		return
 	if is_instance_valid(appearance_player):
 		action_anim_locked = true
-		appearance_player.play(&"PunchRight", 0.05)
+		_play_character_animation(&"PunchRight", 0.05)
 	var request := _make_tool_request()
 	request["tool_id"] = "fist"
 	if GameAuthority.should_send_network_requests():
@@ -4654,7 +4781,8 @@ func _physics_process(delta: float) -> void:
 		or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open())
 	var government_notice_open := is_instance_valid(government_notice_page) \
 		and government_notice_page.is_open()
-	if player_backpack.is_open() or vehicle_upgrade_open or cargo_ui_open or government_notice_open:
+	var computer_open := is_instance_valid(computer_desktop) and computer_desktop.is_open()
+	if player_backpack.is_open() or vehicle_upgrade_open or cargo_ui_open or government_notice_open or computer_open:
 		# UI blocks player input, but gravity, knockback, and collision must continue.
 		_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, Vector2.ZERO, false)
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
@@ -4701,7 +4829,7 @@ func _physics_process(delta: float) -> void:
 		(is_on_floor() or authoritative_grounded) and \
 		not $SubViewport/ShopPage.visible
 	if jumped:
-		appearance_player.play("JumpStart",0.05)
+		_play_character_animation(&"JumpStart", 0.05)
 	
 	 
 	var input_direction = Vector2.ZERO
@@ -4753,20 +4881,38 @@ func release_big_mouth_capture() -> void:
 	pending_input_frames.clear()
 	
 	
+func _play_character_animation(
+	anim_name: StringName,
+	blend_time := 0.12,
+	custom_speed := 1.0,
+	from_end := false
+) -> void:
+	if not is_instance_valid(appearance_player) or anim_name == &"":
+		return
+	if is_respawning:
+		if anim_name != DEATH_ANIMATION_NAME or death_animation_started:
+			return
+		death_animation_started = true
+	appearance_player.play(anim_name, blend_time, custom_speed, from_end)
+
+
 func _play_body_animation(
 	anim_name: StringName,
 	blend_time := 0.12
 ) -> void:
-	if anim_name == null:
+	if is_respawning or anim_name == null:
 		return
 
 	if appearance_player.current_animation == anim_name \
 			and appearance_player.is_playing():
 		return
 
-	appearance_player.play(anim_name, blend_time)
+	_play_character_animation(anim_name, blend_time)
 
 func _set_tool_action():
+	if is_respawning:
+		_play_death_animation()
+		return
 	var definition: Dictionary = tool_definitions[current_tool_index]
 
 	var category := str(
@@ -4775,11 +4921,11 @@ func _set_tool_action():
 	action_anim_locked = true
 	match category:
 		"shooting":
-			appearance_player.play(&"ShootOneHand", 0.05)
+			_play_character_animation(&"ShootOneHand", 0.05)
 		"melee":
-			appearance_player.play(&"PunchRight", 0.05)
+			_play_character_animation(&"PunchRight", 0.05)
 		_:
-			appearance_player.play(&"ToolUseRight", 0.05)
+			_play_character_animation(&"ToolUseRight", 0.05)
 
 
 func get_rift_book_request() -> Dictionary:
@@ -4795,7 +4941,7 @@ func get_rift_book_request() -> Dictionary:
 	}
 		
 func _update_player_action_animation(direction_strength:Vector2):
-	if appearance_player==null:
+	if is_respawning or appearance_player==null:
 		return
 	if vehicle_is_active:
 		_play_vehicle_occupant_animation()
@@ -4823,7 +4969,7 @@ func _update_player_action_animation(direction_strength:Vector2):
 	#print("CURRENT:",ground)
 	if ground and not was_on_floor:
 		#print("JumpLand")
-		appearance_player.play("JumpLand",0.05)
+		_play_character_animation(&"JumpLand", 0.05)
 		landing_animation = true
 		was_on_floor = true
 		return
@@ -4839,15 +4985,15 @@ func _update_player_action_animation(direction_strength:Vector2):
 	
 	elif direction_strength.length() > 0.001:
 		#print("WALK")
-		appearance_player.play(&"Carry" if _selected_item_uses_carry_pose() else &"Walk")
+		_play_character_animation(&"Carry" if _selected_item_uses_carry_pose() else &"Walk")
 	else:
 		if is_instance_valid(tool_node) or is_instance_valid(held_item_node):
 			#print("IDLETOOL")
-			appearance_player.play(&"Carry" if _selected_item_uses_carry_pose() else &"IdleTool")
+			_play_character_animation(&"Carry" if _selected_item_uses_carry_pose() else &"IdleTool")
 			#_set_tool_action()
 		else:
 			#print("IDLE")
-			appearance_player.play(&"Idle")
+			_play_character_animation(&"Idle")
 	was_on_floor = ground
 		
 func _create_crosshair() -> void:
@@ -5199,6 +5345,16 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if is_remote_proxy:
 		return
 	var event_type := str(event.get("type", ""))
+	if event_type == "computer_action_result":
+		var result_value: Variant = event.get("data", {})
+		if result_value is Dictionary:
+			_handle_computer_action_result(result_value as Dictionary)
+		return
+	if event_type == "computer_state":
+		var computer_state_value: Variant = event.get("computer_state", {})
+		if computer_state_value is Dictionary:
+			_apply_computer_state_to_world(computer_state_value as Dictionary)
+		return
 	if event_type == "ladder_action_result":
 		var ladder_result: Variant = event.get("data", {})
 		if ladder_result is Dictionary \
@@ -5396,6 +5552,11 @@ func apply_authoritative_shop_dish_transaction(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)) \
 			or int(result.get("peer_id", 0)) != authority_peer_id:
 		return
+	if str(result.get("kind", "")) == "tool":
+		var slots_value: Variant = result.get("player_slots", null)
+		if slots_value is Array:
+			apply_cargo_backpack_slots(slots_value as Array)
+		return
 	if str(result.get("kind", "")) == "livestock":
 		var slots_value: Variant = result.get("player_slots", [])
 		if slots_value is Array:
@@ -5472,11 +5633,49 @@ func _create_cooldown_ring() -> void:
 	$SubViewport.add_child(cooldown_ring)
 
 
+func _create_vehicle_seat_hud() -> void:
+	if is_instance_valid(vehicle_seat_hud):
+		return
+	vehicle_seat_hud = VEHICLE_SEAT_HUD_SCRIPT.new() as Control
+	vehicle_seat_hud.name = "VehicleSeatHud"
+	vehicle_seat_hud.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	vehicle_seat_hud.offset_left = -242.0
+	vehicle_seat_hud.offset_top = -180.0
+	vehicle_seat_hud.offset_right = -22.0
+	vehicle_seat_hud.offset_bottom = -20.0
+	vehicle_seat_hud.custom_minimum_size = Vector2.ZERO
+	vehicle_seat_hud.size_flags_horizontal = Control.SIZE_SHRINK_END
+	vehicle_seat_hud.size_flags_vertical = Control.SIZE_SHRINK_END
+	vehicle_seat_hud.clip_contents = true
+	vehicle_seat_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vehicle_seat_hud.visible = false
+	$SubViewport.add_child(vehicle_seat_hud)
+
+
+func _update_vehicle_seat_hud() -> void:
+	if not is_instance_valid(vehicle_seat_hud):
+		return
+	if not vehicle_is_active or not is_instance_valid(active_vehicle) or is_respawning:
+		vehicle_seat_hud.call("clear")
+		return
+	vehicle_seat_hud.call(
+		"configure",
+		active_vehicle.get_cabin_seat_count(),
+		active_vehicle.get_cabin_seat_occupants(),
+		active_vehicle_seat_index
+	)
+
+
+func _hide_cooldown_ring() -> void:
+	if is_instance_valid(cooldown_ring):
+		cooldown_ring.call("set_cooldown", 0.0, 0.0)
+
+
 func _update_cooldown_ring() -> void:
 	if not is_instance_valid(cooldown_ring):
 		return
-	if is_respawning or is_prone or $SubViewport/ShopPage.visible:
-		cooldown_ring.call("set_cooldown", 0.0, 0.0)
+	if is_respawning or is_prone or mounted_machine_gun_is_active or $SubViewport/ShopPage.visible:
+		_hide_cooldown_ring()
 		return
 	var remaining := 0.0
 	var duration := 0.0
@@ -5672,18 +5871,19 @@ func _ensure_respawn_overlay() -> void:
 	$SubViewport.add_child(respawn_overlay)
 	respawn_label = Label.new()
 	respawn_label.name = "RespawnLabel"
+	respawn_label.text = "你死了"
 	respawn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	respawn_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	respawn_label.add_theme_font_size_override("font_size", 32)
+	respawn_label.add_theme_font_size_override("font_size", 96)
 	respawn_label.add_theme_color_override("font_color", Color("#FFF4F4"))
 	respawn_label.add_theme_color_override("font_shadow_color", Color("#000000"))
-	respawn_label.add_theme_constant_override("shadow_offset_x", 2)
-	respawn_label.add_theme_constant_override("shadow_offset_y", 2)
+	respawn_label.add_theme_constant_override("shadow_offset_x", 4)
+	respawn_label.add_theme_constant_override("shadow_offset_y", 4)
 	respawn_label.set_anchors_preset(Control.PRESET_CENTER)
-	respawn_label.offset_left = -220.0
-	respawn_label.offset_top = -34.0
-	respawn_label.offset_right = 220.0
-	respawn_label.offset_bottom = 34.0
+	respawn_label.offset_left = -360.0
+	respawn_label.offset_top = -80.0
+	respawn_label.offset_right = 360.0
+	respawn_label.offset_bottom = 80.0
 	respawn_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	respawn_label.z_index = 101
 	$SubViewport.add_child(respawn_label)
@@ -5753,12 +5953,12 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		_update_tranquilizer_overlay()
 		if started_respawning:
 			death_respawn_duration = respawn_left
+			death_animation_started = false
 			_reset_all_camera_shake()
 			_close_gameplay_ui_for_respawn()
-			_play_death_animation()
 		else:
 			# The reliable death event can arrive after an earlier snapshot. Keep the
-			# full authoritative duration so hiding still occurs at its exact midpoint.
+			# full authoritative duration for the complete death-camera presentation.
 			death_respawn_duration = maxf(death_respawn_duration, respawn_left)
 		_update_death_appearance_visibility()
 	if is_respawning == next_is_respawning:
@@ -5766,6 +5966,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 			# A snapshot may arrive before the reliable death event. Keep the local
 			# presentation self-healing in that ordering as well, so a missing
 			# overlay/camera cannot leave the player permanently without the death UI.
+			_play_death_animation()
 			if _owns_local_death_camera():
 				_ensure_respawn_overlay()
 				if not is_instance_valid(death_camera):
@@ -5775,7 +5976,8 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 	is_respawning = next_is_respawning
 	var appearance := get_node_or_null("AppearanceNode") as Node3D
 	if appearance != null:
-		appearance.visible = not is_respawning or respawn_left > death_respawn_duration * 0.5
+		# Keep the corpse visible for the entire third-person death view.
+		appearance.visible = true
 	if is_instance_valid(tool_node):
 		tool_node.visible = not is_respawning and not is_prone
 	if is_instance_valid(held_item_node):
@@ -5794,6 +5996,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		hit_area.set_deferred("monitorable", not is_respawning and not is_remote_proxy)
 	if is_respawning:
 		velocity = Vector3.ZERO
+		_play_death_animation()
 		if remote_is_active:
 			remote_device_close(false)
 		if _owns_local_death_camera():
@@ -5804,6 +6007,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		_reset_all_camera_shake()
 		_stop_death_camera()
 		death_respawn_duration = 0.0
+		death_animation_started = false
 		authoritative_grounded = true
 		action_anim_locked = false
 		landing_animation = false
@@ -5811,14 +6015,14 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 			if vehicle_is_active:
 				_play_vehicle_occupant_animation()
 			else:
-				appearance_player.play(&"Idle", 0.05)
+				_play_character_animation(&"Idle", 0.05)
 		if vehicle_is_active:
 			_enter_vehicle_occupant_pose()
 		else:
 			_clear_vehicle_occupant_pose()
 		if not is_remote_proxy and is_instance_valid(respawn_overlay):
-			var fade := create_tween()
-			fade.tween_property(respawn_overlay, "color:a", 0.0, 0.35)
+			# The death presentation no longer fades to a black screen.
+			respawn_overlay.color.a = 0.0
 		if is_instance_valid(respawn_label):
 			respawn_label.visible = false
 		# CollisionShape3D and Hit3D use deferred physics changes while entering or
@@ -5867,6 +6071,8 @@ func _close_gameplay_ui_for_respawn() -> void:
 			government_notice_page, cargo_delivery_page, cargo_car_storage_page,
 			cargo_crate_storage_page,
 	]
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		computer_desktop.close()
 	for page: Node in pages:
 		if is_instance_valid(page) and page.has_method("is_open") and bool(page.call("is_open")):
 			page.call("close")
@@ -5884,10 +6090,18 @@ func _play_death_animation() -> void:
 		appearance.visible = true
 	if not is_instance_valid(appearance_player):
 		return
-	if not appearance_player.has_animation(&"DeathFallForward"):
+	if death_animation_started:
+		return
+	if not appearance_player.has_animation(DEATH_ANIMATION_NAME):
 		push_warning("Character appearance is missing DeathFallForward: %s" % selected_hero)
 		return
-	appearance_player.play(&"DeathFallForward", 0.08)
+	# A death animation is a one-shot transition. Once it has started, the corpse
+	# remains in its final pose for the whole death-camera presentation; no late
+	# snapshot or per-frame update is allowed to start it again.
+	if appearance_player.current_animation == DEATH_ANIMATION_NAME:
+		death_animation_started = true
+		return
+	_play_character_animation(DEATH_ANIMATION_NAME, 0.08)
 
 
 func _update_death_appearance_visibility() -> void:
@@ -5896,23 +6110,20 @@ func _update_death_appearance_visibility() -> void:
 	var appearance := get_node_or_null("AppearanceNode") as Node3D
 	if appearance == null:
 		return
-	var hide_at_remaining := death_respawn_duration * 0.5
-	appearance.visible = respawn_left > hide_at_remaining
+	appearance.visible = true
 	_update_death_camera()
 
 
 func _update_respawn_overlay() -> void:
 	if not is_instance_valid(respawn_label):
 		return
-	var reveal_respawn_overlay := is_respawning and respawn_left <= death_respawn_duration * 0.5
-	respawn_label.visible = reveal_respawn_overlay
+	respawn_label.visible = is_respawning
+	if is_instance_valid(respawn_overlay):
+		# Keep this node as a transparent UI layer for z-ordering, but never tint
+		# the viewport. The player must see the world for all ten respawn seconds.
+		respawn_overlay.color.a = 0.0
 	if is_respawning:
-		var target_alpha := 0.88 if reveal_respawn_overlay else 0.0
-		if is_instance_valid(respawn_overlay) and not is_equal_approx(respawn_overlay.color.a, target_alpha):
-			var fade := create_tween()
-			fade.tween_property(respawn_overlay, "color:a", target_alpha, 0.35)
-		if reveal_respawn_overlay:
-			respawn_label.text = "你死了\n复活中... %d" % maxf(1.0, ceilf(respawn_left))
+		respawn_label.text = "你死了"
 
 
 func show_match_end_page(settlement: Dictionary) -> void:
@@ -6054,7 +6265,9 @@ func _start_death_camera() -> void:
 	death_camera_origin = global_position + Vector3.UP * 1.7 + backward * 2.6
 	death_camera_target = global_position + Vector3.UP * 7.0 + backward * 8.5
 	death_camera.global_position = death_camera_origin
-	death_camera.fov = camera.fov
+	# Death view must remain a readable third-person shot even if the player was
+	# aiming down sights at the exact moment the fatal damage arrived.
+	death_camera.fov = camera_default_fov
 	death_camera.look_at(global_position + Vector3.UP * 0.55, Vector3.UP)
 	camera.current = false
 	death_camera.make_current()
@@ -6435,9 +6648,10 @@ func _update_crosshair_visibility() -> void:
 		and government_notice_page.is_open()
 	var livestock_chop_open := is_instance_valid(livestock_chop_page) \
 		and livestock_chop_page.is_open()
+	var computer_open := is_instance_valid(computer_desktop) and computer_desktop.is_open()
 	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (mounted_machine_gun_is_active or bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
 		bool(definition.get("show_crosshair", false))) and \
-		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open
+		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open and not computer_open
 	# A hit marker is an attack confirmation, not a part of the aiming reticle.
 	# LongSpear (and other valid non-aimable tools) deliberately has no
 	# crosshair, so hiding the marker whenever the crosshair is hidden would
@@ -6698,6 +6912,13 @@ func _update_interaction() -> void:
 			(target.get("body") as PickupItem).interact(self)
 		"auto_cooker":
 			(target.get("body") as AutoCooker).interact(self)
+		"computer":
+			var computer := target.get("body") as ComputerTerminal
+			if is_instance_valid(computer) and computer.interact(self):
+				pending_computer_terminal = computer
+				request_computer_action(computer, "acquire")
+				_set_weapon_aiming(false)
+				_update_crosshair_visibility()
 		"kitchen":
 			(target.get("body") as KitchenAppliance).interact(self)
 		"shop":
@@ -6713,6 +6934,81 @@ func _update_interaction() -> void:
 			government_notice_page.open_for(target.get("body") as GovernmentBoard)
 			interact_hint.visible = false
 			_update_crosshair_visibility()
+
+
+func request_computer_action(target: ComputerTerminal, action_name: String, extra := {}) -> void:
+	if not is_instance_valid(target):
+		return
+	var action := {
+		"station_kind": "computer",
+		"action": action_name,
+		"computer_id": target.get_computer_id(),
+		"station_path": str(target.get_path()),
+	}
+	if extra is Dictionary:
+		action.merge(extra as Dictionary, true)
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_ingredient_pickup_action(action)
+	else:
+		GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
+
+
+func _handle_computer_action_result(result: Dictionary) -> void:
+	var is_local_result := int(result.get("peer_id", 0)) == authority_peer_id
+	if is_local_result and bool(result.get("ok", false)) \
+			and str(result.get("action", "")) == "uninstall_app" \
+			and is_instance_valid(computer_desktop):
+		var uninstall_instance: Variant = computer_desktop.app_instances.get(str(result.get("app_id", "")), null)
+		if uninstall_instance is ChocolateOSAppBase:
+			(uninstall_instance as ChocolateOSAppBase).on_uninstall()
+	var state_value: Variant = result.get("computer_state", {})
+	var target := _apply_computer_state_to_world(state_value as Dictionary) \
+		if state_value is Dictionary else null
+	if not is_local_result:
+		return
+	var action_name := str(result.get("action", ""))
+	if action_name == "acquire":
+		if bool(result.get("ok", false)) and target is ComputerTerminal:
+			pending_computer_terminal = null
+			computer_desktop.open_for(target as ComputerTerminal, self, state_value as Dictionary)
+			_set_weapon_aiming(false)
+			_update_crosshair_visibility()
+		else:
+			pending_computer_terminal = null
+			show_gameplay_notice("其他玩家正在使用这台电脑" if str(result.get("reason", "")) == "computer_in_use" else "无法打开电脑")
+		return
+	if is_instance_valid(computer_desktop):
+		computer_desktop.apply_action_result(result)
+	_update_crosshair_visibility()
+
+
+func _apply_computer_state_to_world(state: Dictionary) -> ComputerTerminal:
+	if state.is_empty():
+		return null
+	var computer_id := str(state.get("computer_id", ""))
+	var path_text := str(state.get("station_path", ""))
+	var direct := get_node_or_null(NodePath(path_text))
+	if direct is ComputerTerminal:
+		(direct as ComputerTerminal).apply_computer_state(state)
+		if is_instance_valid(computer_desktop):
+			computer_desktop.apply_computer_state(state)
+		return direct as ComputerTerminal
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if node is ComputerTerminal and (node as ComputerTerminal).get_computer_id() == computer_id:
+			(node as ComputerTerminal).apply_computer_state(state)
+			if is_instance_valid(computer_desktop):
+				computer_desktop.apply_computer_state(state)
+			return node as ComputerTerminal
+	if is_instance_valid(pending_computer_terminal) \
+			and pending_computer_terminal.get_computer_id() == computer_id:
+		pending_computer_terminal.apply_computer_state(state)
+		return pending_computer_terminal
+	return null
+
+
+func _on_computer_desktop_closed() -> void:
+	_suppress_esc_mouse_release = Input.is_action_pressed("esc")
+	_update_crosshair_visibility()
 
 
 func _on_shop_page_closed() -> void:
@@ -6961,6 +7257,22 @@ func _get_interactable_crop_tile(body: Node3D) -> FarmTile:
 	return tile if tile.plant_children.has(body) else null
 
 
+func get_crop_tiles_in_interaction_area() -> Array:
+	var tiles: Dictionary = {}
+	if is_remote_proxy or is_respawning:
+		return []
+	for detector: ShapeCast3D in _get_interaction_detectors():
+		if not detector.enabled:
+			continue
+		detector.force_shapecast_update()
+		for collision_index in detector.get_collision_count():
+			var body := detector.get_collider(collision_index) as Node3D
+			var tile := _get_interactable_crop_tile(body)
+			if tile != null and tile.has_crop_status_label_content():
+				tiles[tile.get_instance_id()] = tile
+	return tiles.values()
+
+
 func _get_interaction_detectors() -> Array[ShapeCast3D]:
 	var detectors: Array[ShapeCast3D] = []
 	for detector_path in [NodePath("Head/InteractDetect"), NodePath("SODArea")]:
@@ -7091,6 +7403,9 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 		var horizontal_offset := Vector3(to_target.x, 0.0, to_target.z)
 		var distance := horizontal_offset.length()
 		var max_distance := CROP_INTERACTION_DISTANCE if str(target.get("kind", "")) == "crop" else INTERACTION_MAX_DISTANCE
+		var target_vehicle := target.get("vehicle", target.get("body")) as VehicleBase
+		if target_vehicle != null and target_vehicle.has_method("get_player_interaction_range"):
+			max_distance = float(target_vehicle.call("get_player_interaction_range"))
 		if distance > max_distance:
 			if print_shape_cast_debug:
 				print("[交互筛选][E] %s -> 超出距离 %.2fm / %.2fm" % [body.name, distance, max_distance])
@@ -7227,7 +7542,16 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 		return {
 			"kind": "vehicle",
 			"body": vehicle,
+			"interaction_position": vehicle.get_player_interaction_position(),
 			"hint": "载具已满员" if vehicle.is_full() else "[E] 进入载具",
+		}
+	var computer := _computer_terminal_from_node(body)
+	if computer != null and computer.can_player_interact(self):
+		return {
+			"kind": "computer",
+			"body": computer,
+			"interaction_position": computer.get_interaction_position(),
+			"hint": computer.get_interaction_hint(self),
 		}
 	if body is GarageUpgradeTerminal:
 		var terminal := body as GarageUpgradeTerminal
@@ -7375,19 +7699,75 @@ func _request_livestock_pickup(livestock: FarmLivestock) -> void:
 
 func _refresh_interact_hint() -> void:
 	if not is_instance_valid(interact_hint):
+		_clear_vehicle_interaction_outline()
 		return
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		_clear_vehicle_interaction_outline()
+		interact_hint.visible = true
+		interact_hint.text = "按 ESC退出电脑"
+		interact_hint.z_index = 120
+		return
+	interact_hint.z_index = 0
 	var vehicle_upgrade_open := is_instance_valid(vehicle_upgrade_page) \
 		and vehicle_upgrade_page.has_method("is_open") \
 		and bool(vehicle_upgrade_page.call("is_open"))
 	var government_notice_open := is_instance_valid(government_notice_page) \
 		and government_notice_page.is_open()
 	if $SubViewport/ShopPage.visible or vehicle_upgrade_open or government_notice_open:
+		_clear_vehicle_interaction_outline()
 		interact_hint.visible = false
 		return
+	if vehicle_is_active:
+		_clear_vehicle_interaction_outline()
+		interact_hint.visible = _active_vehicle_can_toggle_headlights()
+		if interact_hint.visible:
+			interact_hint.text = "[C] 打开/关闭车灯"
+		return
 	var target := _get_best_interaction_target()
+	_refresh_vehicle_interaction_outline(target)
 	interact_hint.visible = not target.is_empty()
 	if interact_hint.visible:
 		interact_hint.text = str(target.get("hint", "[E] 交互"))
+
+
+func _refresh_vehicle_interaction_outline(target: Dictionary) -> void:
+	if not is_instance_valid(_vehicle_interaction_outline):
+		return
+	_vehicle_interaction_outline.set_target(_get_confirmable_vehicle_target(target))
+
+
+func _clear_vehicle_interaction_outline() -> void:
+	if is_instance_valid(_vehicle_interaction_outline):
+		_vehicle_interaction_outline.clear_target()
+
+
+func _update_vehicle_interaction_outline_camera() -> void:
+	if is_instance_valid(_vehicle_interaction_outline):
+		_vehicle_interaction_outline.update(_get_active_post_process_camera())
+
+
+func _get_confirmable_vehicle_target(target: Dictionary) -> VehicleBase:
+	var target_kind := str(target.get("kind", ""))
+	if target_kind != "vehicle" and target_kind != "vehicle_platform_passenger":
+		return null
+	var vehicle := target.get("vehicle", target.get("body")) as VehicleBase
+	if not is_instance_valid(vehicle) or vehicle.current_hp <= 0.0 \
+			or not vehicle.can_team_enter(team):
+		return null
+	if target_kind == "vehicle_platform_passenger":
+		var passenger_seat_index := int(target.get("seat_index", -1))
+		if passenger_seat_index < 0 \
+				or not vehicle.has_method("can_enter_platform_passenger") \
+				or not bool(vehicle.call(
+					"can_enter_platform_passenger",
+					authority_peer_id,
+					passenger_seat_index
+				)):
+			return null
+		return vehicle
+	if vehicle.is_full() or vehicle.get_available_seat_index(true) < 0:
+		return null
+	return vehicle
 
 
 func _wire_mesh_gate_from_node(body: Node) -> WireMeshGate:
@@ -7400,6 +7780,15 @@ func _wire_mesh_gate_from_node(body: Node) -> WireMeshGate:
 		return candidate
 	if body is Area3D and (body as Area3D).name == "DoorArea":
 		return body.get_parent() as WireMeshGate
+	return null
+
+
+func _computer_terminal_from_node(body: Node) -> ComputerTerminal:
+	var current: Node = body
+	while current != null:
+		if current is ComputerTerminal:
+			return current as ComputerTerminal
+		current = current.get_parent()
 	return null
 
 
@@ -8082,7 +8471,7 @@ func set_player_appearance(hero_name:String,team_name:String):
 	else:
 		push_warning("Character appearance is missing ProneCrawl: %s" % hero_name)
 	
-	appearance_player.play("Idle")
+	_play_character_animation(&"Idle")
 	emotion_controller = appearance_node.find_child("EmotionController",true)
 	
 	hand_socket.use_external_skeleton = true
@@ -8661,6 +9050,11 @@ func _current_tool_uses_two_handed_grip() -> bool:
 func _skeleton_animation_finished(
 	anim_name:String
 ):
+	if is_respawning:
+		# No late fire/melee completion callback may unlock the ordinary animation
+		# state while the player is in the death presentation.
+		action_anim_locked = true
+		return
 	match anim_name:
 		&"JumpStart":
 			if not is_on_floor():

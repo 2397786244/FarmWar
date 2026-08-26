@@ -3,6 +3,7 @@ extends Node
 const SPATIAL_BUCKET_SIZE := 16.0
 const INVALID_CLEANUP_INTERVAL := 30.0
 const CROP_GENERATION_GLOBAL_BUDGET_PER_FRAME := 32
+const CROP_STATUS_LABEL_REFRESH_INTERVAL := 0.25
 
 var all_lands: Array[FarmTile] = []
 var lands_record: Dictionary = {
@@ -14,6 +15,7 @@ var field_configs: Dictionary = {}
 var default_spacing := 2.2
 var growth_tick := 0.0
 var cleanup_tick := 0.0
+var crop_status_label_refresh_tick := 0.0
 
 var _land_by_id: Dictionary = {}
 var _owner_lands: Dictionary = {
@@ -30,6 +32,15 @@ var _spatial_buckets: Dictionary = {}
 var _tile_bucket_by_id: Dictionary = {}
 var _crop_generation_budget_frame := -1
 var _crop_generation_budget_used := 0
+var _visible_crop_status_tiles: Dictionary = {}
+
+
+func _process(delta: float) -> void:
+	crop_status_label_refresh_tick -= delta
+	if crop_status_label_refresh_tick > 0.0:
+		return
+	crop_status_label_refresh_tick = CROP_STATUS_LABEL_REFRESH_INTERVAL
+	_refresh_crop_status_labels()
 
 
 func _physics_process(delta: float) -> void:
@@ -150,6 +161,49 @@ func get_plots_in_radius(world_position: Vector3, radius: float) -> Array:
 				if is_instance_valid(tile) and tile.global_position.distance_squared_to(world_position) <= radius_squared:
 					result.append(tile)
 	return result
+
+
+func _refresh_crop_status_labels() -> void:
+	var viewer := _get_local_viewer()
+	if viewer == null:
+		_hide_visible_crop_status_labels()
+		return
+
+	var next_visible: Dictionary = {}
+	for tile_value: Variant in viewer.get_crop_tiles_in_interaction_area():
+		var tile := tile_value as FarmTile
+		if tile == null or not is_instance_valid(tile):
+			continue
+		if not tile.has_crop_status_label_content():
+			continue
+		var tile_id := tile.get_instance_id()
+		next_visible[tile_id] = tile
+		tile.set_crop_status_label_nearby(true)
+
+	for tile_id: Variant in _visible_crop_status_tiles.keys():
+		if next_visible.has(tile_id):
+			continue
+		var previous_tile := _visible_crop_status_tiles[tile_id] as FarmTile
+		if is_instance_valid(previous_tile):
+			previous_tile.set_crop_status_label_nearby(false)
+	_visible_crop_status_tiles = next_visible
+
+
+func _hide_visible_crop_status_labels() -> void:
+	for tile_value: Variant in _visible_crop_status_tiles.values():
+		var tile := tile_value as FarmTile
+		if is_instance_valid(tile):
+			tile.set_crop_status_label_nearby(false)
+	_visible_crop_status_tiles.clear()
+
+
+func _get_local_viewer() -> GamePlayer:
+	for node: Node in get_tree().get_nodes_in_group("human_players"):
+		var player := node as GamePlayer
+		if player == null or player.is_remote_proxy or player.is_respawning:
+			continue
+		return player
+	return null
 
 
 func try_consume_crop_generation_budget() -> bool:

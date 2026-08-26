@@ -7,6 +7,10 @@ const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd
 
 const MAX_HP := 500.0
 const LOG_DROP_COUNT := 4
+const PLANT_FIBER_DROP_MIN_COUNT := 2
+const PLANT_FIBER_DROP_MAX_COUNT := 5
+const PLANT_FIBER_DROP_WEIGHT_KG := 1.0
+const PLANT_FIBER_DROP_MODEL := "res://assets/other_items/Material/PlantFiberBundle.glb"
 const FALL_DURATION := 0.8
 const FALL_SETTLE_DELAY := 0.18
 const HIT_FRAGMENT_COLOR := Color("75452b")
@@ -160,6 +164,27 @@ func begin_authoritative_destroy(log_count: int) -> Vector3:
 	return fall_direction
 
 
+func get_authoritative_harvest_drops() -> Array[Dictionary]:
+	var harvest_drops: Array[Dictionary] = []
+	for drop_value: Variant in drops:
+		if not drop_value is Dictionary:
+			continue
+		var drop := (drop_value as Dictionary).duplicate(true)
+		# Plant fiber is a universal tree by-product. Normalize any authored
+		# override so every tree still gives 2-5 separate 1 kg units.
+		if str(drop.get("item_id", drop.get("ingredient_id", ""))) == "plant_fiber":
+			continue
+		harvest_drops.append(drop)
+	harvest_drops.append({
+		"kind": "ingredient",
+		"item_id": "plant_fiber",
+		"count": randi_range(PLANT_FIBER_DROP_MIN_COUNT, PLANT_FIBER_DROP_MAX_COUNT),
+		"weight_kg": PLANT_FIBER_DROP_WEIGHT_KG,
+		"model_path": PLANT_FIBER_DROP_MODEL,
+	})
+	return harvest_drops
+
+
 func _play_fall(spawn_logs: bool) -> void:
 	collision_layer = 0
 	collision_mask = 0
@@ -185,13 +210,13 @@ func _play_fall(spawn_logs: bool) -> void:
 		tween.tween_callback(func() -> void:
 			mesh_root.visible = false
 			if spawn_logs and is_instance_valid(GameAuthority):
-				GameAuthority.spawn_nature_resource_drops(global_position, drops)
+				GameAuthority.spawn_nature_resource_drops(global_position, get_authoritative_harvest_drops())
 			if not is_instance_valid(forest_manager):
 				queue_free()
 		)
 	else:
 		if spawn_logs and is_instance_valid(GameAuthority):
-			GameAuthority.spawn_nature_resource_drops(global_position, drops)
+			GameAuthority.spawn_nature_resource_drops(global_position, get_authoritative_harvest_drops())
 		if not is_instance_valid(forest_manager):
 			queue_free()
 

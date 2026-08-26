@@ -81,6 +81,17 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:xuanchuanmap:%s" % DEFAULT_MAP_VERSION,
 	},
+	{
+		"map_id": "xuanchuan2",
+		"display_name": "xuanchuan2",
+		"scene_path": "res://worlds/xuanchuan2/xuanchuan2.tscn",
+		"icon_path": "",
+		"loading_images_directory": "",
+		"size": Vector2i(512, 512),
+		"source": "builtin",
+		"map_version": DEFAULT_MAP_VERSION,
+		"map_hash": "builtin:xuanchuan2:%s" % DEFAULT_MAP_VERSION,
+	},
 ]
 
 

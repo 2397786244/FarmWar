@@ -53,6 +53,20 @@ var shop_products: Array[Dictionary] = [
 	{"id": "copper", "name": "铜矿", "unit": "kg", "buy_price": 36, "sell_price": 25, "can_buy": true, "can_sell": true},
 	{"id": "limestone", "name": "石灰石", "unit": "kg", "buy_price": 10, "sell_price": 7, "can_buy": true, "can_sell": true},
 	{"id": "stone", "name": "石头", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "iron_ingot", "name": "铁锭", "unit": "kg", "buy_price": 80, "sell_price": 55, "can_buy": true, "can_sell": true},
+	{"id": "copper_ingot", "name": "铜锭", "unit": "kg", "buy_price": 100, "sell_price": 70, "can_buy": true, "can_sell": true},
+	{"id": "steel_plate", "name": "钢板", "unit": "kg", "buy_price": 240, "sell_price": 165, "can_buy": true, "can_sell": true},
+	{"id": "metal_connector", "name": "金属连接件", "unit": "item", "buy_price": 180, "sell_price": 125, "can_buy": true, "can_sell": true},
+	{"id": "cotton_thread", "name": "棉线", "unit": "kg", "buy_price": 70, "sell_price": 48, "can_buy": true, "can_sell": true},
+	{"id": "cotton_cloth", "name": "棉布", "unit": "kg", "buy_price": 150, "sell_price": 105, "can_buy": true, "can_sell": true},
+	{"id": "engineering_plastic_pellets", "name": "工程塑料颗粒", "unit": "kg", "buy_price": 130, "sell_price": 90, "can_buy": true, "can_sell": true},
+	{"id": "hard_drive", "name": "硬盘", "unit": "item", "buy_price": 480, "sell_price": 330, "can_buy": true, "can_sell": true},
+	{"id": "laptop", "name": "笔记本电脑", "kind": "tool", "unit": "item", "buy_price": 1200, "sell_price": 840, "can_buy": true, "can_sell": true},
+	{"id": "desktop", "name": "高端台式机", "kind": "tool", "unit": "item", "buy_price": 2600, "sell_price": 1820, "can_buy": true, "can_sell": true},
+	{"id": "metal_defense_net", "name": "金属防护网", "unit": "item", "buy_price": 260, "sell_price": 180, "can_buy": true, "can_sell": true},
+	{"id": "electronic_detonator_module", "name": "电子引爆模块", "unit": "item", "buy_price": 420, "sell_price": 290, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_roof_cooling_system", "name": "载具冷却系统", "unit": "item", "buy_price": 650, "sell_price": 455, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_signal_augment", "name": "车载信号增强模块", "unit": "item", "buy_price": 700, "sell_price": 490, "can_buy": true, "can_sell": true},
 	{"id": "normal_mushroom", "name": "普通蘑菇", "unit": "kg", "buy_price": 16, "sell_price": 10, "can_buy": true, "can_sell": true},
 	{"id": "bolete_mushroom", "name": "牛肝菌", "unit": "kg", "buy_price": 42, "sell_price": 30, "can_buy": true, "can_sell": true},
 	{"id": "redwhite_mushroom", "name": "红白蘑菇", "unit": "kg", "buy_price": 68, "sell_price": 48, "can_buy": true, "can_sell": true},
@@ -78,6 +92,14 @@ var plant_item_list: Array = IngredientCatalog.get_plantable_ids()
 var team_storage: Dictionary = {
 	"blue": {"money": INITIAL_MONEY},
 	"red": {"money": INITIAL_MONEY},
+}
+
+# Farm Info and the team-storage tab share the same presentation snapshot.  A
+# small per-team revision lets consumers avoid rebuilding their rows when a
+# different team's inventory changes.
+var team_storage_revisions: Dictionary = {
+	"blue": 0,
+	"red": 0,
 }
 
 # 胜利分数与可消费的队伍资金分离。分数只在本局奖励/收入结算时增加，
@@ -135,6 +157,7 @@ func add_item(team: String, item_name: String, amount: float) -> bool:
 	storage_changed.emit(team, item_name, new_amount)
 	if item_name == "money":
 		team_money_changed.emit(team, new_amount - previous_amount, new_amount)
+	mark_team_storage_changed(team)
 	return true
 
 
@@ -176,7 +199,69 @@ func remove_item(team: String, item_name: String, amount: float) -> bool:
 	storage_changed.emit(team, item_name, new_amount)
 	if item_name == "money":
 		team_money_changed.emit(team, new_amount - previous_amount, new_amount)
+	mark_team_storage_changed(team)
 	return true
+
+
+func mark_team_storage_changed(team: String) -> void:
+	if not team_storage.has(team):
+		return
+	team_storage_revisions[team] = int(team_storage_revisions.get(team, 0)) + 1
+
+
+func get_team_storage_revision(team: String) -> int:
+	return int(team_storage_revisions.get(team, 0))
+
+
+func apply_team_storage_revision(team: String, revision: int) -> void:
+	if not team_storage.has(team):
+		return
+	team_storage_revisions[team] = maxi(0, revision)
+
+
+func get_team_storage_display_entries(team: String) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if not team_storage.has(team):
+		return entries
+	var team_data: Dictionary = team_storage[team]
+	for item_id_value: Variant in team_data.keys():
+		var item_id := str(item_id_value)
+		var amount := float(team_data.get(item_id_value, 0.0))
+		if item_id == "money" or amount <= 0.0001:
+			continue
+		var product := get_shop_product(item_id)
+		var unit := str(product.get("unit", "kg"))
+		var display_name := str(product.get("name", ""))
+		var ingredient := IngredientCatalog.get_definition(item_id)
+		if not ingredient.is_empty():
+			display_name = str(ingredient.get("display_name", display_name))
+		if display_name.is_empty():
+			display_name = item_id
+		entries.append({
+			"display_name": display_name,
+			"item_id": item_id,
+			"amount": amount,
+			"unit": unit,
+		})
+	entries.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return str(left.get("display_name", "")) < str(right.get("display_name", ""))
+	)
+	return entries
+
+
+func get_team_storage_display_state(team: String) -> Dictionary:
+	var entries := get_team_storage_display_entries(team)
+	var total_weight_kg := 0.0
+	for entry: Dictionary in entries:
+		if str(entry.get("unit", "kg")) == "kg":
+			total_weight_kg += float(entry.get("amount", 0.0))
+	return {
+		"team": team,
+		"inventory_revision": get_team_storage_revision(team),
+		"team_money": check_team_item_amount(team, "money"),
+		"entries": entries,
+		"total_weight_kg": total_weight_kg,
+	}
 
 
 func check_team_item_amount(team: String, item_name: String) -> float:
@@ -248,6 +333,7 @@ func apply_team_scores(scores: Dictionary, allow_decrease := false) -> void:
 func get_public_inventory_state() -> Dictionary:
 	return {
 		"teams": team_storage.duplicate(true),
+		"inventory_revisions": team_storage_revisions.duplicate(true),
 		"scores": get_team_scores(),
 	}
 
@@ -260,6 +346,7 @@ func reset_team_storage() -> void:
 		for key in team_storage[team]:
 			team_storage[team][key] = INITIAL_MONEY if key == "money" else 0
 			storage_changed.emit(team, key, float(team_storage[team][key]))
+		mark_team_storage_changed(team)
 	for team: String in team_scores:
 		var previous_score := float(team_scores[team])
 		team_scores[team] = 0.0

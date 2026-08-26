@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://cw2ej33j05y3o"]
+
+[ext_resource type="PackedScene" uid="uid://dg37gx1pd2sc1" path="res://assets/facilities/interior/FTF_Prop_OldLaptop_GrayWhite.glb" id="1_laptop_model"]
+[ext_resource type="Script" uid="uid://dcemtjkftuu0g" path="res://src/computer_terminal.gd" id="2_computer_terminal"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lj37m"]
+size = Vector3(0.6, 0.5, 0.5)
+
+[node name="Laptop" type="StaticBody3D" unique_id=1867769403]
+collision_layer = 128
+collision_mask = 0
+script = ExtResource("2_computer_terminal")
+metadata/map_can_overlap_water = false
+metadata/map_can_overlap_support_objects = true
+metadata/computer_kind = "laptop"
+
+[node name="Mesh" parent="." unique_id=1753389402 instance=ExtResource("1_laptop_model")]
+
+[node name="InteractionPoint" type="Marker3D" parent="." unique_id=548103681]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1829388443]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.27393794, 0)
+shape = SubResource("BoxShape3D_lj37m")

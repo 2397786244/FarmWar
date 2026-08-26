@@ -2,16 +2,18 @@
   "content": {
     "ai_configuration": [],
     "ai_count": 0,
-    "building_count": 1,
+    "building_count": 22,
     "defense_facility_count": 0,
     "editor_objects": "editor_objects.dat",
-    "facility_count": 0,
+    "facility_count": 5,
     "farmland_count": 1,
     "ground_rock_count": 0,
     "kitchen_facility_count": 0,
     "manual_grass": "manual_grass.dat",
     "neutral_crop_generator_count": 0,
     "ore_count": 11,
+    "promotional_dummy_count": 0,
+    "promotional_vehicle_driver_dummy_count": 0,
     "road_count": 0,
     "roads": "roads.dat",
     "spawn_count": 8,
@@ -31,7 +33,10 @@
     "farmland_editor_enabled": true,
     "neutral_crop_generators_enabled": true,
     "object_transform_enabled": true,
+    "promotional_dummies_enabled": true,
+    "promotional_vehicle_driver_dummies_enabled": true,
     "size_aware_far_scenery": true,
+    "time_settings_enabled": true,
     "water_bodies_enabled": true,
     "weather_settings_enabled": true,
     "xyz_gizmo_enabled": true,
@@ -87,6 +92,9 @@
     "surface_palette": "surface_palette.png",
     "surface_palette_resource": "surface_palette.tres",
     "vertex_spacing": 1.0
+  },
+  "time": {
+    "initial_hour": 15.75
   },
   "version": "2.0.0",
   "weather": {

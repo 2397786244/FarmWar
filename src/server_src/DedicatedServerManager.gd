@@ -1427,6 +1427,7 @@ func start_match() -> void:
 	_on_inventory_state_ready({
 		"tick": GameAuthority.server_tick,
 		"teams": GlobalVar.team_storage.duplicate(true),
+		"inventory_revisions": GlobalVar.team_storage_revisions.duplicate(true),
 		"scores": GlobalVar.get_team_scores(),
 	})
 

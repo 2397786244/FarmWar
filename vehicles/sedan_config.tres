@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="VehicleConfig" format=3 uid="uid://lmcedrecrdw6"]
+
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="1_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="2_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("2_vehicle_seat")
+anchor_name = "DriverSeat"
+show_occupant = false
+exit_offset = Vector3(1.35, 0.1, 0)
+
+[sub_resource type="Resource" id="VehicleSeatConfig_passenger_front"]
+script = ExtResource("2_vehicle_seat")
+seat_id = "passenger_front"
+anchor_name = "PassengerSeat1"
+can_drive = false
+show_occupant = false
+exit_offset = Vector3(1.35, 0.1, 0)
+
+[sub_resource type="Resource" id="VehicleSeatConfig_passenger_rear_left"]
+script = ExtResource("2_vehicle_seat")
+seat_id = "passenger_rear_left"
+anchor_name = "PassengerSeat2"
+can_drive = false
+show_occupant = false
+exit_offset = Vector3(1.35, 0.1, 0)
+
+[sub_resource type="Resource" id="VehicleSeatConfig_passenger_rear_right"]
+script = ExtResource("2_vehicle_seat")
+seat_id = "passenger_rear_right"
+anchor_name = "PassengerSeat3"
+can_drive = false
+show_occupant = false
+exit_offset = Vector3(1.35, 0.1, 0)
+
+[resource]
+script = ExtResource("1_vehicle_config")
+forward_axis = Vector3(0, 0, 1)
+seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver"), SubResource("VehicleSeatConfig_passenger_front"), SubResource("VehicleSeatConfig_passenger_rear_left"), SubResource("VehicleSeatConfig_passenger_rear_right")])
+camera_offset = Vector3(0, 2.6, 6.4)
+camera_max_fov = 84.0
+camera_speed_for_max_fov = 8.0
+camera_orbit_target_height = 1.0
+collision_size = Vector3(1.7, 1.4, 4.4)
+collision_offset = Vector3(0, 0.7, 0)
+hitbox_size = Vector3(1.9, 1.6, 4.5)
+hitbox_offset = Vector3(0, 0.8, 0)
+wheel_radius = 0.4
+wheel_base = 2.68
+wheel_track = 1.8
+max_forward_speed = 8.0
+max_reverse_speed = 4.5
+acceleration = 5.5
+rolling_deceleration = 2.5
+max_steering_angle_degrees = 32.0
+min_steering_angle_degrees = 10.0
+max_hp = 800.0

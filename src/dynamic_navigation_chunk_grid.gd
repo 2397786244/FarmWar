@@ -493,6 +493,7 @@ func _transform_aabb(local_bounds: AABB, transform: Transform3D) -> AABB:
 
 
 func _scan_demolition_obstacles() -> void:
+	_prune_stale_obstacle_registry()
 	var seen: Dictionary = {}
 	for group_name in [OBSTACLE_GROUP, NAVIGATION_ONLY_OBSTACLE_GROUP]:
 		for node in get_tree().get_nodes_in_group(group_name):
@@ -513,6 +514,51 @@ func _scan_demolition_obstacles() -> void:
 			if old_value is Dictionary:
 				_mark_bounds_dirty((old_value as Dictionary).get("bounds", AABB()))
 			_obstacles.erase(id)
+
+
+func _prune_stale_obstacle_registry() -> void:
+	## 建造/删除防御设施和异步导航烘焙可能跨越多个帧；设施被释放后，
+	## _obstacles 里的旧引用不会自动变成 null。先清掉这些记录，避免在
+	## _make_source_geometry() 中对已释放的 NavigationObstacle3D 做强制转换。
+	for id_value in _obstacles.keys():
+		var data_value: Variant = _obstacles.get(id_value)
+		if not data_value is Dictionary:
+			_discard_obstacle_registry_entry(id_value)
+			continue
+		var data := data_value as Dictionary
+		var owner_value: Variant = data.get("owner", null)
+		var obstacle_value: Variant = data.get("obstacle", null)
+		if not is_instance_valid(owner_value) or not is_instance_valid(obstacle_value):
+			_discard_obstacle_registry_entry(id_value)
+			continue
+		if owner_value is Node and (owner_value as Node).is_queued_for_deletion():
+			_discard_obstacle_registry_entry(id_value)
+			continue
+		if not obstacle_value is NavigationObstacle3D:
+			_discard_obstacle_registry_entry(id_value)
+			continue
+		var obstacle := obstacle_value as NavigationObstacle3D
+		if obstacle.is_queued_for_deletion():
+			_discard_obstacle_registry_entry(id_value)
+
+
+func _discard_obstacle_registry_entry(id_value: Variant) -> void:
+	var old_value: Variant = _obstacles.get(id_value)
+	if old_value is Dictionary:
+		_mark_bounds_dirty((old_value as Dictionary).get("bounds", AABB()))
+	_obstacles.erase(id_value)
+
+
+func _get_live_navigation_obstacle(value: Variant) -> NavigationObstacle3D:
+	## 不要直接对 Variant 使用“as NavigationObstacle3D”：如果 Variant
+	## 指向已经释放的对象，Godot 会在转换处输出 Trying to cast a freed
+	## object。先验证实例仍然存活，再执行类型转换。
+	if not is_instance_valid(value) or not value is NavigationObstacle3D:
+		return null
+	var obstacle := value as NavigationObstacle3D
+	if obstacle.is_queued_for_deletion():
+		return null
+	return obstacle
 
 
 func _register_obstacle(owner: Node3D, obstacle: NavigationObstacle3D, active: bool) -> void:
@@ -680,6 +726,7 @@ func _make_navigation_mesh(chunk_id: Vector2i) -> NavigationMesh:
 
 func _make_source_geometry(chunk_id: Vector2i) -> NavigationMeshSourceGeometryData3D:
 	var source := NavigationMeshSourceGeometryData3D.new()
+	_prune_stale_obstacle_registry()
 	var bake_bounds := _chunk_bounds(chunk_id, bake_border_size + agent_radius)
 	var added_ground := false
 	for mesh_instance in _ground_meshes:
@@ -701,7 +748,7 @@ func _make_source_geometry(chunk_id: Vector2i) -> NavigationMeshSourceGeometryDa
 		var bounds: AABB = data.get("bounds", AABB())
 		if not bounds.intersects(bake_bounds):
 			continue
-		var obstacle := data.get("obstacle", null) as NavigationObstacle3D
+		var obstacle := _get_live_navigation_obstacle(data.get("obstacle", null))
 		if obstacle == null or obstacle.vertices.is_empty():
 			continue
 		var vertices := PackedVector3Array()

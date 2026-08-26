@@ -74,6 +74,10 @@ func _make_default_values() -> Dictionary:
 		"shadow_tint": Color(0.97, 0.99, 1.02, 1.0),
 		"highlight_tint": Color(1.02, 0.99, 0.95, 1.0),
 		"sharpen_strength": 0.12,
+		"atmospheric_fog_enabled": true,
+		"atmospheric_fog_strength": 0.65,
+		"depth_of_field_enabled": true,
+		"depth_of_field_strength": 0.34,
 		"vignette_strength": 0.10,
 		"vignette_start": 1.50,
 		"vignette_end": 1.95,
@@ -230,6 +234,38 @@ func _build_ui() -> void:
 	)
 	_vignette_start_slider.value_changed.connect(_on_vignette_start_changed)
 	_vignette_end_slider.value_changed.connect(_on_vignette_end_changed)
+
+	_add_section_title(screen_content, "大气与景深")
+	_add_render_toggle_row(
+		screen_content,
+		"atmospheric_fog_enabled",
+		"大气雾",
+		"晴天保留远距离朦胧感，雨天会自动增强并缩短可视距离"
+	)
+	_add_render_slider_row(
+		screen_content,
+		"atmospheric_fog_strength",
+		"大气雾强度",
+		0.0,
+		1.0,
+		0.01,
+		true
+	)
+	_add_render_toggle_row(
+		screen_content,
+		"depth_of_field_enabled",
+		"相机景深",
+		"让近处和远处逐渐虚化，中景保持清晰；关闭可节省后处理开销"
+	)
+	_add_render_slider_row(
+		screen_content,
+		"depth_of_field_strength",
+		"景深强度",
+		0.0,
+		1.0,
+		0.01,
+		true
+	)
 
 	_add_section_title(screen_content, "动态效果")
 	_add_toggle_row(

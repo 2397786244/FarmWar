@@ -14,6 +14,7 @@ const COLOR_ACCENT := Color("#54D6A2")
 const COLOR_TEXT := Color("#F4F7FA")
 const COLOR_MUTED := Color("#AFC2D0")
 const START_SCENE := preload("res://ui/start_scene.tscn")
+const RELEASE_CHANNEL := "Alpha"
 
 
 func _ready() -> void:
@@ -99,6 +100,26 @@ func _build_interface() -> void:
 	var quit_button := _make_button("退出游戏")
 	quit_button.pressed.connect(func(): quit_requested.emit())
 	box.add_child(quit_button)
+
+	var version_label := Label.new()
+	version_label.text = "v%s-%s" % [
+		str(ProjectSettings.get_setting("application/config/version", "0.3.1")),
+		RELEASE_CHANNEL,
+	]
+	version_label.anchor_left = 0.0
+	version_label.anchor_top = 1.0
+	version_label.anchor_right = 0.0
+	version_label.anchor_bottom = 1.0
+	version_label.offset_left = 58.0
+	version_label.offset_top = -34.0
+	version_label.offset_right = 220.0
+	version_label.offset_bottom = -10.0
+	version_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	version_label.add_theme_font_size_override("font_size", 14)
+	version_label.add_theme_color_override("font_color", Color(0.69, 0.76, 0.81, 0.82))
+	version_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.72))
+	version_label.add_theme_constant_override("outline_size", 4)
+	add_child(version_label)
 
 
 func _on_singleplayer_pressed() -> void:

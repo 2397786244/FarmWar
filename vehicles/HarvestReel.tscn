@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://d1ns3boc17lxi"]
 
 [ext_resource type="PackedScene" uid="uid://b7kfgxushaww0" path="res://assets/vehicles/HarvestReel.glb" id="1_pdtba"]
-[ext_resource type="Script" path="res://src/harvest_reel.gd" id="2_harvest_reel"]
+[ext_resource type="Script" uid="uid://b5mswu7wfj4yd" path="res://src/harvest_reel.gd" id="2_harvest_reel"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_xmvls"]
 size = Vector3(3.34, 1.3292146, 2.013005)
@@ -24,6 +24,5 @@ shape = SubResource("BoxShape3D_xmvls")
 [node name="ShapeCast3D" type="ShapeCast3D" parent="." unique_id=1133505327]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.33106077, -1.0309818)
 shape = SubResource("BoxShape3D_pdtba")
-collision_mask = 64
-exclude_parent = true
 max_results = 64
+collision_mask = 64

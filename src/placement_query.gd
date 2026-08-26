@@ -280,6 +280,72 @@ static func resolve_free_placement(
 	return result
 
 
+static func resolve_surface_placement(
+	world: World3D,
+	surface_position: Vector3,
+	player_position: Vector3,
+	placement_yaw: float,
+	collision_shape: Shape3D,
+	collision_transform: Transform3D,
+	blocking_mask: int,
+	exceptions: Array = [],
+	surface_normal: Vector3 = Vector3.UP,
+	max_slope_degrees: float = DEFAULT_MAX_SLOPE_DEGREES,
+	clearance: float = DEFAULT_CLEARANCE
+) -> Dictionary:
+	## Place a small facility on the surface hit by the player's placement ray.
+	## Unlike resolve_free_placement(), this intentionally does not recast down
+	## to the terrain. It is used by tabletop facilities such as the laptop,
+	## whose support surface can be several metres above the ground.
+	if world == null or collision_shape == null:
+		return {"ok": false, "reason": "placement_query_unavailable"}
+
+	var normal := surface_normal.normalized()
+	if normal.length_squared() <= 0.001:
+		normal = Vector3.UP
+	var slope_degrees := rad_to_deg(acos(clampf(normal.dot(Vector3.UP), -1.0, 1.0)))
+	if slope_degrees > max_slope_degrees:
+		return {
+			"ok": false,
+			"reason": "placement_too_steep",
+			"surface_position": surface_position,
+			"surface_normal": normal,
+			"slope_degrees": slope_degrees,
+		}
+
+	var support_offset := support_offset_for_shape(collision_shape, collision_transform)
+	var placement_position := surface_position + Vector3.UP * support_offset
+	var clearance_shape := make_clearance_shape(collision_shape, clearance)
+	if clearance_shape == null:
+		return {
+			"ok": false,
+			"reason": "placement_unsupported_collision_shape",
+			"surface_position": surface_position,
+		}
+
+	var shape_query := PhysicsShapeQueryParameters3D.new()
+	shape_query.shape = clearance_shape
+	shape_query.transform = Transform3D(
+		Basis(Vector3.UP, placement_yaw),
+		placement_position
+	) * collision_transform
+	shape_query.collision_mask = blocking_mask
+	shape_query.collide_with_bodies = true
+	shape_query.collide_with_areas = false
+	shape_query.exclude = exceptions
+	var collisions := world.direct_space_state.intersect_shape(shape_query, 32)
+	return {
+		"ok": collisions.is_empty(),
+		"reason": "" if collisions.is_empty() else "placement_blocked",
+		"position": placement_position,
+		"surface_position": surface_position,
+		"surface_normal": normal,
+		"slope_degrees": slope_degrees,
+		"support_offset": support_offset,
+		"collisions": collisions,
+	}
+
+
 static func support_offset_for_shape(
 	shape: Shape3D,
 	shape_transform: Transform3D

@@ -111,10 +111,14 @@ func _validate() -> void:
 	var generator := generator_packed.instantiate() as WildAnimalGenerator if generator_packed != null else null
 	_check(generator != null, "WildAnimalGenerator scene loads")
 	_check(generator != null and generator.maximum_animals == 2, "generator cap is two animals")
-	var bear_hide := IngredientCatalog.get_definition("bear_hide")
-	_check(str(bear_hide.get("display_name", "")) == "黑熊皮", "BlackBear hide item is registered")
-	_check(IngredientCatalog.get_harvest_drop_scene_path("bear_hide").contains("RawBeef"), "BlackBear hide temporarily uses the beef model")
-	_check(BlackBear.BEAR_HIDE_DROP_COUNT == 5, "BlackBear death drop count is five hides")
+	var animal_hide := IngredientCatalog.get_definition("animal_hide")
+	_check(str(animal_hide.get("display_name", "")) == "动物皮", "BlackBear animal hide item is registered")
+	_check(
+		IngredientCatalog.get_harvest_drop_scene_path("animal_hide")
+			== "res://assets/other_items/Material/AnimalHide.glb",
+		"BlackBear animal hide uses the AnimalHide model"
+	)
+	_check(BlackBear.ANIMAL_HIDE_DROP_COUNT == 5, "BlackBear death drop count is five animal hides")
 	print("Wild animal validation: %s" % ("FAILED" if _failed else "PASS"))
 	proxy.free()
 	bear.free()

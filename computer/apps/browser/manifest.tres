@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+app_id = "browser"
+program_id = "app_browser"
+display_name = "Browser"
+description = "浏览 ChocolateOS 内置网络内容。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/system/browser.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/system/browser.png"
+entry_kind = "browser"
+system_app = true
+removable = false
+default_grid_position = Vector2i(1, 0)
+pinned_to_dock = true
+permissions = PackedStringArray("network.read")

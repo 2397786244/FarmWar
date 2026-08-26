@@ -192,6 +192,10 @@ const PROFILES := {
 		"flame_damage_multiplier": 1.0,
 	},
 	"boom_buggy": {"damage": 200.0, "radius": 10.0},
+	"vehicle_explosion": {
+		"damage": 500.0, "radius_four_wheel": 8.5, "radius_two_wheel": 5.2,
+		"knockback": 30.0,
+	},
 	"small_mouse": {
 		"range": 60.0, "damage": 5.0, "visual_speed": 60.0,
 		"primary_cooldown": 1.0, "labeled_duration": 6.0,

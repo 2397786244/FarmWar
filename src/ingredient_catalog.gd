@@ -37,7 +37,13 @@ static func is_team_storage_material(ingredient_id: String) -> bool:
 	var definition := get_definition(ingredient_id)
 	if definition.is_empty():
 		return false
-	return is_plantable(ingredient_id) or str(definition.get("category", "")) in ["wood", "ore"]
+	return is_plantable(ingredient_id) or str(definition.get("category", "")) in [
+		"wood",
+		"ore",
+		"animal_product",
+		"industrial_material",
+		"industrial_product",
+	]
 
 
 static func get_team_storage_material_ids() -> Array[String]:

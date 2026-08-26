@@ -90,6 +90,11 @@ func _ready() -> void:
 			if is_instance_valid(spawner) and spawner.has_method("set_gameplay_enabled"):
 				spawner.set_gameplay_enabled(true)
 	is_map_initialized = true
+	# Build the authority-side aggregate once after all FarmTiles exist.  The
+	# cooperative save restore may run a second rebuild after applying saved
+	# ownership/crops, so this also covers a fresh map without a save.
+	if is_instance_valid(GameAuthority) and GameAuthority.has_method("rebuild_farm_statistics"):
+		GameAuthority.rebuild_farm_statistics()
 	map_initialization_completed.emit()
 
 
@@ -103,7 +108,8 @@ func _register_static_map_facilities() -> void:
 		if not is_instance_valid(node) or not node is Node3D:
 			continue
 		var facility := node as Node3D
-		var category := "defense" if facility is MapDefenseFacility else "kitchen"
+		var category := "defense" if facility is MapDefenseFacility \
+			else "interior" if facility is ComputerTerminal else "kitchen"
 		facility.add_to_group("network_map_facilities")
 		var editor_uuid := str(facility.get_meta("map_editor_uuid", ""))
 		var runtime_id := str(facility.get_meta("network_map_facility_id", ""))
@@ -128,7 +134,7 @@ func _register_static_map_facilities() -> void:
 
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
-	if node is KitchenAppliance or node is MapDefenseFacility:
+	if node is KitchenAppliance or node is MapDefenseFacility or node is ComputerTerminal:
 		result.append(node)
 	for child in node.get_children():
 		_collect_static_facilities(child, result)
@@ -171,10 +177,13 @@ func _configure_editor_map_daylight() -> void:
 	var day_night := get_node_or_null("DayNightSystem")
 	if day_night == null:
 		return
-	day_night.set("initial_hour", 10.0)
 	# DayNightSystem has already run _ready by the time FarmWorldInitializer is
-	# ready, so reapply immediately instead of leaving one noon-lit frame.
-	day_night.call("_apply_time_of_day")
+	# ready. Reapply the map-authored initial hour without replacing it with the
+	# historical fixed 10:00 editor default.
+	if day_night.has_method("refresh_time_of_day"):
+		day_night.call("refresh_time_of_day")
+	else:
+		day_night.call("_apply_time_of_day")
 
 
 func _enforce_runtime_shadow_casters() -> void:

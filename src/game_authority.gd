@@ -157,6 +157,11 @@ const FREE_PLACEMENT_BLOCKING_MASK := (
 	| COLLISION_LAYER_NATURE_RESOURCE
 	| COLLISION_LAYER_WILD_ANIMAL
 )
+## Interior computer facilities may overlap a desk/table support collider, but
+## must still reject walls, players, vehicles and natural resources.
+const SUPPORT_OVERLAP_BLOCKING_MASK := (
+	FREE_PLACEMENT_BLOCKING_MASK & ~(COLLISION_LAYER_TOOL | COLLISION_LAYER_BUILDING)
+)
 const FREE_PLACEMENT_MAX_SLOPE_DEGREES := 5.0
 # The clearance shape expands 0.15 m beyond the source CollisionShape on every side.
 const FREE_PLACEMENT_CLEARANCE := 0.15
@@ -241,6 +246,14 @@ var pending_farm_tile_deltas: Dictionary = {}
 var pending_farm_reconcile_chunks: Array = []
 var farm_reconcile_states: Dictionary = {}
 var farm_reconcile_cycle := 0
+# Authority-side FarmTile aggregate. The tile-record map is only maintained on
+# the server/local authority; clients receive the already aggregated result in
+# the 1 Hz snapshot and never scan their partial FarmTile set.
+var farm_summary_by_team: Dictionary = {}
+var farm_summary_tile_records: Dictionary = {}
+var farm_summary_revision := 0
+var farm_summary_initialized := false
+var remote_farm_summary_state: Dictionary = {}
 var local_match_elapsed_seconds := 0.0
 var local_match_finished := false
 
@@ -352,6 +365,11 @@ func start_client_mode() -> void:
 
 
 func stop_authority() -> void:
+	# A session can stop before the normal peer-disconnected callback reaches
+	# unregister_player. Clear authoritative computer locks before disabling the
+	# authority mode so a reused world cannot inherit a stale owner.
+	if mode == MODE_SERVER or mode == MODE_LOCAL:
+		_release_all_computer_locks()
 	mode = MODE_DISABLED
 	server_manager = null
 	_reset_runtime_state()
@@ -477,6 +495,11 @@ func _reset_runtime_state(clear_players := true) -> void:
 	pending_farm_reconcile_chunks.clear()
 	farm_reconcile_states.clear()
 	farm_reconcile_cycle = 0
+	farm_summary_by_team.clear()
+	farm_summary_tile_records.clear()
+	farm_summary_revision = 0
+	farm_summary_initialized = false
+	remote_farm_summary_state.clear()
 	local_match_elapsed_seconds = 0.0
 	local_match_finished = false
 	authoritative_farm_events.clear()
@@ -1611,8 +1634,11 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 
 
 func unregister_player(peer_id: int) -> void:
+	# Release station locks even if another cleanup path already removed the
+	# player's state dictionary. Disconnect cleanup must never leave a computer
+	# owned by a peer that no longer exists.
+	_force_release_kitchen_user(peer_id)
 	if player_states.has(peer_id):
-		_force_release_kitchen_user(peer_id)
 		release_big_mouth_capture(peer_id, "disconnected")
 		force_release_mounted_machine_gun(peer_id)
 	_destroy_rift_anchor_for_peer(peer_id)
@@ -2477,7 +2503,11 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 			elif not str(state.get("vehicle_id", "")).is_empty() \
 					or not str(state.get("mounted_machine_gun_vehicle_id", "")).is_empty():
 				result["reason"] = "already_seated"
-			elif not _can_server_interact_with_position(state, vehicle.global_position, PLAYER_VEHICLE_INTERACTION_RANGE):
+			elif not _can_server_interact_with_position(
+				state,
+				vehicle.get_player_interaction_position(),
+				vehicle.get_player_interaction_range()
+			):
 				result["reason"] = "vehicle_out_of_range"
 			else:
 				if seat_index >= 0 and vehicle is FarmBaseVehicle \
@@ -2583,7 +2613,18 @@ func server_vehicle_action(peer_id: int, action: Dictionary) -> void:
 	if vehicle_id.is_empty() or vehicle_id != str(state.get("vehicle_id", "")):
 		return
 	var vehicle := _find_vehicle(vehicle_id)
-	if vehicle == null or vehicle.driver_peer_id != peer_id:
+	if vehicle == null:
+		return
+	if action_name == "switch_vehicle_seat":
+		_server_vehicle_seat_switch(
+			peer_id,
+			state,
+			vehicle,
+			int(action.get("seat_index", -1))
+		)
+		bytes_received_this_second += len(JSON.stringify(action).to_utf8_buffer())
+		return
+	if vehicle.driver_peer_id != peer_id:
 		return
 	if action_name == "toggle_headlights" and vehicle.has_method("toggle_headlights"):
 		vehicle.call("toggle_headlights")
@@ -2591,6 +2632,53 @@ func server_vehicle_action(peer_id: int, action: Dictionary) -> void:
 		vehicle_state.merge(vehicle.get_network_state(), true)
 		vehicle_states[vehicle_id] = vehicle_state
 	bytes_received_this_second += len(JSON.stringify(action).to_utf8_buffer())
+
+
+func _server_vehicle_seat_switch(
+	peer_id: int,
+	state: Dictionary,
+	vehicle: VehicleBase,
+	target_seat_index: int
+) -> Dictionary:
+	var vehicle_id := vehicle.get_vehicle_id()
+	var result := {
+		"ok": false,
+		"peer_id": peer_id,
+		"vehicle_id": vehicle_id,
+		"connected": true,
+		"seat_index": target_seat_index,
+		"seat_switched": true,
+		"tick": server_tick,
+	}
+	if str(state.get("vehicle_id", "")) != vehicle_id:
+		result["reason"] = "not_vehicle_occupant"
+		return result
+	if not vehicle.is_cabin_seat(target_seat_index):
+		result["reason"] = "invalid_cabin_seat"
+		return result
+	var current_seat_index := vehicle.get_seat_index_for_peer(peer_id)
+	if current_seat_index < 0 or not vehicle.is_cabin_seat(current_seat_index):
+		# FarmBaseVehicle platform passengers enter from the side and never use
+		# the in-cabin numeric seat switching flow.
+		result["reason"] = "platform_seat_cannot_switch"
+		return result
+	if not vehicle.can_switch_seat(peer_id, target_seat_index) \
+			or not vehicle.switch_seat(peer_id, target_seat_index):
+		result["reason"] = "seat_occupied_or_unavailable"
+		return result
+	state["vehicle_seat_index"] = target_seat_index
+	_sync_occupied_player_state(peer_id, state, vehicle)
+	player_states[peer_id] = state
+	var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
+	vehicle_state.merge(vehicle.get_network_state(), true)
+	vehicle_states[vehicle_id] = vehicle_state
+	result["ok"] = true
+	result["previous_seat_index"] = current_seat_index
+	result["open_cabin"] = vehicle.should_show_occupant(target_seat_index)
+	result["seat_occupants"] = vehicle.get_seat_occupants()
+	_apply_local_player_vehicle_session(result)
+	reliable_world_event_ready.emit({"type": "vehicle_session", "data": result, "tick": server_tick})
+	return result
 
 
 func _server_mounted_machine_gun_session(peer_id: int, vehicle_id: String, connected: bool) -> Dictionary:
@@ -2871,6 +2959,7 @@ func destroy_vehicle_with_occupants(vehicle: VehicleBase) -> void:
 		"type": "vehicle_destroyed",
 		"vehicle_id": vehicle_id,
 		"position": vehicle.global_position,
+		"explosion_variant": vehicle.get_destruction_effect_variant(),
 		"tick": server_tick,
 	})
 
@@ -4059,6 +4148,10 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_place_vehicle_scene(peer_id, tool_request, tool_id, "res://character/weapons/SurveyRider.tscn"), true)
 		"field_kitchen":
 			result.merge(_server_place_vehicle_scene(peer_id, tool_request, tool_id, "res://character/weapons/KitchenCar.tscn"), true)
+		"laptop":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/laptop.tscn", "laptop"), true)
+		"desktop":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/desktop.tscn", "desktop"), true)
 		"auto_cooker":
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/AutomaticCook.tscn", "auto_cooker"), true)
 		"trap":
@@ -4955,6 +5048,9 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 	var is_weapon := product_kind == "weapon"
 	var is_livestock := product_kind == "livestock"
 	var is_ammo_supply_box := product_kind == "ammo_supply_box" or item_id == AMMO_SUPPLY_BOX_ID
+	var tool_definition: Dictionary = authoritative_tool_definitions.get(item_id, {})
+	var is_personal_backpack_tool := product_kind == "tool" \
+		and bool(tool_definition.get("shop_backpack_item", false))
 	var dish_weight := float(DishCatalog.get_definition(item_id).get("serving_weight_kg", 0.0)) * amount if is_dish else 0.0
 	var state: Dictionary = player_states[peer_id]
 	var transaction_total_price := 0
@@ -4994,6 +5090,75 @@ func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionar
 			failure_reason = "personal_bag_full"
 		else:
 			failure_reason = "insufficient_money"
+	elif is_personal_backpack_tool and is_buy and bool(product.get("can_buy", false)):
+		var tool_amount := int(amount)
+		var total_price := roundi(float(product.get("buy_price", 0)) * float(tool_amount))
+		var requested_weight := float(tool_definition.get("weight_kg", 0.0)) * float(tool_amount)
+		var enough_slots := tool_amount > 0 \
+			and _server_backpack_entry_count(state) + tool_amount <= _server_bag_capacity(state)
+		var can_own_tool := authoritative_tool_definitions.has(item_id) \
+			and (not _player_has_tool(state, item_id) or _tool_allows_multiple(item_id))
+		var has_capacity := enough_slots \
+			and _personal_ingredient_total_weight(state) + requested_weight \
+			<= _server_bag_weight_capacity_kg(state) + 0.001
+		if has_capacity and can_own_tool \
+				and GlobalVar.check_team_item_amount(team, "money") >= total_price:
+			ok = GlobalVar.remove_item(team, "money", total_price)
+			if ok:
+				var tool_ids: Array = state.get("special_tool_ids", [])
+				var entries: Array[Dictionary] = []
+				for _index in range(tool_amount):
+					var entry := {
+						"kind": "tool",
+						"tool_id": item_id,
+						"weight_kg": float(tool_definition.get("weight_kg", 0.0)),
+					}
+					tool_ids.append(item_id)
+					_server_layout_add_item(state, entry)
+					entries.append(entry)
+				state["special_tool_ids"] = tool_ids
+				player_states[peer_id] = state
+				player_slots_result = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+				transaction_total_price = total_price
+				_emit_personal_inventory_grant(peer_id, entries)
+		elif not has_capacity:
+			failure_reason = "personal_bag_full"
+		elif not can_own_tool:
+			failure_reason = "unique_tool_already_owned"
+		else:
+			failure_reason = "insufficient_money"
+	elif is_personal_backpack_tool and not is_buy and bool(product.get("can_sell", false)):
+		var tool_amount := int(amount)
+		var matching_slots: Array[int] = []
+		var slots_value: Variant = state.get("backpack_slot_items", [])
+		if slots_value is Array:
+			for index in range((slots_value as Array).size()):
+				var slot_value: Variant = (slots_value as Array)[index]
+				var item: Dictionary = slot_value as Dictionary if slot_value is Dictionary else {}
+				if str(item.get("kind", "")) == "tool" \
+						and str(item.get("tool_id", "")) == item_id:
+					matching_slots.append(index)
+					if matching_slots.size() >= tool_amount:
+						break
+		if tool_amount > 0 and matching_slots.size() == tool_amount:
+			ok = true
+			for slot_index: int in matching_slots:
+				if _consume_dropped_item_from_player(state, {
+					"kind": "tool", "tool_id": item_id, "slot_index": slot_index,
+				}).is_empty():
+					ok = false
+					break
+			if ok:
+				transaction_total_price = roundi(float(product.get("sell_price", 0)) * float(tool_amount))
+				GlobalVar.add_team_reward(team, transaction_total_price)
+				_clear_invalid_current_selection(
+					state,
+					_typed_dictionary_array(state.get("backpack_slot_items", []) as Array)
+				)
+				player_states[peer_id] = state
+				player_slots_result = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+		else:
+			failure_reason = "personal_item_insufficient"
 	elif is_livestock and is_buy and bool(product.get("can_buy", false)):
 		var livestock_amount := int(amount)
 		var chop_check := _check_livestock_purchase_capacity(team, item_id, livestock_amount)
@@ -5248,6 +5413,29 @@ func _release_invalid_kitchen_users() -> void:
 						market_state, market.get_interaction_position(), 6.0
 					):
 				market.force_release_user(market_peer_id)
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if not node is ComputerTerminal:
+			continue
+		var computer := node as ComputerTerminal
+		var expired := computer.refresh_user_lock()
+		var peer_id := computer.active_user_peer_id
+		if expired:
+			_emit_computer_state(computer)
+		if peer_id == 0:
+			continue
+		if not player_states.has(peer_id):
+			if computer.force_release_user(peer_id):
+				_emit_computer_state(computer)
+			continue
+		var computer_player_state: Dictionary = player_states[peer_id]
+		if float(computer_player_state.get("respawn_left", 0.0)) > 0.0 \
+				or not _can_server_interact_with_position(
+					computer_player_state,
+					computer.get_interaction_position(),
+					PLAYER_VEHICLE_INTERACTION_RANGE
+				):
+			if computer.force_release_user(peer_id):
+				_emit_computer_state(computer)
 
 
 func _force_release_kitchen_user(peer_id: int) -> void:
@@ -5262,6 +5450,25 @@ func _force_release_kitchen_user(peer_id: int) -> void:
 	for node in get_tree().get_nodes_in_group("livestock_markets"):
 		if node is LivestockMarket:
 			(node as LivestockMarket).force_release_user(peer_id)
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if node is ComputerTerminal:
+			var computer := node as ComputerTerminal
+			if computer.force_release_user(peer_id):
+				_emit_computer_state(computer)
+
+
+func _release_all_computer_locks() -> void:
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if node is ComputerTerminal:
+			(node as ComputerTerminal).force_release_user()
+
+
+func _emit_computer_state(computer: ComputerTerminal) -> void:
+	reliable_world_event_ready.emit({
+		"type": "computer_state",
+		"computer_state": computer.get_computer_state(),
+		"tick": server_tick,
+	})
 
 
 func _emit_kitchen_lock_state(station: KitchenAppliance) -> void:
@@ -5292,6 +5499,8 @@ func _reserve_ready_ingredient_pickups() -> void:
 	for team in EventBoard.VALID_TEAMS:
 		reserve_ingredient_pickups_for_team(str(team))
 func server_ingredient_pickup_action(peer_id: int, action: Dictionary) -> Dictionary:
+	if str(action.get("station_kind", "")) == "computer":
+		return server_computer_action(peer_id, action)
 	if str(action.get("station_kind", "")) == "livestock":
 		return server_livestock_pickup_action(peer_id, action)
 	if str(action.get("station_kind", "")) == "livestock_chop":
@@ -5419,6 +5628,122 @@ func server_ingredient_pickup_action(peer_id: int, action: Dictionary) -> Dictio
 		inventory_state_ready.emit(_build_inventory_state())
 	reliable_world_event_ready.emit({"type": "ingredient_pickup_action_result", "data": result, "tick": server_tick})
 	return result
+
+
+func server_computer_action(peer_id: int, action: Dictionary) -> Dictionary:
+	var action_name := str(action.get("action", ""))
+	var result := {
+		"ok": false,
+		"peer_id": peer_id,
+		"action": action_name,
+		"computer_id": str(action.get("computer_id", "")),
+		"tick": server_tick,
+	}
+	if not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+		return _emit_computer_action_result(result)
+	var player_state: Dictionary = player_states[peer_id]
+	var computer := _computer_from_action(action)
+	if computer == null:
+		result["reason"] = "unknown_computer"
+		return _emit_computer_action_result(result)
+	result["computer_id"] = computer.get_computer_id()
+	if action_name == "release":
+		result["ok"] = computer.release_user(peer_id)
+		if not bool(result["ok"]):
+			result["reason"] = "not_computer_user"
+		result["computer_state"] = computer.get_computer_state()
+		return _emit_computer_action_result(result)
+	if not _can_server_interact_with_position(
+		player_state, computer.get_interaction_position(), PLAYER_VEHICLE_INTERACTION_RANGE
+	):
+		result["reason"] = "computer_out_of_range"
+		result["computer_state"] = computer.get_computer_state()
+		return _emit_computer_action_result(result)
+	if action_name == "acquire":
+		result["ok"] = computer.try_acquire_user(peer_id)
+		if not bool(result["ok"]):
+			result["reason"] = "computer_in_use"
+		result["computer_state"] = computer.get_computer_state()
+		return _emit_computer_action_result(result)
+	if computer.active_user_peer_id != peer_id or not computer.touch_user(peer_id):
+		result["reason"] = "not_computer_user"
+		result["computer_state"] = computer.get_computer_state()
+		return _emit_computer_action_result(result)
+	match action_name:
+		"heartbeat":
+			result["ok"] = true
+		"move_app":
+			var cell_value: Variant = action.get("cell", [0, 0])
+			var cell := ChocolateOSCatalog._as_grid_cell(cell_value)
+			result.merge(computer.move_app(str(action.get("app_id", "")), cell), true)
+		"install_app":
+			var program_id := str(action.get("program_id", ""))
+			var manifest := ChocolateOSCatalog.get_manifest_for_program(program_id)
+			if manifest == null:
+				result["reason"] = "unknown_program"
+			elif str(action.get("source", "app_store")) == "app_store" and not manifest.app_store_distribution:
+				result["reason"] = "distribution_not_allowed"
+			elif str(action.get("source", "app_store")) == "hard_drive" \
+					and not _player_has_program_hard_drive(player_state, program_id):
+				result["reason"] = "program_drive_not_found"
+			else:
+				result.merge(computer.install_app(manifest.app_id), true)
+				result["app_id"] = manifest.app_id
+		"uninstall_app":
+			var app_id := str(action.get("app_id", ""))
+			result.merge(computer.uninstall_app(app_id), true)
+			result["app_id"] = app_id
+		"write_app_data":
+			var payload_value: Variant = action.get("payload", {})
+			if not payload_value is Dictionary:
+				result["reason"] = "invalid_payload"
+			else:
+				result.merge(computer.write_app_data(
+					str(action.get("app_id", "")),
+					payload_value as Dictionary,
+					int(action.get("expected_revision", 0))
+				), true)
+		"shutdown":
+			# Kept as a backwards-compatible no-op for older clients. The current
+			# Shutdown application is visual-only and does not alter terminal state.
+			result["ok"] = true
+		_:
+			result["reason"] = "unsupported_action"
+	result["computer_state"] = computer.get_computer_state()
+	return _emit_computer_action_result(result)
+
+
+func _emit_computer_action_result(result: Dictionary) -> Dictionary:
+	reliable_world_event_ready.emit({"type": "computer_action_result", "data": result, "tick": server_tick})
+	return result
+
+
+func _computer_from_action(action: Dictionary) -> ComputerTerminal:
+	var requested_id := str(action.get("computer_id", ""))
+	var requested_path := str(action.get("station_path", ""))
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if not node is ComputerTerminal:
+			continue
+		var computer := node as ComputerTerminal
+		if (not requested_id.is_empty() and computer.get_computer_id() == requested_id) \
+				or (not requested_path.is_empty() and str(computer.get_path()) == requested_path):
+			return computer
+	return null
+
+
+func _player_has_program_hard_drive(player_state: Dictionary, program_id: String) -> bool:
+	var slots_value: Variant = player_state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return false
+	for value: Variant in slots_value:
+		if not value is Dictionary:
+			continue
+		var item := value as Dictionary
+		var item_id := str(item.get("item_id", item.get("ingredient_id", "")))
+		if item_id == "hard_drive" and str(item.get("program_id", "")) == program_id:
+			return true
+	return false
 
 
 func server_livestock_chop_action(peer_id: int, action: Dictionary) -> Dictionary:
@@ -9169,8 +9494,17 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 	if direction.length_squared() <= 0.001:
 		direction = Vector3.FORWARD
 	var hit := _raycast_world(origin, origin + direction * 12.0)
+	var definition: Dictionary = authoritative_tool_definitions.get(device_type, {})
+	var placement_config: Variant = definition.get("placement_preview", {})
+	var surface_mode := placement_config is Dictionary \
+		and str((placement_config as Dictionary).get("mode", "")) == "surface"
 	var target_position := _vector3_from_value(tool_request.get("target_position", Vector3.ZERO))
 	var position := target_position if target_position != Vector3.ZERO else _vector3_from_value(hit.get("position", player_position + direction * 4.0))
+	var surface_normal := Vector3.ZERO
+	if surface_mode and hit.get("position") is Vector3:
+		position = hit.get("position") as Vector3
+		var hit_normal: Variant = hit.get("normal", Vector3.UP)
+		surface_normal = hit_normal as Vector3 if hit_normal is Vector3 else Vector3.UP
 	if position.distance_to(player_position) > 10.0:
 		position = player_position + direction * 4.0
 	var wall_snap := _resolve_authoritative_wall_snap(device_type, scene_path, position, placement_yaw)
@@ -9188,7 +9522,9 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 			scene_path,
 			position,
 			placement_yaw,
-			wall_snap_exceptions
+			wall_snap_exceptions,
+			device_type,
+			surface_normal
 		)
 		if not bool(placement.get("ok", false)):
 			return {
@@ -9739,7 +10075,9 @@ func _validate_free_placement(
 	scene_path: String,
 	requested_position: Vector3,
 	placement_yaw: float,
-	additional_exceptions: Array = []
+	additional_exceptions: Array = [],
+	tool_id := "",
+	surface_normal := Vector3.ZERO
 ) -> Dictionary:
 	_free_placement_debug("request peer=%d scene=%s requested=%s" % [peer_id, scene_path, requested_position])
 	var player_state: Dictionary = player_states.get(peer_id, {})
@@ -9772,21 +10110,40 @@ func _validate_free_placement(
 		if exception_value is RID and (exception_value as RID).is_valid() \
 				and not exceptions.has(exception_value):
 			exceptions.append(exception_value)
-	var placement := PlacementQueryScript.resolve_free_placement(
-		world_3d,
-		requested_position,
-		player_position,
-		placement_yaw,
-		collision_shape.shape,
-		collision_shape.transform,
-		FREE_PLACEMENT_BLOCKING_MASK,
-		exceptions,
-		COLLISION_LAYER_GROUND,
-		FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-		FREE_PLACEMENT_CLEARANCE,
-		FREE_PLACEMENT_GROUND_RAY_ABOVE,
-		FREE_PLACEMENT_GROUND_RAY_BELOW
-	)
+	var blocking_mask := FREE_PLACEMENT_BLOCKING_MASK
+	if _tool_allows_support_object_overlap(tool_id):
+		blocking_mask = SUPPORT_OVERLAP_BLOCKING_MASK
+	var placement: Dictionary
+	if surface_normal.length_squared() > 0.001:
+		placement = PlacementQueryScript.resolve_surface_placement(
+			world_3d,
+			requested_position,
+			player_position,
+			placement_yaw,
+			collision_shape.shape,
+			collision_shape.transform,
+			blocking_mask,
+			exceptions,
+			surface_normal,
+			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+			FREE_PLACEMENT_CLEARANCE
+		)
+	else:
+		placement = PlacementQueryScript.resolve_free_placement(
+			world_3d,
+			requested_position,
+			player_position,
+			placement_yaw,
+			collision_shape.shape,
+			collision_shape.transform,
+			blocking_mask,
+			exceptions,
+			COLLISION_LAYER_GROUND,
+			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+			FREE_PLACEMENT_CLEARANCE,
+			FREE_PLACEMENT_GROUND_RAY_ABOVE,
+			FREE_PLACEMENT_GROUND_RAY_BELOW
+		)
 	var blocking_colliders: Array[String] = []
 	for collision_value: Variant in placement.get("collisions", []):
 		if collision_value is Dictionary:
@@ -9796,7 +10153,7 @@ func _validate_free_placement(
 		% [
 			collision_shape.shape.get_class(),
 			placement.get("position", requested_position),
-			FREE_PLACEMENT_BLOCKING_MASK,
+			blocking_mask,
 			blocking_colliders,
 		]
 	)
@@ -9811,6 +10168,11 @@ func _validate_free_placement(
 		]
 	)
 	return placement
+
+
+func _tool_allows_support_object_overlap(tool_id: String) -> bool:
+	var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {})
+	return bool(definition.get("allow_support_object_overlap", false))
 
 
 func _placement_exception_rids(peer_id: int) -> Array:
@@ -10731,17 +11093,19 @@ func _spawn_local_intercept_trail(origin: Vector3, target: Vector3, lifetime: fl
 
 
 ## Local BoomBullet entities (Wreck, NormalDrone, and AutoShooter) use this
-## instead of their old AI-only overlap check.  Multiplayer projectiles are
-## still resolved by _explode_projectile on the server.
+## instead of their old AI-only overlap check. Vehicle destruction calls the
+## same helper with server_authority=true on dedicated/listen-server modes.
 func apply_local_boom_explosion(
 	position: Vector3,
 	team: String,
 	damage: float,
 	radius: float,
 	effect := "Explosion",
-	knockback := 20.0
+	knockback := 20.0,
+	server_authority := false
 ) -> void:
-	if not is_local_authority() or radius <= 0.0 or damage <= 0.0:
+	if (not is_local_authority() and not (server_authority and is_server_authority())) \
+			or radius <= 0.0 or damage <= 0.0:
 		return
 	# Match server projectile resolution: the shield zone weakens an enemy Boom
 	# at the actual detonation point, before its radius damage is distributed.
@@ -10799,6 +11163,17 @@ func apply_local_boom_explosion(
 	_damage_harvest_trees_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
 	_damage_nature_resources_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
 	_damage_wild_animals_in_radius(position, radius, damage, knockback, team, effect, false, attacker_peer_id)
+
+
+func apply_authoritative_vehicle_explosion(
+	position: Vector3,
+	team: String,
+	damage: float,
+	radius: float,
+	effect := "VehicleExplosion",
+	knockback := 30.0
+) -> void:
+	apply_local_boom_explosion(position, team, damage, radius, effect, knockback, true)
 
 
 func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_peer_id := 0, hit_world := true) -> void:
@@ -10902,7 +11277,15 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			_vector3_from_value(projectile.get("velocity", Vector3.FORWARD))
 		)
 	if projectile_type != "spicy_bullet":
-		var damaged_vehicles := _damage_vehicles_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff)
+		var damaged_vehicles := _damage_vehicles_in_radius(
+			hit_position,
+			radius,
+			damage,
+			damage_team,
+			effect,
+			linear_falloff,
+			team
+		)
 		confirmed_target_count += damaged_vehicles
 		if damaged_vehicles > 0:
 			confirmed_total_damage += damage
@@ -10920,7 +11303,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			effect,
 			linear_falloff,
 			team,
-			friendly_fire
+			friendly_fire,
+			team
 		)
 		confirmed_target_count += damaged_tools
 		if damaged_tools > 0:
@@ -12300,7 +12684,8 @@ func _damage_registered_tool_ref(
 	damage: float,
 	effect: String,
 	attacker_team: String,
-	allow_friendly_fire := false
+	allow_friendly_fire := false,
+	hit_confirmation_team := ""
 ) -> bool:
 	if damage <= 0.0:
 		return false
@@ -12312,6 +12697,7 @@ func _damage_registered_tool_ref(
 	if state.is_empty():
 		return false
 	var team := str(state.get("team", ""))
+	var confirmation_team := attacker_team if hit_confirmation_team.is_empty() else hit_confirmation_team
 	var enemy_only := _is_enemy_only_tool_state(state) and not team.is_empty()
 	var is_enemy_tool := not attacker_team.is_empty() and not team.is_empty() and team != attacker_team
 	if not allow_friendly_fire and enemy_only and not is_enemy_tool:
@@ -12349,13 +12735,13 @@ func _damage_registered_tool_ref(
 		})
 	if state["hp"] <= 0.0:
 		_destroy_registered_tool_ref(tool_ref)
-		return is_enemy_tool and before_hp > 0.0
+		return should_show_player_hit_confirmation(confirmation_team, team) and before_hp > 0.0
 	if kind == "placed":
 		placed_tool_states[id] = state
 	elif kind == "remote":
 		remote_device_states[id] = state
-	var can_show_hit_confirmation := (is_enemy_tool or (team.is_empty() and not attacker_team.is_empty()))
-	return can_show_hit_confirmation and float(state.get("hp", before_hp)) < before_hp
+	return should_show_player_hit_confirmation(confirmation_team, team) \
+		and float(state.get("hp", before_hp)) < before_hp
 
 
 func get_chain_link_fence_speed_multiplier(
@@ -12562,7 +12948,8 @@ func _damage_tools_in_radius(
 	effect: String,
 	linear_falloff := false,
 	structure_attacker_team := "",
-	allow_friendly_fire := false
+	allow_friendly_fire := false,
+	hit_confirmation_team := ""
 ) -> int:
 	if radius <= 0.0 or damage <= 0.0:
 		return 0
@@ -12590,7 +12977,14 @@ func _damage_tools_in_radius(
 		if not structure_attacker_team.is_empty() and _is_enemy_only_tool_state(state):
 			damage_team = structure_attacker_team
 			target_allows_friendly_fire = allow_friendly_fire
-		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, damage_team, target_allows_friendly_fire):
+		if _damage_registered_tool_ref(
+			ref,
+			damage * ratio * occlusion,
+			effect,
+			damage_team,
+			target_allows_friendly_fire,
+			hit_confirmation_team
+		):
 			damaged_count += 1
 		touched_paths[str(state.get("path", id))] = true
 	for raw_id in remote_device_states.keys():
@@ -12618,7 +13012,14 @@ func _damage_tools_in_radius(
 		if not structure_attacker_team.is_empty() and _is_enemy_only_tool_state(state):
 			damage_team = structure_attacker_team
 			target_allows_friendly_fire = allow_friendly_fire
-		if _damage_registered_tool_ref(ref, damage * ratio * occlusion, effect, damage_team, target_allows_friendly_fire):
+		if _damage_registered_tool_ref(
+			ref,
+			damage * ratio * occlusion,
+			effect,
+			damage_team,
+			target_allows_friendly_fire,
+			hit_confirmation_team
+		):
 			damaged_count += 1
 	return damaged_count
 
@@ -12775,6 +13176,15 @@ func _vehicle_team(vehicle: VehicleBase) -> String:
 	return ""
 
 
+## Player hit-marker rule: only an explicit, non-empty same-team relationship
+## suppresses feedback. An empty target team is neutral/unowned, not friendly,
+## so it must remain eligible for a hit confirmation.
+func should_show_player_hit_confirmation(attacker_team: String, target_team: String) -> bool:
+	var source := attacker_team.strip_edges()
+	var target := target_team.strip_edges()
+	return source.is_empty() or target.is_empty() or source != target
+
+
 func _vehicle_for_collider(collider: Variant) -> VehicleBase:
 	var node := collider as Node
 	while node != null:
@@ -12830,17 +13240,30 @@ func notify_vehicle_damaged(vehicle: VehicleBase, damage: float) -> void:
 	})
 
 
-func _damage_vehicle(vehicle: VehicleBase, damage: float, effect: String, attacker_team: String) -> bool:
+func _damage_vehicle(
+	vehicle: VehicleBase,
+	damage: float,
+	effect: String,
+	attacker_team: String,
+	hit_confirmation_team := ""
+) -> bool:
 	if vehicle == null or not is_instance_valid(vehicle) or damage <= 0.0:
 		return false
 	var target_team := _vehicle_team(vehicle)
-	var is_enemy_vehicle := not attacker_team.is_empty() and not target_team.is_empty() \
-		and target_team != attacker_team
+	var confirmation_team := attacker_team if hit_confirmation_team.is_empty() else hit_confirmation_team
 	var damage_applied := vehicle.impact(effect, damage, attacker_team)
-	return damage_applied and is_enemy_vehicle
+	return damage_applied and should_show_player_hit_confirmation(confirmation_team, target_team)
 
 
-func _damage_vehicles_in_radius(center: Vector3, radius: float, damage: float, attacker_team: String, effect: String, linear_falloff := false) -> int:
+func _damage_vehicles_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false,
+	hit_confirmation_team := ""
+) -> int:
 	if radius <= 0.0 or damage <= 0.0:
 		return 0
 	var damaged_count := 0
@@ -12853,7 +13276,13 @@ func _damage_vehicles_in_radius(center: Vector3, radius: float, damage: float, a
 			continue
 		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
 		var occlusion := _explosion_damage_multiplier(center, vehicle.global_position + Vector3.UP, vehicle)
-		if _damage_vehicle(vehicle, damage * ratio * occlusion, effect, attacker_team):
+		if _damage_vehicle(
+			vehicle,
+			damage * ratio * occlusion,
+			effect,
+			attacker_team,
+			hit_confirmation_team
+		):
 			damaged_count += 1
 	return damaged_count
 
@@ -13632,6 +14061,7 @@ func apply_reliable_world_event(event: Dictionary) -> void:
 		if GlobalVar.team_storage.has(team):
 			var team_data: Dictionary = GlobalVar.team_storage[team]
 			team_data["money"] = float(event.get("new_amount", team_data.get("money", 0.0)))
+			GlobalVar.mark_team_storage_changed(team)
 			GlobalVar.storage_changed.emit(team, "money", float(team_data["money"]))
 	elif event_type == "team_score_changed":
 		var score_team := str(event.get("team", ""))
@@ -13645,14 +14075,159 @@ func apply_reliable_world_event(event: Dictionary) -> void:
 	reliable_world_event_ready.emit(event)
 
 
-func report_farm_tile_delta(tile: FarmTile, delta: Dictionary) -> void:
-	if mode != MODE_SERVER or tile == null or not is_instance_valid(tile):
+func _empty_farm_summary_entry() -> Dictionary:
+	return {
+		"owned_farm_tiles": 0,
+		"planted_farm_tiles": 0,
+	}
+
+
+func _farm_summary_tile_key(tile: FarmTile, delta: Dictionary) -> String:
+	var field_id := str(delta.get("field_id", ""))
+	if not field_id.is_empty():
+		return "%s:%s" % [field_id, str(delta.get("grid_coordinate", Vector2i.ZERO))]
+	if delta.has("tile_path"):
+		return str(delta.get("tile_path", tile.get_path()))
+	return str(tile.get_path())
+
+
+func _farm_summary_record_from_delta(delta: Dictionary) -> Dictionary:
+	return {
+		"team": str(delta.get("land_owner", "")),
+		"planted": not str(delta.get("seed_record", "")).is_empty(),
+	}
+
+
+func _ensure_farm_summary_team(team: String) -> void:
+	if team.is_empty():
 		return
-	var key := str(delta.get("field_id", ""))
-	if not key.is_empty():
-		key += ":%s" % str(delta.get("grid_coordinate", Vector2i.ZERO))
-	else:
-		key = str(delta.get("tile_path", tile.get_path()))
+	if not farm_summary_by_team.has(team):
+		farm_summary_by_team[team] = _empty_farm_summary_entry()
+
+
+func _apply_farm_summary_record(record: Dictionary, multiplier: int) -> void:
+	var team := str(record.get("team", ""))
+	if team.is_empty():
+		return
+	_ensure_farm_summary_team(team)
+	var summary: Dictionary = farm_summary_by_team[team]
+	summary["owned_farm_tiles"] = maxi(
+		0,
+		int(summary.get("owned_farm_tiles", 0)) + multiplier
+	)
+	if bool(record.get("planted", false)):
+		summary["planted_farm_tiles"] = maxi(
+		0,
+		int(summary.get("planted_farm_tiles", 0)) + multiplier
+	)
+	farm_summary_by_team[team] = summary
+
+
+func _farm_world_is_initializing() -> bool:
+	var world := GlobalVar.gameworld
+	return world is FarmWorldInitializer and not (world as FarmWorldInitializer).is_map_initialized
+
+
+func rebuild_farm_statistics() -> bool:
+	if not is_server_authority() and not is_local_authority():
+		return false
+	if _farm_world_is_initializing():
+		farm_summary_initialized = false
+		return false
+	farm_summary_by_team.clear()
+	farm_summary_tile_records.clear()
+	farm_summary_by_team["red"] = _empty_farm_summary_entry()
+	farm_summary_by_team["blue"] = _empty_farm_summary_entry()
+	for node in get_tree().get_nodes_in_group("farm_tiles"):
+		if not node is FarmTile or not is_instance_valid(node):
+			continue
+		var tile := node as FarmTile
+		var delta := tile.get_farm_tile_delta("summary")
+		var key := _farm_summary_tile_key(tile, delta)
+		var record := _farm_summary_record_from_delta(delta)
+		farm_summary_tile_records[key] = record
+		_apply_farm_summary_record(record, 1)
+	farm_summary_revision += 1
+	farm_summary_initialized = true
+	return true
+
+
+func _ensure_farm_statistics_ready() -> bool:
+	if farm_summary_initialized:
+		return true
+	return rebuild_farm_statistics()
+
+
+func _update_farm_statistics_from_delta(tile: FarmTile, delta: Dictionary) -> void:
+	if not farm_summary_initialized or tile == null or not is_instance_valid(tile):
+		return
+	var key := _farm_summary_tile_key(tile, delta)
+	var next_record := _farm_summary_record_from_delta(delta)
+	var previous_value: Variant = farm_summary_tile_records.get(key, null)
+	if previous_value is Dictionary:
+		var previous_record := previous_value as Dictionary
+		if previous_record == next_record:
+			return
+		_apply_farm_summary_record(previous_record, -1)
+	_apply_farm_summary_record(next_record, 1)
+	farm_summary_tile_records[key] = next_record
+	farm_summary_revision += 1
+
+
+func get_farm_summary_state() -> Dictionary:
+	if is_server_authority() or is_local_authority():
+		_ensure_farm_statistics_ready()
+	var ready := farm_summary_initialized
+	var revision := farm_summary_revision
+	var teams: Dictionary = farm_summary_by_team.duplicate(true)
+	if is_client_proxy():
+		ready = bool(remote_farm_summary_state.get("ready", false))
+		revision = int(remote_farm_summary_state.get("farm_revision", 0))
+		var remote_teams: Variant = remote_farm_summary_state.get("teams", {})
+		teams = (remote_teams as Dictionary).duplicate(true) if remote_teams is Dictionary else {}
+	return {
+		"ready": ready,
+		"farm_revision": revision,
+		"teams": teams,
+	}
+
+
+func apply_authoritative_farm_summary_state(state: Dictionary) -> void:
+	remote_farm_summary_state = state.duplicate(true)
+
+
+func get_farm_info_state(team: String) -> Dictionary:
+	var summary_state := get_farm_summary_state()
+	var ready := bool(summary_state.get("ready", false))
+	var summary: Dictionary = {}
+	var teams_value: Variant = summary_state.get("teams", {})
+	if teams_value is Dictionary:
+		var team_value: Variant = (teams_value as Dictionary).get(team, {})
+		if team_value is Dictionary:
+			summary = (team_value as Dictionary).duplicate(true)
+	var inventory_state := GlobalVar.get_team_storage_display_state(team)
+	return {
+		"ok": true,
+		"ready": ready,
+		"team": team,
+		"farm_revision": int(summary_state.get("farm_revision", 0)),
+		"owned_farm_tiles": int(summary.get("owned_farm_tiles", 0)),
+		"planted_farm_tiles": int(summary.get("planted_farm_tiles", 0)),
+		"inventory_revision": int(inventory_state.get("inventory_revision", 0)),
+		"team_money": float(inventory_state.get("team_money", 0.0)),
+		"inventory_entries": inventory_state.get("entries", []),
+		"total_weight_kg": float(inventory_state.get("total_weight_kg", 0.0)),
+	}
+
+
+func report_farm_tile_delta(tile: FarmTile, delta: Dictionary) -> void:
+	if (not is_server_authority() and not is_local_authority()) \
+			or tile == null or not is_instance_valid(tile):
+		return
+	_update_farm_statistics_from_delta(tile, delta)
+	if mode != MODE_SERVER:
+		return
+	var key := _farm_summary_tile_key(tile, delta)
 	pending_farm_tile_deltas[key] = delta
 	farm_reconcile_states[key] = delta.duplicate(true)
 
@@ -13710,11 +14285,16 @@ func apply_inventory_state(state: Dictionary) -> void:
 	var teams: Variant = state.get("teams", {})
 	if teams is Dictionary:
 		GlobalVar.team_storage = (teams as Dictionary).duplicate(true)
+		var revisions_value: Variant = state.get("inventory_revisions", {})
 		for team in GlobalVar.team_storage.keys():
 			var team_data: Variant = GlobalVar.team_storage[team]
 			if team_data is Dictionary:
 				for item_name in (team_data as Dictionary).keys():
 					GlobalVar.storage_changed.emit(str(team), str(item_name), float((team_data as Dictionary).get(item_name, 0.0)))
+			if revisions_value is Dictionary and (revisions_value as Dictionary).has(team):
+				GlobalVar.apply_team_storage_revision(str(team), int((revisions_value as Dictionary).get(team, 0)))
+			else:
+				GlobalVar.mark_team_storage_changed(str(team))
 	var scores: Variant = state.get("scores", {})
 	if scores is Dictionary:
 		GlobalVar.apply_team_scores(scores as Dictionary)
@@ -13828,6 +14408,7 @@ func _build_world_snapshot() -> Dictionary:
 			"seat_occupants": vehicle.get("seat_occupants", []),
 			"headlights_on": bool(vehicle.get("headlights_on", false)),
 			"brake_lights_on": bool(vehicle.get("brake_lights_on", false)),
+			"police_light_blue_on": bool(vehicle.get("police_light_blue_on", false)),
 			"body_color": vehicle.get("body_color", null),
 			"wheel_color": vehicle.get("wheel_color", null),
 			"platform_machine_gun_installed": bool(vehicle.get("platform_machine_gun_installed", false)),
@@ -14076,10 +14657,20 @@ func _build_low_frequency_snapshot(include_nature_resources := false) -> Diction
 	for animal in get_tree().get_nodes_in_group("farm_livestock"):
 		if is_instance_valid(animal) and animal.has_method("get_low_frequency_growth_state"):
 			livestock_growth.append(animal.call("get_low_frequency_growth_state") as Dictionary)
+	var computers: Array[Dictionary] = []
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if node is ComputerTerminal:
+			computers.append((node as ComputerTerminal).get_computer_summary_state())
+	var weather_forecast: Dictionary = {}
+	var weather_system := get_tree().get_first_node_in_group("weather_systems")
+	if weather_system != null and weather_system.has_method("get_weather_forecast_state"):
+		weather_forecast = weather_system.call("get_weather_forecast_state") as Dictionary
+	var farm_summary := get_farm_summary_state()
 	var snapshot := {
 		"tick": server_tick,
 		"scores": scores,
 		"inventory": inventory,
+		"farm_summary": farm_summary,
 		"extractors": extractors,
 		"auto_cookers": auto_cookers,
 		"induction_counters": induction_counters,
@@ -14087,6 +14678,8 @@ func _build_low_frequency_snapshot(include_nature_resources := false) -> Diction
 		"stand_mixers": stand_mixers,
 		"livestock_chops": livestock_chops,
 		"livestock_growth": livestock_growth,
+		"computers": computers,
+		"weather_forecast": weather_forecast,
 		"dropped_items": dropped_items,
 		"cargo_car_respawns": cargo_car_respawns,
 		"rare_resource": rare_resource_state,
@@ -14121,6 +14714,7 @@ func _build_inventory_state() -> Dictionary:
 	return {
 		"tick": server_tick,
 		"teams": GlobalVar.team_storage.duplicate(true),
+		"inventory_revisions": GlobalVar.team_storage_revisions.duplicate(true),
 		"scores": GlobalVar.get_team_scores(),
 	}
 

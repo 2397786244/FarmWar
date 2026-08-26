@@ -16,6 +16,9 @@ const PREVIEW_BLOCKING_MASK := (
 	2 | 8 | 128 | 4096 | 8192 | 32768
 	| 16384
 )
+const SUPPORT_OVERLAP_BLOCKING_MASK := (
+	PREVIEW_BLOCKING_MASK & ~(128 | 4096)
+)
 const FARM_TILE_TOOL_IDS := {
 	"auto_shooter": "AutoShooter",
 	"shield_door": "ShieldDoor",
@@ -140,6 +143,8 @@ func update_preview(allowed_by_player_state := true) -> void:
 	var cooldown_active := cooldown_remaining > 0.0001
 	if current_mode == "farm_tile":
 		_update_farm_tile_preview(request, yaw, cooldown_active)
+	elif current_mode == "surface":
+		_update_surface_preview(request, yaw, cooldown_active)
 	else:
 		_update_free_preview(request, yaw, cooldown_active)
 
@@ -162,6 +167,12 @@ func _resolve_placement_definition(definition: Dictionary, item: Dictionary) -> 
 			"enabled": true,
 			"mode": str(configured.get("mode", "free")),
 			"scene_path": configured_scene,
+			"allow_support_object_overlap": bool(
+				configured.get(
+					"allow_support_object_overlap",
+					definition.get("allow_support_object_overlap", false)
+				)
+			),
 		}
 	if FARM_TILE_TOOL_IDS.has(tool_id):
 		return {
@@ -186,6 +197,7 @@ func _resolve_placement_definition(definition: Dictionary, item: Dictionary) -> 
 			"enabled": true,
 			"mode": "free",
 			"scene_path": str(definition.get("path", "")),
+			"allow_support_object_overlap": bool(definition.get("allow_support_object_overlap", false)),
 		}
 	return {}
 
@@ -305,11 +317,32 @@ func _update_farm_tile_preview(request: Dictionary, yaw: float, cooldown_active 
 			yaw,
 			source_collision_shape,
 			source_collision_transform,
-			PREVIEW_BLOCKING_MASK,
+			_placement_blocking_mask(),
 			_placement_exceptions()
 		)
 		valid = bool(placement.get("ok", false))
 	_set_preview_transform(tile.global_position + Vector3.UP * 0.1, yaw, valid, cooldown_active)
+
+
+func _update_surface_preview(request: Dictionary, yaw: float, cooldown_active := false) -> void:
+	var surface_target := _resolve_surface_target(request)
+	var surface_position := surface_target.get(
+		"position", _resolve_fallback_target(request)
+	) as Vector3
+	var surface_normal := surface_target.get("normal", Vector3.UP) as Vector3
+	var result := PlacementQueryScript.resolve_surface_placement(
+		player.get_world_3d(),
+		surface_position,
+		player.global_position,
+		yaw,
+		source_collision_shape,
+		source_collision_transform,
+		_placement_blocking_mask(),
+		_placement_exceptions(),
+		surface_normal
+	)
+	var position := result.get("position", surface_position) as Vector3
+	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
 
 
 func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := false) -> void:
@@ -337,13 +370,43 @@ func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := fa
 		yaw,
 		source_collision_shape,
 		source_collision_transform,
-		PREVIEW_BLOCKING_MASK,
+		_placement_blocking_mask(),
 		placement_exceptions,
 	)
 	var position := result.get("position", placement_position) as Vector3
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
 	if wall_snap_active:
 		wall_snap_position = position
+
+
+func _placement_blocking_mask() -> int:
+	return SUPPORT_OVERLAP_BLOCKING_MASK if bool(
+		current_definition.get("allow_support_object_overlap", false)
+	) else PREVIEW_BLOCKING_MASK
+
+
+func _resolve_surface_target(request: Dictionary) -> Dictionary:
+	var origin := request.get("origin", player.global_position) as Vector3
+	var direction := request.get("direction", -player.global_transform.basis.z) as Vector3
+	if direction.length_squared() <= 0.001:
+		direction = -player.global_transform.basis.z
+	direction = direction.normalized()
+	var world := player.get_world_3d()
+	if world != null:
+		var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 12.0)
+		query.collision_mask = PREVIEW_TARGET_MASK
+		query.collide_with_bodies = true
+		query.collide_with_areas = true
+		query.exclude = _placement_exceptions()
+		var hit := world.direct_space_state.intersect_ray(query)
+		if not hit.is_empty() and hit.get("position") is Vector3:
+			var normal_value: Variant = hit.get("normal", Vector3.UP)
+			return {
+				"position": hit.get("position") as Vector3,
+				"normal": normal_value as Vector3 if normal_value is Vector3 else Vector3.UP,
+			}
+	var fallback := _resolve_fallback_target(request)
+	return {"position": fallback, "normal": Vector3.UP}
 
 
 func _reset_wall_snap() -> void:

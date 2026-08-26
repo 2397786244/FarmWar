@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=2 format=3]
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+[resource]
+script = ExtResource("1")
+app_id = "my_computer"
+program_id = "app_my_computer"
+display_name = "My Computer"
+description = "查看电脑和背包中的程序硬盘。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/system/my_computer.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/system/my_computer.png"
+entry_kind = "my_computer"
+system_app = true
+removable = false
+default_grid_position = Vector2i(0, 0)
+pinned_to_dock = true

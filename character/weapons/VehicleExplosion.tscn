@@ -1,0 +1,278 @@
+[gd_scene load_steps=22 format=3]
+
+[ext_resource type="Script" path="res://src/vehicle_explosion.gd" id="1_vehicle_explosion"]
+
+[sub_resource type="StandardMaterial3D" id="Material_fire"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.28, 0.015, 0.96)
+emission_enabled = true
+emission = Color(1, 0.08, 0.002, 1)
+emission_energy_multiplier = 9.0
+
+[sub_resource type="SphereMesh" id="Mesh_fire"]
+material = SubResource("Material_fire")
+radius = 0.72
+height = 1.44
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Material_shockwave"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.52, 0.08, 0.84)
+emission_enabled = true
+emission = Color(1, 0.18, 0.01, 1)
+emission_energy_multiplier = 5.5
+
+[sub_resource type="TorusMesh" id="Mesh_shockwave"]
+material = SubResource("Material_shockwave")
+inner_radius = 0.46
+outer_radius = 0.6
+rings = 32
+ring_segments = 12
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_blast_gas"]
+direction = Vector3(0, 0, 1)
+spread = 78.0
+gravity = Vector3(0, -3, 0)
+damping_min = 1.0
+damping_max = 3.0
+initial_velocity_min = 16.0
+initial_velocity_max = 32.0
+scale_min = 0.55
+scale_max = 1.5
+emission_shape = 3
+emission_sphere_radius = 0.75
+
+[sub_resource type="StandardMaterial3D" id="Material_blast_gas"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.22, 0.19, 0.16, 0.48)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="Mesh_blast_gas"]
+material = SubResource("Material_blast_gas")
+radius = 0.62
+height = 1.1
+radial_segments = 8
+rings = 5
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_fireball"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+gravity = Vector3(0, -16, 0)
+initial_velocity_min = 12.0
+initial_velocity_max = 28.0
+scale_min = 0.3
+scale_max = 0.9
+emission_shape = 3
+emission_sphere_radius = 0.38
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_sparks"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+gravity = Vector3(0, -20, 0)
+initial_velocity_min = 20.0
+initial_velocity_max = 44.0
+scale_min = 0.5
+scale_max = 1.3
+emission_shape = 3
+emission_sphere_radius = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Material_sparks"]
+shading_mode = 0
+albedo_color = Color(1, 0.78, 0.14, 1)
+emission_enabled = true
+emission = Color(1, 0.34, 0.015, 1)
+emission_energy_multiplier = 8.0
+
+[sub_resource type="BoxMesh" id="Mesh_sparks"]
+material = SubResource("Material_sparks")
+size = Vector3(0.055, 0.055, 0.38)
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_debris"]
+direction = Vector3(0, 1, 0)
+spread = 155.0
+gravity = Vector3(0, -18, 0)
+initial_velocity_min = 10.0
+initial_velocity_max = 25.0
+angular_velocity_min = -900.0
+angular_velocity_max = 900.0
+scale_min = 0.4
+scale_max = 1.4
+emission_shape = 3
+emission_sphere_radius = 0.42
+
+[sub_resource type="StandardMaterial3D" id="Material_debris"]
+shading_mode = 0
+albedo_color = Color(0.11, 0.085, 0.055, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_debris"]
+material = SubResource("Material_debris")
+size = Vector3(0.14, 0.1, 0.22)
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_mushroom_stem"]
+direction = Vector3(0, 1, 0)
+spread = 26.0
+gravity = Vector3(0, 1.2, 0)
+damping_min = 0.6
+damping_max = 1.5
+initial_velocity_min = 8.0
+initial_velocity_max = 17.0
+scale_min = 0.75
+scale_max = 1.7
+emission_shape = 3
+emission_sphere_radius = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Material_mushroom_stem"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.18, 0.16, 0.14, 0.42)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="Mesh_mushroom_stem"]
+material = SubResource("Material_mushroom_stem")
+radius = 0.68
+height = 1.2
+radial_segments = 8
+rings = 5
+
+[sub_resource type="ParticleProcessMaterial" id="Particle_mushroom_cap"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+gravity = Vector3(0, 0.3, 0)
+damping_min = 0.8
+damping_max = 1.8
+initial_velocity_min = 1.5
+initial_velocity_max = 6.0
+scale_min = 0.75
+scale_max = 1.5
+emission_shape = 3
+emission_sphere_radius = 1.1
+
+[sub_resource type="StandardMaterial3D" id="Material_mushroom_cap"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.2, 0.18, 0.16, 0.64)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="Mesh_mushroom_cap"]
+material = SubResource("Material_mushroom_cap")
+radius = 1.0
+height = 1.35
+radial_segments = 16
+rings = 8
+
+[node name="VehicleExplosion" type="Node3D"]
+script = ExtResource("1_vehicle_explosion")
+
+[node name="Flash" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_fire")
+mesh = SubResource("Mesh_fire")
+
+[node name="FireCore" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_fire")
+mesh = SubResource("Mesh_fire")
+
+[node name="Shockwave" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_shockwave")
+mesh = SubResource("Mesh_shockwave")
+
+[node name="BlastGasParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 120
+lifetime = 0.95
+one_shot = true
+explosiveness = 1.0
+randomness = 0.7
+visibility_aabb = AABB(-35, -18, -35, 70, 40, 70)
+process_material = SubResource("Particle_blast_gas")
+draw_pass_1 = SubResource("Mesh_blast_gas")
+
+[node name="FireballParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 90
+lifetime = 0.9
+one_shot = true
+explosiveness = 1.0
+randomness = 0.55
+visibility_aabb = AABB(-25, -22, -25, 50, 52, 50)
+process_material = SubResource("Particle_fireball")
+draw_pass_1 = SubResource("Mesh_fire")
+
+[node name="SparkParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 130
+lifetime = 1.2
+one_shot = true
+explosiveness = 1.0
+randomness = 0.72
+visibility_aabb = AABB(-35, -25, -35, 70, 65, 70)
+process_material = SubResource("Particle_sparks")
+draw_pass_1 = SubResource("Mesh_sparks")
+
+[node name="DebrisParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 58
+lifetime = 1.8
+one_shot = true
+explosiveness = 1.0
+randomness = 0.85
+visibility_aabb = AABB(-28, -18, -28, 56, 48, 56)
+process_material = SubResource("Particle_debris")
+draw_pass_1 = SubResource("Mesh_debris")
+
+[node name="MushroomStemParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 96
+lifetime = 2.9
+one_shot = true
+explosiveness = 0.76
+randomness = 0.92
+visibility_aabb = AABB(-16, -5, -16, 32, 70, 32)
+process_material = SubResource("Particle_mushroom_stem")
+draw_pass_1 = SubResource("Mesh_mushroom_stem")
+
+[node name="MushroomCap" type="Node3D" parent="."]
+visible = false
+
+[node name="CapCore" type="MeshInstance3D" parent="MushroomCap"]
+material_override = SubResource("Material_mushroom_cap")
+mesh = SubResource("Mesh_mushroom_cap")
+
+[node name="CapLobeLeft" type="MeshInstance3D" parent="MushroomCap"]
+position = Vector3(-0.62, -0.08, 0.03)
+scale = Vector3(0.78, 0.82, 0.78)
+material_override = SubResource("Material_mushroom_cap")
+mesh = SubResource("Mesh_mushroom_cap")
+
+[node name="CapLobeRight" type="MeshInstance3D" parent="MushroomCap"]
+position = Vector3(0.62, -0.08, 0.03)
+scale = Vector3(0.78, 0.82, 0.78)
+material_override = SubResource("Material_mushroom_cap")
+mesh = SubResource("Mesh_mushroom_cap")
+
+[node name="CapLobeBack" type="MeshInstance3D" parent="MushroomCap"]
+position = Vector3(0, -0.05, -0.56)
+scale = Vector3(0.72, 0.74, 0.72)
+material_override = SubResource("Material_mushroom_cap")
+mesh = SubResource("Mesh_mushroom_cap")
+
+[node name="MushroomCapParticles" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 70
+lifetime = 2.4
+one_shot = true
+explosiveness = 0.82
+randomness = 0.9
+visibility_aabb = AABB(-22, -5, -22, 44, 25, 44)
+process_material = SubResource("Particle_mushroom_cap")
+draw_pass_1 = SubResource("Mesh_mushroom_stem")
+
+[node name="BlastLight" type="OmniLight3D" parent="."]
+light_color = Color(1, 0.3, 0.06, 1)
+light_energy = 0.0
+omni_range = 24.0
+shadow_enabled = false

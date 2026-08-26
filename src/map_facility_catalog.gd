@@ -2,6 +2,10 @@ extends RefCounted
 class_name MapFacilityCatalog
 
 const INTERIOR_FACILITY_ROOT := "res://facilities/interior"
+const INTERIOR_LABEL_OVERRIDES := {
+	"laptop": "笔记本电脑",
+	"desktop": "台式机",
+}
 
 const KITCHEN_ASSETS: Array[Dictionary] = [
 	{"id": "canning_station", "label": "罐头台", "path": "res://kitchens/canning_station.tscn", "category": "kitchen"},
@@ -59,9 +63,14 @@ static func _scan_interior_directory(directory_path: String, result: Array[Dicti
 		var resource_path := directory_path.path_join(entry)
 		var relative_path := resource_path.trim_prefix(INTERIOR_FACILITY_ROOT + "/")
 		var id_path := relative_path.trim_suffix(".tscn").replace("/", "_").to_snake_case()
+		var asset_basename := entry.get_basename().to_snake_case()
+		var asset_label := str(INTERIOR_LABEL_OVERRIDES.get(
+			asset_basename,
+			_humanize_asset_name(entry.get_basename())
+		))
 		result.append({
 			"id": "interior_%s" % id_path,
-			"label": _humanize_asset_name(entry.get_basename()),
+			"label": asset_label,
 			"path": resource_path,
 			"category": "interior",
 		})

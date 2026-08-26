@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="TerrainSurfacePalette" format=3]
+
+[ext_resource type="Script" path="res://src/terrain/terrain_surface_palette.gd" id="1_7g7at"]
+[ext_resource type="Script" path="res://src/terrain/terrain_surface_definition.gd" id="2_lgkbc"]
+
+[sub_resource type="Resource" id="Resource_ds218"]
+script = ExtResource("2_lgkbc")
+display_name = "Grass"
+color = Color(0.03137255, 0.24313726, 0.08235294, 1)
+roughness = 0.95
+
+[sub_resource type="Resource" id="Resource_wvwxh"]
+script = ExtResource("2_lgkbc")
+surface_id = 1
+display_name = "Soil"
+color = Color(0.67058825, 0.43137255, 0.24313726, 1)
+roughness = 0.98
+
+[sub_resource type="Resource" id="Resource_jqm1q"]
+script = ExtResource("2_lgkbc")
+surface_id = 2
+display_name = "Town Asphalt"
+color = Color(0.34901962, 0.654902, 0.047058824, 1)
+roughness = 0.96
+
+[sub_resource type="Resource" id="Resource_he176"]
+script = ExtResource("2_lgkbc")
+surface_id = 3
+display_name = "Country Gravel"
+color = Color(0.36862746, 0.3019608, 0.1882353, 1)
+roughness = 0.98
+
+[resource]
+script = ExtResource("1_7g7at")
+surfaces = Array[ExtResource("2_lgkbc")]([SubResource("Resource_ds218"), SubResource("Resource_wvwxh"), SubResource("Resource_jqm1q"), SubResource("Resource_he176")])

@@ -37,6 +37,14 @@ func get_cargo_capacity_kg() -> float:
 	return 0.0
 
 
+func get_destruction_effect_variant() -> String:
+	return "two_wheel"
+
+
+func get_destruction_effect_radius() -> float:
+	return COMBAT_BALANCE.get_float("vehicle_explosion", "radius_two_wheel", 5.2)
+
+
 func _cache_visual_nodes() -> void:
 	super._cache_visual_nodes()
 	if vehicle_config == null:
@@ -99,8 +107,7 @@ func _update_body_visual_lean(delta: float) -> void:
 
 
 func _update_driving_camera_fov(delta: float) -> void:
-	var speed_ratio := clampf(absf(current_speed) / maxf(vehicle_config.camera_speed_for_max_fov, 0.01), 0.0, 1.0)
-	var target_fov := lerpf(vehicle_config.camera_base_fov, vehicle_config.camera_max_fov, speed_ratio)
+	var target_fov := get_camera_fov_for_speed(current_speed)
 	vehicle_camera.fov = lerpf(
 		vehicle_camera.fov,
 		target_fov,

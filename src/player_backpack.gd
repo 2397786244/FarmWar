@@ -360,41 +360,16 @@ func _refresh_team_storage() -> void:
 		team_storage_money.text = "队伍金钱  0"
 		team_storage_total.text = "总重量  0.00 kg"
 		return
-	var team_data: Dictionary = GlobalVar.team_storage[player.team]
-	team_storage_money.text = "队伍金钱  %d" % int(round(GlobalVar.check_team_item_amount(player.team, "money")))
+	var display_state := GlobalVar.get_team_storage_display_state(player.team)
+	team_storage_money.text = "队伍金钱  %d" % int(round(float(display_state.get("team_money", 0.0))))
 	team_storage_money.add_theme_color_override(
 		"font_color", Color("#FF5656") if player.team == "red" else Color("#69A7FF")
 	)
-	var entries: Array[Dictionary] = []
-	var total_weight := 0.0
-	for item_id_value: Variant in team_data.keys():
-		var item_id := str(item_id_value)
-		var amount := float(team_data.get(item_id_value, 0.0))
-		if item_id == "money" or amount <= 0.0001:
-			continue
-		var product := GlobalVar.get_shop_product(item_id)
-		var unit := str(product.get("unit", "kg"))
-		var display_name := str(product.get("name", ""))
-		var ingredient := IngredientCatalog.get_definition(item_id)
-		if not ingredient.is_empty():
-			display_name = str(ingredient.get("display_name", display_name))
-		if display_name.is_empty():
-			display_name = item_id
-		entries.append({
-			"display_name": display_name,
-			"item_id": item_id,
-			"amount": amount,
-			"unit": unit,
-		})
-		if unit == "kg":
-			total_weight += amount
-	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return str(a.get("display_name", "")) < str(b.get("display_name", ""))
-	)
+	var entries: Array[Dictionary] = display_state.get("entries", [])
 	for entry: Dictionary in entries:
 		_add_team_storage_row(entry)
 	team_storage_empty.visible = entries.is_empty()
-	team_storage_total.text = "总重量  %.2f kg" % total_weight
+	team_storage_total.text = "总重量  %.2f kg" % float(display_state.get("total_weight_kg", 0.0))
 
 
 func _add_team_storage_row(entry: Dictionary) -> void:

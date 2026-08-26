@@ -9,7 +9,7 @@ signal changed(settings: Dictionary)
 
 const SETTINGS_PATH := "user://farmwar_display_settings.cfg"
 const SETTINGS_SECTION := "display"
-const SETTINGS_VERSION := 2
+const SETTINGS_VERSION := 3
 const AA_MODES := ["off", "fxaa", "smaa", "taa", "fsr2"]
 const POST_PROCESS_PARAMETERS := [
 	"effect_strength",
@@ -60,6 +60,7 @@ func set_setting(key: String, value: Variant) -> void:
 	values[key] = _sanitize_value(key, value)
 	_apply_viewport_settings()
 	_apply_scene_post_process()
+	_apply_scene_camera_effects()
 	_queue_save()
 	changed.emit(values.duplicate(true))
 
@@ -74,6 +75,7 @@ func reset_to_defaults() -> void:
 func apply_settings() -> void:
 	_apply_viewport_settings()
 	_apply_scene_post_process()
+	_apply_scene_camera_effects()
 
 
 func apply_to_player(player: Node) -> void:
@@ -93,6 +95,10 @@ func _make_default_values() -> Dictionary:
 		"shadow_tint": Color(0.97, 0.99, 1.02, 1.0),
 		"highlight_tint": Color(1.02, 0.99, 0.95, 1.0),
 		"sharpen_strength": 0.12,
+		"atmospheric_fog_enabled": true,
+		"atmospheric_fog_strength": 0.65,
+		"depth_of_field_enabled": true,
+		"depth_of_field_strength": 0.34,
 		"vignette_strength": 0.10,
 		"vignette_start": 1.50,
 		"vignette_end": 1.95,
@@ -128,8 +134,9 @@ func _load_from_user_file() -> void:
 	if stored_version < SETTINGS_VERSION:
 		# The old vignette defaults darkened too much of the image. Move existing
 		# installs to the new corner-only defaults once.
-		values["vignette_start"] = 1.50
-		values["vignette_end"] = 1.95
+		if stored_version < 2:
+			values["vignette_start"] = 1.50
+			values["vignette_end"] = 1.95
 		values["settings_version"] = SETTINGS_VERSION
 		_queue_save()
 
@@ -162,8 +169,10 @@ func _sanitize_value(key: String, value: Variant) -> Variant:
 			return clampi(int(value), 0, 3)
 		"fsr2_scale":
 			return clampf(float(value), 0.5, 1.0)
-		"debanding_enabled":
+		"atmospheric_fog_enabled", "depth_of_field_enabled", "debanding_enabled":
 			return bool(value)
+		"atmospheric_fog_strength", "depth_of_field_strength":
+			return clampf(float(value), 0.0, 1.0)
 		_:
 			return value
 
@@ -212,6 +221,47 @@ func _apply_scene_post_process() -> void:
 		_apply_to_post_process(node as ColorRect)
 	for player in get_tree().get_nodes_in_group("human_players"):
 		apply_to_player(player)
+
+
+func _apply_scene_camera_effects() -> void:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
+	for node in scene.find_children("*", "WorldEnvironment", true, false):
+		_apply_to_world_environment(node as WorldEnvironment)
+	for node in scene.find_children("*", "Camera3D", true, false):
+		var camera := node as Camera3D
+		if camera != null and camera.attributes != null:
+			_apply_to_camera_attributes(camera.attributes)
+
+
+func _apply_to_world_environment(world_environment: WorldEnvironment) -> void:
+	if not is_instance_valid(world_environment):
+		return
+	var attributes := world_environment.camera_attributes as CameraAttributesPractical
+	if attributes == null:
+		attributes = CameraAttributesPractical.new()
+		world_environment.camera_attributes = attributes
+	_apply_to_camera_attributes(attributes)
+
+
+func _apply_to_camera_attributes(attributes: CameraAttributes) -> void:
+	var practical := attributes as CameraAttributesPractical
+	if practical == null:
+		return
+	var enabled := bool(values.get("depth_of_field_enabled", true))
+	var strength := clampf(float(values.get("depth_of_field_strength", 0.34)), 0.0, 1.0)
+	var active := enabled and strength > 0.001
+	practical.dof_blur_far_enabled = active
+	practical.dof_blur_near_enabled = active
+	# Keep the playable range sharp while softening very near foreground and
+	# distant scenery. The user-facing strength controls blur amount only, so
+	# camera framing remains stable across player and vehicle cameras.
+	practical.dof_blur_far_distance = 58.0
+	practical.dof_blur_far_transition = 38.0
+	practical.dof_blur_near_distance = 1.35
+	practical.dof_blur_near_transition = 2.25
+	practical.dof_blur_amount = lerpf(0.0, 0.24, strength) if active else 0.0
 
 
 func _apply_to_post_process(world_post: ColorRect) -> void:

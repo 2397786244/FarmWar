@@ -331,14 +331,140 @@
       "source": {"plantable": false},
       "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/Log_Drop.glb", "whole_item": "res://assets/other_items/Material/Log_Drop.glb", "chopped_item": ""}
     },
-    "bear_hide": {
-      "display_name": "黑熊皮",
+    "animal_hide": {
+      "display_name": "动物皮",
       "kind": "material",
       "category": "animal_product",
       "pickup_unit_kg": 1.0,
-      "description": "从黑熊身上取得的厚实毛皮，保暖且耐磨，可用于制作防寒装备、皮革制品和高级装具。",
+      "description": "从野生动物身上取得的皮革原料，可用于制作动物皮背包、防寒装备和其他工业制品。",
       "source": {"plantable": false},
-      "models": {"plant_visual": "", "harvest_drop": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "whole_item": "res://assets/food/chopped_items/FTF_Ingredient_RawBeef_ThickSlice.glb", "chopped_item": ""}
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/AnimalHide.glb", "whole_item": "res://assets/other_items/Material/AnimalHide.glb", "chopped_item": ""}
+    },
+    "plant_fiber": {
+      "display_name": "植物纤维",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由植物原料整理出的纤维束，可用于加工植物纤维布和其他纺织制品。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/PlantFiberBundle.glb", "whole_item": "res://assets/other_items/Material/PlantFiberBundle.glb", "chopped_item": ""}
+    },
+    "plant_fiber_cloth": {
+      "display_name": "植物纤维布",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "由植物纤维加工而成的布料，可用于制作植物纤维装备和其他工业制品。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/PlantFiberCloth.glb", "whole_item": "res://assets/other_items/industrials/PlantFiberCloth.glb", "chopped_item": ""}
+    },
+    "iron_ingot": {
+      "display_name": "铁锭",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由铁矿冶炼出的基础金属锭，可用于制造钢材、金属板、连接件和工业设施。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_IronIngot_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_IronIngot_Drop.glb", "chopped_item": ""}
+    },
+    "copper_ingot": {
+      "display_name": "铜锭",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由铜矿冶炼出的导电金属材料，可进一步加工为铜线和电子部件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_CopperIngot_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_CopperIngot_Drop.glb", "chopped_item": ""}
+    },
+    "steel_plate": {
+      "display_name": "钢板",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "经过轧制的高强度钢材，可用于载具模块、装甲、工业设备和结构件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_SteelPlate_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_SteelPlate_Drop.glb", "chopped_item": ""}
+    },
+    "metal_connector": {
+      "display_name": "金属连接件",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于固定、铰接和拼装工业结构的标准金属连接件，是载具和装备制造的重要部件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_MetalConnector_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_MetalConnector_Drop.glb", "chopped_item": ""}
+    },
+    "cotton_thread": {
+      "display_name": "棉线",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由棉花纤维纺制的线材，可继续织成棉布或用于缝制防护装备。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_CottonThreadSpool_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_CottonThreadSpool_Drop.glb", "chopped_item": ""}
+    },
+    "cotton_cloth": {
+      "display_name": "棉布",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "由棉线织成的柔性布料，可用于制作服装、防护装备和其他纺织制品。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_CottonCloth_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_CottonCloth_Drop.glb", "chopped_item": ""}
+    },
+    "engineering_plastic_pellets": {
+      "display_name": "工程塑料颗粒",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "耐冲击、耐腐蚀的工程塑料原料，可用于塑料装备、护甲和工业部件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_EngineeringPlasticPellets_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_EngineeringPlasticPellets_Drop.glb", "chopped_item": ""}
+    },
+    "hard_drive": {
+      "display_name": "硬盘",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于存储程序和工业数据的固态硬盘；空白硬盘与程序硬盘共用这一模型。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_SolidStateDrive_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_SolidStateDrive_Drop.glb", "chopped_item": ""}
+    },
+    "metal_defense_net": {
+      "display_name": "金属防护网",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于加固载具外壳和关键部位的金属防护网片，可提升载具防护能力。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_MetalDefenseNetPiece_Drop.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_MetalDefenseNetPiece_Drop.glb", "chopped_item": ""}
+    },
+    "electronic_detonator_module": {
+      "display_name": "电子引爆模块",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于将控制信号转换为可靠起爆指令的工业电子模块，是爆破装置的关键组件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Tool_ElectronicDetonatorModule.glb", "whole_item": "res://assets/other_items/industrials/FTF_Tool_ElectronicDetonatorModule.glb", "chopped_item": ""}
+    },
+    "vehicle_roof_cooling_system": {
+      "display_name": "载具冷却系统",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "安装在载具上的散热与冷却模块，用于降低高负荷运行时的热量并维持载具性能。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "whole_item": "res://assets/other_items/industrials/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "chopped_item": ""}
+    },
+    "vehicle_signal_augment": {
+      "display_name": "车载信号增强模块",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "安装在载具上的通信与信号放大模块，用于提升载具和团队设备之间的信息覆盖与协同能力。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "whole_item": "res://assets/other_items/industrials/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "chopped_item": ""}
     },
     "coal": {
       "display_name": "煤矿",
@@ -375,6 +501,15 @@
       "description": "常见的建筑与工业矿物，可加工成砌筑材料、石灰和其他生产原料。",
       "source": {"plantable": false},
       "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_limestone_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_limestone_ore.glb", "chopped_item": ""}
+    },
+    "saltpeter": {
+      "display_name": "硝矿石",
+      "kind": "material",
+      "category": "ore",
+      "pickup_unit_kg": 1.0,
+      "description": "含硝石成分的工业矿石，可作为化工、推进剂和电子工业生产的基础原料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/nature/drop_items/drop_saltpeter_ore.glb", "whole_item": "res://assets/nature/drop_items/drop_saltpeter_ore.glb", "chopped_item": ""}
     },
     "stone": {
       "display_name": "石头",

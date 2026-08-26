@@ -106,6 +106,7 @@ const ROAD_CENTER_LINE_DASHED = 2
 const ROAD_CENTER_LINE_WHITE = 0
 const ROAD_CENTER_LINE_YELLOW = 1
 const TREE_FOREST_MANAGER_PATH = "res://src/tree_forest_manager.gd"
+const TREE_PLACEMENT_GROUND_OFFSET := -0.10
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
 const PLACEMENT_QUERY_SCRIPT = preload("res://src/placement_query.gd")
@@ -116,6 +117,7 @@ const FAR_SCENERY_PATH = "res://src/far_scenery_ring_3d.gd"
 const CLOUD_SYSTEM_PATH = "res://worlds/shared/cloud_system.tscn"
 const DAY_NIGHT_SYSTEM_PATH = "res://worlds/shared/day_night_system.tscn"
 const WEATHER_SYSTEM_PATH = "res://worlds/shared/weather_system.tscn"
+const DEFAULT_INITIAL_HOUR := 10.0
 const DEFAULT_CLEAR_WEATHER_PROBABILITY := 0.50
 const DEFAULT_RAIN_WEATHER_PROBABILITY := 0.40
 const DEFAULT_ECLIPSE_WEATHER_PROBABILITY := 0.10
@@ -128,10 +130,13 @@ const ZOMBIE_GENERATOR_PATH = "res://buildings/auxiliary/ZombieGenerator.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
 const PROMOTIONAL_DUMMY_SPAWN_KIND := "promotional_dummy"
+const PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND := "promotional_vehicle_driver_dummy"
 const PROMOTIONAL_DUMMY_CHARACTER_META := "promotional_dummy_character_id"
 const PROMOTIONAL_DUMMY_ANIMATION_META := "promotional_dummy_animation"
 const PROMOTIONAL_DUMMY_WEAPON_META := "promotional_dummy_weapon_id"
 const PROMOTIONAL_DUMMY_AUTO_FIRE_META := "promotional_dummy_continuous_fire"
+const PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META := "promotional_vehicle_dummy_vehicle_uuid"
+const PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META := "promotional_vehicle_dummy_seat_index"
 const PROMOTIONAL_DUMMY_TOOL_CONFIG_PATH := "res://data/tool_definitions.json"
 const PROMOTIONAL_DUMMY_FIRE_CONTROLLER_SCRIPT_PATH := "res://src/promotional_dummy_fire_controller.gd"
 const FARM_FIELD_GENERATOR_SCRIPT_PATH = "res://src/farm_field_generator.gd"
@@ -185,6 +190,23 @@ const PROMOTIONAL_DUMMY_WEAPON_GRIP_ROTATION := Vector3(0.0, 180.0, 180.0)
 const PROMOTIONAL_DUMMY_RIGHT_HAND_GRIP_OFFSET := Vector3(0.22, -0.25, 0.55)
 const PROMOTIONAL_DUMMY_RIGHT_ELBOW_POLE_OFFSET := Vector3(0.62, 0.08, -0.18)
 const PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS := [&"Walk", &"ToolUseRight"]
+const PROMOTIONAL_VEHICLE_DRIVER_ALLOWED_ANIMATIONS := [&"Carry"]
+const PROMOTIONAL_VEHICLE_DRIVER_CHARACTER_IDS := [
+	"farmer",
+	"cook",
+	"guard",
+	"mage",
+	"engineer",
+	"apothecary",
+	"assistant",
+	"trickster",
+	"prospector",
+	"rider",
+]
+const PROMOTIONAL_DUMMY_RIGHT_FOOT_TARGET := Vector3(0.34, 0.10, -0.90)
+const PROMOTIONAL_DUMMY_LEFT_FOOT_TARGET := Vector3(-0.34, 0.10, -0.90)
+const PROMOTIONAL_DUMMY_RIGHT_KNEE_POLE := Vector3(0.45, 0.45, -0.25)
+const PROMOTIONAL_DUMMY_LEFT_KNEE_POLE := Vector3(-0.45, 0.45, -0.25)
 const MAP_ICON_FILE_NAME = "map_icon.png"
 const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
 const ROADS_FILE_NAME = "roads.dat"
@@ -233,6 +255,7 @@ const GRASS_CHUNK_SIZE = 32.0
 const MAX_RAY_DISTANCE = 6000.0
 const EDITOR_MARKER_META = &"farmwar_editor_visual_only"
 const MAP_CAN_OVERLAP_WATER_META = &"map_can_overlap_water"
+const MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META = &"map_can_overlap_support_objects"
 
 const TREE_ASSETS = [
 	{"label": "CottonWood", "path": "res://buildings/nature/CottonWood.tscn", "id": "cottonwood"},
@@ -258,6 +281,7 @@ const ORE_ASSETS = [
 	{"label": "Coal Ore", "path": "res://items/CoalOre.tscn", "id": "coal_ore"},
 	{"label": "Limestone Ore", "path": "res://items/LimestoneOre.tscn", "id": "limestone_ore"},
 	{"label": "Copper Ore", "path": "res://items/CopperOre.tscn", "id": "copper_ore"},
+	{"label": "Saltpeter Ore", "path": "res://items/SaltpeterOre.tscn", "id": "saltpeter_ore"},
 	{"label": "Moss Rock", "path": "res://items/MossRock.tscn", "id": "moss_rock"},
 	{"label": "Granite Rock", "path": "res://items/GraniteRock.tscn", "id": "granite_rock"},
 	{"label": "Normal Mushroom", "path": "res://items/NormalMushroom.tscn", "id": "normal_mushroom"},
@@ -293,9 +317,67 @@ const VEHICLE_ASSETS = [
 		"id": "farm_base_vehicle",
 		"placement_category": "vehicle",
 	},
+	{
+		"label": "CombineCar",
+		"path": "res://vehicles/combine_car.tscn",
+		"id": "combine_car",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "PoliceCar",
+		"path": "res://vehicles/police_car.tscn",
+		"id": "police_car",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "FirePickup",
+		"path": "res://vehicles/fire_pickup.tscn",
+		"id": "fire_pickup",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "MiniCar",
+		"path": "res://vehicles/mini_car.tscn",
+		"id": "mini_car",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "ATV",
+		"path": "res://vehicles/atv.tscn",
+		"id": "atv",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "SportCar",
+		"path": "res://vehicles/sport_car.tscn",
+		"id": "sport_car",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "Van",
+		"path": "res://vehicles/van.tscn",
+		"id": "van",
+		"placement_category": "vehicle",
+	},
+	{
+		"label": "Sedan",
+		"path": "res://vehicles/sedan.tscn",
+		"id": "sedan",
+		"placement_category": "vehicle",
+	},
 ]
 
 const FARM_BASE_VEHICLE_PATH := "res://vehicles/farm_base_vehicle.tscn"
+const COMBINE_CAR_PATH := "res://vehicles/combine_car.tscn"
+const LEGACY_COMBINE_CAR_PATH := "res://buildings/CombineCar.tscn"
+const POLICE_CAR_PATH := "res://vehicles/police_car.tscn"
+const LEGACY_POLICE_CAR_PATH := "res://buildings/PoliceCar.tscn"
+const FIRE_PICKUP_PATH := "res://vehicles/fire_pickup.tscn"
+const MINI_CAR_PATH := "res://vehicles/mini_car.tscn"
+const ATV_PATH := "res://vehicles/atv.tscn"
+const SPORT_CAR_PATH := "res://vehicles/sport_car.tscn"
+const VAN_PATH := "res://vehicles/van.tscn"
+const SEDAN_PATH := "res://vehicles/sedan.tscn"
 const VEHICLE_COLOR_OPTIONS = [
 	{"id": "black", "label": "黑色", "color": Color("000000")},
 	{"id": "white", "label": "白色", "color": Color("ffffff")},
@@ -336,6 +418,11 @@ const FALLBACK_SURFACES = [
 @export var default_map_name = "NewFarmMap"
 @export var default_map_size = Vector2i(256, 256)
 @export var default_template = TemplateMode.CRESTON_TOWN
+
+@export_category("Auto Save")
+@export var auto_save_enabled := true
+@export_range(1.0, 30.0, 0.5) var auto_save_idle_seconds := 3.0
+@export_range(60.0, 3600.0, 30.0) var auto_save_interval_seconds := 300.0
 
 @export_category("Terrain")
 @export_range(0.25, 4.0, 0.25) var vertex_spacing = 1.0
@@ -434,6 +521,7 @@ var _terrain_skirt_mesh: MeshInstance3D
 var _ground_safety_mesh: MeshInstance3D
 var _day_night_system: Node
 var _weather_system: Node
+var _map_initial_hour := DEFAULT_INITIAL_HOUR
 var _weather_clear_probability := DEFAULT_CLEAR_WEATHER_PROBABILITY
 var _weather_rain_probability := DEFAULT_RAIN_WEATHER_PROBABILITY
 var _weather_rain_intensity := DEFAULT_RAIN_INTENSITY
@@ -477,6 +565,7 @@ var _selected_promotional_dummy_character_id := "farmer"
 var _selected_promotional_dummy_animation := ""
 var _selected_promotional_dummy_weapon_id := "future_m4"
 var _selected_promotional_dummy_continuous_fire := false
+var _selected_promotional_vehicle_driver_character_id := "farmer"
 var _promotional_player_tool_definitions_by_id: Dictionary = {}
 var _neutral_crop_area_size := Vector2(16.0, 16.0)
 var _neutral_crop_respawn_interval := 120.0
@@ -655,6 +744,8 @@ var _water_history_guard := false
 # Runtime undo/redo. A drag from mouse-down to mouse-up is one action.
 var _undo_redo = UndoRedo.new()
 var _saved_undo_version = 0
+var _time_settings_revision := 0
+var _saved_time_settings_revision := 0
 var _stroke_tool_mode = ToolMode.TERRAIN
 var _stroke_height_before: Dictionary = {}
 var _stroke_surface_before: Dictionary = {}
@@ -722,9 +813,19 @@ var _map_icon_texture: ImageTexture
 var _map_icon_source_path = ""
 var _tool_buttons: Dictionary = {}
 var _last_save_succeeded := false
+var _map_save_in_progress := false
+var _auto_save_in_progress := false
+var _last_editor_activity_msec := 0
+var _next_auto_save_due_msec := 0
+var _next_auto_save_check_msec := 0
 
 
 func _ready() -> void:
+	# The promotional dummy weapon correction must run after its child
+	# AnimationPlayer and SkeletonModifier3D have applied the current frame.
+	# This mirrors ShowcaseCharacter's presentation update ordering and keeps
+	# the Muzzle frame in sync with the final Hand.R pose.
+	process_priority = 100
 	_rng.randomize()
 	_undo_redo.max_steps = 100
 	_build_editor_camera()
@@ -737,6 +838,8 @@ func _ready() -> void:
 	_scan_building_assets()
 	_scan_facility_assets()
 	_build_editor_ui()
+	_reset_auto_save_schedule()
+	set_process_input(true)
 	set_process(true)
 	set_physics_process(true)
 
@@ -747,6 +850,28 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if not key_event.echo:
+			_register_editor_activity()
+		return
+	if event is InputEventMouseMotion:
+		var mouse_motion := event as InputEventMouseMotion
+		if not mouse_motion.relative.is_zero_approx():
+			_register_editor_activity()
+		return
+	if (
+		event is InputEventMouseButton
+		or event is InputEventScreenTouch
+		or event is InputEventScreenDrag
+		or event is InputEventJoypadButton
+		or event is InputEventJoypadMotion
+		or event is InputEventGesture
+	):
+		_register_editor_activity()
 
 
 # -----------------------------------------------------------------------------
@@ -979,14 +1104,14 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.SURFACE, "Surface Colors", "Paint and configure terrain surface colors")
 	_add_tool_button(column, group, ToolMode.ROAD, "Roads", "Draw and edit continuous curve roads")
 	_add_tool_button(column, group, ToolMode.WATER, "Water", "Draw irregular lakes and river centerlines")
-	_add_tool_button(column, group, ToolMode.WEATHER, "Weather", "Configure clear, rain and eclipse probabilities")
+	_add_tool_button(column, group, ToolMode.WEATHER, "Time & Weather", "Configure the map start time and weather probabilities")
 	_add_tool_button(column, group, ToolMode.GRASS, "Grass", "Manual MultiMesh grass brush")
 	_add_tool_button(column, group, ToolMode.TREE, "Trees", "Place complete harvestable tree scenes")
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
 	_add_tool_button(column, group, ToolMode.GROUND_ROCK, "Ground Rocks", "Place collision-free roadside rock decoration")
 	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
 	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
-	_add_tool_button(column, group, ToolMode.VEHICLE, "Vehicles", "Place team-owned or neutral CargoCar and FarmBaseVehicle scenes")
+	_add_tool_button(column, group, ToolMode.VEHICLE, "Vehicles", "Place team-owned or neutral CargoCar, FarmBaseVehicle, CombineCar, PoliceCar, FirePickup, MiniCar, ATV, SportCar, Van and Sedan scenes")
 	_add_tool_button(column, group, ToolMode.FACILITY, "Facilities", "Place map kitchens and defensive facilities")
 	_add_tool_button(column, group, ToolMode.FARMLAND, "Farmland", "Place configurable FarmFieldGenerator regions")
 	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
@@ -1202,7 +1327,7 @@ func _refresh_bottom_dock() -> void:
 			_tool_title_label.text = "Water Bodies"
 			_add_water_buttons()
 		ToolMode.WEATHER:
-			_tool_title_label.text = "Weather System"
+			_tool_title_label.text = "Time & Weather"
 			_add_weather_controls()
 		_:
 			_tool_title_label.text = "Unavailable"
@@ -1529,9 +1654,47 @@ func _add_promotional_dummy_controls() -> void:
 
 func _add_weather_controls() -> void:
 	var explanation := Label.new()
-	explanation.text = "天气设置会写入当前地图。自动天气每天只抽取一种：晴天、雨天或日食。三个概率合计始终为 100%；日食仍只会在 09:00–12:00 之间开始，持续到不晚于 18:00。"
+	explanation.text = "初始时间和天气设置会写入当前地图。进入地图时，昼夜系统从设定的时间开始运行。"
 	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(explanation)
+
+	var time_heading := Label.new()
+	time_heading.text = "地图初始时间"
+	time_heading.add_theme_font_size_override("font_size", 18)
+	_bottom_content.add_child(time_heading)
+
+	var initial_time_label := Label.new()
+	initial_time_label.text = "开始时间：%s" % _format_time_of_day(_map_initial_hour)
+	_bottom_content.add_child(initial_time_label)
+
+	var initial_time_slider := HSlider.new()
+	initial_time_slider.min_value = 0.0
+	initial_time_slider.max_value = 23.75
+	initial_time_slider.step = 0.25
+	initial_time_slider.value = _map_initial_hour
+	initial_time_slider.custom_minimum_size.x = 220.0
+	initial_time_slider.tooltip_text = "设置玩家初次进入地图时的游戏内时间，每格 15 分钟"
+	initial_time_slider.value_changed.connect(func(value: float) -> void:
+		_apply_initial_hour_from_editor(value)
+		initial_time_label.text = "开始时间：%s" % _format_time_of_day(_map_initial_hour)
+	)
+	_bottom_content.add_child(initial_time_slider)
+
+	var time_hint := Label.new()
+	time_hint.text = "时间调整会立即预览太阳、环境光和天空的效果；地图编辑期间时钟不会自动流逝。"
+	time_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(time_hint)
+	_bottom_content.add_child(HSeparator.new())
+
+	var weather_heading := Label.new()
+	weather_heading.text = "自动天气"
+	weather_heading.add_theme_font_size_override("font_size", 18)
+	_bottom_content.add_child(weather_heading)
+
+	var weather_explanation := Label.new()
+	weather_explanation.text = "自动天气每天只抽取一种：晴天、雨天或日食。三个概率合计始终为 100%；日食仍只会在 09:00–12:00 之间开始，持续到不晚于 18:00。"
+	weather_explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(weather_explanation)
 
 	_weather_probability_sliders.clear()
 	_weather_probability_labels.clear()
@@ -2597,6 +2760,10 @@ func _add_vehicle_placement_controls() -> void:
 	rules.text = "Choose a team to assign owner_team, or No owner for a neutral vehicle. FarmBaseVehicle supports independent standard/reinforced variants, body color, wheel color, 0–2 rear platform passenger seats, an optional rear machine gun, an optional rear NitroBoost (8 m/s maximum forward speed), and an optional HarvestReel that harvests mature crops only while moving."
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(rules)
+	var promotional_driver_hint := Label.new()
+	promotional_driver_hint.text = "放置载具后，切换 Transform Objects 并选中载具，可添加或移除静态宣传驾驶员假人。"
+	promotional_driver_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(promotional_driver_hint)
 
 
 func _add_vehicle_color_option_row(label_text: String, current_color: Color, changed: Callable) -> void:
@@ -2968,6 +3135,12 @@ func _add_object_edit_controls() -> void:
 		_add_neutral_crop_generator_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_promotional_dummy(_selected_map_object):
 		_add_promotional_dummy_inspector_controls()
+	if is_instance_valid(_selected_map_object) and _selected_map_object is VehicleBase:
+		_add_promotional_vehicle_driver_inspector_controls(_selected_map_object as VehicleBase)
+	elif is_instance_valid(_selected_map_object) and _is_promotional_vehicle_driver_dummy(_selected_map_object):
+		var linked_vehicle := _find_promotional_vehicle_driver_vehicle(_selected_map_object)
+		if linked_vehicle != null:
+			_add_promotional_vehicle_driver_inspector_controls(linked_vehicle)
 
 	if is_instance_valid(_selected_map_object) and _is_farmland(_selected_map_object):
 		_add_farmland_inspector_controls()
@@ -3446,6 +3619,79 @@ func _add_promotional_dummy_inspector_controls() -> void:
 
 	var hint := Label.new()
 	hint.text = "只允许 Walk/ToolUseRight 循环动画；没有 ToolUseRight 的角色不能持枪。武器复用玩家 TSCN、握持缩放、枪口粒子与火舌。Continuous Fire 只播放视觉开火，不产生伤害或网络事件。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_promotional_vehicle_driver_inspector_controls(vehicle: VehicleBase) -> void:
+	if vehicle == null:
+		return
+	var vehicle_uuid := str(vehicle.get_meta("map_editor_uuid", ""))
+	if vehicle_uuid.is_empty():
+		return
+	var driver_dummy := _find_promotional_vehicle_driver_dummy(vehicle_uuid)
+	var character_id := _selected_promotional_vehicle_driver_character_id
+	if driver_dummy != null:
+		character_id = str(driver_dummy.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	_selected_promotional_vehicle_driver_character_id = character_id
+
+	var heading := Label.new()
+	heading.text = "宣传驾驶员假人"
+	_bottom_content.add_child(heading)
+
+	var character_row := HBoxContainer.new()
+	character_row.add_child(_make_label("角色"))
+	var character_option := OptionButton.new()
+	var character_definitions := _get_promotional_vehicle_driver_character_definitions()
+	for entry_value in character_definitions:
+		var entry := entry_value as Dictionary
+		var entry_id := str(entry.get("id", ""))
+		character_option.add_item(str(entry.get("label", entry_id)))
+		character_option.set_item_metadata(character_option.item_count - 1, entry_id)
+		if entry_id == character_id:
+			character_option.select(character_option.item_count - 1)
+	if character_option.selected < 0 and character_option.item_count > 0:
+		character_option.select(0)
+		character_id = str(character_option.get_item_metadata(0))
+		_selected_promotional_vehicle_driver_character_id = character_id
+	character_option.item_selected.connect(func(index: int) -> void:
+		var next_character_id := str(character_option.get_item_metadata(index))
+		_selected_promotional_vehicle_driver_character_id = next_character_id
+		if driver_dummy != null:
+			_set_promotional_vehicle_driver_character(vehicle_uuid, next_character_id)
+	)
+	character_row.add_child(character_option)
+	_bottom_content.add_child(character_row)
+
+	var action_row := HBoxContainer.new()
+	var add_button := Button.new()
+	add_button.text = "添加/更新驾驶员假人"
+	add_button.pressed.connect(func() -> void:
+		var next_character_id := _selected_promotional_vehicle_driver_character_id
+		if character_option.selected >= 0:
+			next_character_id = str(character_option.get_item_metadata(character_option.selected))
+		_set_promotional_vehicle_driver_character(vehicle_uuid, next_character_id)
+	)
+	action_row.add_child(add_button)
+
+	var remove_button := Button.new()
+	remove_button.text = "移除驾驶员假人"
+	remove_button.disabled = driver_dummy == null
+	remove_button.pressed.connect(_remove_promotional_vehicle_driver_dummy.bind(vehicle_uuid))
+	action_row.add_child(remove_button)
+	_bottom_content.add_child(action_row)
+
+	var visibility_hint := Label.new()
+	var driver_seat_index := vehicle.get_driver_seat_index()
+	if driver_seat_index >= 0 and vehicle.should_show_occupant(driver_seat_index):
+		visibility_hint.text = "当前为开放式驾驶位：假人播放 Carry，腿部使用车辆坐姿 IK，手持物品 IK 关闭。"
+	else:
+		visibility_hint.text = "当前载具为封闭式驾驶室：假人会隐藏，仅保存为宣传占位，不占用真实座位。"
+	visibility_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(visibility_hint)
+
+	var hint := Label.new()
+	hint.text = "此假人为地图静态装饰，不调用 enter_seat，不影响玩家进入载具，也不产生网络同步。角色仅限玩家可选的十个职业。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
@@ -4429,6 +4675,39 @@ func _on_strength_changed(value: float) -> void:
 	_strength_label.text = "Strength: %.2f" % value
 
 
+func _format_time_of_day(hour_value: float) -> String:
+	var total_minutes := posmod(roundi(fposmod(hour_value, 24.0) * 60.0), 24 * 60)
+	return "%02d:%02d" % [total_minutes / 60, total_minutes % 60]
+
+
+func _get_time_editor_config() -> Dictionary:
+	return {
+		"initial_hour": _map_initial_hour,
+	}
+
+
+func _apply_initial_hour_from_editor(value: float, mark_unsaved := true) -> void:
+	var normalized_hour := fposmod(snappedf(value, 0.25), 24.0)
+	if mark_unsaved and not is_equal_approx(_map_initial_hour, normalized_hour):
+		_time_settings_revision += 1
+	_map_initial_hour = normalized_hour
+	if is_instance_valid(_day_night_system):
+		_set_property_if_present(_day_night_system, "initial_hour", _map_initial_hour)
+		if _day_night_system.has_method("refresh_time_of_day"):
+			_day_night_system.call("refresh_time_of_day")
+		elif _day_night_system.has_method("_apply_time_of_day"):
+			_day_night_system.call("_apply_time_of_day")
+	if is_instance_valid(_map_root):
+		_map_root.set_meta("farmwar_time_configuration", _get_time_editor_config())
+
+
+func _apply_time_editor_config(config: Dictionary) -> void:
+	var configured_hour := DEFAULT_INITIAL_HOUR
+	if not config.is_empty():
+		configured_hour = float(config.get("initial_hour", configured_hour))
+	_apply_initial_hour_from_editor(configured_hour, false)
+
+
 func _get_weather_editor_config() -> Dictionary:
 	return {
 		"clear_weather_probability": _weather_clear_probability,
@@ -4824,7 +5103,7 @@ func _tool_name(mode: ToolMode) -> String:
 		ToolMode.OBJECT_EDIT: return "Object Edit"
 		ToolMode.ROAD: return "Roads"
 		ToolMode.WATER: return "Water Bodies"
-		ToolMode.WEATHER: return "Weather System"
+		ToolMode.WEATHER: return "Time & Weather"
 		_: return "Unavailable"
 
 
@@ -5308,6 +5587,90 @@ func _process(delta: float) -> void:
 		_end_stroke()
 	if _object_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_end_object_transform_drag()
+	_update_auto_save_state()
+
+
+func _register_editor_activity() -> void:
+	_last_editor_activity_msec = Time.get_ticks_msec()
+
+
+func _reset_auto_save_schedule() -> void:
+	var now := Time.get_ticks_msec()
+	_last_editor_activity_msec = now
+	_next_auto_save_due_msec = now + int(auto_save_interval_seconds * 1000.0)
+	_next_auto_save_check_msec = now + 1000
+
+
+func _schedule_next_auto_save() -> void:
+	var now := Time.get_ticks_msec()
+	_next_auto_save_due_msec = now + int(auto_save_interval_seconds * 1000.0)
+	_next_auto_save_check_msec = now + 1000
+
+
+func _update_auto_save_state() -> void:
+	if not auto_save_enabled or _auto_save_in_progress or _map_save_in_progress:
+		return
+	var now := Time.get_ticks_msec()
+	if now < _next_auto_save_check_msec:
+		return
+	# Auto-save eligibility is sampled once per second. This keeps the polling
+	# cost negligible even though the editor itself renders every frame.
+	_next_auto_save_check_msec = now + 1000
+	if _next_auto_save_due_msec <= 0:
+		_reset_auto_save_schedule()
+		return
+	if now < _next_auto_save_due_msec:
+		return
+	if _map_root == null or not has_unsaved_changes():
+		_schedule_next_auto_save()
+		return
+	if _editor_has_active_interaction():
+		return
+	var idle_msec := int(auto_save_idle_seconds * 1000.0)
+	if now - _last_editor_activity_msec < idle_msec:
+		return
+	_perform_auto_save()
+
+
+func _editor_has_active_interaction() -> bool:
+	if (
+		_stroke_active
+		or _object_dragging
+		or _road_dragging
+		or _camera_look_active
+		or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+		or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE)
+	):
+		return true
+	for keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E]:
+		if Input.is_key_pressed(keycode):
+			return true
+	for dialog in [
+		_icon_file_dialog,
+		_open_map_file_dialog,
+		_save_as_directory_dialog,
+		_export_directory_dialog,
+		_discard_changes_dialog,
+	]:
+		if is_instance_valid(dialog) and dialog.visible:
+			return true
+	return false
+
+
+func _perform_auto_save() -> void:
+	if _auto_save_in_progress or _map_save_in_progress:
+		return
+	_auto_save_in_progress = true
+	# Incomplete editor drafts are intentionally allowed here. A normal manual
+	# save still validates red/blue player spawn points before producing a
+	# playable map, while auto-save must protect work-in-progress maps too.
+	await save_current_map(true, true)
+	_auto_save_in_progress = false
+	if not _last_save_succeeded:
+		# Avoid repeatedly hitting the disk after a write failure. The next retry
+		# follows the normal five-minute interval.
+		_schedule_next_auto_save()
 
 
 func _update_promotional_dummy_presentations() -> void:
@@ -5315,6 +5678,9 @@ func _update_promotional_dummy_presentations() -> void:
 		return
 	for child in _buildings_root.get_children():
 		var dummy := child as Node3D
+		if _is_promotional_vehicle_driver_dummy(dummy):
+			_update_promotional_vehicle_driver_dummy(dummy)
+			continue
 		if not _is_promotional_dummy(dummy):
 			continue
 		var weapon_id := str(dummy.get_meta(PROMOTIONAL_DUMMY_WEAPON_META, ""))
@@ -5322,6 +5688,117 @@ func _update_promotional_dummy_presentations() -> void:
 			"PromotionalDummyFireController"
 		) == null:
 			_configure_promotional_dummy_fire_controller(dummy)
+		if not weapon_id.is_empty():
+			_align_promotional_dummy_weapon(dummy)
+
+
+func _align_promotional_dummy_weapon(dummy: Node3D) -> void:
+	# The dummy's right-arm IK controls the Hand.R position only.  The imported
+	# animation can still rotate the wrist, and each weapon scene can have a
+	# different authored axis.  As in Player and FutureWarriorAI, the weapon's
+	# Muzzle (or its gameplay RayCast3D) is therefore treated as the authoritative
+	# forward frame and ToolPivot is solved backwards from that frame.
+	if not is_instance_valid(dummy) or not dummy.is_inside_tree():
+		return
+	var tool_pivot := dummy.get_node_or_null(
+		"RightHandSocket/ToolPivot"
+	) as Node3D
+	var weapon_grip := dummy.get_node_or_null(
+		"RightHandSocket/ToolPivot/WeaponGrip"
+	) as Node3D
+	var weapon := dummy.get_node_or_null(
+		"RightHandSocket/ToolPivot/WeaponGrip/WeaponTSCN"
+	) as Node3D
+	if not is_instance_valid(tool_pivot) or not is_instance_valid(weapon_grip) \
+			or not is_instance_valid(weapon):
+		return
+
+	var character := dummy.get_node_or_null("CharacterGLB") as Node3D
+	var character_basis := (
+		character.global_transform.basis.orthonormalized()
+		if is_instance_valid(character)
+		else dummy.global_transform.basis.orthonormalized()
+	)
+	var presentation_forward := character_basis.z.normalized()
+	if presentation_forward.length_squared() < 0.001:
+		# Promotional characters are authored facing +Z.  Keep the fallback
+		# consistent with the hand-IK target calculation above.
+		presentation_forward = Vector3(0.0, 0.0, 1.0)
+	var presentation_up := character_basis.y.normalized()
+	if presentation_up.length_squared() < 0.001:
+		presentation_up = Vector3.UP
+	if absf(presentation_forward.dot(presentation_up)) > 0.98:
+		presentation_up = Vector3.UP
+		if absf(presentation_forward.dot(presentation_up)) > 0.98:
+			presentation_up = Vector3.RIGHT
+	# Godot's weapon forward is -Z.  The imported promotional characters face
+	# +Z, so the target frame must point its -Z axis at presentation_forward.
+	var target_basis := Basis.looking_at(
+		presentation_forward,
+		presentation_up
+	).orthonormalized()
+	var weapon_aim_basis := _get_promotional_dummy_weapon_aim_basis(
+		weapon,
+		target_basis
+	)
+	if weapon_aim_basis.determinant() == 0.0:
+		tool_pivot.transform = Transform3D.IDENTITY
+		return
+
+	var pivot_basis := tool_pivot.global_transform.basis.orthonormalized()
+	# Fixed authored offset from ToolPivot to the weapon's true aim frame.
+	var aim_from_pivot := (
+		pivot_basis.inverse() * weapon_aim_basis
+	).orthonormalized()
+	var desired_pivot_basis := (
+		target_basis * aim_from_pivot.inverse()
+	).orthonormalized()
+	tool_pivot.global_transform = Transform3D(
+		desired_pivot_basis,
+		tool_pivot.global_position
+	)
+
+
+func _get_promotional_dummy_weapon_aim_basis(
+	weapon: Node3D,
+	target_basis: Basis
+) -> Basis:
+	if not is_instance_valid(weapon):
+		return Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO)
+	var muzzle := weapon.get_node_or_null("Muzzle") as Node3D
+	if muzzle == null:
+		muzzle = weapon.find_child("Muzzle", true, false) as Node3D
+	if muzzle != null:
+		return muzzle.global_transform.basis.orthonormalized()
+
+	# SproutBlaster and future utility weapons may expose only a gameplay ray.
+	# Use its actual world direction while retaining a stable up vector, exactly
+	# like the Player/FutureWarriorAI fallback path.
+	var aim_ray := weapon.find_child("RayCast3D", true, false) as RayCast3D
+	var ray_direction := Vector3.ZERO
+	if aim_ray != null and not aim_ray.target_position.is_zero_approx():
+		ray_direction = (
+			aim_ray.to_global(aim_ray.target_position)
+			- aim_ray.global_position
+		).normalized()
+	else:
+		var attack_area := weapon.find_child("AttackArea", true, false) as Area3D
+		if attack_area != null:
+			ray_direction = (
+				attack_area.global_position - weapon.global_position
+			).normalized()
+	if ray_direction.length_squared() <= 0.001:
+		return Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO)
+
+	var preferred_up := weapon.global_transform.basis.y.normalized()
+	if preferred_up.length_squared() < 0.001:
+		preferred_up = target_basis.y.normalized()
+	if absf(ray_direction.dot(preferred_up)) > 0.98:
+		preferred_up = target_basis.x.normalized()
+	return Basis.looking_at(
+		ray_direction,
+		preferred_up
+	).orthonormalized()
 
 
 func _ensure_editor_camera_current() -> void:
@@ -5556,10 +6033,14 @@ func _redo_last_action() -> void:
 func _reset_undo_history() -> void:
 	_undo_redo.clear_history(false)
 	_saved_undo_version = _undo_redo.get_version()
+	_saved_time_settings_revision = _time_settings_revision
 
 
 func has_unsaved_changes() -> bool:
-	return _undo_redo.get_version() != _saved_undo_version
+	return (
+		_undo_redo.get_version() != _saved_undo_version
+		or _time_settings_revision != _saved_time_settings_revision
+	)
 
 
 func _raycast_terrain() -> Dictionary:
@@ -5870,6 +6351,9 @@ func create_new_map(
 	_weather_rain_probability = DEFAULT_RAIN_WEATHER_PROBABILITY
 	_weather_rain_intensity = DEFAULT_RAIN_INTENSITY
 	_weather_eclipse_probability = DEFAULT_ECLIPSE_WEATHER_PROBABILITY
+	_map_initial_hour = DEFAULT_INITIAL_HOUR
+	_time_settings_revision = 0
+	_saved_time_settings_revision = 0
 
 	if is_instance_valid(_map_root):
 		var previous_map = _map_root
@@ -5954,6 +6438,7 @@ func create_new_map(
 	_map_root.set_meta("farmwar_terrain_winding_version", 2)
 	_map_root.set_meta("farmwar_editor_generated", true)
 	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
+	_map_root.set_meta("farmwar_time_configuration", _get_time_editor_config())
 	_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
 	add_child(_map_root)
 
@@ -5968,6 +6453,7 @@ func create_new_map(
 	_focus_camera_on_map()
 	_refresh_bottom_dock()
 	_reset_undo_history()
+	_reset_auto_save_schedule()
 
 	_set_status("Created %s [%s] (%d x %d m, %d x %d height samples)" % [
 		_display_name,
@@ -6183,7 +6669,7 @@ func _create_environment_skeleton() -> void:
 		# Match Creston Town's morning lighting.  Noon pushes directional shadows
 		# almost directly underneath props, which makes newly generated maps look
 		# as if they have no shadows at all even when shadow rendering is active.
-		_set_property_if_present(_day_night_system, "initial_hour", 10.0)
+		_set_property_if_present(_day_night_system, "initial_hour", _map_initial_hour)
 		_day_night_system.process_mode = Node.PROCESS_MODE_DISABLED
 		_map_root.add_child(_day_night_system)
 
@@ -7557,22 +8043,35 @@ func _apply_scene_placement_brush(
 	instance.set_meta("map_editor_category", category_name)
 	instance.set_meta("map_editor_asset_path", scene_path)
 	instance.set_meta("map_editor_uuid", _new_editor_uuid(category_name))
-	instance.set_meta("map_editor_align_mode", "surface_normal")
-	instance.set_meta("map_editor_ground_offset", placed_object_ground_offset)
+	var is_tree: bool = category_name == "tree"
+	var placement_ground_offset: float = TREE_PLACEMENT_GROUND_OFFSET if is_tree else placed_object_ground_offset
+	instance.set_meta("map_editor_align_mode", "upright" if is_tree else "surface_normal")
+	instance.set_meta("map_editor_ground_offset", placement_ground_offset)
 	category_root.add_child(instance)
 
-	# Place the complete interactive scene on the authoritative terrain. Its
-	# global Y axis follows the terrain normal, while random yaw is applied
-	# around that normal rather than around world Y.
+	# Trees stay vertically upright on slopes. Their root is placed slightly
+	# below the terrain sample to avoid a visible gap at the ground contact.
+	# Other scene-placement resources retain the configurable surface-normal
+	# behavior.
 	var placement_yaw = _rng.randf_range(-PI, PI)
 	var scale_value = _rng.randf_range(0.92, 1.08)
-	_place_node_on_terrain(
-		instance,
-		point_xz,
-		placement_yaw,
-		scale_value,
-		placed_object_ground_offset
-	)
+	if is_tree:
+		instance.scale = Vector3.ONE * scale_value
+		_place_map_object_at_terrain(
+			instance,
+			point_xz,
+			placement_yaw,
+			false,
+			placement_ground_offset
+		)
+	else:
+		_place_node_on_terrain(
+			instance,
+			point_xz,
+			placement_yaw,
+			scale_value,
+			placement_ground_offset
+		)
 
 	var identifier = "%s_%04d" % [str(_selected_asset.get("id", category_name)), _next_object_id]
 	_set_property_if_present(instance, "tree_id", identifier)
@@ -8075,6 +8574,183 @@ func _is_promotional_dummy(node: Node3D) -> bool:
 	return str(node.get_meta("map_editor_spawn_kind", "")) == PROMOTIONAL_DUMMY_SPAWN_KIND
 
 
+func _is_promotional_vehicle_driver_dummy(node: Node3D) -> bool:
+	if node == null:
+		return false
+	return str(node.get_meta("map_editor_spawn_kind", "")) == PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND
+
+
+func _get_promotional_vehicle_driver_character_definitions() -> Array:
+	var result: Array = []
+	for character_id_value in PROMOTIONAL_VEHICLE_DRIVER_CHARACTER_IDS:
+		var character_id := str(character_id_value)
+		var definition := _get_promotional_character_definition(character_id)
+		var animation_names := _get_promotional_animation_names(
+			str(definition.get("path", "")),
+			PROMOTIONAL_VEHICLE_DRIVER_ALLOWED_ANIMATIONS
+		)
+		if _promotional_animation_name_for(animation_names, "Carry").is_empty():
+			continue
+		result.append(definition)
+	return result
+
+
+func _is_valid_promotional_vehicle_driver_character(character_id: String) -> bool:
+	for entry_value in _get_promotional_vehicle_driver_character_definitions():
+		var entry := entry_value as Dictionary
+		if str(entry.get("id", "")) == character_id:
+			return true
+	return false
+
+
+func _find_promotional_vehicle_driver_dummy(vehicle_uuid: String) -> Node3D:
+	if vehicle_uuid.is_empty() or _buildings_root == null:
+		return null
+	for child in _buildings_root.get_children():
+		var candidate := child as Node3D
+		if not _is_promotional_vehicle_driver_dummy(candidate):
+			continue
+		if str(candidate.get_meta(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, "")) == vehicle_uuid:
+			return candidate
+	return null
+
+
+func _find_promotional_vehicle_driver_vehicle(dummy: Node3D) -> VehicleBase:
+	if not _is_promotional_vehicle_driver_dummy(dummy):
+		return null
+	var vehicle_uuid := str(dummy.get_meta(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, ""))
+	return _find_editor_object_by_uuid(vehicle_uuid) as VehicleBase
+
+
+func _set_promotional_vehicle_driver_character(vehicle_uuid: String, character_id: String) -> void:
+	if vehicle_uuid.is_empty():
+		return
+	if not _is_valid_promotional_vehicle_driver_character(character_id):
+		character_id = "farmer"
+	var existing := _find_promotional_vehicle_driver_dummy(vehicle_uuid)
+	var had_existing := existing != null
+	var before_character := str(existing.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer")) if had_existing else "farmer"
+	var dummy_uuid := str(existing.get_meta("map_editor_uuid", "")) if had_existing else _new_editor_uuid("auxiliary_vehicle_driver")
+	if had_existing and before_character == character_id:
+		return
+	_selected_promotional_vehicle_driver_character_id = character_id
+	_undo_redo.create_action("Set Promotional Vehicle Driver Dummy")
+	_undo_redo.add_do_method(
+		_apply_promotional_vehicle_driver_state.bind(
+			vehicle_uuid,
+			character_id,
+			true,
+			dummy_uuid
+		)
+	)
+	_undo_redo.add_undo_method(
+		_apply_promotional_vehicle_driver_state.bind(
+			vehicle_uuid,
+			before_character,
+			had_existing,
+			dummy_uuid
+		)
+	)
+	_undo_redo.commit_action(false)
+	_apply_promotional_vehicle_driver_state(vehicle_uuid, character_id, true, dummy_uuid)
+
+
+func _remove_promotional_vehicle_driver_dummy(vehicle_uuid: String) -> void:
+	var existing := _find_promotional_vehicle_driver_dummy(vehicle_uuid)
+	if existing == null:
+		return
+	var dummy_uuid := str(existing.get_meta("map_editor_uuid", ""))
+	var before_character := str(existing.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+	_undo_redo.create_action("Remove Promotional Vehicle Driver Dummy")
+	_undo_redo.add_do_method(
+		_apply_promotional_vehicle_driver_state.bind(
+			vehicle_uuid,
+			before_character,
+			false,
+			dummy_uuid
+		)
+	)
+	_undo_redo.add_undo_method(
+		_apply_promotional_vehicle_driver_state.bind(
+			vehicle_uuid,
+			before_character,
+			true,
+			dummy_uuid
+		)
+	)
+	_undo_redo.commit_action(false)
+	_apply_promotional_vehicle_driver_state(vehicle_uuid, before_character, false, dummy_uuid)
+
+
+func _apply_promotional_vehicle_driver_state(
+	vehicle_uuid: String,
+	character_id: String,
+	should_exist: bool,
+	dummy_uuid := ""
+) -> void:
+	var existing := _find_promotional_vehicle_driver_dummy(vehicle_uuid)
+	if not should_exist:
+		if existing != null:
+			if existing == _selected_map_object:
+				_clear_selected_map_object()
+			var parent := existing.get_parent()
+			if parent != null:
+				parent.remove_child(existing)
+			existing.free()
+		if _tool_mode == ToolMode.OBJECT_EDIT:
+			_refresh_bottom_dock()
+		return
+
+	if not _is_valid_promotional_vehicle_driver_character(character_id):
+		character_id = "farmer"
+	var vehicle := _find_editor_object_by_uuid(vehicle_uuid) as VehicleBase
+	if vehicle == null:
+		push_warning("Promotional vehicle driver dummy cannot find vehicle: %s" % vehicle_uuid)
+		return
+	var carry_animation := _promotional_animation_name_for(
+		_get_promotional_animation_names(
+			str(_get_promotional_character_definition(character_id).get("path", "")),
+			PROMOTIONAL_VEHICLE_DRIVER_ALLOWED_ANIMATIONS
+		),
+		"Carry"
+	)
+	if carry_animation.is_empty():
+		push_warning("Promotional vehicle driver character has no Carry animation: %s" % character_id)
+		return
+
+	var dummy := existing
+	if dummy == null:
+		dummy = _create_promotional_vehicle_driver_dummy_node(character_id, vehicle_uuid, 0)
+		if dummy == null:
+			return
+		dummy.name = "PromotionalDriverDummy_%s" % vehicle_uuid.right(8)
+		dummy.set_meta("map_editor_category", "auxiliary")
+		dummy.set_meta("map_editor_asset_path", str(_get_promotional_character_definition(character_id).get("path", "")))
+		dummy.set_meta("map_editor_uuid", dummy_uuid if not dummy_uuid.is_empty() else _new_editor_uuid("auxiliary_vehicle_driver"))
+		dummy.set_meta("map_editor_align_mode", "vehicle_seat")
+		dummy.set_meta("map_editor_ground_offset", 0.0)
+		_buildings_root.add_child(dummy)
+	else:
+		dummy.set_meta(PROMOTIONAL_DUMMY_CHARACTER_META, character_id)
+		dummy.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, carry_animation)
+		dummy.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, "")
+		dummy.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false)
+		dummy.set_meta("map_editor_asset_path", str(_get_promotional_character_definition(character_id).get("path", "")))
+		_rebuild_promotional_dummy_visual(dummy)
+		_configure_promotional_vehicle_driver_visual(dummy)
+
+	dummy.set_meta("map_editor_spawn_kind", PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND)
+	dummy.set_meta(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, vehicle_uuid)
+	dummy.set_meta(PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META, 0)
+	_update_promotional_vehicle_driver_dummy(dummy)
+	_selected_promotional_vehicle_driver_character_id = character_id
+	if dummy == _selected_map_object:
+		_refresh_selection_visual()
+		_refresh_transform_gizmo()
+	if _tool_mode == ToolMode.OBJECT_EDIT:
+		_refresh_bottom_dock()
+
+
 func _get_promotional_character_definition(character_id: String) -> Dictionary:
 	for entry_value in PROMOTIONAL_DUMMY_CHARACTERS:
 		var entry := entry_value as Dictionary
@@ -8187,7 +8863,10 @@ func _promotional_animation_name_for(
 	return ""
 
 
-func _get_promotional_animation_names(character_path: String) -> PackedStringArray:
+func _get_promotional_animation_names(
+	character_path: String,
+	allowed_animation_names: Array = []
+) -> PackedStringArray:
 	var source_names := PackedStringArray()
 	var packed := _load_resource_or_null(character_path) as PackedScene
 	if packed == null:
@@ -8207,7 +8886,10 @@ func _get_promotional_animation_names(character_path: String) -> PackedStringArr
 					source_names.append(name)
 	character.free()
 	var result := PackedStringArray()
-	for allowed_name in PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS:
+	var requested_animation_names: Array = PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS
+	if not allowed_animation_names.is_empty():
+		requested_animation_names = allowed_animation_names
+	for allowed_name in requested_animation_names:
 		var source_name := _promotional_animation_name_for(source_names, str(allowed_name))
 		if not source_name.is_empty():
 			result.append(source_name)
@@ -8275,7 +8957,7 @@ func _add_promotional_dummy_right_arm_ik(
 	var character_basis := character.global_transform.basis if character.is_inside_tree() else character.transform.basis
 	var presentation_forward := character_basis.z.normalized()
 	if presentation_forward.length_squared() < 0.001:
-		presentation_forward = Vector3.FORWARD
+		presentation_forward = Vector3(0.0, 0.0, 1.0)
 
 	var right_hand_target := Marker3D.new()
 	right_hand_target.name = "RightHandIKTarget"
@@ -8318,6 +9000,143 @@ func _add_promotional_dummy_right_arm_ik(
 	right_arm_ik.set_pole_node(0, right_arm_ik.get_path_to(right_elbow_pole))
 	right_arm_ik.active = weapon_enabled
 	right_arm_ik.influence = 1.0 if weapon_enabled else 0.0
+
+
+func _add_promotional_dummy_vehicle_leg_ik(
+	dummy: Node3D,
+	character: Node3D,
+	skeleton: Skeleton3D,
+	side: String,
+	root_bone: String,
+	middle_bone: String,
+	end_bone: String,
+	target_local: Vector3,
+	pole_local: Vector3,
+	pole_direction: int
+) -> void:
+	if skeleton.find_bone(root_bone) < 0 \
+			or skeleton.find_bone(middle_bone) < 0 \
+			or skeleton.find_bone(end_bone) < 0:
+		return
+	var target := Marker3D.new()
+	target.name = "PromotionalVehicle%sLegIKTarget" % side
+	target.position = character.transform * target_local
+	dummy.add_child(target)
+	var pole := Marker3D.new()
+	pole.name = "PromotionalVehicle%sKneePole" % side
+	pole.position = character.transform * pole_local
+	dummy.add_child(pole)
+
+	var leg_ik := TwoBoneIK3D.new()
+	leg_ik.name = "PromotionalVehicle%sLegIK" % side
+	skeleton.add_child(leg_ik)
+	leg_ik.setting_count = 1
+	leg_ik.set_root_bone_name(0, root_bone)
+	leg_ik.set_middle_bone_name(0, middle_bone)
+	leg_ik.set_end_bone_name(0, end_bone)
+	leg_ik.set_use_virtual_end(0, false)
+	leg_ik.set_extend_end_bone(0, false)
+	leg_ik.set_pole_direction(0, pole_direction)
+	leg_ik.set_target_node(0, leg_ik.get_path_to(target))
+	leg_ik.set_pole_node(0, leg_ik.get_path_to(pole))
+	leg_ik.active = true
+	leg_ik.influence = 1.0
+
+
+func _configure_promotional_vehicle_driver_visual(dummy: Node3D) -> void:
+	if dummy == null:
+		return
+	var character := dummy.get_node_or_null("CharacterGLB") as Node3D
+	if character == null:
+		return
+	# The imported promotional GLBs face +Z. VehicleSeatConfig's occupant
+	# transform is intentionally authored for player models, which face -Z.
+	# Keep the shared seat transform and turn only this visual around locally.
+	character.rotation = Vector3(0.0, PI, 0.0)
+	var skeleton := character.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skeleton == null:
+		return
+	if skeleton.find_child("PromotionalVehicleRightLegIK", false, false) != null:
+		return
+	_add_promotional_dummy_vehicle_leg_ik(
+		dummy,
+		character,
+		skeleton,
+		"Right",
+		"Thigh.R",
+		"Shin.R",
+		"Foot.R",
+		PROMOTIONAL_DUMMY_RIGHT_FOOT_TARGET,
+		PROMOTIONAL_DUMMY_RIGHT_KNEE_POLE,
+		SkeletonModifier3D.SECONDARY_DIRECTION_PLUS_X
+	)
+	_add_promotional_dummy_vehicle_leg_ik(
+		dummy,
+		character,
+		skeleton,
+		"Left",
+		"Thigh.L",
+		"Shin.L",
+		"Foot.L",
+		PROMOTIONAL_DUMMY_LEFT_FOOT_TARGET,
+		PROMOTIONAL_DUMMY_LEFT_KNEE_POLE,
+		SkeletonModifier3D.SECONDARY_DIRECTION_MINUS_X
+	)
+
+
+func _create_promotional_vehicle_driver_dummy_node(
+	character_id: String,
+	vehicle_uuid: String,
+	seat_index: int
+) -> Node3D:
+	var character_definition := _get_promotional_character_definition(character_id)
+	var carry_animation := _promotional_animation_name_for(
+		_get_promotional_animation_names(
+			str(character_definition.get("path", "")),
+			PROMOTIONAL_VEHICLE_DRIVER_ALLOWED_ANIMATIONS
+		),
+		"Carry"
+	)
+	if carry_animation.is_empty():
+		return null
+	var dummy := Node3D.new()
+	dummy.set_meta("map_editor_spawn_kind", PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND)
+	dummy.set_meta("map_editor_category", "auxiliary")
+	dummy.set_meta(PROMOTIONAL_DUMMY_CHARACTER_META, character_id)
+	dummy.set_meta(PROMOTIONAL_DUMMY_ANIMATION_META, carry_animation)
+	dummy.set_meta(PROMOTIONAL_DUMMY_WEAPON_META, "")
+	dummy.set_meta(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false)
+	dummy.set_meta("map_editor_asset_path", str(character_definition.get("path", "")))
+	dummy.set_meta(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, vehicle_uuid)
+	dummy.set_meta(PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META, seat_index)
+	_rebuild_promotional_dummy_visual(dummy)
+	_configure_promotional_vehicle_driver_visual(dummy)
+	return dummy
+
+
+func _update_promotional_vehicle_driver_dummy(dummy: Node3D) -> void:
+	if not _is_promotional_vehicle_driver_dummy(dummy):
+		return
+	var vehicle := _find_promotional_vehicle_driver_vehicle(dummy)
+	if vehicle == null:
+		dummy.visible = false
+		return
+	var seat_index := int(dummy.get_meta(PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META, 0))
+	var show_occupant := vehicle.should_show_occupant(seat_index)
+	dummy.visible = show_occupant
+	if vehicle.has_method("get_occupant_world_transform"):
+		dummy.global_transform = vehicle.get_occupant_world_transform(seat_index)
+	var character := dummy.get_node_or_null("CharacterGLB") as Node3D
+	if character != null:
+		character.rotation = Vector3(0.0, PI, 0.0)
+		var skeleton := character.find_child("Skeleton3D", true, false) as Skeleton3D
+		if skeleton != null:
+			for ik_name in ["PromotionalVehicleRightLegIK", "PromotionalVehicleLeftLegIK"]:
+				var leg_ik := skeleton.find_child(ik_name, false, false) as TwoBoneIK3D
+				if leg_ik == null:
+					continue
+				leg_ik.active = show_occupant
+				leg_ik.influence = 1.0 if show_occupant else 0.0
 
 
 func _promotional_dummy_to_local_position(dummy: Node3D, world_position: Vector3) -> Vector3:
@@ -8369,7 +9188,10 @@ func _rebuild_promotional_dummy_visual(dummy: Node3D) -> void:
 		(mesh_value as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 	var source_animation_player := character.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	var animation_names := _get_promotional_animation_names(character_path)
+	var allowed_animation_names: Array = PROMOTIONAL_DUMMY_ALLOWED_ANIMATIONS
+	if _is_promotional_vehicle_driver_dummy(dummy):
+		allowed_animation_names = PROMOTIONAL_VEHICLE_DRIVER_ALLOWED_ANIMATIONS
+	var animation_names := _get_promotional_animation_names(character_path, allowed_animation_names)
 	var animation_name := str(dummy.get_meta(PROMOTIONAL_DUMMY_ANIMATION_META, ""))
 	if animation_name.is_empty() or not animation_names.has(animation_name):
 		animation_name = _get_default_promotional_animation(character_definition)
@@ -8586,14 +9408,77 @@ func _new_editor_uuid(category: String) -> String:
 	]
 
 
+func _normalize_vehicle_asset_metadata(node: Node3D) -> Dictionary:
+	var category := str(node.get_meta("map_editor_category", "spawn"))
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	var scene_path := str(node.scene_file_path)
+	var is_combine_car := asset_path == LEGACY_COMBINE_CAR_PATH \
+			or asset_path == COMBINE_CAR_PATH \
+			or scene_path == LEGACY_COMBINE_CAR_PATH \
+			or scene_path == COMBINE_CAR_PATH
+	if is_combine_car:
+		category = "vehicle"
+		asset_path = COMBINE_CAR_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_police_car := asset_path == LEGACY_POLICE_CAR_PATH \
+			or asset_path == POLICE_CAR_PATH \
+			or scene_path == LEGACY_POLICE_CAR_PATH \
+			or scene_path == POLICE_CAR_PATH
+	if is_police_car:
+		category = "vehicle"
+		asset_path = POLICE_CAR_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_fire_pickup := asset_path == FIRE_PICKUP_PATH or scene_path == FIRE_PICKUP_PATH
+	if is_fire_pickup:
+		category = "vehicle"
+		asset_path = FIRE_PICKUP_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_mini_car := asset_path == MINI_CAR_PATH or scene_path == MINI_CAR_PATH
+	if is_mini_car:
+		category = "vehicle"
+		asset_path = MINI_CAR_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_atv := asset_path == ATV_PATH or scene_path == ATV_PATH
+	if is_atv:
+		category = "vehicle"
+		asset_path = ATV_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_sport_car := asset_path == SPORT_CAR_PATH or scene_path == SPORT_CAR_PATH
+	if is_sport_car:
+		category = "vehicle"
+		asset_path = SPORT_CAR_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_van := asset_path == VAN_PATH or scene_path == VAN_PATH
+	if is_van:
+		category = "vehicle"
+		asset_path = VAN_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	var is_sedan := asset_path == SEDAN_PATH or scene_path == SEDAN_PATH
+	if is_sedan:
+		category = "vehicle"
+		asset_path = SEDAN_PATH
+		node.set_meta("map_editor_category", category)
+		node.set_meta("map_editor_asset_path", asset_path)
+	return {"category": category, "asset_path": asset_path}
+
+
 func _serialize_editor_object(node: Node3D) -> Dictionary:
-	var category = str(node.get_meta("map_editor_category", "spawn"))
+	var normalized_asset := _normalize_vehicle_asset_metadata(node)
+	var category = str(normalized_asset.get("category", "spawn"))
 	var spawn_kind = str(node.get_meta("map_editor_spawn_kind", ""))
+	var asset_path = str(normalized_asset.get("asset_path", node.scene_file_path))
 	var record: Dictionary = {
 		"uuid": str(node.get_meta("map_editor_uuid", _new_editor_uuid(category))),
 		"category": category,
 		"spawn_kind": spawn_kind,
-		"asset_path": str(node.get_meta("map_editor_asset_path", node.scene_file_path)),
+		"asset_path": asset_path,
 		"name": node.name,
 		"transform": node.transform,
 		"process_mode": int(node.process_mode),
@@ -8603,6 +9488,7 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"facility_id": str(node.get_meta("map_editor_facility_id", "")),
 		"map_enterable": bool(node.get_meta("map_enterable", false)),
 		"map_can_overlap_water": bool(node.get_meta(MAP_CAN_OVERLAP_WATER_META, false)),
+		"map_can_overlap_support_objects": bool(node.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false)),
 		"properties": {},
 	}
 	node.set_meta("map_editor_uuid", record["uuid"])
@@ -8666,6 +9552,16 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 			PROMOTIONAL_DUMMY_AUTO_FIRE_META,
 			false
 		))
+	if _is_promotional_vehicle_driver_dummy(node):
+		properties[PROMOTIONAL_DUMMY_CHARACTER_META] = str(node.get_meta(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer"))
+		properties[PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META] = str(node.get_meta(
+			PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META,
+			""
+		))
+		properties[PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META] = int(node.get_meta(
+			PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META,
+			0
+		))
 	return record
 
 
@@ -8724,6 +9620,30 @@ func _restore_object_records(records: Array) -> void:
 		var category = str(record.get("category", "spawn"))
 		var spawn_kind = str(record.get("spawn_kind", ""))
 		var asset_path = str(record.get("asset_path", ""))
+		if asset_path == LEGACY_COMBINE_CAR_PATH or asset_path == COMBINE_CAR_PATH:
+			asset_path = COMBINE_CAR_PATH
+			category = "vehicle"
+		elif asset_path == LEGACY_POLICE_CAR_PATH or asset_path == POLICE_CAR_PATH:
+			asset_path = POLICE_CAR_PATH
+			category = "vehicle"
+		elif asset_path == FIRE_PICKUP_PATH:
+			asset_path = FIRE_PICKUP_PATH
+			category = "vehicle"
+		elif asset_path == MINI_CAR_PATH:
+			asset_path = MINI_CAR_PATH
+			category = "vehicle"
+		elif asset_path == ATV_PATH:
+			asset_path = ATV_PATH
+			category = "vehicle"
+		elif asset_path == SPORT_CAR_PATH:
+			asset_path = SPORT_CAR_PATH
+			category = "vehicle"
+		elif asset_path == VAN_PATH:
+			asset_path = VAN_PATH
+			category = "vehicle"
+		elif asset_path == SEDAN_PATH:
+			asset_path = SEDAN_PATH
+			category = "vehicle"
 		var node: Node3D
 
 		if category == "farmland":
@@ -8752,6 +9672,13 @@ func _restore_object_records(records: Array) -> void:
 				str(promotional_properties.get(PROMOTIONAL_DUMMY_WEAPON_META, "future_m4")),
 				bool(promotional_properties.get(PROMOTIONAL_DUMMY_AUTO_FIRE_META, false))
 			)
+		elif category == "auxiliary" and spawn_kind == PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND:
+			var vehicle_dummy_properties := record.get("properties", {}) as Dictionary
+			node = _create_promotional_vehicle_driver_dummy_node(
+				str(vehicle_dummy_properties.get(PROMOTIONAL_DUMMY_CHARACTER_META, "farmer")),
+				str(vehicle_dummy_properties.get(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, "")),
+				int(vehicle_dummy_properties.get(PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META, 0))
+			)
 		else:
 			var packed = _load_resource_or_null(asset_path) as PackedScene
 			if packed == null:
@@ -8765,12 +9692,31 @@ func _restore_object_records(records: Array) -> void:
 		node.set_meta("map_editor_uuid", uuid)
 		node.set_meta("map_editor_category", category)
 		node.set_meta("map_editor_asset_path", asset_path)
-		node.set_meta("map_editor_align_mode", str(record.get("align_mode", "surface_normal")))
-		node.set_meta("map_editor_ground_offset", float(record.get("ground_offset", placed_object_ground_offset)))
+		var migrate_tree_placement := category == "tree" and (
+			str(record.get("align_mode", "surface_normal")) != "upright"
+			or not is_equal_approx(
+				float(record.get("ground_offset", placed_object_ground_offset)),
+				TREE_PLACEMENT_GROUND_OFFSET
+			)
+		)
+		var record_align_mode := str(record.get("align_mode", "surface_normal"))
+		var record_ground_offset := float(record.get("ground_offset", placed_object_ground_offset))
+		if category == "tree":
+			record_align_mode = "upright"
+			record_ground_offset = TREE_PLACEMENT_GROUND_OFFSET
+		node.set_meta("map_editor_align_mode", record_align_mode)
+		node.set_meta("map_editor_ground_offset", record_ground_offset)
 		if category in ["building", "vehicle", "facility"]:
 			node.set_meta(
 				MAP_CAN_OVERLAP_WATER_META,
 				bool(record.get("map_can_overlap_water", node.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
+			)
+			node.set_meta(
+				MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META,
+				bool(record.get(
+					"map_can_overlap_support_objects",
+					node.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false)
+				))
 			)
 		if category == "building":
 			node.set_meta("map_enterable", bool(record.get("map_enterable", node.get_meta("map_enterable", false))))
@@ -8782,12 +9728,26 @@ func _restore_object_records(records: Array) -> void:
 			node.set_meta("map_editor_facility_id", facility_id)
 		if not spawn_kind.is_empty():
 			node.set_meta("map_editor_spawn_kind", spawn_kind)
+		if spawn_kind == PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND:
+			var driver_properties_after_meta := record.get("properties", {}) as Dictionary
+			node.set_meta(
+				PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META,
+				str(driver_properties_after_meta.get(PROMOTIONAL_VEHICLE_DUMMY_VEHICLE_UUID_META, ""))
+			)
+			node.set_meta(
+				PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META,
+				int(driver_properties_after_meta.get(PROMOTIONAL_VEHICLE_DUMMY_SEAT_INDEX_META, 0))
+			)
 
 		var target_root = _category_root_for_record(category)
 		if target_root == null:
 			node.free()
 			continue
 		target_root.add_child(node)
+		if migrate_tree_placement:
+			var tree_xz := Vector2(node.global_position.x, node.global_position.z)
+			var tree_yaw := _extract_world_yaw(node.global_basis)
+			_place_map_object_at_terrain(node, tree_xz, tree_yaw, false, TREE_PLACEMENT_GROUND_OFFSET)
 		if category == "vehicle":
 			_disable_editor_vehicle_cameras(node)
 
@@ -8817,6 +9777,9 @@ func _restore_object_records(records: Array) -> void:
 		elif category == "farmland":
 			_set_property_if_present(node, "generate_on_ready", false)
 			_refresh_farmland_preview(node)
+		elif spawn_kind == PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND:
+			_configure_promotional_vehicle_driver_visual(node)
+			_update_promotional_vehicle_driver_dummy(node)
 	_rebuild_power_wires()
 
 
@@ -8929,6 +9892,10 @@ func _apply_building_placement(center: Vector3) -> void:
 	instance.set_meta("map_editor_asset_path", scene_path)
 	instance.set_meta("map_editor_uuid", _new_editor_uuid(object_category))
 	instance.set_meta(MAP_CAN_OVERLAP_WATER_META, bool(instance.get_meta(MAP_CAN_OVERLAP_WATER_META, false)))
+	instance.set_meta(
+		MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META,
+		bool(instance.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false))
+	)
 	if not is_facility and not is_vehicle:
 		instance.set_meta(
 			"map_enterable",
@@ -9223,6 +10190,7 @@ func _validate_building_node(
 		return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [slope_degrees, building_max_slope_degrees]}
 	var allow_kitchen_inside_buildings := _is_kitchen_facility_node(node)
 	var require_enterable_building := _is_interior_facility_node(node)
+	var allow_support_object_overlap := bool(node.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false))
 	var overlaps_enterable_building := false
 	for candidate in _get_building_overlap_candidates():
 		if candidate == ignore_node or not is_instance_valid(candidate):
@@ -9239,6 +10207,8 @@ func _validate_building_node(
 				overlaps_enterable_building = true
 			continue
 		if overlaps_candidate:
+			if allow_support_object_overlap:
+				continue
 			if allow_kitchen_inside_buildings and _is_enterable_building_node(candidate):
 				continue
 			return {"valid": false, "reason": "overlaps %s" % candidate.name}
@@ -9893,7 +10863,10 @@ func _get_all_editable_objects() -> Array[Node3D]:
 			continue
 		for child in root.get_children():
 			if child is Node3D:
-				result.append(child as Node3D)
+				var candidate := child as Node3D
+				if _is_promotional_vehicle_driver_dummy(candidate) and not candidate.visible:
+					continue
+				result.append(candidate)
 	return result
 
 
@@ -10086,12 +11059,23 @@ func _apply_object_transform_by_uuid(uuid: String, transform_value: Transform3D)
 		_rebuild_resource_multimeshes_deferred()
 	if _is_power_pole(node):
 		_rebuild_power_wires()
+	if node is VehicleBase:
+		var driver_dummy := _find_promotional_vehicle_driver_dummy(
+			str(node.get_meta("map_editor_uuid", ""))
+		)
+		if driver_dummy != null:
+			_update_promotional_vehicle_driver_dummy(driver_dummy)
 
 func _delete_selected_object() -> void:
 	if not is_instance_valid(_selected_map_object):
 		return
 	var record = _serialize_editor_object(_selected_map_object)
 	var records: Array = [record]
+	if _selected_map_object is VehicleBase:
+		var vehicle_uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+		var driver_dummy := _find_promotional_vehicle_driver_dummy(vehicle_uuid)
+		if driver_dummy != null:
+			records.append(_serialize_editor_object(driver_dummy))
 	_remove_object_records(records)
 	_clear_selected_map_object()
 	_undo_redo.create_action("Delete Map Object")
@@ -10145,10 +11129,12 @@ func _align_selected_object_to_ground() -> void:
 		return
 	var before = _selected_map_object.transform
 	var category = str(_selected_map_object.get_meta("map_editor_category", "spawn"))
-	var align_to_normal = category in ["tree", "ore"]
+	var align_to_normal = category == "ore"
 	var xz = Vector2(_selected_map_object.global_position.x, _selected_map_object.global_position.z)
 	var yaw = _extract_world_yaw(_selected_map_object.global_basis)
 	var ground_offset = float(_selected_map_object.get_meta("map_editor_ground_offset", placed_object_ground_offset))
+	if category == "tree":
+		ground_offset = TREE_PLACEMENT_GROUND_OFFSET
 	_place_map_object_at_terrain(_selected_map_object, xz, yaw, align_to_normal, ground_offset)
 	var after = _selected_map_object.transform
 	if before.is_equal_approx(after):
@@ -10338,7 +11324,24 @@ func create_road_from_points(points: PackedVector3Array, road_type: int = 1) -> 
 # Save the generated map and authoritative editor data
 # -----------------------------------------------------------------------------
 
-func save_current_map() -> void:
+func save_current_map(
+	allow_incomplete_map: bool = false,
+	is_auto_save: bool = false
+) -> void:
+	if _map_save_in_progress:
+		_last_save_succeeded = false
+		if not is_auto_save:
+			_set_status("A map save is already in progress")
+		return
+	_map_save_in_progress = true
+	await _save_current_map_impl(allow_incomplete_map, is_auto_save)
+	_map_save_in_progress = false
+
+
+func _save_current_map_impl(
+	allow_incomplete_map: bool,
+	is_auto_save: bool
+) -> void:
 	_last_save_succeeded = false
 	if _map_root == null:
 		_set_status("No map to save")
@@ -10356,10 +11359,11 @@ func save_current_map() -> void:
 	_update_map_metadata_before_save()
 	_rebuild_power_wires()
 	_rebuild_all_roads_immediately()
-	var map_validation_error := _get_playable_map_validation_error()
-	if not map_validation_error.is_empty():
-		_set_status(map_validation_error)
-		return
+	if not allow_incomplete_map:
+		var map_validation_error := _get_playable_map_validation_error()
+		if not map_validation_error.is_empty():
+			_set_status(map_validation_error)
+			return
 	# An imported icon always wins.  Otherwise render a small local preview of
 	# the map before writing the sidecar manifest; _save_map_icon() will then
 	# persist the generated 128x128 image exactly like an imported one.
@@ -10415,8 +11419,10 @@ func save_current_map() -> void:
 		return
 	_current_map_folder = folder
 	_saved_undo_version = _undo_redo.get_version()
+	_saved_time_settings_revision = _time_settings_revision
 	_last_save_succeeded = true
-	_set_status("Saved: %s" % scene_path)
+	_schedule_next_auto_save()
+	_set_status(("Auto-saved: %s" if is_auto_save else "Saved: %s") % scene_path)
 
 
 func _capture_generated_map_icon() -> void:
@@ -10512,6 +11518,7 @@ func _update_map_metadata_before_save() -> void:
 	_map_root.set_meta("surface_default_id", _get_default_surface_id())
 	_map_root.set_meta("manual_grass", _manual_grass)
 	_map_root.set_meta("farmwar_ai_configuration", _ai_configurations.duplicate(true))
+	_map_root.set_meta("farmwar_time_configuration", _get_time_editor_config())
 	_map_root.set_meta("farmwar_weather_configuration", _get_weather_editor_config())
 	_map_root.set_meta("integrated_systems", [
 		"explicit_ground_static_body",
@@ -10536,6 +11543,7 @@ func _update_map_metadata_before_save() -> void:
 		"farmland_field_generator",
 		"neutral_crop_generator",
 		"promotional_dummy_visuals",
+		"promotional_vehicle_driver_dummy_visuals",
 		"facility_catalog",
 		"static_kitchen_facilities",
 		"static_defense_facilities",
@@ -10607,6 +11615,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"depth": int(_map_size.y),
 		},
 		"template": template_name,
+		"time": _get_time_editor_config(),
 		"weather": _get_weather_editor_config(),
 		"scene": "%s.tscn" % _map_id,
 		"terrain": {
@@ -10641,6 +11650,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"farmland_count": _farmlands_root.get_child_count(),
 			"neutral_crop_generator_count": _count_neutral_crop_generators(),
 			"promotional_dummy_count": _count_promotional_dummies(),
+			"promotional_vehicle_driver_dummy_count": _count_promotional_vehicle_driver_dummies(),
 			"ai_configuration": _ai_configurations.duplicate(true),
 			"ai_count": _ai_configurations.size(),
 			"squad_generator_count": _get_editor_squad_spawners().size(),
@@ -10654,7 +11664,9 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"farmland_editor_enabled": true,
 			"neutral_crop_generators_enabled": true,
 			"promotional_dummies_enabled": true,
+			"promotional_vehicle_driver_dummies_enabled": true,
 			"day_night_enabled_in_gameplay": is_instance_valid(_day_night_system),
+			"time_settings_enabled": is_instance_valid(_day_night_system),
 			"weather_settings_enabled": is_instance_valid(_weather_system),
 			"eclipse_weather_enabled": true,
 			"size_aware_far_scenery": true,
@@ -10921,10 +11933,12 @@ func open_map_package(manifest_path: String) -> void:
 	var map_id_value = str(manifest.get("map_id", display_name_value))
 	var version_value = str(manifest.get("version", default_map_version))
 	var terrain_data = manifest.get("terrain", {}) as Dictionary
+	var time_config := manifest.get("time", {}) as Dictionary
 	var weather_config := manifest.get("weather", {}) as Dictionary
 	vertex_spacing = maxf(0.25, float(terrain_data.get("vertex_spacing", vertex_spacing)))
 
 	create_new_map(display_name_value, map_size_value, template_value, map_id_value, version_value)
+	_apply_time_editor_config(time_config)
 	_apply_weather_editor_config(weather_config)
 	_ai_configurations = configured_ai_value.duplicate(true) if configured_ai_value is Array else []
 	_selected_ai_index = 0 if not _ai_configurations.is_empty() else -1
@@ -10948,6 +11962,7 @@ func open_map_package(manifest_path: String) -> void:
 	_update_map_ui_from_loaded_manifest()
 	_reset_undo_history()
 	_saved_undo_version = _undo_redo.get_version()
+	_reset_auto_save_schedule()
 	_set_status("Opened: %s" % manifest_path)
 
 
@@ -11513,7 +12528,20 @@ func _count_promotional_dummies() -> int:
 		return 0
 	var count := 0
 	for child in _buildings_root.get_children():
-		if child is Node3D and _is_promotional_dummy(child as Node3D):
+		if child is Node3D and (
+				_is_promotional_dummy(child as Node3D)
+				or _is_promotional_vehicle_driver_dummy(child as Node3D)
+		):
+			count += 1
+	return count
+
+
+func _count_promotional_vehicle_driver_dummies() -> int:
+	if _buildings_root == null:
+		return 0
+	var count := 0
+	for child in _buildings_root.get_children():
+		if child is Node3D and _is_promotional_vehicle_driver_dummy(child as Node3D):
 			count += 1
 	return count
 

@@ -1,0 +1,100 @@
+[gd_scene format=3 uid="uid://cvwu16wqdn81l"]
+
+[ext_resource type="PackedScene" uid="uid://ncatbrqpbup7" path="res://assets/vehicles/FTF_Vehicle_CombineHarvester_BlackYellow_7m.glb" id="1_hne8f"]
+[ext_resource type="Script" uid="uid://b6u5ood6hjsyq" path="res://src/combine_car.gd" id="2_combine_car"]
+[ext_resource type="Resource" path="res://vehicles/combine_car_config.tres" id="3_combine_config"]
+
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_tyc17"]
+points = PackedVector3Array(3.4082549, 1.8851997, 0.47395754, 3.4059222, 1.8254622, 0.5157993, 3.2840273, 1.6945537, 0.19501281, 3.3709285, 1.9529406, 0.44407058, 3.367429, 1.9540838, 0.45801783, 3.4018395, 1.8906304, 0.48591232, 2.549744, -0.3302388, 4.1048884, 3.4006732, 1.8114566, 0.52775407, 3.2764456, 1.6205248, 0.2488091, 3.2816947, 1.634816, 0.23685431, 2.549744, -0.43027794, 4.1048884, 1.5495083, -0.08014092, -2.3354146, 1.5495083, 0.07992175, -2.3354146, 3.246701, 1.7622947, 0.16512585, 3.2560327, 1.9760925, 0.28467345, 3.2402856, 2.032686, 0.29330754, 3.2099578, 2.0798473, 0.33050013, 3.305024, 2.002674, 0.43942142, 3.305607, 2.0003877, 0.45336866, 2.3747756, -0.37025446, 4.334686, 2.53458, -0.31509, 4.1048884, 2.3747756, -0.3751135, 4.339999, 2.3794415, -0.3751135, 4.334686, 2.549744, -0.43027794, 3.994639, 2.4745076, -0.3651096, 3.0243096, 2.3794415, -0.44514093, 4.334686, 2.3747756, -0.44999996, 4.334686, 2.53458, -0.44514093, 4.1048884, 1.4596913, -0.17017615, -2.3354146, 1.4596913, -0.08014092, -2.4250755, 2.4196842, -0.42027405, 3.0243096, 1.4596913, 0.07992175, -2.4250755, 1.259644, 1.6599687, -2.0704172, 1.3599591, 1.6599687, -1.97013, 1.2695589, 2.2699218, -1.5855846, 1.1698267, 2.4299843, -1.5503845, 1.1295841, 2.47, -1.5503845, 3.1790464, 2.094996, 0.3789835, 3.183129, 2.090137, 0.3896098, 3.1714647, 2.094996, 0.3922665, 3.1481354, 2.0818481, 0.43610072, 3.1545508, 2.073845, 0.44407058, 2.3345325, 0.48979643, 3.25942, -0.05553484, 2.1747415, 1.5943856, 2.3747756, -0.44514093, 4.339999, -2.375615, -0.3751135, 4.339999, 2.53458, -0.44514093, 3.994639, -2.375615, -0.44999996, 4.334686, 2.3747756, -0.44999996, 4.064375, -1.4605304, -0.17017615, -2.3354146, -1.4605304, -0.08014092, -2.4250755, 0.619843, 0.44520757, -2.4450002, 0.65775275, 0.4574981, -2.4450002, 0.681082, 0.48979643, -2.4450002, -2.4205234, -0.42027405, 3.0243096, 0.681082, 0.5298121, -2.4450002, 0.65775275, 0.56211054, -2.4450002, 0.619843, 0.5746869, -2.4450002, -1.2604834, 1.6599687, -2.0704172, 1.1494138, 2.2699218, -1.7051325, 1.1295841, 2.4299843, -1.5902338, -1.1304235, 2.47, -1.5503845, 1.1295841, 2.47, 0.18969941, -1.4651963, 2.1747415, 1.5943856, -2.375615, -0.44514093, 4.339999, -2.375615, -0.37025446, 4.334686, -2.5354192, -0.31509, 4.1048884, -2.55, -0.3302388, 4.1048884, -2.3802807, -0.3751135, 4.334686, -2.3802807, -0.44514093, 4.334686, -2.55, -0.43027794, 4.1048884, -2.5354192, -0.44514093, 4.1048884, -2.375615, -0.44999996, 4.064375, -1.5503476, -0.08014092, -2.3354146, -1.4605304, 0.07992175, -2.4250755, -0.68192136, 0.48979643, -2.4450002, -0.6585922, 0.4574981, -2.4450002, -0.6200992, 0.44520757, -2.4450002, -2.5354192, -0.44514093, 3.994639, -2.4753468, -0.3651096, 3.0243096, -0.6200992, 0.5746869, -2.4450002, -0.6585922, 0.56211054, -2.4450002, -1.5503476, 0.07992175, -2.3354146, -1.3602153, 1.6599687, -1.97013, -1.2703981, 2.2699218, -1.5855846, -1.1502533, 2.2699218, -1.7051325, -1.1304235, 2.4299843, -1.5902338, -1.170083, 2.4299843, -1.5503845, -1.5200197, 2.119863, 0.2043109, -1.4651963, 2.1747415, 0.2043109, -1.1304235, 2.47, 0.18969941, -1.5200197, 2.119863, 1.5943856, -2.360451, 0.46492955, 3.25942, -2.3353722, 0.48979643, 3.25942, -2.55, -0.3302388, 3.994639, -2.55, -0.43027794, 3.994639, -0.68192136, 0.5298121, -2.4450002, -2.4753468, -0.2350587, 3.0243096, -1.4605304, 1.4198748, -1.8851182, -2.360451, 0.46492955, 3.1797218)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tyc17"]
+size = Vector3(6, 1, 6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_iff0n"]
+size = Vector3(4, 1, 5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hne8f"]
+size = Vector3(6, 2, 1)
+
+[node name="CombineCar" type="CharacterBody3D" unique_id=1106920857]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("2_combine_car")
+vehicle_config = ExtResource("3_combine_config")
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=810012108 instance=ExtResource("1_hne8f")]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=1177477048]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+target_position = Vector3(0, -2.4, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1406478508]
+
+[node name="CameraOrbitYaw" type="Node3D" parent="." unique_id=1923863279]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=1738292720]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=103923519]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 12)
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=213930956]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.1, 0.15, 1.1)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=44787705]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 1.05, -0.22)
+shape = SubResource("ConvexPolygonShape3D_tyc17")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=1490359378]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6206095, -0.828455)
+shape = SubResource("BoxShape3D_tyc17")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=769640623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.738424, -0.5849184)
+shape = SubResource("BoxShape3D_iff0n")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=222296904]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1130456751]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 1.05, -0.22)
+shape = SubResource("ConvexPolygonShape3D_tyc17")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="Hit3D" unique_id=695183788]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6206095, -0.828455)
+shape = SubResource("BoxShape3D_tyc17")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="Hit3D" unique_id=582285547]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.738424, -0.5849184)
+shape = SubResource("BoxShape3D_iff0n")
+debug_color = Color(0.83747876, 0.2774343, 0.68148816, 0.41960785)
+
+[node name="ShapeCast3D" type="ShapeCast3D" parent="." unique_id=942610404]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 5.764908)
+shape = SubResource("BoxShape3D_hne8f")
+max_results = 64
+collision_mask = 64
+
+[node name="HeadLightPos" type="Marker3D" parent="." unique_id=1077616927]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4022036, 4.494997)
+
+[node name="Light3D" type="SpotLight3D" parent="HeadLightPos"]
+rotation = Vector3(0, 3.1415927, 0)
+light_color = Color(1, 1, 1, 1)
+light_energy = 15.0
+light_indirect_energy = 0.0
+spot_range = 12.0
+spot_angle = 60.0
+spot_attenuation = 1.35
+shadow_enabled = false
+visible = false
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

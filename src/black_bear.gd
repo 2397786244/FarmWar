@@ -40,7 +40,7 @@ const NETWORK_STATES := {
 	"flee": State.FLEE,
 	"dead": State.DEAD,
 }
-const BEAR_HIDE_DROP_COUNT := 5
+const ANIMAL_HIDE_DROP_COUNT := 5
 
 @export var animal_id := ""
 @export var display_name := "黑熊"
@@ -731,9 +731,9 @@ func _die() -> void:
 			"击杀%s" % display_name
 		)
 		GameAuthority.spawn_nature_resource_drops(global_position, [{
-			"item_id": "bear_hide",
-			"count": BEAR_HIDE_DROP_COUNT,
-			"weight_kg": IngredientCatalog.get_pickup_unit_kg("bear_hide"),
+			"item_id": "animal_hide",
+			"count": ANIMAL_HIDE_DROP_COUNT,
+			"weight_kg": IngredientCatalog.get_pickup_unit_kg("animal_hide"),
 		}])
 
 

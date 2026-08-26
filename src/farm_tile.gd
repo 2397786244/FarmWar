@@ -4,7 +4,6 @@ class_name FarmTile
 const NEUTRAL_COLOR := Color(0.0, 0.0, 0.0, 0.0)
 const RED_OWNER_COLOR := Color(0.94, 0.18, 0.18, 1.0)
 const BLUE_OWNER_COLOR := Color(0.16, 0.38, 1.0, 1.0)
-const SHOW_CROP_STATUS_LABEL := false
 
 ## Shared placement templates. Add a new count here before assigning it below.
 const CROP_POSITION_PATTERNS := {
@@ -67,11 +66,13 @@ var plant_protector:Array[PlantProtector] = []
 var bug_effects:bool = false  # 
 var fertilizer_multiplier := 1.0
 var fertilizer_blocked := false
+var _crop_status_label_nearby := false
 
 func _ready() -> void:
 	add_to_group("farm_tiles")
 	get_crop_visual_manager(true)
 	Farmlandmanager.register_land(self)
+	_refresh_crop_status_label()
 	_update_owner_visual(false)
 
 
@@ -79,6 +80,27 @@ func get_crop_visual_manager(create_if_missing := true) -> FarmCropVisualManager
 	if create_if_missing:
 		return FarmCropVisualManager.get_or_create_for_node(self)
 	return FarmCropVisualManager.find_for_node(self)
+
+
+func has_crop_status_label_content() -> bool:
+	return not seed_record.is_empty() and not plant_children.is_empty()
+
+
+func set_crop_status_label_nearby(nearby: bool) -> void:
+	_crop_status_label_nearby = nearby
+	_refresh_crop_status_label()
+
+
+func _refresh_crop_status_label() -> void:
+	var label := get_node_or_null("Label3D") as Label3D
+	if label == null:
+		return
+	if not has_crop_status_label_content():
+		label.visible = false
+		label.text = ""
+		return
+	label.text = "可收获" if can_harvest else "生长中"
+	label.visible = _crop_status_label_nearby
 
 
 func _register_crop_visuals() -> void:
@@ -124,15 +146,14 @@ func step() -> void:
 		_publish_farm_tile_delta("flame")
 		
 	if seed_record.is_empty() or can_harvest:
+		_refresh_crop_status_label()
 		return
 	# freeze 不暂停作物生长。
 	var base_growth := randi_range(1, 3)
 	growth_value = mini(100, growth_value + roundi(float(base_growth) * fertilizer_multiplier))
 	if growth_value >= 100:
 		can_harvest = true
-		$Label3D.text = "可收获"
-	else:
-		$Label3D.text = "%d%%" % growth_value
+	_refresh_crop_status_label()
 	if growth_value != growth_before or can_harvest != harvest_before:
 		_publish_farm_tile_delta("growth")
 
@@ -532,8 +553,6 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 	burn_remaining = 0.0
 	burn_dps = 0.0
 	last_effect = ""
-	$Label3D.text = "0%"
-	$Label3D.visible = SHOW_CROP_STATUS_LABEL
 
 	crop_positions.clear()
 	for crop_position: Vector3 in crop_config["positions"]:
@@ -550,6 +569,7 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 		_clear_crop()
 		return false
 	_register_crop_visuals()
+	_refresh_crop_status_label()
 	if not allow_neutral:
 		claim_land(tool_owner)
 	else:
@@ -587,8 +607,6 @@ func apply_authoritative_plant(
 	current_hp = max_hp
 	bug_effects = false
 	apply_authoritative_fertilizer(1.0, false)
-	$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-	$Label3D.visible = SHOW_CROP_STATUS_LABEL
 	var positions: Array = crop_config["positions"]
 	if not authoritative_positions.is_empty():
 		positions = authoritative_positions
@@ -608,6 +626,7 @@ func apply_authoritative_plant(
 	var planted := not plant_children.is_empty()
 	if planted:
 		_register_crop_visuals()
+		_refresh_crop_status_label()
 	_notify_manager_state_changed()
 	return planted
 
@@ -637,8 +656,7 @@ func apply_authoritative_tool_destroyed() -> void:
 	var runner_home := get_node_or_null("RunnerHome")
 	if is_instance_valid(runner_home):
 		runner_home.queue_free()
-	if seed_record.is_empty():
-		$Label3D.visible = false
+	_refresh_crop_status_label()
 	_notify_manager_state_changed()
 
 
@@ -712,8 +730,7 @@ func apply_authoritative_state(state: Dictionary) -> void:
 		else:
 			growth_value = clampi(next_growth, 0, 100)
 			can_harvest = next_ready
-			$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-			$Label3D.visible = SHOW_CROP_STATUS_LABEL
+			_refresh_crop_status_label()
 	else:
 		_clear_crop()
 		if is_instance_valid(tool_child):
@@ -762,8 +779,7 @@ func apply_authoritative_delta(delta: Dictionary) -> void:
 		else:
 			growth_value = next_growth
 			can_harvest = next_ready
-			$Label3D.text = "可收获" if can_harvest else "%d%%" % growth_value
-			$Label3D.visible = SHOW_CROP_STATUS_LABEL
+			_refresh_crop_status_label()
 		current_hp = maxf(0.0, float(delta.get("current_hp", current_hp)))
 		burn_remaining = maxf(0.0, float(delta.get("burn_remaining", burn_remaining)))
 		burn_dps = maxf(0.0, float(delta.get("burn_dps", burn_dps)))
@@ -810,7 +826,7 @@ func get_farm_tile_delta(effect: String) -> Dictionary:
 
 
 func _publish_farm_tile_delta(effect: String) -> void:
-	if not GameAuthority.is_server_authority():
+	if not GameAuthority.is_server_authority() and not GameAuthority.is_local_authority():
 		return
 	farm_revision += 1
 	GameAuthority.report_farm_tile_delta(self, get_farm_tile_delta(effect))
@@ -907,8 +923,7 @@ func _clear_crop() -> void:
 	bug_effects = false
 	apply_authoritative_fertilizer(1.0, false)
 	plant_mode = "Plant"
-	$Label3D.visible = false
-	$Label3D.text = "0%"
+	_refresh_crop_status_label()
 	_notify_manager_state_changed()
 
 
@@ -922,8 +937,7 @@ func _reset_crop_for_regrowth() -> void:
 	last_effect = ""
 	apply_authoritative_fertilizer(1.0, false)
 	plant_mode = "Plant"
-	$Label3D.visible = SHOW_CROP_STATUS_LABEL
-	$Label3D.text = "0%"
+	_refresh_crop_status_label()
 	_notify_manager_state_changed()
 
 

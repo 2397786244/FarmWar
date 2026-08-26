@@ -8,6 +8,8 @@ const AUTHORITY_TICK_RATE := 60.0
 const ECLIPSE_TRIGGER_START_HOUR := 9.0
 const ECLIPSE_TRIGGER_END_HOUR := 12.0
 const ECLIPSE_LATEST_END_HOUR := 18.0
+const FORECAST_LENGTH := 7
+const WEATHER_FORECAST_SCHEMA_VERSION := 1
 
 @export_group("Scene Nodes")
 @export var day_night_system_path := NodePath("../DayNightSystem")
@@ -52,6 +54,14 @@ var _authoritative_weather_type := "clear"
 var _authoritative_weather_intensity := 0.0
 var _authoritative_eclipse_active := false
 var _authoritative_eclipse_intensity := 0.0
+var forecast_revision := 0
+var forecast_start_day := -1
+var forecast_days: Array[Dictionary] = []
+var _forecast_initialized := false
+var _authoritative_forecast_received := false
+var _authoritative_forecast_revision := -1
+var _authoritative_forecast_start_day := -1
+var _authoritative_forecast_days: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -63,12 +73,16 @@ func _ready() -> void:
 	_day_night_system = get_node_or_null(day_night_system_path)
 	_cloud_system = get_node_or_null(cloud_system_path)
 	_create_rain_particles()
+	if _is_forecast_authority():
+		_ensure_forecast_for_current_day()
 	_apply_weather_visuals()
 
 
 func _process(delta: float) -> void:
 	_fallback_elapsed += delta
 	var elapsed_seconds := _synchronized_elapsed_seconds()
+	if _is_forecast_authority():
+		_ensure_forecast_for_current_day()
 	var target_weather := (
 		_authoritative_weather_type
 		if _authoritative_weather_active
@@ -91,7 +105,7 @@ func _process(delta: float) -> void:
 			eclipse_intensity = 0.0
 		weather_changed.emit(
 			current_weather,
-			rain_intensity if current_weather == "rain" else 0.0
+			_scheduled_rain_intensity(elapsed_seconds) if current_weather == "rain" else 0.0
 		)
 		if current_weather == "rain":
 			_notify_weather_started("现在下雨了！")
@@ -100,11 +114,12 @@ func _process(delta: float) -> void:
 		if previous_eclipse_active != eclipse_active:
 			eclipse_changed.emit(eclipse_active)
 
-	var target_intensity := (
-		_authoritative_weather_intensity
-		if _authoritative_weather_active and current_weather == "rain"
-		else rain_intensity if current_weather == "rain" else 0.0
-	)
+	var target_intensity := 0.0
+	if current_weather == "rain":
+		if _authoritative_weather_active:
+			target_intensity = _authoritative_weather_intensity
+		else:
+			target_intensity = _scheduled_rain_intensity(elapsed_seconds)
 	current_intensity = move_toward(
 		current_intensity, target_intensity, delta / maxf(0.1, transition_seconds)
 	)
@@ -140,6 +155,123 @@ func get_authoritative_weather_state() -> Dictionary:
 	}
 
 
+func get_weather_app_state() -> Dictionary:
+	# This is the only weather interface the Weather application needs. The app
+	# receives a read-only, presentation-safe copy and never rolls weather on
+	# its own. Rain intensity remains internal to the environment renderer and
+	# is intentionally omitted from this response.
+	var elapsed_seconds := _synchronized_elapsed_seconds()
+	var clock := _get_world_clock_state(elapsed_seconds)
+	var current_day := int(clock.get("day_index", 0))
+	if _is_forecast_authority():
+		_ensure_forecast_for_day(current_day)
+	var forecast_state := get_weather_forecast_state()
+	var app_days: Array[Dictionary] = []
+	var source_days: Variant = forecast_state.get("forecast_days", [])
+	if source_days is Array:
+		for value: Variant in source_days:
+			if not value is Dictionary:
+				continue
+			var entry := value as Dictionary
+			var eclipse_value: Variant = entry.get("eclipse", {})
+			var eclipse := eclipse_value as Dictionary if eclipse_value is Dictionary else {}
+			app_days.append({
+				"day_index": int(entry.get("day_index", 0)),
+				"weather_type": str(entry.get("weather_type", "clear")),
+				"is_today": int(entry.get("day_index", -1)) == current_day,
+				"eclipse": {
+					"enabled": bool(eclipse.get("enabled", false)),
+					"start_hour": float(eclipse.get("start_hour", 0.0)),
+					"end_hour": float(eclipse.get("end_hour", 0.0)),
+				},
+			})
+	return {
+		"schema_version": WEATHER_FORECAST_SCHEMA_VERSION,
+		"world_day": current_day,
+		"current_hour": float(clock.get("hour", 0.0)),
+		"current_weather_type": current_weather,
+		"current_eclipse_active": eclipse_active,
+		"forecast_revision": int(forecast_state.get("forecast_revision", 0)),
+		"forecast_start_day": int(forecast_state.get("forecast_start_day", -1)),
+		"forecast_days": app_days,
+	}
+
+
+func get_weather_forecast_state() -> Dictionary:
+	var elapsed_seconds := _synchronized_elapsed_seconds()
+	var clock := _get_world_clock_state(elapsed_seconds)
+	var current_day := int(clock.get("day_index", 0))
+	if _is_forecast_authority():
+		_ensure_forecast_for_day(current_day)
+	var source_days := _active_forecast_days()
+	return {
+		"schema_version": WEATHER_FORECAST_SCHEMA_VERSION,
+		"forecast_revision": _active_forecast_revision(),
+		"forecast_start_day": _active_forecast_start_day(),
+		"forecast_days": _copy_forecast_days(source_days),
+	}
+
+
+func get_persistent_state() -> Dictionary:
+	if _is_forecast_authority():
+		_ensure_forecast_for_current_day()
+	var forecast_state := get_weather_forecast_state()
+	return {
+		"schema_version": WEATHER_FORECAST_SCHEMA_VERSION,
+		"weather_seed": weather_seed,
+		"weather_override": weather_override,
+		"clear_weather_probability": clear_weather_probability,
+		"rain_weather_probability": rain_weather_probability,
+		"eclipse_weather_probability": eclipse_weather_probability,
+		"rain_intensity": rain_intensity,
+		"forecast_revision": int(forecast_state.get("forecast_revision", 0)),
+		"forecast_start_day": int(forecast_state.get("forecast_start_day", -1)),
+		"forecast_days": forecast_state.get("forecast_days", []),
+	}
+
+
+func apply_persistent_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	if state.has("weather_seed"):
+		weather_seed = int(state.get("weather_seed", weather_seed))
+	if state.has("weather_override"):
+		set_weather_override(str(state.get("weather_override", "auto")))
+	if state.has("clear_weather_probability"):
+		clear_weather_probability = clampf(float(state.get("clear_weather_probability", clear_weather_probability)), 0.0, 1.0)
+	if state.has("rain_weather_probability"):
+		rain_weather_probability = clampf(float(state.get("rain_weather_probability", rain_weather_probability)), 0.0, 1.0)
+	if state.has("eclipse_weather_probability"):
+		eclipse_weather_probability = clampf(float(state.get("eclipse_weather_probability", eclipse_weather_probability)), 0.0, 1.0)
+	if state.has("rain_intensity"):
+		rain_intensity = clampf(float(state.get("rain_intensity", rain_intensity)), 0.1, 1.0)
+	var saved_days := _copy_forecast_days(state.get("forecast_days", []))
+	if saved_days.is_empty():
+		return
+	forecast_start_day = int(state.get("forecast_start_day", saved_days[0].get("day_index", -1)))
+	forecast_revision = maxi(1, int(state.get("forecast_revision", 1)))
+	forecast_days = saved_days
+	_forecast_initialized = true
+	if _is_forecast_authority():
+		_ensure_forecast_for_current_day()
+
+
+func apply_authoritative_forecast_state(state: Dictionary) -> void:
+	if _is_forecast_authority():
+		return
+	var incoming_revision := int(state.get("forecast_revision", -1))
+	if _authoritative_forecast_received and incoming_revision >= 0 \
+			and incoming_revision < _authoritative_forecast_revision:
+		return
+	var incoming_days := _copy_forecast_days(state.get("forecast_days", []))
+	if incoming_days.is_empty():
+		return
+	_authoritative_forecast_revision = incoming_revision
+	_authoritative_forecast_start_day = int(state.get("forecast_start_day", incoming_days[0].get("day_index", -1)))
+	_authoritative_forecast_days = incoming_days
+	_authoritative_forecast_received = true
+
+
 func apply_authoritative_weather_state(state: Dictionary) -> void:
 	_authoritative_weather_active = true
 	var requested_weather_type := str(state.get("weather_type", "clear"))
@@ -148,11 +280,7 @@ func apply_authoritative_weather_state(state: Dictionary) -> void:
 		_authoritative_weather_type = "eclipse"
 	else:
 		_authoritative_weather_type = "rain" if requested_weather_type == "rain" else "clear"
-	_authoritative_weather_intensity = clampf(
-		float(state.get("intensity", 0.0)),
-		0.0,
-		1.0
-	)
+	_authoritative_weather_intensity = clampf(float(state.get("intensity", 0.0)), 0.0, 1.0)
 	_authoritative_eclipse_active = _authoritative_weather_type == "eclipse"
 	_authoritative_eclipse_intensity = clampf(
 		float(state.get("eclipse_intensity", 1.0 if _authoritative_eclipse_active else 0.0)),
@@ -171,11 +299,19 @@ func clear_authoritative_weather_state() -> void:
 func _scheduled_weather_condition(elapsed_seconds: float) -> String:
 	var clock := _get_world_clock_state(elapsed_seconds)
 	var day_index := int(clock.get("day_index", 0))
-	var daily_weather := _daily_weather_kind(day_index)
+	var entry := _forecast_entry_for_day(day_index)
+	var daily_weather := str(entry.get("weather_type", "clear"))
 	if daily_weather != "eclipse":
 		return daily_weather
 	var scheduled_eclipse := _scheduled_eclipse(elapsed_seconds)
 	return "eclipse" if bool(scheduled_eclipse.get("active", false)) else "clear"
+
+
+func _scheduled_rain_intensity(elapsed_seconds: float) -> float:
+	var clock := _get_world_clock_state(elapsed_seconds)
+	var entry := _forecast_entry_for_day(int(clock.get("day_index", 0)))
+	return clampf(float(entry.get("rain_intensity", rain_intensity)), 0.0, 1.0) \
+		if str(entry.get("weather_type", "clear")) == "rain" else 0.0
 
 
 func _daily_weather_kind(day_index: int) -> String:
@@ -211,13 +347,12 @@ func get_weather_probabilities() -> Dictionary:
 func _scheduled_eclipse(elapsed_seconds: float) -> Dictionary:
 	var clock := _get_world_clock_state(elapsed_seconds)
 	var day_index := int(clock.get("day_index", 0))
-	var start_hour := lerpf(
-		ECLIPSE_TRIGGER_START_HOUR,
-		ECLIPSE_TRIGGER_END_HOUR,
-		_hash01(day_index, 11)
-	)
-	var end_hour := minf(ECLIPSE_LATEST_END_HOUR, start_hour + 6.0)
-	var selected_for_day := _daily_weather_kind(day_index) == "eclipse"
+	var entry := _forecast_entry_for_day(day_index)
+	var eclipse_value: Variant = entry.get("eclipse", {})
+	var eclipse := eclipse_value as Dictionary if eclipse_value is Dictionary else {}
+	var start_hour := float(eclipse.get("start_hour", ECLIPSE_TRIGGER_START_HOUR))
+	var end_hour := float(eclipse.get("end_hour", ECLIPSE_LATEST_END_HOUR))
+	var selected_for_day := str(entry.get("weather_type", "clear")) == "eclipse"
 	var current_hour := float(clock.get("hour", 0.0))
 	return {
 		"day_index": day_index,
@@ -229,17 +364,116 @@ func _scheduled_eclipse(elapsed_seconds: float) -> Dictionary:
 
 
 func get_eclipse_schedule_for_day(day_index: int) -> Dictionary:
+	var entry := _forecast_entry_for_day(day_index)
+	var eclipse_value: Variant = entry.get("eclipse", {})
+	var eclipse := eclipse_value as Dictionary if eclipse_value is Dictionary else {}
+	return {
+		"day_index": day_index,
+		"start_hour": float(eclipse.get("start_hour", ECLIPSE_TRIGGER_START_HOUR)),
+		"end_hour": float(eclipse.get("end_hour", ECLIPSE_LATEST_END_HOUR)),
+		"selected": str(entry.get("weather_type", "clear")) == "eclipse",
+	}
+
+
+func _ensure_forecast_for_current_day() -> void:
+	var clock := _get_world_clock_state(_synchronized_elapsed_seconds())
+	_ensure_forecast_for_day(int(clock.get("day_index", 0)))
+
+
+func _ensure_forecast_for_day(day_index: int) -> void:
+	if not _forecast_initialized or forecast_start_day < 0 or forecast_days.is_empty():
+		forecast_start_day = day_index
+		forecast_days.clear()
+		_forecast_initialized = true
+		forecast_revision = maxi(1, forecast_revision)
+		_fill_forecast_tail()
+		return
+	if day_index < forecast_start_day:
+		forecast_start_day = day_index
+		forecast_days.clear()
+		forecast_revision += 1
+		_fill_forecast_tail()
+		return
+	if day_index == forecast_start_day:
+		_fill_forecast_tail()
+		return
+	var days_elapsed := day_index - forecast_start_day
+	if days_elapsed >= FORECAST_LENGTH:
+		forecast_days.clear()
+	else:
+		for _index in range(days_elapsed):
+			if not forecast_days.is_empty():
+				forecast_days.pop_front()
+	forecast_start_day = day_index
+	forecast_revision += 1
+	_fill_forecast_tail()
+
+
+func _fill_forecast_tail() -> void:
+	while forecast_days.size() < FORECAST_LENGTH:
+		var next_day := forecast_start_day + forecast_days.size()
+		forecast_days.append(_generate_forecast_day(next_day))
+
+
+func _generate_forecast_day(day_index: int) -> Dictionary:
+	var weather_type := _daily_weather_kind(day_index)
+	var eclipse_enabled := weather_type == "eclipse"
 	var start_hour := lerpf(
 		ECLIPSE_TRIGGER_START_HOUR,
 		ECLIPSE_TRIGGER_END_HOUR,
 		_hash01(day_index, 11)
 	)
+	var eclipse := {
+		"enabled": eclipse_enabled,
+		"start_hour": start_hour if eclipse_enabled else 0.0,
+		"end_hour": minf(ECLIPSE_LATEST_END_HOUR, start_hour + 6.0) if eclipse_enabled else 0.0,
+	}
 	return {
 		"day_index": day_index,
-		"start_hour": start_hour,
-		"end_hour": minf(ECLIPSE_LATEST_END_HOUR, start_hour + 6.0),
-		"selected": _daily_weather_kind(day_index) == "eclipse",
+		"weather_type": weather_type,
+		"rain_intensity": rain_intensity if weather_type == "rain" else 0.0,
+		"eclipse": eclipse,
 	}
+
+
+func _forecast_entry_for_day(day_index: int) -> Dictionary:
+	for entry: Dictionary in _active_forecast_days():
+		if int(entry.get("day_index", -1)) == day_index:
+			return entry
+	# A client may render one frame before its first low-frequency snapshot. The
+	# deterministic fallback keeps the environment stable until authority data
+	# arrives; authoritative clients never use it once the forecast is received.
+	return _generate_forecast_day(day_index)
+
+
+func _active_forecast_days() -> Array[Dictionary]:
+	if _authoritative_forecast_received and not _authoritative_forecast_days.is_empty():
+		return _authoritative_forecast_days
+	return forecast_days
+
+
+func _active_forecast_revision() -> int:
+	return _authoritative_forecast_revision if _authoritative_forecast_received else forecast_revision
+
+
+func _active_forecast_start_day() -> int:
+	return _authoritative_forecast_start_day if _authoritative_forecast_received else forecast_start_day
+
+
+func _copy_forecast_days(value: Variant) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if not value is Array:
+		return result
+	for item: Variant in value:
+		if item is Dictionary:
+			result.append((item as Dictionary).duplicate(true))
+			if result.size() >= FORECAST_LENGTH:
+				break
+	return result
+
+
+func _is_forecast_authority() -> bool:
+	return GameAuthority.is_server_authority() or GameAuthority.is_local_authority()
 
 
 func _get_world_clock_state(elapsed_seconds: float) -> Dictionary:

@@ -1969,6 +1969,10 @@ func _save_authoritative_world_state(advance_elapsed := false) -> bool:
 
 
 func _capture_persistent_world_state() -> Dictionary:
+	var weather_state: Dictionary = {}
+	var weather_system := get_tree().get_first_node_in_group("weather_systems")
+	if weather_system != null and weather_system.has_method("get_persistent_state"):
+		weather_state = weather_system.call("get_persistent_state") as Dictionary
 	var farm_tiles: Array[Dictionary] = []
 	for node in get_tree().get_nodes_in_group("farm_tiles"):
 		if not node is FarmTile:
@@ -2046,6 +2050,7 @@ func _capture_persistent_world_state() -> Dictionary:
 		"placed_tools": placed_tools,
 		"livestock": livestock,
 		"stations": _capture_persistent_station_states(),
+		"weather": weather_state,
 	}
 
 
@@ -2054,7 +2059,7 @@ func _capture_persistent_station_states() -> Array[Dictionary]:
 	var groups := [
 		"ingredient_pickups", "chopping_stations", "ingredient_extractors", "auto_cookers", "stand_mixers",
 		"oven_stations", "smoker_stations", "freezer_stations", "griddle_stations",
-		"induction_counters", "plating_stations", "livestock_chops",
+		"induction_counters", "plating_stations", "livestock_chops", "computer_terminals",
 	]
 	for group_name: String in groups:
 		for node in get_tree().get_nodes_in_group(group_name):
@@ -2071,6 +2076,8 @@ func _capture_persistent_station_states() -> Array[Dictionary]:
 				state = node.call("get_mixer_state") as Dictionary
 			elif node.has_method("get_chop_state"):
 				state = node.call("get_chop_state") as Dictionary
+			elif node.has_method("get_computer_state"):
+				state = node.call("get_computer_state") as Dictionary
 			if not state.is_empty():
 				state["facility_id"] = str(node.get_meta("network_map_facility_id", ""))
 				entries.append({"group": group_name, "state": state})
@@ -2085,7 +2092,14 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 	# 仓库不依赖场景节点，先恢复它。这样 HUD、房主权威端和随后加入的
 	# 客户端在世界初始化期间就能读到同一份资金与物资。
 	_restore_saved_team_storage(world_state)
+	var weather_state: Variant = world_state.get("weather", {})
+	if weather_state is Dictionary and not (weather_state as Dictionary).is_empty():
+		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
+			if weather_system != null and weather_system.has_method("apply_persistent_state"):
+				weather_system.call("apply_persistent_state", weather_state as Dictionary)
 	if world_state.is_empty():
+		if is_instance_valid(GameAuthority) and GameAuthority.has_method("rebuild_farm_statistics"):
+			GameAuthority.rebuild_farm_statistics()
 		world_state_restored = true
 		return
 	for _frame in range(FARM_RESTORE_WAIT_FRAMES):
@@ -2103,6 +2117,8 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 	for generator_value: Variant in scene.get_tree().get_nodes_in_group("neutral_crop_generators"):
 		if is_instance_valid(generator_value) and generator_value.has_method("refresh_after_world_restore"):
 			generator_value.call("refresh_after_world_restore")
+	if is_instance_valid(GameAuthority) and GameAuthority.has_method("rebuild_farm_statistics"):
+		GameAuthority.rebuild_farm_statistics()
 	world_state_restored = true
 
 
@@ -2158,6 +2174,8 @@ func _restore_team_inventory(team: String, value: Variant) -> bool:
 			GlobalVar.team_money_changed.emit(team, restored_amount - previous_amount, restored_amount)
 		restored_any = true
 	GlobalVar.team_storage[team] = inventory
+	if restored_any:
+		GlobalVar.mark_team_storage_changed(team)
 	return restored_any
 
 
@@ -2320,6 +2338,8 @@ func _restore_persistent_stations(value: Variant) -> void:
 			station.call("apply_authoritative_mixer_state", state)
 		elif station.has_method("apply_authoritative_chop_state"):
 			station.call("apply_authoritative_chop_state", state)
+		elif station.has_method("apply_computer_state"):
+			station.call("apply_computer_state", state)
 
 
 func _find_farm_tile_for_restore(state: Dictionary) -> FarmTile:

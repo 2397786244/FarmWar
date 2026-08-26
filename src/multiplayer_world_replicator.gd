@@ -13,6 +13,7 @@ const AI_SCENES := {
 }
 const AI_NORMAL_DRONE_SCENE := preload("res://character/AIDevices/AINormalDrone.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
+const VEHICLE_EXPLOSION_SCENE := preload("res://character/weapons/VehicleExplosion.tscn")
 const GRENADE_EXPLOSION_SCENE := preload("res://character/weapons/GrenadeExplosion.tscn")
 const BUG_STORM_SCENE := preload("res://character/weapons/BugStorm.tscn")
 const MEDICINE_STORM_SCENE := preload("res://character/weapons/MedicineStorm.tscn")
@@ -62,6 +63,8 @@ const PLACED_TOOL_SCENES := {
 	"anti_air": "res://character/weapons/AntiAir.tscn",
 	"area_protector": "res://character/weapons/AreaProtector.tscn",
 	"auto_cooker": "res://character/weapons/AutomaticCook.tscn",
+	"laptop": "res://facilities/interior/laptop.tscn",
+	"desktop": "res://facilities/interior/desktop.tscn",
 	"trap": "res://character/weapons/Trap.tscn",
 	"big_mouth": "res://character/weapons/BigMouth.tscn",
 	"fake_player": "res://character/weapons/FakePlayer.tscn",
@@ -1278,6 +1281,12 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_sync_dropped_items(event.get("items", []))
 		"ingredient_pickup_action_result":
 			_apply_ingredient_pickup_action_result(event.get("data", {}))
+		"computer_action_result":
+			var computer_result: Variant = event.get("data", {})
+			if computer_result is Dictionary:
+				_apply_computer_state((computer_result as Dictionary).get("computer_state", {}))
+		"computer_state":
+			_apply_computer_state(event.get("computer_state", {}))
 		"ingredient_pickup_state":
 			_apply_ingredient_pickup_state(event.get("station_state", {}))
 		"livestock_chop_action_result":
@@ -2208,7 +2217,7 @@ func _apply_vehicle_destroyed_event(event: Dictionary) -> void:
 		vehicle.queue_free()
 	var position: Variant = event.get("position", Vector3.ZERO)
 	if position is Vector3:
-		_spawn_boom_effect(position)
+		_spawn_vehicle_explosion(position, str(event.get("explosion_variant", "four_wheel")))
 
 
 func _apply_vehicle_shield_event(event: Dictionary) -> void:
@@ -2589,6 +2598,17 @@ func _spawn_boom_effect(position: Vector3) -> void:
 	effect.global_position = position
 
 
+func _spawn_vehicle_explosion(position: Vector3, variant: String = "four_wheel") -> void:
+	if _resolve_world_root() == null:
+		return
+	var effect := VEHICLE_EXPLOSION_SCENE.instantiate() as Node3D
+	if effect == null:
+		return
+	effect.set("vehicle_variant", "two_wheel" if variant == "two_wheel" else "four_wheel")
+	world_root.add_child(effect)
+	effect.global_position = position
+
+
 func _spawn_grenade_explosion(position: Vector3) -> void:
 	if _resolve_world_root() == null:
 		return
@@ -2841,6 +2861,15 @@ func _apply_tool_respawned_event(event: Dictionary) -> void:
 
 
 func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
+	var farm_summary: Variant = snapshot.get("farm_summary", {})
+	if farm_summary is Dictionary and is_instance_valid(GameAuthority) \
+			and GameAuthority.has_method("apply_authoritative_farm_summary_state"):
+		GameAuthority.apply_authoritative_farm_summary_state(farm_summary as Dictionary)
+	var weather_forecast: Variant = snapshot.get("weather_forecast", {})
+	if weather_forecast is Dictionary and not (weather_forecast as Dictionary).is_empty():
+		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
+			if weather_system != null and weather_system.has_method("apply_authoritative_forecast_state"):
+				weather_system.call("apply_authoritative_forecast_state", weather_forecast as Dictionary)
 	var rare_resource: Variant = snapshot.get("rare_resource", {})
 	if rare_resource is Dictionary and not (rare_resource as Dictionary).is_empty():
 		_apply_rare_resource_spawned(rare_resource as Dictionary)
@@ -2861,6 +2890,10 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 			var animal: Node = wild_animal_visuals.get(animal_id, null)
 			if is_instance_valid(animal) and animal.has_method("apply_network_growth_state"):
 				animal.call("apply_network_growth_state", growth_state)
+	var computers: Variant = snapshot.get("computers", [])
+	if computers is Array:
+		for computer_state_value: Variant in computers:
+			_apply_computer_state(computer_state_value)
 	var inventory: Variant = snapshot.get("inventory", {})
 	if inventory is Dictionary:
 		_on_inventory_state_received(inventory)
@@ -2919,6 +2952,22 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 	_sync_dropped_items(snapshot.get("dropped_items", []))
 
 
+func _apply_computer_state(state_value: Variant) -> void:
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var computer_id := str(state.get("computer_id", ""))
+	var path_text := str(state.get("station_path", ""))
+	var direct := get_node_or_null(NodePath(path_text))
+	if direct is ComputerTerminal:
+		(direct as ComputerTerminal).apply_computer_state(state)
+		return
+	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
+		if node is ComputerTerminal and (node as ComputerTerminal).get_computer_id() == computer_id:
+			(node as ComputerTerminal).apply_computer_state(state)
+			return
+
+
 func _apply_nature_resource_health(state: Dictionary) -> void:
 	var resource_id := str(state.get("resource_id", ""))
 	if resource_id.is_empty():
@@ -2970,11 +3019,16 @@ func _on_inventory_state_received(state: Dictionary) -> void:
 	var teams: Variant = state.get("teams", {})
 	if teams is Dictionary:
 		GlobalVar.team_storage = (teams as Dictionary).duplicate(true)
+		var revisions_value: Variant = state.get("inventory_revisions", {})
 		for team in GlobalVar.team_storage.keys():
 			var team_data: Variant = GlobalVar.team_storage[team]
 			if team_data is Dictionary:
 				for item_name in (team_data as Dictionary).keys():
 					GlobalVar.storage_changed.emit(str(team), str(item_name), float((team_data as Dictionary).get(item_name, 0.0)))
+			if revisions_value is Dictionary and (revisions_value as Dictionary).has(team):
+				GlobalVar.apply_team_storage_revision(str(team), int((revisions_value as Dictionary).get(team, 0)))
+			else:
+				GlobalVar.mark_team_storage_changed(str(team))
 	var scores: Variant = state.get("scores", {})
 	if scores is Dictionary:
 		GlobalVar.apply_team_scores(scores as Dictionary)
@@ -3002,6 +3056,11 @@ func _disable_visual_runtime(root: Node, preserve_animation_players := false) ->
 		return
 	# Preserve the cooker animation and local interaction collision on clients.
 	if root is AutoCooker:
+		return
+	# Computers are presentation-only on remote clients, but they still need
+	# their collision and ComputerTerminal script so the local player can see the
+	# [E] prompt and request the next desktop-UI interaction pass.
+	if root is ComputerTerminal:
 		return
 	root.set_process(false)
 	root.set_physics_process(false)

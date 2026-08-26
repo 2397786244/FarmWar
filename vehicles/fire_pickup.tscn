@@ -1,0 +1,65 @@
+[gd_scene load_steps=6 format=3 uid="uid://bftnyx0yikdew"]
+
+[ext_resource type="PackedScene" uid="uid://d261m2cqhepcj" path="res://assets/vehicles/FirePickup.glb" id="1_oex6g"]
+[ext_resource type="Script" path="res://src/fire_pickup.gd" id="2_fire_pickup"]
+[ext_resource type="Resource" path="res://vehicles/fire_pickup_config.tres" id="3_fire_pickup_config"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vehicle"]
+size = Vector3(2.4, 2.2, 5.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(2.55, 2.4, 5.7)
+
+[node name="FirePickup" type="CharacterBody3D" unique_id=892877637]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("2_fire_pickup")
+vehicle_config = ExtResource("3_fire_pickup_config")
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=1737074869 instance=ExtResource("1_oex6g")]
+
+[node name="VehicleShape" type="CollisionShape3D" parent="."]
+position = Vector3(0, 1.1, 0)
+shape = SubResource("BoxShape3D_vehicle")
+
+[node name="GroundProbe" type="RayCast3D" parent="."]
+position = Vector3(0, 0.55, 0)
+target_position = Vector3(0, -1.8, 0)
+
+[node name="DriverSeat" type="Node3D" parent="."]
+position = Vector3(0, 1.2, 0.65)
+
+[node name="PassengerSeat1" type="Node3D" parent="."]
+position = Vector3(0, 1.2, -0.45)
+
+[node name="CameraOrbitYaw" type="Node3D" parent="."]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw"]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch"]
+
+[node name="ExitPoint" type="Marker3D" parent="."]
+position = Vector3(1.5, 0.1, 0)
+
+[node name="Hit3D" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D"]
+position = Vector3(0, 1.2, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[node name="HeadLightPos" type="Marker3D" parent="." unique_id=1462182553]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15232, 2.973466)
+
+[node name="Light3D" type="SpotLight3D" parent="HeadLightPos" unique_id=559349482]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+visible = false
+light_energy = 15.0
+light_indirect_energy = 0.0
+spot_range = 12.0
+spot_attenuation = 1.35
+spot_angle = 60.0
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

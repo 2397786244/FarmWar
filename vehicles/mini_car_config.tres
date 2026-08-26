@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="VehicleConfig" format=3 uid="uid://dvvysmn2h8t38"]
+
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="1_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="2_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("2_vehicle_seat")
+anchor_name = "DriverSeat"
+show_occupant = false
+exit_offset = Vector3(1.1, 0.1, 0)
+
+[sub_resource type="Resource" id="VehicleSeatConfig_passenger"]
+script = ExtResource("2_vehicle_seat")
+seat_id = "passenger_1"
+anchor_name = "PassengerSeat1"
+can_drive = false
+show_occupant = false
+exit_offset = Vector3(1.1, 0.1, 0)
+
+[resource]
+script = ExtResource("1_vehicle_config")
+forward_axis = Vector3(0, 0, 1)
+seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver"), SubResource("VehicleSeatConfig_passenger")])
+camera_offset = Vector3(0, 2.2, 5)
+camera_max_fov = 81.0
+camera_speed_for_max_fov = 6.0
+camera_orbit_target_height = 0.9
+collision_size = Vector3(1.8, 1.35, 3.3)
+collision_offset = Vector3(0, 0.7, 0)
+hitbox_size = Vector3(1.95, 1.5, 3.45)
+hitbox_offset = Vector3(0, 0.78, 0)
+wheel_radius = 0.32
+wheel_base = 1.88
+wheel_track = 1.6
+max_forward_speed = 6.0
+max_reverse_speed = 3.0
+acceleration = 4.8
+brake_deceleration = 15.0
+rolling_deceleration = 2.5
+max_steering_angle_degrees = 34.0
+min_steering_angle_degrees = 10.0
+max_hp = 600.0

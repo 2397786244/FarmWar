@@ -1,0 +1,57 @@
+[gd_scene load_steps=4 format=3 uid="uid://b41231e0onked"]
+
+[ext_resource type="PackedScene" uid="uid://bno1ockjv0cw0" path="res://assets/vehicles/ATV.glb" id="1_q2j72"]
+[ext_resource type="Script" path="res://src/atv.gd" id="2_atv"]
+[ext_resource type="Resource" path="res://vehicles/atv_config.tres" id="3_atv_config"]
+
+[node name="Atv" type="CharacterBody3D" unique_id=1801861519]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("2_atv")
+vehicle_config = ExtResource("3_atv_config")
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=2002173978 instance=ExtResource("1_q2j72")]
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=1801861520]
+position = Vector3(0, 0.4, 0)
+target_position = Vector3(0, -1.5, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1147098894]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.93764615, -0.28265753)
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=786846887]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 1.5
+polygon = PackedVector2Array(-1.1846495, 0.8866879, -1.1846495, 0.1077026, 1.1298347, 0.1002125, 1.0848932, 1.043983, -0.33825257, 1.0664535)
+
+[node name="HeadLightPos" type="Marker3D" parent="." unique_id=1649335828]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7551366, 1.3009048)
+
+[node name="Light3D" type="SpotLight3D" parent="HeadLightPos" unique_id=348723563]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+visible = false
+light_energy = 15.0
+light_indirect_energy = 0.0
+spot_range = 12.0
+spot_attenuation = 1.35
+spot_angle = 60.0
+
+[node name="CameraOrbitYaw" type="Node3D" parent="." unique_id=1801861521]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=1801861522]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=1801861523]
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=1801861524]
+position = Vector3(1.35, 0.1, 0)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=1084052323]
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="Hit3D" unique_id=1340172215]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 1.5
+polygon = PackedVector2Array(-1.1846495, 0.8866879, -1.1846495, 0.1077026, 1.1298347, 0.1002125, 1.0848932, 1.043983, -0.33825257, 1.0664535)
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=3 format=3]
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+[ext_resource type="PackedScene" path="res://computer/apps/recycle_bin/recycle_bin.tscn" id="2_recycle_bin"]
+[resource]
+script = ExtResource("1")
+app_id = "recycle_bin"
+program_id = "app_recycle_bin"
+display_name = "Recycle Bin"
+description = "ChocolateOS 回收站。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/system/recycle_bin.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/system/recycle_bin.png"
+entry_kind = "recycle_bin"
+entry_scene = ExtResource("2_recycle_bin")
+system_app = true
+removable = false
+default_grid_position = Vector2i(0, 2)

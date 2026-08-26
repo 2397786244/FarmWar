@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="VehicleConfig" format=3 uid="uid://ckiqqcy3vj71x"]
+
+[ext_resource type="Script" uid="uid://cxhcffeltsn2l" path="res://src/vehicle_config.gd" id="1_vehicle_config"]
+[ext_resource type="Script" uid="uid://cglw2go85rfp3" path="res://src/vehicle_seat_config.gd" id="2_vehicle_seat"]
+
+[sub_resource type="Resource" id="VehicleSeatConfig_driver"]
+script = ExtResource("2_vehicle_seat")
+show_occupant = false
+
+[resource]
+script = ExtResource("1_vehicle_config")
+forward_axis = Vector3(0, 0, 1)
+seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver")])
+camera_offset = Vector3(0, 5, 12)
+camera_max_fov = 82.0
+camera_speed_for_max_fov = 5.0
+camera_orbit_target_height = 2.2
+collision_size = Vector3(10.2, 5.2, 10.5)
+collision_offset = Vector3(0, 2.6, 1.2)
+hitbox_size = Vector3(10.4, 5.4, 10.7)
+hitbox_offset = Vector3(0, 2.7, 1.2)
+wheel_radius = 0.9
+wheel_base = 3.48
+wheel_track = 5.25
+max_forward_speed = 3.0
+max_reverse_speed = 3.0
+acceleration = 1.5
+brake_deceleration = 13.0
+rolling_deceleration = 2.5
+max_steering_angle_degrees = 36.0
+min_steering_angle_degrees = 8.0
+steering_response = 3.5
+max_hp = 7000.0

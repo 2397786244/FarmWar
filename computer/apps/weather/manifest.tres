@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=3 format=3]
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+[ext_resource type="PackedScene" path="res://computer/apps/weather/weather.tscn" id="2_weather"]
+[resource]
+script = ExtResource("1")
+app_id = "weather"
+program_id = "app_weather"
+display_name = "Weather"
+description = "查看当前天气、未来七天预报和日食时间。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/applications/weather.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/applications/weather.png"
+default_installed = true
+default_grid_position = Vector2i(2, 1)
+pinned_to_dock = true
+permissions = PackedStringArray("weather.read", "world_time.read")
+entry_kind = "weather"
+entry_scene = ExtResource("2_weather")

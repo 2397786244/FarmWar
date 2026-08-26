@@ -7,12 +7,17 @@ signal cargo_manifest_changed(manifest: Array[Dictionary])
 
 const GROUND_COLLISION_LAYER := 1
 const BULLET_COLLISION_LAYER := 32
-const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
+const COMBAT_BALANCE := preload("res://src/combat_balance.gd")
+const VEHICLE_EXPLOSION_SCENE := preload("res://character/weapons/VehicleExplosion.tscn")
 const VEHICLE_SHIELD_SCENE := preload("res://character/weapons/VehicleShieldBubble.tscn")
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const NETWORK_INTERPOLATION_RATE := 18.0
 const NETWORK_SNAP_DISTANCE := 6.0
 const CARGO_SLOT_COUNT := 12
+## A faster vehicle earns a wider top-speed view. The configured camera_max_fov
+## remains an optional per-vehicle ceiling, while the actual maximum forward
+## speed determines how much of that ceiling can be reached.
+const CAMERA_FOV_DEGREES_PER_MAX_SPEED := 1.5
 
 @export var vehicle_config: VehicleConfig
 @export var network_id := ""
@@ -123,6 +128,40 @@ func get_max_forward_speed() -> float:
 
 func get_max_reverse_speed() -> float:
 	return vehicle_config.max_reverse_speed if vehicle_config != null else 0.0
+
+
+## Visual destruction variants are selected here so every VehicleBase subclass
+## gets the same one-shot explosion path. TwoWheelVehicleBase overrides this
+## with a shorter plume and a smaller ground shockwave.
+func get_destruction_effect_variant() -> String:
+	return "four_wheel"
+
+
+func get_destruction_effect_radius() -> float:
+	return COMBAT_BALANCE.get_float("vehicle_explosion", "radius_four_wheel", 8.5)
+
+
+func get_destruction_effect_damage() -> float:
+	return COMBAT_BALANCE.get_float("vehicle_explosion", "damage", 500.0)
+
+
+func get_destruction_effect_knockback() -> float:
+	return COMBAT_BALANCE.get_float("vehicle_explosion", "knockback", 30.0)
+
+
+## Returns the speed-dependent driving FOV used by every VehicleBase subclass.
+## Forward maximum speed is intentionally read through get_max_forward_speed()
+## so temporary upgrades such as NitroBoost affect the view immediately.
+func get_camera_fov_for_speed(speed: float) -> float:
+	if vehicle_config == null:
+		return 72.0
+	var base_fov := vehicle_config.camera_base_fov
+	var configured_max_fov := maxf(vehicle_config.camera_max_fov, base_fov)
+	var speed_based_max_fov := base_fov + maxf(get_max_forward_speed(), 0.0) \
+		* CAMERA_FOV_DEGREES_PER_MAX_SPEED
+	var max_fov := minf(configured_max_fov, speed_based_max_fov)
+	var speed_ratio := clampf(absf(speed) / maxf(get_max_forward_speed(), 0.01), 0.0, 1.0)
+	return lerpf(base_fov, max_fov, speed_ratio)
 
 
 func simulate_authority(delta: float) -> void:
@@ -301,6 +340,25 @@ func get_seat_count() -> int:
 	return _seat_definitions().size()
 
 
+## Seats inside the normal cabin. FarmBaseVehicle overrides this view so its
+## dynamically added side/platform seats remain available to their own entry
+## interaction, but are not shown as in-cabin seats in the vehicle HUD.
+func get_cabin_seat_count() -> int:
+	return _base_seat_definitions().size()
+
+
+func get_cabin_seat_occupants() -> Array[int]:
+	var occupants: Array[int] = []
+	occupants.resize(get_cabin_seat_count())
+	for seat_index in range(occupants.size()):
+		occupants[seat_index] = int(seat_occupants.get(seat_index, 0))
+	return occupants
+
+
+func is_cabin_seat(seat_index: int) -> bool:
+	return seat_index >= 0 and seat_index < get_cabin_seat_count()
+
+
 func is_full() -> bool:
 	return seat_occupants.size() >= get_seat_count()
 
@@ -336,6 +394,27 @@ func enter_seat(peer_id: int, seat_index: int = -1) -> bool:
 	if not can_enter_seat(peer_id, requested_index):
 		return false
 	seat_occupants[requested_index] = peer_id
+	_refresh_driver_peer_id()
+	return true
+
+
+func can_switch_seat(peer_id: int, target_seat_index: int) -> bool:
+	if peer_id <= 0 or current_hp <= 0.0:
+		return false
+	var current_seat_index := get_seat_index_for_peer(peer_id)
+	return current_seat_index >= 0 \
+			and target_seat_index >= 0 \
+			and target_seat_index < get_seat_count() \
+			and target_seat_index != current_seat_index \
+			and not seat_occupants.has(target_seat_index)
+
+
+func switch_seat(peer_id: int, target_seat_index: int) -> bool:
+	if not can_switch_seat(peer_id, target_seat_index):
+		return false
+	var current_seat_index := get_seat_index_for_peer(peer_id)
+	seat_occupants.erase(current_seat_index)
+	seat_occupants[target_seat_index] = peer_id
 	_refresh_driver_peer_id()
 	return true
 
@@ -387,6 +466,12 @@ func get_seat_world_transform(seat_index: int) -> Transform3D:
 
 
 func get_occupant_world_transform(seat_index: int) -> Transform3D:
+	# Closed vehicles do not expose a visible seat anchor. Keep the hidden
+	# authoritative player proxy attached to the vehicle body instead of moving
+	# it to an arbitrary logical DriverSeat marker. Open vehicles retain the
+	# authored seat/hip offsets below.
+	if not should_show_occupant(seat_index):
+		return Transform3D(global_transform.basis.orthonormalized(), global_position)
 	var seat_transform := get_seat_world_transform(seat_index)
 	var definitions := _seat_definitions()
 	if seat_index < 0 or seat_index >= definitions.size():
@@ -419,6 +504,17 @@ func get_exit_position(seat_index: int = -1) -> Vector3:
 
 func get_driving_camera() -> Camera3D:
 	return vehicle_camera
+
+
+## World point used by player/server vehicle-entry validation. Large custom
+## vehicles can override the range without changing the shared interaction
+## pipeline.
+func get_player_interaction_position() -> Vector3:
+	return global_position
+
+
+func get_player_interaction_range() -> float:
+	return 4.0
 
 
 func get_cargo_capacity_kg() -> float:
@@ -650,11 +746,15 @@ func _apply_driving_camera_orbit() -> void:
 	)
 
 
-func _seat_definitions() -> Array[VehicleSeatConfig]:
+func _base_seat_definitions() -> Array[VehicleSeatConfig]:
 	if vehicle_config != null and not vehicle_config.seats.is_empty():
 		return vehicle_config.seats
 	var fallback := VehicleSeatConfig.new()
 	return [fallback]
+
+
+func _seat_definitions() -> Array[VehicleSeatConfig]:
+	return _base_seat_definitions()
 
 
 func _refresh_driver_peer_id() -> void:
@@ -684,6 +784,8 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	if current_hp <= 0.0:
 		GameAuthority.destroy_vehicle_with_occupants(self)
 		vehicle_destroyed.emit()
+		if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
+			_apply_destruction_explosion_damage()
 		if GameAuthority.is_local_authority():
 			_spawn_destruction_effect()
 		queue_free()
@@ -745,13 +847,25 @@ func repair(amount: float) -> float:
 	return current_hp - previous_hp
 
 
+func _apply_destruction_explosion_damage() -> void:
+	GameAuthority.apply_authoritative_vehicle_explosion(
+		global_position,
+		owner_team,
+		get_destruction_effect_damage(),
+		get_destruction_effect_radius(),
+		"VehicleExplosion",
+		get_destruction_effect_knockback()
+	)
+
+
 func _spawn_destruction_effect() -> void:
 	var world_root: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if world_root == null:
 		return
-	var effect := BOOM_EFFECT_SCENE.instantiate() as Node3D
+	var effect := VEHICLE_EXPLOSION_SCENE.instantiate() as Node3D
 	if effect == null:
 		return
+	effect.set("vehicle_variant", get_destruction_effect_variant())
 	world_root.add_child(effect)
 	effect.global_position = global_position
 
@@ -1002,7 +1116,13 @@ func _cache_seat_anchors() -> void:
 		if vehicle_config.open_cabin:
 			var default_anchor_name := "DriverSeatPoint" if seat_index == 0 else "SeatPoint_%d" % seat_index
 			var anchor_name := default_anchor_name if seat.anchor_name.is_empty() else seat.anchor_name
-			anchor = _find_visual_node(anchor_name)
+			# Open vehicles may author the seat marker directly on the gameplay
+			# scene root (for example an ATV's DriverSeat) instead of embedding a
+			# marker inside the imported Mesh scene. Prefer that authored root
+			# marker, then fall back to the visual scene for existing vehicles.
+			anchor = get_node_or_null(anchor_name) as Node3D
+			if anchor == null:
+				anchor = _find_visual_node(anchor_name)
 			if anchor == null:
 				push_warning("Open vehicle is missing seat anchor %s." % anchor_name)
 		seat_anchors.append(anchor)
@@ -1027,8 +1147,7 @@ func _update_vehicle_visuals(delta: float) -> void:
 		steering_wheel.basis = _steering_wheel_rest_basis
 		var axis := vehicle_config.steering_wheel_axis.normalized()
 		steering_wheel.rotate_object_local(axis, _vehicle_turn_angle() * 3.0)
-	var speed_ratio := clampf(absf(current_speed) / maxf(vehicle_config.camera_speed_for_max_fov, 0.01), 0.0, 1.0)
-	var target_fov := lerpf(vehicle_config.camera_base_fov, vehicle_config.camera_max_fov, speed_ratio)
+	var target_fov := get_camera_fov_for_speed(current_speed)
 	vehicle_camera.fov = lerpf(vehicle_camera.fov, target_fov, 1.0 - exp(-vehicle_config.camera_fov_response * maxf(delta, 0.0)))
 
 
@@ -1068,5 +1187,23 @@ func _on_hit_3d_body_entered(body: Node3D) -> void:
 		return
 	var strength := float(strength_value) if strength_value != null else 10.0
 	var attacker_team := str(body.get("bullet_owner"))
-	if impact(str(body.get("bullet_effect")), strength, attacker_team):
+	var effect := str(body.get("bullet_effect"))
+	var target_team := owner_team
+	if GameAuthority.has_method("_vehicle_team"):
+		var resolved_team: Variant = GameAuthority.call("_vehicle_team", self)
+		if resolved_team is String:
+			target_team = resolved_team as String
+	var attacker_peer_id := 0
+	if body.has_method("get_bullet_shooter"):
+		var shooter: Variant = body.call("get_bullet_shooter")
+		if shooter is Node:
+			attacker_peer_id = GameAuthority.get_authority_player_peer_id(shooter as Node)
+	attacker_peer_id = GameAuthority.resolve_attacker_peer_id(attacker_team, attacker_peer_id)
+	if impact(effect, strength, attacker_team):
+		if attacker_peer_id > 0 and GameAuthority.should_show_player_hit_confirmation(
+			attacker_team, target_team
+		):
+			GameAuthority.call(
+				"_emit_hit_confirmed", attacker_peer_id, 1, strength, effect
+			)
 		body.queue_free()

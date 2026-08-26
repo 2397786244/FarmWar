@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=2 format=3]
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+[resource]
+script = ExtResource("1")
+app_id = "settings"
+program_id = "app_settings"
+display_name = "Settings"
+description = "管理 ChocolateOS 和已安装应用。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/system/settings.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/system/settings.png"
+entry_kind = "settings"
+system_app = true
+removable = false
+default_grid_position = Vector2i(1, 1)
+pinned_to_dock = true

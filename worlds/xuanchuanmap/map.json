@@ -2,7 +2,7 @@
   "content": {
     "ai_configuration": [],
     "ai_count": 0,
-    "building_count": 45,
+    "building_count": 57,
     "defense_facility_count": 0,
     "editor_objects": "editor_objects.dat",
     "facility_count": 0,
@@ -11,13 +11,14 @@
     "kitchen_facility_count": 0,
     "manual_grass": "manual_grass.dat",
     "neutral_crop_generator_count": 2,
-    "ore_count": 11,
-    "promotional_dummy_count": 5,
+    "ore_count": 28,
+    "promotional_dummy_count": 13,
+    "promotional_vehicle_driver_dummy_count": 1,
     "road_count": 1,
     "roads": "roads.dat",
     "spawn_count": 2,
     "squad_generator_count": 0,
-    "tree_count": 133,
+    "tree_count": 175,
     "water_bodies": "water_bodies.dat",
     "water_count": 0,
     "zombie_generator_count": 0
@@ -33,6 +34,7 @@
     "neutral_crop_generators_enabled": true,
     "object_transform_enabled": true,
     "promotional_dummies_enabled": true,
+    "promotional_vehicle_driver_dummies_enabled": true,
     "size_aware_far_scenery": true,
     "water_bodies_enabled": true,
     "weather_settings_enabled": true,
@@ -49,13 +51,13 @@
   },
   "surface_colors": [
     {
-      "color": "14311b",
+      "color": "051c0b",
       "id": 0,
       "name": "Grass",
       "roughness": 0.95
     },
     {
-      "color": "9c5f2d",
+      "color": "6d411d",
       "id": 1,
       "name": "Soil",
       "roughness": 0.98
@@ -71,6 +73,12 @@
       "id": 3,
       "name": "Country Gravel",
       "roughness": 0.98
+    },
+    {
+      "color": "816328",
+      "id": 4,
+      "name": "Surface 4",
+      "roughness": 0.9
     }
   ],
   "template": "creston_town",

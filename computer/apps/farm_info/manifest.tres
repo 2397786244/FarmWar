@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=3 format=3]
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1"]
+[ext_resource type="PackedScene" path="res://computer/apps/farm_info/farm_info.tscn" id="2_farm_info"]
+[resource]
+script = ExtResource("1")
+app_id = "farm_info"
+program_id = "app_farm_info"
+display_name = "Farm Info"
+description = "查看农场信息和生产概况。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/applications/farm_info.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/applications/farm_info.png"
+entry_kind = "farm_info"
+entry_scene = ExtResource("2_farm_info")
+default_installed = true
+default_grid_position = Vector2i(2, 0)
+pinned_to_dock = true
+permissions = PackedStringArray("farm.read")

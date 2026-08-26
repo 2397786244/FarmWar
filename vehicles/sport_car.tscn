@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://qftth1kp5l1j"]
+
+[ext_resource type="PackedScene" uid="uid://c8dlh6wrlequ3" path="res://assets/vehicles/SportCar.glb" id="1_khbgu"]
+[ext_resource type="Script" uid="uid://0likf0qv5erb" path="res://src/sport_car.gd" id="2_sport_car"]
+[ext_resource type="Resource" path="res://vehicles/sport_car_config.tres" id="3_sport_car_config"]
+
+[node name="SportCar" type="CharacterBody3D" unique_id=2142576013]
+collision_layer = 8192
+collision_mask = 12427
+script = ExtResource("2_sport_car")
+vehicle_config = ExtResource("3_sport_car_config")
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=290676832 instance=ExtResource("1_khbgu")]
+
+[node name="GroundProbe" type="RayCast3D" parent="." unique_id=470266419]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+target_position = Vector3(0, -1.5, 0)
+
+[node name="DriverSeat" type="Node3D" parent="." unique_id=1346945221]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.35)
+
+[node name="PassengerSeat1" type="Node3D" parent="." unique_id=1337249641]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -0.35)
+
+[node name="CameraOrbitYaw" type="Node3D" parent="." unique_id=829328250]
+
+[node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=1535869812]
+
+[node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=1115961515]
+fov = 72.0
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=2075417994]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.3, 0.1, 0)
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1818613840]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 1.6
+polygon = PackedVector2Array(-1.9736786, 0.7789851, -1.9736786, 0.119843885, 1.9811692, 0.0973731, 1.9586978, 1.0036924, 0.75276905, 0.9962021, 0.5505329, 1.303302, -0.25841334, 1.2958118, -0.6254353, 0.9512607)
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=2127388060]
+
+[node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="Hit3D" unique_id=728198107]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+depth = 1.6
+polygon = PackedVector2Array(-1.9736786, 0.7789851, -1.9736786, 0.119843885, 1.9811692, 0.0973731, 1.9586978, 1.0036924, 0.75276905, 0.9962021, 0.5505329, 1.303302, -0.25841334, 1.2958118, -0.6254353, 0.9512607)
+
+[node name="HeadLightPos" type="Marker3D" parent="." unique_id=85708852]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6954279, 2.2150745)
+
+[node name="Light3D" type="SpotLight3D" parent="HeadLightPos" unique_id=1311944577]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+visible = false
+light_energy = 10.0
+light_indirect_energy = 0.0
+spot_range = 12.0
+spot_attenuation = 1.35
+spot_angle = 60.0
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]

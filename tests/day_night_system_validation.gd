@@ -17,6 +17,13 @@ func _run_validation() -> void:
 	assert(system._is_hour_in_wrapped_range(0.0, 19.0, 5.0))
 	assert(not system._is_hour_in_wrapped_range(18.99, 19.0, 5.0))
 	assert(not system._is_hour_in_wrapped_range(5.0, 19.0, 5.0))
+	system.initial_hour = 18.25
+	system.refresh_time_of_day()
+	assert(absf(system.get_current_hour() - 18.25) < 0.01)
+	system.initial_hour = 24.5
+	system.refresh_time_of_day()
+	assert(absf(system.initial_hour - 0.5) < 0.01)
+	assert(absf(system.get_current_hour() - 0.5) < 0.01)
 
 	var lamp_scene := load("res://buildings/StreetLampStraight.tscn") as PackedScene
 	assert(lamp_scene != null)
