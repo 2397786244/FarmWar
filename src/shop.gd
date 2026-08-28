@@ -35,6 +35,20 @@ func allows_product(item_name: String) -> bool:
 		and str(product.get("shop_category", "general")) == shop_category
 
 
+func can_buy_product(item_name: String) -> bool:
+	var product := GlobalVar.get_shop_product(item_name)
+	return not product.is_empty() \
+		and allows_product(item_name) \
+		and GlobalVar.is_shop_product_buyable(shop_category, item_name, product)
+
+
+func can_sell_product(item_name: String) -> bool:
+	var product := GlobalVar.get_shop_product(item_name)
+	return not product.is_empty() \
+		and allows_product(item_name) \
+		and GlobalVar.is_shop_product_sellable(shop_category, item_name, product)
+
+
 func buy(team: String, item_name: String, amount: float = 1.0) -> bool:
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_shop_transaction({
@@ -47,7 +61,7 @@ func buy(team: String, item_name: String, amount: float = 1.0) -> bool:
 	if amount <= 0:
 		return false
 	var product: Dictionary = GlobalVar.get_shop_product(item_name)
-	if product.is_empty() or not allows_product(item_name) or not bool(product.get("can_buy", false)):
+	if not can_buy_product(item_name):
 		return false
 
 	var total_price := roundi(float(product["buy_price"]) * amount)
@@ -75,7 +89,7 @@ func sell(team: String, item_name: String, amount: float = 1.0) -> bool:
 	if amount <= 0:
 		return false
 	var product: Dictionary = GlobalVar.get_shop_product(item_name)
-	if product.is_empty() or not allows_product(item_name) or not bool(product.get("can_sell", false)):
+	if not can_sell_product(item_name):
 		return false
 	if GlobalVar.check_team_item_amount(team, item_name) < amount:
 		return false

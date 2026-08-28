@@ -291,7 +291,7 @@ func _physics_process(delta: float) -> void:
 func _create_required_runtime_nodes() -> void:
 	# 与现有 GamePlayer / AIPlayer 的实体和受击层保持一致。
 	collision_layer = 8
-	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL
+	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL | GameAuthority.COLLISION_LAYER_VEHICLES
 
 	head = _ensure_node3d(self, "Head")
 	head.position = Vector3(0.0, 1.7080579, -0.45418245)
@@ -914,9 +914,13 @@ func _plant_target_tile(tile: Node3D) -> bool:
 		held_tool.call("emit")
 
 	# 某些 SproutBlaster 依赖玩家 UI 中的种子选择。AI 没有该 UI 时，
-	# 只有在 emit 后地块仍为空才使用 FarmTile.plant() 兼容回退。
+	# 只有在 emit 后地块仍为空才使用同一套“种植并扣款”回退，避免 AI
+	# 绕过 SproutBlaster 的种植成本直接调用 FarmTile.plant()。
 	var success := not str(tile.get("seed_record")).is_empty()
-	if not success and tile.has_method("plant"):
+	var sprout_cost_handler := held_tool.has_method("_try_plant_with_cost")
+	if not success and sprout_cost_handler and tile is FarmTile:
+		success = bool(held_tool.call("_try_plant_with_cost", tile as FarmTile, seed_name))
+	if not success and not sprout_cost_handler and tile.has_method("plant"):
 		var plant_result: Variant = tile.call("plant", seed_name, team_id)
 		success = true if plant_result == null else bool(plant_result)
 
@@ -2242,7 +2246,7 @@ func _respawn_at_team_spawn() -> void:
 	was_on_floor = true
 	state = AIState.THINK
 	collision_layer = 8
-	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL
+	collision_mask = 519 | GameAuthority.COLLISION_LAYER_TOOL | GameAuthority.COLLISION_LAYER_VEHICLES
 	if main_collision_shape != null:
 		main_collision_shape.set_deferred("disabled", false)
 	if hit_collision_shape != null:

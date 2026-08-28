@@ -6,6 +6,8 @@ signal computer_interface_requested(computer: ComputerTerminal)
 const VEHICLE_INTERACTION_OUTLINE_SCRIPT := preload("res://src/vehicle_interaction_outline.gd")
 const VEHICLE_SEAT_HUD_SCRIPT := preload("res://src/vehicle_seat_hud.gd")
 const CHOCOLATE_OS_DESKTOP_SCENE := preload("res://ui/chocolate_os_desktop.tscn")
+const INDUSTRIAL_WORKBENCH_PAGE_SCENE := preload("res://ui/industrial_workbench_page.tscn")
+const SPROUT_SEED_SELECTOR_SCENE := preload("res://ui/sprout_seed_selector.tscn")
 @onready var camera = $Head/Camera3D
 @onready var Head = $Head
 @onready var world_post_process: ColorRect = $EffectLayer/WorldPostProcess
@@ -173,6 +175,7 @@ var hit_marker_tween: Tween
 var last_hit_confirmation_id := 0
 var cooldown_ring: Control
 var vehicle_seat_hud: Control
+var sprout_seed_selector: SproutSeedSelector
 var health_root: PanelContainer
 var health_bar: ProgressBar
 var health_label: Label
@@ -331,6 +334,7 @@ var _mounted_machine_gun_collision_vehicle: VehicleBase
 @onready var game_exit_dialog: Node = $SubViewport/GameExitDialog
 
 var _suppress_esc_mouse_release := false
+var industrial_workbench_page: Node
 
 func _load_tool_definitions() -> bool:
 	tool_definitions.clear()
@@ -806,10 +810,18 @@ func get_backpack_item(index: int) -> Dictionary:
 		else:
 			result["detail"] = "道具"
 	elif str(result.get("kind", "")) == "ingredient":
-		var ingredient_definition := IngredientCatalog.get_definition(str(result.get("ingredient_id", "")))
+		var ingredient_id := str(result.get("ingredient_id", ""))
+		var ingredient_definition := IngredientCatalog.get_definition(ingredient_id)
 		var ingredient_name := str(ingredient_definition.get("display_name", result.get("display_name", result.get("ingredient_id", "食材"))))
 		result["display_name"] = "切碎的" + ingredient_name if _is_chopped_ingredient_item(result) else ingredient_name
-		result["detail"] = "%.2f kg" % float(result.get("weight_kg", 0.0))
+		if ingredient_id == "hard_drive":
+			var drive_program_id := str(result.get("program_id", "")).strip_edges()
+			var drive_state := "空白"
+			if not drive_program_id.is_empty():
+				drive_state = HardDriveProgramCatalog.display_name_for(drive_program_id)
+			result["detail"] = "%s | %.2f kg" % [drive_state, float(result.get("weight_kg", 0.0))]
+		else:
+			result["detail"] = "%.2f kg" % float(result.get("weight_kg", 0.0))
 	elif str(result.get("kind", "")) == "dish":
 		var dish_definition := DishCatalog.get_definition(str(result.get("dish_id", "")))
 		result["display_name"] = str(dish_definition.get("display_name", result.get("dish_id", "成品菜")))
@@ -845,6 +857,9 @@ func split_backpack_item_unit(from_index: int, to_index: int, requested_weight_k
 			or to_index >= backpack_items.size() or from_index == to_index:
 		return false
 	var source := backpack_items[from_index]
+	if str(source.get("kind", "")) == "ingredient" \
+			and str(source.get("ingredient_id", "")) == "hard_drive":
+		return false
 	var target := backpack_items[to_index]
 	var piece := UnitWeightItem.make_piece(source, requested_weight_kg)
 	if piece.is_empty() or (not target.is_empty() and not UnitWeightItem.can_merge(target, piece)):
@@ -856,9 +871,44 @@ func split_backpack_item_unit(from_index: int, to_index: int, requested_weight_k
 	return true
 
 
-func add_personal_ingredient(ingredient_id: String, weight_kg: float, is_chopped := false) -> bool:
+func add_personal_ingredient(
+		ingredient_id: String,
+		weight_kg: float,
+		is_chopped := false,
+		program_id := "",
+		drive_instance_id := ""
+) -> bool:
 	if ingredient_id.is_empty() or weight_kg <= 0.0 or not can_add_personal_ingredient(ingredient_id, weight_kg, is_chopped):
 		return false
+	if ingredient_id == "hard_drive":
+		var unit_weight := maxf(0.001, IngredientCatalog.get_pickup_unit_kg("hard_drive"))
+		var remaining_weight := weight_kg
+		var first_drive := true
+		while remaining_weight > 0.0001:
+			var inserted := false
+			for index in range(backpack_items.size()):
+				if not backpack_items[index].is_empty():
+					continue
+				var drive_item := {
+					"kind": "ingredient",
+					"ingredient_id": "hard_drive",
+					"display_name": "硬盘",
+					"weight_kg": minf(unit_weight, remaining_weight),
+					"is_chopped": false,
+				}
+				if first_drive and not program_id.strip_edges().is_empty():
+					drive_item["program_id"] = program_id.strip_edges()
+				if first_drive and not drive_instance_id.strip_edges().is_empty():
+					drive_item["drive_instance_id"] = drive_instance_id.strip_edges()
+				backpack_items[index] = drive_item
+				remaining_weight -= unit_weight
+				first_drive = false
+				inserted = true
+				break
+			if not inserted:
+				return false
+		_refresh_selected_item_after_inventory_change()
+		return true
 	for index in range(backpack_items.size()):
 		var item := backpack_items[index]
 		if str(item.get("kind", "")) == "ingredient" and str(item.get("ingredient_id", "")) == ingredient_id \
@@ -1008,7 +1058,9 @@ func apply_test_backpack_grant(entries: Array) -> void:
 				add_personal_ingredient(
 					str(entry.get("ingredient_id", entry.get("id", ""))),
 					float(entry.get("weight_kg", 0.0)),
-					bool(entry.get("is_chopped", false))
+					bool(entry.get("is_chopped", false)),
+					str(entry.get("program_id", "")),
+					str(entry.get("drive_instance_id", ""))
 				)
 			"dish":
 				add_personal_dish(
@@ -1213,7 +1265,9 @@ func apply_authoritative_dropped_item_action_result(result: Dictionary) -> void:
 				add_personal_ingredient(
 					str(item.get("ingredient_id", "")),
 					float(item.get("weight_kg", 0.0)),
-					bool(item.get("is_chopped", false))
+					bool(item.get("is_chopped", false)),
+					str(item.get("program_id", "")),
+					str(item.get("drive_instance_id", ""))
 				)
 			elif str(item.get("kind", "")) == "dish":
 				add_personal_dish(
@@ -1413,9 +1467,15 @@ func _backpack_items_match(first: Dictionary, second: Dictionary) -> bool:
 			return first_instance.is_empty() or second_instance.is_empty() or first_instance == second_instance
 		return true
 	if kind == "ingredient":
-		return str(first.get("ingredient_id", "")) == str(second.get("ingredient_id", "")) \
-				and _is_chopped_ingredient_item(first) == bool(second.get("is_chopped", false)) \
-				and is_equal_approx(float(first.get("weight_kg", 0.0)), float(second.get("weight_kg", 0.0)))
+		if str(first.get("ingredient_id", "")) != str(second.get("ingredient_id", "")) \
+				or _is_chopped_ingredient_item(first) != bool(second.get("is_chopped", false)) \
+				or not is_equal_approx(float(first.get("weight_kg", 0.0)), float(second.get("weight_kg", 0.0))):
+			return false
+		if str(first.get("ingredient_id", "")) == "hard_drive":
+			var first_drive_id := str(first.get("drive_instance_id", ""))
+			var second_drive_id := str(second.get("drive_instance_id", ""))
+			return first_drive_id.is_empty() or second_drive_id.is_empty() or first_drive_id == second_drive_id
+		return true
 	if kind == "dish":
 		return str(first.get("dish_id", "")) == str(second.get("dish_id", "")) \
 				and int(first.get("servings", 0)) == int(second.get("servings", 0)) \
@@ -1466,6 +1526,15 @@ func remove_personal_ingredient_by_type(ingredient_id: String, weight_kg: float,
 func can_add_personal_ingredient(ingredient_id: String, weight_kg: float, is_chopped := false) -> bool:
 	if ingredient_id.is_empty() or weight_kg <= 0.0:
 		return false
+	if ingredient_id == "hard_drive":
+		var unit_weight := maxf(0.001, IngredientCatalog.get_pickup_unit_kg("hard_drive"))
+		var required_slots := maxi(1, ceili(weight_kg / unit_weight - 0.0001))
+		var empty_slots := 0
+		for item: Dictionary in backpack_items:
+			if item.is_empty():
+				empty_slots += 1
+		return empty_slots >= required_slots \
+			and get_personal_bag_weight_kg() + weight_kg <= get_personal_bag_capacity_kg() + 0.001
 	for index in range(backpack_items.size()):
 		var item := backpack_items[index]
 		if str(item.get("kind", "")) == "ingredient" and str(item.get("ingredient_id", "")) == ingredient_id \
@@ -1604,6 +1673,7 @@ func _ready() -> void:
 		if is_instance_valid(event_task_hud):
 			event_task_hud.bind_player(self)
 		_create_health_ui()
+		_create_sprout_seed_selector()
 		_create_control_status_ui()
 		_create_vehicle_seat_hud()
 		_create_match_timer_ui()
@@ -1636,6 +1706,9 @@ func _ready() -> void:
 		computer_desktop.name = "ChocolateOSDesktop"
 		$SubViewport.add_child(computer_desktop)
 		computer_desktop.closed.connect(_on_computer_desktop_closed)
+		industrial_workbench_page = INDUSTRIAL_WORKBENCH_PAGE_SCENE.instantiate()
+		industrial_workbench_page.name = "IndustrialWorkbenchPage"
+		$SubViewport.add_child(industrial_workbench_page)
 		_ensure_tranquilizer_overlay()
 		team_chat_panel.bind_player(self)
 		game_exit_dialog.resume_requested.connect(_close_game_exit_dialog)
@@ -2023,6 +2096,7 @@ func _close_active_ui_for_escape() -> bool:
 		stand_mixer_page,
 		ingredient_extractor_page,
 		auto_cooker_page,
+		industrial_workbench_page,
 	]
 	for page: Node in closable_pages:
 		if is_instance_valid(page) and page.has_method("is_open") \
@@ -2041,7 +2115,9 @@ func _inventory_ui_blocks_gameplay_actions() -> bool:
 		or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
 		or (is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open()) \
 		or (is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open()) \
-		or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open())
+		or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open()) \
+		or (is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("is_open") \
+			and bool(industrial_workbench_page.call("is_open")))
 
 
 func _chat_input_captures_gameplay() -> bool:
@@ -2076,7 +2152,6 @@ func is_chat_input_active() -> bool:
 func _input(event: InputEvent) -> void:
 	if is_remote_proxy:
 		return
-	var text_input_focused := bool(team_chat_panel.call("is_text_input_focused"))
 	var modified_talk := bool(team_chat_panel.call("is_modified_talk_event", event))
 	if modified_talk:
 		team_chat_panel.toggle_chat()
@@ -2084,11 +2159,9 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if _chat_input_captures_gameplay():
-		if event.is_action_pressed("esc", false):
-			team_chat_panel.close_chat()
-			_update_crosshair_visibility()
-			get_viewport().set_input_as_handled()
-		elif event.is_action_pressed("enter", false):
+		# Ctrl+Y is the only chat state shortcut. ESC is intentionally left
+		# available to the active gameplay UI; it no longer closes chat here.
+		if event.is_action_pressed("enter", false):
 			team_chat_panel.submit_current_text()
 			get_viewport().set_input_as_handled()
 		return
@@ -2130,11 +2203,6 @@ func _input(event: InputEvent) -> void:
 		if event.is_action_pressed("interact", false):
 			government_notice_page.close()
 			get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("talk", false) and not text_input_focused:
-		team_chat_panel.toggle_chat()
-		_update_crosshair_visibility()
-		get_viewport().set_input_as_handled()
 		return
 	if is_respawning:
 		return
@@ -2311,10 +2379,12 @@ func _input(event: InputEvent) -> void:
 		return
 	if remote_is_active:
 		return
-	if event.is_action_pressed("second_action", false) and not player_backpack.is_open():
-		if _cycle_sprout_blaster_seed():
+	if event is InputEventKey and event.pressed and not event.echo and _is_sprout_blaster_selected():
+		var seed_direction := _sprout_seed_direction_from_key(event)
+		if seed_direction != 0:
+			_cycle_sprout_blaster_seed(seed_direction)
 			get_viewport().set_input_as_handled()
-		return
+			return
 	if event.is_action_pressed(SWIM_DIVE_INPUT_ACTION, false) and not player_backpack.is_open():
 		# The mapped prone action is the dive input while the player's body is in
 		# water. Do not
@@ -2545,7 +2615,23 @@ func _get_selected_sprout_seed_id() -> String:
 	return seed_id if IngredientCatalog.is_plantable(seed_id) else _default_sprout_seed_id()
 
 
-func _cycle_sprout_blaster_seed() -> bool:
+func _is_sprout_blaster_selected() -> bool:
+	if current_tool_index < 0 or current_tool_index >= backpack_items.size():
+		return false
+	var item := backpack_items[current_tool_index]
+	return str(item.get("kind", "")) == "tool" \
+		and str(item.get("tool_id", "")) == "sprout_blaster"
+
+
+func _sprout_seed_direction_from_key(event: InputEventKey) -> int:
+	if event.physical_keycode == KEY_LEFT or event.keycode == KEY_LEFT:
+		return -1
+	if event.physical_keycode == KEY_RIGHT or event.keycode == KEY_RIGHT:
+		return 1
+	return 0
+
+
+func _cycle_sprout_blaster_seed(direction: int = 1) -> bool:
 	if is_prone or vehicle_is_active or remote_is_active or is_respawning \
 			or current_tool_index < 0 or current_tool_index >= backpack_items.size():
 		return false
@@ -2558,12 +2644,15 @@ func _cycle_sprout_blaster_seed() -> bool:
 		return false
 	var current_seed := _get_selected_sprout_seed_id()
 	var current_index := seed_ids.find(current_seed)
-	var next_seed := seed_ids[wrapi(current_index + 1, 0, seed_ids.size())]
+	if current_index < 0:
+		current_index = 0
+	var next_seed := seed_ids[wrapi(current_index + direction, 0, seed_ids.size())]
 	item["selected_seed_id"] = next_seed
 	backpack_items[current_tool_index] = item
 	if is_instance_valid(tool_node):
 		tool_node.set("selected_seed_id", next_seed)
 	_update_ammo_ui()
+	_update_sprout_seed_selector()
 	return true
 
 
@@ -2643,6 +2732,20 @@ func _request_vehicle_enter(vehicle: VehicleBase, requested_seat_index := -1) ->
 				"vehicle_id": vehicle_id,
 				"seat_index": seat_index,
 			}, vehicle)
+
+
+func _request_vehicle_upright(vehicle: VehicleBase) -> void:
+	if vehicle_is_active or mounted_machine_gun_is_active or remote_is_active \
+			or vehicle == null or not vehicle.can_be_uprighted():
+		return
+	var action := {
+		"vehicle_id": vehicle.get_vehicle_id(),
+		"action": "upright_vehicle",
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_vehicle_action(action)
+	elif _is_authority_local_player():
+		GameAuthority.local_vehicle_action(authority_peer_id, action)
 
 
 func _request_mounted_machine_gun_enter(vehicle: FarmBaseVehicle) -> void:
@@ -5355,6 +5458,19 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		if computer_state_value is Dictionary:
 			_apply_computer_state_to_world(computer_state_value as Dictionary)
 		return
+	if event_type == "industrial_workbench_action_result":
+		var industrial_result_value: Variant = event.get("data", {})
+		if industrial_result_value is Dictionary \
+				and int((industrial_result_value as Dictionary).get("peer_id", 0)) == authority_peer_id:
+			apply_authoritative_industrial_workbench_action_result(industrial_result_value as Dictionary)
+		return
+	if event_type == "industrial_workbench_state":
+		var industrial_state_value: Variant = event.get("station_state", {})
+		if industrial_state_value is Dictionary:
+			_apply_industrial_workbench_state(industrial_state_value as Dictionary)
+			if is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("refresh_if_open"):
+				industrial_workbench_page.call("refresh_if_open")
+		return
 	if event_type == "ladder_action_result":
 		var ladder_result: Variant = event.get("data", {})
 		if ladder_result is Dictionary \
@@ -5453,6 +5569,9 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		if data_value is Dictionary:
 			var data := data_value as Dictionary
 			if int(data.get("peer_id", 0)) == authority_peer_id:
+				if str(data.get("tool_id", "")) == "sprout_blaster" \
+						and str(data.get("farm_action", "")) == "plant":
+					_show_sprout_plant_result_notice(data)
 				var slots_value: Variant = data.get("player_slots", null)
 				if slots_value is Array:
 					apply_cargo_backpack_slots(slots_value as Array)
@@ -5546,6 +5665,28 @@ func _on_authority_world_event(event: Dictionary) -> void:
 			return
 		last_hit_confirmation_id = confirmation_id
 	show_hit_marker()
+
+
+func _show_sprout_plant_result_notice(result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		return
+	var seed_id := str(result.get("seed_id", ""))
+	var seed_definition := IngredientCatalog.get_definition(seed_id)
+	var seed_name := str(seed_definition.get("display_name", seed_id))
+	var cost := int(result.get("planting_cost", 0))
+	match str(result.get("reason", "")):
+		"insufficient_money":
+			show_gameplay_notice("队伍金钱不足，播种%s需要%d金币" % [seed_name, cost])
+		"farm_tile_occupied":
+			show_gameplay_notice("这块土地已有作物或工具，无法播种")
+		"no_farm_tile":
+			show_gameplay_notice("只能在农田地块上播种")
+		"invalid_seed_id":
+			show_gameplay_notice("当前选择的作物无法播种")
+		"plant_failed":
+			show_gameplay_notice("播种失败，队伍金钱已退回")
+		_:
+			show_gameplay_notice("播种失败：%s" % str(result.get("reason", "未知原因")))
 
 
 func apply_authoritative_shop_dish_transaction(result: Dictionary) -> void:
@@ -5709,6 +5850,93 @@ func _update_cooldown_ring() -> void:
 		if current_tool_index < tool_definitions.size():
 			duration = float(tool_definitions[current_tool_index].get("cooldown", 0.0))
 	cooldown_ring.call("set_cooldown", remaining, duration)
+
+
+func _create_sprout_seed_selector() -> void:
+	if is_instance_valid(sprout_seed_selector):
+		return
+	sprout_seed_selector = SPROUT_SEED_SELECTOR_SCENE.instantiate() as SproutSeedSelector
+	if not is_instance_valid(sprout_seed_selector):
+		return
+	sprout_seed_selector.name = "SproutSeedSelector"
+	$SubViewport.add_child(sprout_seed_selector)
+	_update_sprout_seed_selector()
+
+
+func _update_sprout_seed_selector() -> void:
+	if not is_instance_valid(sprout_seed_selector):
+		return
+	var blocked := is_remote_proxy or is_respawning or is_prone \
+		or vehicle_is_active or remote_is_active or mounted_machine_gun_is_active
+	if is_instance_valid(player_backpack) and player_backpack.is_open():
+		blocked = true
+	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
+		blocked = true
+	if is_instance_valid(game_exit_dialog) and game_exit_dialog.is_open():
+		blocked = true
+	if is_instance_valid(team_chat_panel) and team_chat_panel.has_method("is_input_capturing") \
+			and bool(team_chat_panel.call("is_input_capturing")):
+		blocked = true
+	if is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("is_open") \
+			and bool(industrial_workbench_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(vehicle_upgrade_page) and vehicle_upgrade_page.has_method("is_open") \
+			and bool(vehicle_upgrade_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(ingredient_pickup_page) and ingredient_pickup_page.has_method("is_open") \
+			and bool(ingredient_pickup_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(plating_station_page) and plating_station_page.has_method("is_open") \
+			and bool(plating_station_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(oven_page) and oven_page.has_method("is_open") \
+			and bool(oven_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(griddle_station_page) and griddle_station_page.has_method("is_open") \
+			and bool(griddle_station_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(induction_counter_page) and induction_counter_page.has_method("is_open") \
+			and bool(induction_counter_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(farm_smoker_page) and farm_smoker_page.has_method("is_open") \
+			and bool(farm_smoker_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(freezer_page) and freezer_page.has_method("is_open") \
+			and bool(freezer_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(stand_mixer_page) and stand_mixer_page.has_method("is_open") \
+			and bool(stand_mixer_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(ingredient_extractor_page) and ingredient_extractor_page.has_method("is_open") \
+			and bool(ingredient_extractor_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(auto_cooker_page) and auto_cooker_page.has_method("is_open") \
+			and bool(auto_cooker_page.call("is_open")):
+		blocked = true
+	if is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open():
+		blocked = true
+	if is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open():
+		blocked = true
+	if is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open():
+		blocked = true
+	if is_instance_valid(government_notice_page) and government_notice_page.is_open():
+		blocked = true
+	if is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open():
+		blocked = true
+	if $SubViewport/ShopPage.visible:
+		blocked = true
+
+	if blocked or not _is_sprout_blaster_selected():
+		sprout_seed_selector.reset()
+		return
+	var seed_ids := _plantable_seed_ids()
+	if seed_ids.is_empty():
+		sprout_seed_selector.reset()
+		return
+	var selected_index := seed_ids.find(_get_selected_sprout_seed_id())
+	if selected_index < 0:
+		selected_index = 0
+	sprout_seed_selector.refresh(seed_ids, selected_index)
 
 
 func _create_health_ui() -> void:
@@ -6070,6 +6298,7 @@ func _close_gameplay_ui_for_respawn() -> void:
 			ingredient_extractor_page, auto_cooker_page, livestock_chop_page,
 			government_notice_page, cargo_delivery_page, cargo_car_storage_page,
 			cargo_crate_storage_page,
+			industrial_workbench_page,
 	]
 	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
 		computer_desktop.close()
@@ -6342,6 +6571,7 @@ func _update_health_ui() -> void:
 		fill_color = Color("#63D487")
 	health_bar.add_theme_stylebox_override("fill", _make_bar_style(fill_color))
 	_update_ammo_ui()
+	_update_sprout_seed_selector()
 
 
 func _update_ammo_ui() -> void:
@@ -6363,6 +6593,8 @@ func _get_selected_item_info_text() -> String:
 		var tool_id := str(item.get("tool_id", ""))
 		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 		var tool_name := str(definition.get("name", definition.get("short", tool_id)))
+		if tool_id == "sprout_blaster":
+			return "播种枪"
 		if tool_id == AMMO_SUPPLY_BOX_ID:
 			return "%s\n%d / %d 发" % [
 				tool_name,
@@ -6638,6 +6870,9 @@ func _update_crosshair_visibility() -> void:
 	var auto_cooker_page_open := is_instance_valid(auto_cooker_page) \
 		and auto_cooker_page.has_method("is_open") \
 		and bool(auto_cooker_page.call("is_open"))
+	var industrial_workbench_page_open := is_instance_valid(industrial_workbench_page) \
+		and industrial_workbench_page.has_method("is_open") \
+		and bool(industrial_workbench_page.call("is_open"))
 	var vehicle_upgrade_page_open := is_instance_valid(vehicle_upgrade_page) \
 		and vehicle_upgrade_page.has_method("is_open") \
 		and bool(vehicle_upgrade_page.call("is_open"))
@@ -6651,7 +6886,7 @@ func _update_crosshair_visibility() -> void:
 	var computer_open := is_instance_valid(computer_desktop) and computer_desktop.is_open()
 	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (mounted_machine_gun_is_active or bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
 		bool(definition.get("show_crosshair", false))) and \
-		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open and not computer_open
+		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not industrial_workbench_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open and not computer_open
 	# A hit marker is an attack confirmation, not a part of the aiming reticle.
 	# LongSpear (and other valid non-aimable tools) deliberately has no
 	# crosshair, so hiding the marker whenever the crosshair is hidden would
@@ -6666,6 +6901,7 @@ func _refresh_hotbar() -> void:
 	if is_instance_valid(player_backpack):
 		player_backpack.refresh()
 	_update_ammo_ui()
+	_update_sprout_seed_selector()
 	_update_cooldown_ring()
 
 
@@ -6828,6 +7064,15 @@ func _update_interaction() -> void:
 		auto_cooker_page.call("close")
 		_update_crosshair_visibility()
 		return
+	if is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("is_open") \
+			and bool(industrial_workbench_page.call("is_open")):
+		if industrial_workbench_page.has_method("try_take_completed_output") \
+				and bool(industrial_workbench_page.call("try_take_completed_output")):
+			_update_crosshair_visibility()
+			return
+		industrial_workbench_page.call("close")
+		_update_crosshair_visibility()
+		return
 	var target := _get_best_interaction_target(true)
 	if target.is_empty():
 		CARGO_CAR_DEBUG.log(
@@ -6854,6 +7099,8 @@ func _update_interaction() -> void:
 			_update_crosshair_visibility()
 		"vehicle":
 			_request_vehicle_enter(target.get("vehicle", target.get("body")) as VehicleBase)
+		"vehicle_upright":
+			_request_vehicle_upright(target.get("vehicle", target.get("body")) as VehicleBase)
 		"vehicle_platform_passenger":
 			_request_platform_passenger_enter(
 				target.get("vehicle") as VehicleBase,
@@ -6912,6 +7159,15 @@ func _update_interaction() -> void:
 			(target.get("body") as PickupItem).interact(self)
 		"auto_cooker":
 			(target.get("body") as AutoCooker).interact(self)
+		"industrial_workbench":
+			var workbench := target.get("body") as IndustrialWorkbench
+			if not is_instance_valid(workbench):
+				return
+			if workbench.complete:
+				_request_industrial_workbench_take(workbench)
+			elif not workbench.processing and not workbench.is_in_use_by_other(authority_peer_id):
+				industrial_workbench_page.call("open_for", workbench, self)
+				_update_crosshair_visibility()
 		"computer":
 			var computer := target.get("body") as ComputerTerminal
 			if is_instance_valid(computer) and computer.interact(self):
@@ -6953,6 +7209,63 @@ func request_computer_action(target: ComputerTerminal, action_name: String, extr
 		GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 
 
+func _request_industrial_workbench_take(workbench: IndustrialWorkbench) -> void:
+	if not is_instance_valid(workbench):
+		return
+	var action := {
+		"station_kind": "industrial_workbench",
+		"action": "take",
+		"station_path": str(workbench.get_path()),
+		"station_position": workbench.global_position,
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_ingredient_pickup_action(action)
+		return
+	var result := GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
+	apply_authoritative_industrial_workbench_action_result(result)
+
+
+func apply_authoritative_industrial_workbench_action_result(result: Dictionary) -> void:
+	if int(result.get("peer_id", 0)) != authority_peer_id:
+		return
+	var state_value: Variant = result.get("station_state", {})
+	if state_value is Dictionary:
+		_apply_industrial_workbench_state(state_value as Dictionary)
+	var slots_value: Variant = result.get("player_slots", null)
+	if slots_value is Array:
+		apply_cargo_backpack_slots(slots_value as Array)
+	if not bool(result.get("ok", false)):
+		show_gameplay_notice(_industrial_workbench_result_reason(str(result.get("reason", "操作失败"))))
+	if is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("apply_authoritative_action_result"):
+		industrial_workbench_page.call("apply_authoritative_action_result", result)
+
+
+func _apply_industrial_workbench_state(state: Dictionary) -> void:
+	var workbench := get_node_or_null(NodePath(str(state.get("station_path", "")))) as IndustrialWorkbench
+	if workbench == null:
+		var position_value: Variant = state.get("station_position", null)
+		if position_value is Vector3:
+			var best_distance := INF
+			for node in get_tree().get_nodes_in_group("industrial_workbenches"):
+				if node is IndustrialWorkbench:
+					var distance := (node as IndustrialWorkbench).global_position.distance_squared_to(position_value as Vector3)
+					if distance < best_distance:
+						workbench = node as IndustrialWorkbench
+						best_distance = distance
+	if workbench != null:
+		workbench.apply_authoritative_workbench_state(state)
+
+
+func _industrial_workbench_result_reason(reason: String) -> String:
+	match reason:
+		"ingredients_insufficient": return "工业工作台：输入材料不足。"
+		"personal_bag_full": return "工业工作台：背包装不下成品，成品仍在工作台。"
+		"equipment_already_owned": return "工业工作台：你已经拥有这件装备。"
+		"station_in_use": return "工业工作台：队友正在使用。"
+		"station_out_of_range": return "工业工作台：距离太远。"
+	return "工业工作台：" + (reason if not reason.is_empty() else "操作失败。")
+
+
 func _handle_computer_action_result(result: Dictionary) -> void:
 	var is_local_result := int(result.get("peer_id", 0)) == authority_peer_id
 	if is_local_result and bool(result.get("ok", false)) \
@@ -6966,6 +7279,9 @@ func _handle_computer_action_result(result: Dictionary) -> void:
 		if state_value is Dictionary else null
 	if not is_local_result:
 		return
+	var player_slots_value: Variant = result.get("player_slots", null)
+	if player_slots_value is Array:
+		apply_cargo_backpack_slots(player_slots_value as Array)
 	var action_name := str(result.get("action", ""))
 	if action_name == "acquire":
 		if bool(result.get("ok", false)) and target is ComputerTerminal:
@@ -7438,6 +7754,13 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 		var platform_vehicle := platform_area.get_vehicle()
 		if platform_vehicle == null:
 			return {}
+		if platform_vehicle.toppled:
+			return {
+				"kind": "vehicle_upright", "body": platform_area,
+				"vehicle": platform_vehicle,
+				"interaction_position": platform_vehicle.get_player_interaction_position(),
+				"hint": "[E] 扶正载具",
+			}
 		if not platform_vehicle.can_team_enter(team):
 			return {"kind": "vehicle_locked", "body": platform_area, "hint": "敌方载具，无法登车"}
 		if platform_area.get_interaction_kind() == "passenger":
@@ -7506,6 +7829,13 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 		var cargo_vehicle := interaction_area.get_cargo_car()
 		if not is_instance_valid(cargo_vehicle):
 			return {}
+		if cargo_vehicle.toppled:
+			return {
+				"kind": "vehicle_upright", "body": interaction_area,
+				"vehicle": cargo_vehicle,
+				"interaction_position": cargo_vehicle.get_player_interaction_position(),
+				"hint": "[E] 扶正载具",
+			}
 		if interaction_area.interaction_kind == "cargo":
 			return {
 				"kind": "cargo_car_storage",
@@ -7529,6 +7859,13 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 			return {"kind": "crop", "body": body, "tile": crop_tile, "hint": "[E] 收获"}
 	if body is VehicleBase:
 		var vehicle := body as VehicleBase
+		if vehicle.toppled:
+			return {
+				"kind": "vehicle_upright", "body": vehicle,
+				"vehicle": vehicle,
+				"interaction_position": vehicle.get_player_interaction_position(),
+				"hint": "[E] 扶正载具",
+			}
 		# CargoCar interaction is intentionally restricted to its two cab-side
 		# driver areas and three cargo-bed areas.
 		if vehicle.supports_cargo():
@@ -7597,6 +7934,15 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 		var auto_cooker := body as AutoCooker
 		if auto_cooker.can_player_interact(self):
 			return {"kind": "auto_cooker", "body": auto_cooker, "hint": auto_cooker.get_interaction_hint(self)}
+	if body is IndustrialWorkbench:
+		var workbench := body as IndustrialWorkbench
+		if workbench.can_player_interact(self):
+			return {
+				"kind": "industrial_workbench",
+				"body": workbench,
+				"interaction_position": workbench.get_interaction_position(),
+				"hint": workbench.get_interaction_hint(self),
+			}
 	if body is KitchenAppliance:
 		var appliance := body as KitchenAppliance
 		if appliance.can_player_interact(self):
@@ -7748,11 +8094,15 @@ func _update_vehicle_interaction_outline_camera() -> void:
 
 func _get_confirmable_vehicle_target(target: Dictionary) -> VehicleBase:
 	var target_kind := str(target.get("kind", ""))
-	if target_kind != "vehicle" and target_kind != "vehicle_platform_passenger":
+	if target_kind != "vehicle" and target_kind != "vehicle_platform_passenger" \
+			and target_kind != "vehicle_upright":
 		return null
 	var vehicle := target.get("vehicle", target.get("body")) as VehicleBase
-	if not is_instance_valid(vehicle) or vehicle.current_hp <= 0.0 \
-			or not vehicle.can_team_enter(team):
+	if not is_instance_valid(vehicle) or vehicle.current_hp <= 0.0:
+		return null
+	if target_kind == "vehicle_upright":
+		return vehicle if vehicle.can_be_uprighted() else null
+	if not vehicle.can_team_enter(team):
 		return null
 	if target_kind == "vehicle_platform_passenger":
 		var passenger_seat_index := int(target.get("seat_index", -1))

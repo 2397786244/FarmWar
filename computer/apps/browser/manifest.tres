@@ -15,4 +15,4 @@ system_app = true
 removable = false
 default_grid_position = Vector2i(1, 0)
 pinned_to_dock = true
-permissions = PackedStringArray("network.read")
+permissions = PackedStringArray("network.read", "app_storage.write")

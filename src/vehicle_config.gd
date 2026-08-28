@@ -66,6 +66,10 @@ class_name VehicleConfig
 
 @export_group("Durability")
 @export var max_hp := 300.0
+## Relative chassis mass used by authority-owned collision damage. This is a
+## gameplay coefficient rather than a physics mass because vehicles remain
+## CharacterBody3D nodes.
+@export_range(0.1, 5.0, 0.05) var ramming_mass_factor := 1.0
 
 @export_group("Cargo")
 ## Maximum cargo weight carried by this vehicle. Zero disables cargo support.

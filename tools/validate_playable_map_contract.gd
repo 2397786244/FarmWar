@@ -2,7 +2,6 @@ extends SceneTree
 
 const MAPS := [
 	"res://worlds/creston_town/creston_town.tscn",
-	"res://worlds/redpine_county/redpine_county.tscn",
 ]
 
 
@@ -11,12 +10,19 @@ func _initialize() -> void:
 	root.add_child(registry)
 	var registered_maps := registry.list_singleplayer_maps()
 	if registered_maps.size() < MAPS.size():
-		_fail("GameMapRegistry did not list both built-in maps")
+		_fail("GameMapRegistry did not list the remaining built-in map")
 		return
+	for removed_id: String in ["multiplayer_test", "redpine_county"]:
+		if not registry.get_map_by_id(removed_id).is_empty():
+			_fail("Removed built-in map is still registered: %s" % removed_id)
+			return
 	for definition: Dictionary in registered_maps:
-		if str(definition.get("source", "")) == "builtin" and not bool(definition.get("is_compatible", false)):
+		if str(definition.get("source", "")) != "builtin":
+			continue
+		var validated := registry.validate_map_definition(definition)
+		if not bool(validated.get("is_compatible", false)):
 			_fail("GameMapRegistry rejected %s: %s" % [
-				str(definition.get("map_id", "")), str(definition.get("validation_errors", [])),
+				str(validated.get("map_id", "")), str(validated.get("validation_errors", [])),
 			])
 			return
 	for scene_path: String in MAPS:

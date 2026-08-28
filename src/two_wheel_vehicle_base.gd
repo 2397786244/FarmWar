@@ -20,7 +20,7 @@ func _physics_process(delta: float) -> void:
 	# leave the rider permanently upright.
 	if not vehicle_deployed or vehicle_config == null or not GameAuthority.is_client_proxy():
 		return
-	_update_vehicle_visuals(delta)
+	_update_vehicle_presentation(delta)
 
 
 func _seat_definitions() -> Array[VehicleSeatConfig]:

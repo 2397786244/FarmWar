@@ -90,7 +90,6 @@ enum HeightMode {
 
 enum TemplateMode {
 	CRESTON_TOWN,
-	REDPINE_COUNTY,
 }
 
 
@@ -110,6 +109,12 @@ const TREE_PLACEMENT_GROUND_OFFSET := -0.10
 const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
 const PLACEMENT_QUERY_SCRIPT = preload("res://src/placement_query.gd")
+const VEHICLE_SPAWN_CATALOG = preload("res://src/vehicle_spawn_catalog.gd")
+# Kept as a public compatibility view for validation scripts and editor
+# extensions that used the old constant.  Runtime/editor code reads the same
+# entries through VehicleSpawnCatalog below, so there is still one source of
+# truth for paths and labels.
+static var VEHICLE_ASSETS: Array[Dictionary] = VEHICLE_SPAWN_CATALOG.get_editor_assets()
 # The shared scenery implementation was moved out of src/environment.  Keep
 # the editor on the same script as the shipped maps; the old path silently
 # produced a plain Node3D and therefore no distant ring at all.
@@ -245,7 +250,6 @@ const ENTERABLE_BUILDING_SCENE_PATHS = [
 ]
 
 const CRESTON_PALETTE_PATH = "res://worlds/creston_town/creston_town_surface_palette.tres"
-const REDPINE_PALETTE_PATH = "res://worlds/redpine_county/redpine_county_surface_palette.tres"
 
 const TERRAIN_COLLISION_LAYER = 1
 const BOUNDARY_COLLISION_LAYER = 2
@@ -300,73 +304,6 @@ const ROADSIDE_ROCK_ASSETS = [
 # Drivable map objects are kept separate from buildings. They are saved in the
 # map's Buildings root so the normal map package/scene ownership and runtime
 # vehicle registration continue to work.
-const VEHICLE_ASSETS = [
-	{
-		"label": "CargoCar",
-		"path": "res://vehicles/cargo_car.tscn",
-		"id": "cargo_car",
-		"placement_category": "vehicle",
-		"team_scene_paths": {
-			"red": "res://vehicles/red_cargo_car.tscn",
-			"blue": "res://vehicles/blue_cargo_car.tscn",
-		},
-	},
-	{
-		"label": "Farm Base Vehicle",
-		"path": "res://vehicles/farm_base_vehicle.tscn",
-		"id": "farm_base_vehicle",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "CombineCar",
-		"path": "res://vehicles/combine_car.tscn",
-		"id": "combine_car",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "PoliceCar",
-		"path": "res://vehicles/police_car.tscn",
-		"id": "police_car",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "FirePickup",
-		"path": "res://vehicles/fire_pickup.tscn",
-		"id": "fire_pickup",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "MiniCar",
-		"path": "res://vehicles/mini_car.tscn",
-		"id": "mini_car",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "ATV",
-		"path": "res://vehicles/atv.tscn",
-		"id": "atv",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "SportCar",
-		"path": "res://vehicles/sport_car.tscn",
-		"id": "sport_car",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "Van",
-		"path": "res://vehicles/van.tscn",
-		"id": "van",
-		"placement_category": "vehicle",
-	},
-	{
-		"label": "Sedan",
-		"path": "res://vehicles/sedan.tscn",
-		"id": "sedan",
-		"placement_category": "vehicle",
-	},
-]
-
 const FARM_BASE_VEHICLE_PATH := "res://vehicles/farm_base_vehicle.tscn"
 const COMBINE_CAR_PATH := "res://vehicles/combine_car.tscn"
 const LEGACY_COMBINE_CAR_PATH := "res://buildings/CombineCar.tscn"
@@ -818,6 +755,7 @@ var _auto_save_in_progress := false
 var _last_editor_activity_msec := 0
 var _next_auto_save_due_msec := 0
 var _next_auto_save_check_msec := 0
+var _vehicle_assets: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -837,6 +775,7 @@ func _ready() -> void:
 	_build_thumbnail_renderer()
 	_scan_building_assets()
 	_scan_facility_assets()
+	_vehicle_assets = VEHICLE_SPAWN_CATALOG.get_editor_assets()
 	_build_editor_ui()
 	_reset_auto_save_schedule()
 	set_process_input(true)
@@ -982,7 +921,6 @@ func _build_top_bar() -> void:
 
 	_template_option = OptionButton.new()
 	_template_option.add_item("Creston Town", TemplateMode.CRESTON_TOWN)
-	_template_option.add_item("Redpine County", TemplateMode.REDPINE_COUNTY)
 	_template_option.select(default_template)
 	_template_option.item_selected.connect(_on_template_selected)
 	primary_row.add_child(_template_option)
@@ -1112,7 +1050,7 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.SPAWN, "Spawn Points", "Team player spawns, giant crop or wild animal generators")
 	_add_tool_button(column, group, ToolMode.BUILDING, "Buildings", "Browse and place scenes from res://buildings, excluding nature/")
 	_add_tool_button(column, group, ToolMode.VEHICLE, "Vehicles", "Place team-owned or neutral CargoCar, FarmBaseVehicle, CombineCar, PoliceCar, FirePickup, MiniCar, ATV, SportCar, Van and Sedan scenes")
-	_add_tool_button(column, group, ToolMode.FACILITY, "Facilities", "Place map kitchens and defensive facilities")
+	_add_tool_button(column, group, ToolMode.FACILITY, "Facilities", "Place map kitchens, industrial workbenches and defensive facilities")
 	_add_tool_button(column, group, ToolMode.FARMLAND, "Farmland", "Place configurable FarmFieldGenerator regions")
 	_add_tool_button(column, group, ToolMode.AUXILIARY, "Auxiliary", "Place tutorial message areas and helper volumes")
 	_add_tool_button(column, group, ToolMode.AI, "AI Players", "Configure map AI players, teams, spawn points and respawn times")
@@ -2815,7 +2753,7 @@ func _add_vehicle_browser() -> void:
 	browser.add_child(title)
 
 	_building_count_label = Label.new()
-	_building_count_label.text = "%d vehicles" % VEHICLE_ASSETS.size()
+	_building_count_label.text = "%d vehicles" % _vehicle_assets.size()
 	browser.add_child(_building_count_label)
 
 	_building_grid = GridContainer.new()
@@ -2824,7 +2762,7 @@ func _add_vehicle_browser() -> void:
 	_building_grid.add_theme_constant_override("v_separation", 8)
 	browser.add_child(_building_grid)
 	_building_thumbnail_cards.clear()
-	for asset_value: Variant in VEHICLE_ASSETS:
+	for asset_value: Variant in _vehicle_assets:
 		_add_building_asset_card(asset_value as Dictionary, false, true)
 
 func _add_building_browser() -> void:
@@ -2900,11 +2838,15 @@ func _add_facility_inspector_controls() -> void:
 	category_option.set_item_metadata(1, "defense")
 	category_option.add_item("室内设施")
 	category_option.set_item_metadata(2, "interior")
+	category_option.add_item("工业工作台")
+	category_option.set_item_metadata(3, "industrial")
 	var category_index := 0
 	if _selected_facility_category == "defense":
 		category_index = 1
 	elif _selected_facility_category == "interior":
 		category_index = 2
+	elif _selected_facility_category == "industrial":
+		category_index = 3
 	category_option.select(category_index)
 	category_option.item_selected.connect(func(index: int) -> void:
 		_selected_facility_category = str(category_option.get_item_metadata(index))
@@ -2920,7 +2862,7 @@ func _add_facility_inspector_controls() -> void:
 	category_row.add_child(category_option)
 	_bottom_content.add_child(category_row)
 
-	if _selected_facility_category == "kitchen":
+	if _selected_facility_category in ["kitchen", "industrial"]:
 		var kitchen_team_row := HBoxContainer.new()
 		kitchen_team_row.add_child(_make_label("队伍所属"))
 		var kitchen_team_option := OptionButton.new()
@@ -2945,11 +2887,16 @@ func _add_facility_inspector_controls() -> void:
 		)
 		defense_team_row.add_child(defense_team_option)
 		_bottom_content.add_child(defense_team_row)
-	else:
+	elif _selected_facility_category == "interior":
 		var interior_hint := Label.new()
 		interior_hint.text = "室内设施只能放入可进入建筑；水体重叠由场景根节点的 map_can_overlap_water 标记决定。"
 		interior_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bottom_content.add_child(interior_hint)
+	else:
+		var facility_hint := Label.new()
+		facility_hint.text = "请选择设施类别。"
+		facility_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(facility_hint)
 
 	if _selected_facility_category == "defense":
 		var respawn_check := CheckBox.new()
@@ -2976,7 +2923,7 @@ func _add_facility_inspector_controls() -> void:
 		)
 
 	var hint := Label.new()
-	hint.text = "厨具只设置队伍所属，默认启用；防御设施可设置队伍所属和是否自动复活。四种墙体支持同族端点吸附：距离 1m 内且夹角至少 30°。"
+	hint.text = "厨具和工业工作台设置队伍所属，默认启用；防御设施可设置队伍所属和是否自动复活。四种墙体支持同族端点吸附：距离 1m 内且夹角至少 30°。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
@@ -2998,7 +2945,7 @@ func _add_facility_browser() -> void:
 
 	var refresh_button := Button.new()
 	refresh_button.text = "重新扫描"
-	refresh_button.tooltip_text = "重新读取厨具、防御设施和 res://facilities/interior/ 下的场景"
+	refresh_button.tooltip_text = "重新读取厨具、工业工作台、防御设施和 res://facilities/interior/ 下的场景"
 	refresh_button.pressed.connect(_rescan_facility_assets)
 	toolbar.add_child(refresh_button)
 
@@ -3013,7 +2960,7 @@ func _add_facility_browser() -> void:
 	toolbar.add_child(_building_count_label)
 
 	var hint := Label.new()
-	hint.text = "选择设施后，鼠标左键放置；室内设施自动读取 res://facilities/interior/。地图加载时恢复设施的运行时脚本。"
+	hint.text = "选择设施后，鼠标左键放置；室内设施自动读取 res://facilities/interior/，工业工作台来自 res://facilities/industrial/。地图加载时恢复设施的运行时脚本。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	browser.add_child(hint)
 
@@ -3184,6 +3131,8 @@ func _add_facility_object_inspector_controls() -> void:
 		category_label = "防御设施"
 	elif facility_category == "interior":
 		category_label = "室内设施"
+	elif facility_category == "industrial":
+		category_label = "工业工作台"
 	heading.text = "设施 Inspector · %s" % category_label
 	_bottom_content.add_child(heading)
 	if facility_category == "interior":
@@ -3192,12 +3141,17 @@ func _add_facility_object_inspector_controls() -> void:
 		interior_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bottom_content.add_child(interior_info)
 		return
+	if facility_category == "industrial":
+		var industrial_info := Label.new()
+		industrial_info.text = "工业工作台；制作配方、加工进度和成品领取由权威端管理。"
+		industrial_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(industrial_info)
 
 	var team_row := HBoxContainer.new()
 	team_row.add_child(_make_label("队伍所属"))
 	var team_option := OptionButton.new()
-	var current_team := str(_get_property_or(facility, "owner_team" if facility_category == "kitchen" else "tool_owner", ""))
-	if facility_category == "kitchen":
+	var current_team := str(_get_property_or(facility, "owner_team" if facility_category in ["kitchen", "industrial"] else "tool_owner", ""))
+	if facility_category in ["kitchen", "industrial"]:
 		team_option.add_item("红队")
 		team_option.add_item("蓝队")
 		team_option.select(0 if current_team == "red" else 1)
@@ -4657,12 +4611,8 @@ func _make_label(text_value: String) -> Label:
 
 func _on_template_selected(index: int) -> void:
 	_template_mode = _template_option.get_item_id(index)
-	if _template_mode == TemplateMode.REDPINE_COUNTY:
-		_map_width_spin.value = 1024
-		_map_depth_spin.value = 1024
-	else:
-		_map_width_spin.value = 256
-		_map_depth_spin.value = 256
+	_map_width_spin.value = 256
+	_map_depth_spin.value = 256
 
 
 func _on_radius_changed(value: float) -> void:
@@ -4798,7 +4748,7 @@ func _select_tool(mode: ToolMode) -> void:
 				_selected_building_asset = (default_facilities[0] as Dictionary).duplicate(true)
 	elif mode == ToolMode.VEHICLE:
 		if str(_selected_building_asset.get("placement_category", "")) != "vehicle":
-			_selected_building_asset = (VEHICLE_ASSETS[0] as Dictionary).duplicate(true)
+			_selected_building_asset = (_vehicle_assets[0] as Dictionary).duplicate(true)
 		_selected_vehicle_team = ""
 		_selected_vehicle_body_color = Color("000000")
 		_selected_vehicle_wheel_color = Color("000000")
@@ -6466,11 +6416,7 @@ func create_new_map(
 
 
 func _load_template_surface_resources() -> void:
-	var palette_path = CRESTON_PALETTE_PATH
-	if _template_mode == TemplateMode.REDPINE_COUNTY:
-		palette_path = REDPINE_PALETTE_PATH
-
-	_surface_palette_resource = _load_resource_or_null(palette_path)
+	_surface_palette_resource = _load_resource_or_null(CRESTON_PALETTE_PATH)
 	_surface_entries = _extract_surface_entries(_surface_palette_resource)
 	if _surface_entries.is_empty():
 		_surface_entries = FALLBACK_SURFACES.duplicate(true)
@@ -9905,9 +9851,9 @@ func _apply_building_placement(center: Vector3) -> void:
 	if is_facility:
 		instance.set_meta("map_editor_facility_category", facility_category)
 		instance.set_meta("map_editor_facility_id", str(_selected_building_asset.get("id", "facility")))
-		if facility_category == "kitchen":
+		if facility_category == "kitchen" or facility_category == "industrial":
 			_set_property_if_present(instance, "owner_team", _selected_facility_team)
-		else:
+		elif facility_category == "defense":
 			_set_property_if_present(instance, "tool_owner", _selected_defense_team)
 			_set_property_if_present(instance, "auto_respawn", _selected_defense_auto_respawn)
 			_set_property_if_present(instance, "respawn_seconds", _selected_defense_respawn_seconds)
@@ -11546,6 +11492,7 @@ func _update_map_metadata_before_save() -> void:
 		"promotional_vehicle_driver_dummy_visuals",
 		"facility_catalog",
 		"static_kitchen_facilities",
+		"industrial_workbench_placement",
 		"static_defense_facilities",
 		"enemy_squad_generators",
 		"persistent_squad_target_points",
@@ -11599,11 +11546,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 	_save_water_bodies_sidecar(folder)
 
 	var icon_saved = _save_map_icon(folder)
-	var template_name = (
-		"redpine_county"
-		if _template_mode == TemplateMode.REDPINE_COUNTY
-		else "creston_town"
-	)
+	var template_name = "creston_town"
 	var manifest = {
 		"format_version": 5,
 		"map_id": _map_id,
@@ -11646,6 +11589,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"building_count": _buildings_root.get_child_count(),
 			"facility_count": _count_map_facilities(),
 			"kitchen_facility_count": _count_map_facilities("kitchen"),
+			"industrial_facility_count": _count_map_facilities("industrial"),
 			"defense_facility_count": _count_map_facilities("defense"),
 			"farmland_count": _farmlands_root.get_child_count(),
 			"neutral_crop_generator_count": _count_neutral_crop_generators(),
@@ -11928,7 +11872,7 @@ func open_map_package(manifest_path: String) -> void:
 		maxi(32, int(size_data.get("width", 256))),
 		maxi(32, int(size_data.get("depth", 256)))
 	)
-	var template_value = TemplateMode.REDPINE_COUNTY if str(manifest.get("template", "creston_town")) == "redpine_county" else TemplateMode.CRESTON_TOWN
+	var template_value = TemplateMode.CRESTON_TOWN
 	var display_name_value = str(manifest.get("display_name", "Opened Farm Map"))
 	var map_id_value = str(manifest.get("map_id", display_name_value))
 	var version_value = str(manifest.get("version", default_map_version))

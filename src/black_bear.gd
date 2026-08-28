@@ -41,11 +41,23 @@ const NETWORK_STATES := {
 	"dead": State.DEAD,
 }
 const ANIMAL_HIDE_DROP_COUNT := 5
+const NAVIGATION_REFRESH_INTERVAL := 0.25
+const NAVIGATION_REPATH_DISTANCE := 0.75
+const NAVIGATION_PATH_WAIT_SECONDS := 0.75
+const NAVIGATION_PATH_DESIRED_DISTANCE := 0.65
+const NAVIGATION_TARGET_DESIRED_DISTANCE := 1.0
+const NAVIGATION_FALLBACK_RAY_MASK := GameAuthority.COLLISION_LAYER_WALL \
+	| GameAuthority.COLLISION_LAYER_TOOL \
+	| GameAuthority.COLLISION_LAYER_BUILDING \
+	| GameAuthority.COLLISION_LAYER_VEHICLES \
+	| GameAuthority.COLLISION_LAYER_NATURE_RESOURCE
 
 @export var animal_id := ""
 @export var display_name := "黑熊"
 @export var max_hp := 1000.0
 @export var network_proxy := false
+@export_category("Navigation")
+@export var navigation_debug_enabled := false
 
 var current_hp := 1000.0
 var home_position := Vector3.ZERO
@@ -79,6 +91,12 @@ var _last_attacker_peer_id := 0
 var _pending_attacker_peer_id := 0
 var _flame_attacker_peer_id := 0
 var _rng := RandomNumberGenerator.new()
+var _navigation_agent: NavigationAgent3D
+var _last_navigation_goal := Vector3.INF
+var _navigation_refresh_left := 0.0
+var _navigation_path_wait_left := 0.0
+var _navigation_using_direct_fallback := false
+var _navigation_debug_left := 0.0
 
 @onready var mesh_root: Node3D = get_node_or_null("Mesh") as Node3D
 @onready var animation_player: AnimationPlayer = (
@@ -96,6 +114,7 @@ func _ready() -> void:
 	if home_position == Vector3.ZERO:
 		home_position = global_position
 	add_to_group("wild_animals")
+	_ensure_navigation_agent()
 	if hit_area != null and not hit_area.body_entered.is_connected(_on_hit_body_entered):
 		hit_area.body_entered.connect(_on_hit_body_entered)
 	_configure_animation_loops()
@@ -115,6 +134,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_state_elapsed += delta
 	_target_scan_left -= delta
+	_navigation_refresh_left = maxf(0.0, _navigation_refresh_left - delta)
+	_navigation_debug_left = maxf(0.0, _navigation_debug_left - delta)
 	_avoidance_left = maxf(0.0, _avoidance_left - delta)
 	if state == State.DEAD:
 		velocity = Vector3.ZERO
@@ -163,6 +184,7 @@ func set_interest_sleeping(value: bool) -> void:
 			return
 		interest_sleeping = true
 		velocity = Vector3.ZERO
+		_reset_navigation_path()
 		target_peer_id = 0
 		target_livestock = null
 		_set_state(State.IDLE, true)
@@ -336,20 +358,26 @@ func _update_idle(delta: float) -> void:
 		return
 	_idle_left -= delta
 	if _idle_left <= 0.0:
-		_choose_wander_target()
-		_set_state(State.WANDER)
+		if _choose_wander_target():
+			_set_state(State.WANDER)
+		else:
+			_idle_left = _rng.randf_range(1.0, 2.0)
 
 
 func _update_wander(delta: float) -> void:
 	if _has_valid_target():
 		_begin_chase()
 		return
-	var direction := _horizontal_direction_to(_wander_target)
-	if direction.length_squared() <= 0.01 or global_position.distance_to(_wander_target) <= 1.0:
+	if _horizontal_distance_to(_wander_target) <= NAVIGATION_TARGET_DESIRED_DISTANCE:
 		_idle_left = _rng.randf_range(2.0, 5.0)
 		_set_state(State.IDLE)
 		return
-	_move_horizontal(direction, CombatBalance.get_float("black_bear", "wander_speed", 2.4), delta)
+	_navigate_horizontal(
+		_wander_target,
+		CombatBalance.get_float("black_bear", "wander_speed", 2.4),
+		delta,
+		false
+	)
 
 
 func _update_chase(delta: float) -> void:
@@ -383,7 +411,7 @@ func _update_chase(delta: float) -> void:
 			1.0
 		)
 		chase_speed = lerpf(approach_speed, chase_speed, approach_ratio)
-	_move_horizontal(_horizontal_direction_to(target_position), chase_speed, delta)
+	_navigate_horizontal(target_position, chase_speed, delta, true)
 
 
 func _update_attack(delta: float) -> void:
@@ -444,7 +472,7 @@ func _update_flee(delta: float) -> void:
 	var distance_home := _horizontal_distance_to(home_position)
 	if distance_home > 1.5:
 		var flee_speed := CombatBalance.get_float("black_bear", "flee_speed", 12.0)
-		_move_horizontal(_horizontal_direction_to(home_position), flee_speed, delta)
+		_navigate_horizontal(home_position, flee_speed, delta, true)
 	else:
 		_stop_horizontal(delta)
 	if _flee_left <= 0.0:
@@ -550,11 +578,161 @@ func _clear_target_and_idle() -> void:
 	_set_state(State.IDLE)
 
 
-func _choose_wander_target() -> void:
-	var angle := _rng.randf_range(0.0, TAU)
-	var radius := _rng.randf_range(3.0, CombatBalance.get_float("black_bear", "wander_radius", 12.0))
-	_wander_target = home_position + Vector3(cos(angle), 0.0, sin(angle)) * radius
-	_wander_target.y = global_position.y
+func _choose_wander_target() -> bool:
+	if not _navigation_is_ready():
+		_navigation_debug("wander-map-wait")
+		return false
+	var navigation_map := _navigation_agent.get_navigation_map()
+	for _attempt in range(12):
+		var angle := _rng.randf_range(0.0, TAU)
+		var radius := _rng.randf_range(
+			3.0,
+			CombatBalance.get_float("black_bear", "wander_radius", 12.0)
+		)
+		var candidate := home_position + Vector3(cos(angle), 0.0, sin(angle)) * radius
+		var closest := NavigationServer3D.map_get_closest_point(navigation_map, candidate)
+		if closest.distance_to(candidate) > 2.0:
+			continue
+		_wander_target = closest
+		return true
+	return false
+
+
+func _ensure_navigation_agent() -> void:
+	_navigation_agent = get_node_or_null("BlackBearNavigationAgent") as NavigationAgent3D
+	if _navigation_agent == null:
+		_navigation_agent = NavigationAgent3D.new()
+		_navigation_agent.name = "BlackBearNavigationAgent"
+		add_child(_navigation_agent)
+	_navigation_agent.radius = 0.55
+	_navigation_agent.height = 1.35
+	_navigation_agent.path_desired_distance = NAVIGATION_PATH_DESIRED_DISTANCE
+	_navigation_agent.target_desired_distance = NAVIGATION_TARGET_DESIRED_DISTANCE
+	# CharacterBody3D collision and the existing slide response remain the local
+	# avoidance authority. RVO is deliberately disabled because this controller
+	# does not consume NavigationAgent3D.velocity_computed.
+	_navigation_agent.avoidance_enabled = false
+	_reset_navigation_path()
+
+
+func _navigate_horizontal(goal: Vector3, speed: float, delta: float, allow_direct_fallback: bool) -> void:
+	if not _navigation_is_ready():
+		_navigation_path_wait_left = maxf(0.0, _navigation_path_wait_left - delta)
+		if allow_direct_fallback and _navigation_path_wait_left <= 0.0 \
+				and _direct_navigation_fallback_is_clear(goal):
+			_navigation_using_direct_fallback = true
+			_navigation_debug("map-wait-direct")
+			_move_horizontal(_horizontal_direction_to(goal), speed, delta)
+		else:
+			_navigation_debug("map-wait")
+			_stop_horizontal(delta)
+		return
+
+	var needs_repath := _last_navigation_goal == Vector3.INF \
+		or _last_navigation_goal.distance_to(goal) > NAVIGATION_REPATH_DISTANCE
+	if needs_repath and _navigation_refresh_left <= 0.0:
+		_navigation_agent.target_position = goal
+		_last_navigation_goal = goal
+		_navigation_refresh_left = NAVIGATION_REFRESH_INTERVAL
+		_navigation_path_wait_left = NAVIGATION_PATH_WAIT_SECONDS
+		_navigation_using_direct_fallback = false
+		_navigation_debug("path-requested")
+		_stop_horizontal(delta)
+		return
+
+	var next_position := _navigation_agent.get_next_path_position()
+	var navigation_direction := _horizontal_direction_to(next_position)
+	if navigation_direction.length_squared() > 0.001:
+		_navigation_path_wait_left = 0.0
+		_navigation_using_direct_fallback = false
+		_navigation_debug("navigation-path")
+		_move_horizontal(navigation_direction, speed, delta)
+		return
+
+	_navigation_path_wait_left = maxf(0.0, _navigation_path_wait_left - delta)
+	if not allow_direct_fallback and _navigation_path_wait_left <= 0.0:
+		# A sampled wander point may be on a disconnected navigation island.
+		# Abandon it instead of leaving the bear permanently in Walk/zero velocity.
+		_idle_left = _rng.randf_range(1.0, 2.0)
+		_set_state(State.IDLE)
+		return
+	if allow_direct_fallback and _navigation_path_wait_left <= 0.0 \
+			and _direct_navigation_fallback_is_clear(goal):
+		_navigation_using_direct_fallback = true
+		_navigation_debug("no-path-direct")
+		_move_horizontal(_horizontal_direction_to(goal), speed, delta)
+		return
+	_navigation_debug("path-wait")
+	_stop_horizontal(delta)
+
+
+func _navigation_is_ready() -> bool:
+	if _navigation_agent == null:
+		return false
+	var navigation_map := _navigation_agent.get_navigation_map()
+	return navigation_map.is_valid() \
+		and NavigationServer3D.map_get_iteration_id(navigation_map) > 0
+
+
+func _direct_navigation_fallback_is_clear(goal: Vector3) -> bool:
+	var direction := _horizontal_direction_to(goal)
+	if direction == Vector3.ZERO:
+		return false
+	var next_position := global_position + direction * 0.75
+	if WaterBody3D.is_navigation_blocked(next_position):
+		return false
+	var query := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3.UP * 0.7,
+		goal + Vector3.UP * 0.7
+	)
+	query.exclude = [get_rid()]
+	query.collision_mask = NAVIGATION_FALLBACK_RAY_MASK
+	query.collide_with_areas = false
+	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+func _reset_navigation_path() -> void:
+	_last_navigation_goal = Vector3.INF
+	_navigation_refresh_left = 0.0
+	_navigation_path_wait_left = NAVIGATION_PATH_WAIT_SECONDS
+	_navigation_using_direct_fallback = false
+	if _navigation_agent != null and _navigation_agent.get_navigation_map().is_valid():
+		_navigation_agent.target_position = global_position
+
+
+func get_navigation_target_position() -> Vector3:
+	if state == State.WANDER:
+		return _wander_target
+	if state == State.FLEE:
+		return home_position
+	var target_position_value: Variant = _target_position()
+	return target_position_value as Vector3 if target_position_value is Vector3 else Vector3.INF
+
+
+func notify_navigation_chunks_rebuilt(_chunk_ids: Array) -> void:
+	if destroyed or state == State.DEAD:
+		return
+	_reset_navigation_path()
+	_navigation_debug("chunks-rebuilt", true)
+
+
+func _navigation_debug(reason: String, force := false) -> void:
+	if not navigation_debug_enabled or (not force and _navigation_debug_left > 0.0):
+		return
+	_navigation_debug_left = 1.0
+	var iteration := 0
+	if _navigation_agent != null and _navigation_agent.get_navigation_map().is_valid():
+		iteration = NavigationServer3D.map_get_iteration_id(_navigation_agent.get_navigation_map())
+	print(
+		"[BlackBearNav] id=%s state=%s reason=%s iteration=%d fallback=%s goal=%s" % [
+			animal_id,
+			STATE_NAMES.get(state, "idle"),
+			reason,
+			iteration,
+			_navigation_using_direct_fallback,
+			get_navigation_target_position(),
+		]
+	)
 
 
 func _move_horizontal(direction: Vector3, speed: float, delta: float) -> void:
@@ -654,7 +832,10 @@ func _horizontal_distance_to(target: Vector3) -> float:
 func _set_state(next_state: State, force := false) -> void:
 	if state == next_state and not force:
 		return
+	var previous_state := state
 	state = next_state
+	if previous_state != next_state:
+		_reset_navigation_path()
 	_state_elapsed = 0.0
 	_attack_applied = false
 	if animation_player != null:
@@ -721,6 +902,7 @@ func _die() -> void:
 	target_peer_id = 0
 	target_livestock = null
 	velocity = Vector3.ZERO
+	_reset_navigation_path()
 	_set_collision_enabled(false)
 	_set_state(State.DEAD)
 	_update_health_label()

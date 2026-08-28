@@ -101,6 +101,8 @@ func _refresh_maps() -> void:
 		]
 		if not bool(definition.get("is_compatible", false)):
 			label += " · 需要补全基础系统"
+		elif bool(definition.get("needs_runtime_validation", false)):
+			label += " · 进入时验证"
 		var index := map_list.add_item(label, _load_icon(str(definition.get("icon_path", ""))))
 		map_list.set_item_disabled(index, not bool(definition.get("is_compatible", false)))
 	if maps.is_empty():
@@ -123,6 +125,8 @@ func _on_map_selected(index: int) -> void:
 	]
 	if not errors.is_empty():
 		description_label.text += "\n\n暂不可进入：\n- " + "\n- ".join(errors)
+	elif bool(definition.get("needs_runtime_validation", false)):
+		description_label.text += "\n兼容性：进入时验证"
 
 
 func _map_source_text(source: String) -> String:

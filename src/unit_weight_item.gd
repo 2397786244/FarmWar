@@ -38,8 +38,14 @@ static func can_merge(first: Dictionary, second: Dictionary) -> bool:
 		return false
 	match str(first.get("kind", "")):
 		"ingredient":
-			return str(first.get("ingredient_id", "")) == str(second.get("ingredient_id", "")) \
-				and bool(first.get("is_chopped", false)) == bool(second.get("is_chopped", false))
+			if str(first.get("ingredient_id", "")) != str(second.get("ingredient_id", "")) \
+					or bool(first.get("is_chopped", false)) != bool(second.get("is_chopped", false)):
+				return false
+			# Hard drives are physical, individually programmable media.  They
+			# must never be merged or split through the generic weight-item UI.
+			if str(first.get("ingredient_id", "")) == "hard_drive":
+				return false
+			return true
 		"dish":
 			return str(first.get("dish_id", "")) == str(second.get("dish_id", ""))
 		_:

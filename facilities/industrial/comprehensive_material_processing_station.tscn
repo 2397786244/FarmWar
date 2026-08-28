@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://3dlguien403w"]
+
+[ext_resource type="PackedScene" uid="uid://b8e135wb7jx1u" path="res://assets/facilities/industrial/FTF_Tool_ComprehensiveMaterialProcessingStation.glb" id="1_model"]
+[ext_resource type="Script" path="res://src/industrial_workbench.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3ly7j"]
+size = Vector3(1.4, 1.6, 1)
+
+[node name="ComprehensiveMaterialProcessingStation" type="StaticBody3D" unique_id=1110017380 groups=["comprehensive_material_processing_stations", "industrial_workbenches"]]
+collision_layer = 512
+collision_mask = 11
+metadata/map_can_overlap_water = false
+metadata/facility_kind = "industrial_workbench"
+metadata/workbench_id = "comprehensive_material_processing_station"
+metadata/display_name = "综合材料加工台"
+metadata/ui_kind = "industrial_crafting"
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=1246246709 instance=ExtResource("1_model")]
+
+[node name="InteractionPoint" type="Marker3D" parent="." unique_id=694887685]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0.95)
+
+[node name="CraftingUIAnchor" type="Marker3D" parent="." unique_id=1547539750]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1977241105]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8474171, 0)
+shape = SubResource("BoxShape3D_3ly7j")

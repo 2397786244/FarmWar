@@ -70,6 +70,8 @@ func _build_interface() -> void:
 	title.add_theme_color_override("font_color", COLOR_TEXT)
 	root.add_child(title)
 	status_label = Label.new()
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.custom_minimum_size.y = 48.0
 	status_label.add_theme_font_size_override("font_size", 20)
 	status_label.add_theme_color_override("font_color", COLOR_MUTED)
 	root.add_child(status_label)
@@ -358,6 +360,8 @@ func _refresh_maps() -> void:
 		if not bool(definition.get("is_compatible", false)):
 			label += " · 基础系统不完整"
 		else:
+			if bool(definition.get("needs_runtime_validation", false)):
+				label += " · 进入时验证"
 			if first_compatible < 0:
 				first_compatible = index
 		var item_index := map_list.add_item(label, _load_icon(str(definition.get("icon_path", ""))))
@@ -396,6 +400,8 @@ func _on_map_selected(index: int) -> void:
 	var errors: Array = definition.get("validation_errors", []) as Array
 	if not errors.is_empty():
 		map_details_label.text += "\n" + "；".join(errors)
+	elif bool(definition.get("needs_runtime_validation", false)):
+		map_details_label.text += "\n兼容性：进入时验证"
 
 
 func _map_source_text(source: String) -> String:

@@ -552,6 +552,24 @@ func _sync_vehicles(vehicles_value: Variant) -> void:
 			vehicle.apply_network_state(data)
 
 
+func _apply_vehicle_topple_state_event(event: Dictionary) -> void:
+	var vehicle := _find_vehicle_visual(str(event.get("vehicle_id", "")))
+	if vehicle == null:
+		return
+	var state_value: Variant = event.get("vehicle_state", {})
+	if state_value is Dictionary:
+		vehicle.apply_network_state(state_value as Dictionary)
+		return
+	var axis_value: Variant = event.get("tip_axis", Vector3.FORWARD)
+	var axis := axis_value as Vector3 if axis_value is Vector3 else Vector3.FORWARD
+	vehicle.set_toppled(
+		bool(event.get("toppled", false)),
+		axis,
+		float(event.get("tip_angle", 0.0)),
+		false
+	)
+
+
 func _find_vehicle_visual(vehicle_id: String) -> VehicleBase:
 	if vehicle_id.is_empty():
 		return null
@@ -1208,8 +1226,14 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_vehicle_destroyed_event(event)
 		"vehicle_placed":
 			_apply_vehicle_placed_event(event)
+		"vehicle_spawn_drop_finished":
+			_apply_vehicle_spawn_drop_finished_event(event)
+		"vehicle_spawn_drop_failed":
+			_apply_vehicle_spawn_drop_failed_event(event)
 		"vehicle_shield_applied":
 			_apply_vehicle_shield_event(event)
+		"vehicle_topple_state":
+			_apply_vehicle_topple_state_event(event)
 		"cargo_car_respawn_state":
 			_apply_cargo_car_respawn_state(event)
 		"trap_triggered":
@@ -1281,10 +1305,27 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_sync_dropped_items(event.get("items", []))
 		"ingredient_pickup_action_result":
 			_apply_ingredient_pickup_action_result(event.get("data", {}))
+		"industrial_workbench_action_result":
+			_apply_industrial_workbench_action_result(event.get("data", {}))
+		"industrial_workbench_state":
+			_apply_industrial_workbench_state(event.get("station_state", {}))
 		"computer_action_result":
 			var computer_result: Variant = event.get("data", {})
 			if computer_result is Dictionary:
+				var embedded_team := str((computer_result as Dictionary).get("team", ""))
+				var embedded_state: Variant = (computer_result as Dictionary).get("embedded_lab_state", {})
+				if not embedded_team.is_empty() and embedded_state is Dictionary \
+						and is_instance_valid(GameAuthority) \
+						and GameAuthority.has_method("apply_authoritative_team_embedded_lab_state"):
+					GameAuthority.apply_authoritative_team_embedded_lab_state(embedded_team, embedded_state)
 				_apply_computer_state((computer_result as Dictionary).get("computer_state", {}))
+		"embedded_lab_state":
+			var embedded_team := str(event.get("team", ""))
+			var embedded_state: Variant = event.get("state", {})
+			if not embedded_team.is_empty() and embedded_state is Dictionary \
+					and is_instance_valid(GameAuthority) \
+					and GameAuthority.has_method("apply_authoritative_team_embedded_lab_state"):
+				GameAuthority.apply_authoritative_team_embedded_lab_state(embedded_team, embedded_state)
 		"computer_state":
 			_apply_computer_state(event.get("computer_state", {}))
 		"ingredient_pickup_state":
@@ -1693,6 +1734,46 @@ func _apply_ingredient_pickup_action_result(data_value: Variant) -> void:
 			if page != null and page.has_method("apply_authoritative_action_result"):
 				page.call("apply_authoritative_action_result", data)
 			return
+
+
+func _apply_industrial_workbench_action_result(data_value: Variant) -> void:
+	if not data_value is Dictionary:
+		return
+	var data := data_value as Dictionary
+	_apply_industrial_workbench_state(data.get("station_state", {}))
+	var peer_id := int(data.get("peer_id", 0))
+	if peer_id != MultiplayerNetwork.get_unique_peer_id():
+		return
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if node is GamePlayer and int((node as GamePlayer).authority_peer_id) == peer_id:
+			(node as GamePlayer).apply_authoritative_industrial_workbench_action_result(data)
+			return
+
+
+func _apply_industrial_workbench_state(state_value: Variant) -> void:
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var workbench := get_node_or_null(NodePath(str(state.get("station_path", "")))) as IndustrialWorkbench
+	if workbench == null:
+		var position_value: Variant = state.get("station_position", null)
+		if position_value is Vector3:
+			var best_distance := INF
+			for node in get_tree().get_nodes_in_group("industrial_workbenches"):
+				if node is IndustrialWorkbench:
+					var distance := (node as IndustrialWorkbench).global_position.distance_squared_to(position_value as Vector3)
+					if distance < best_distance:
+						workbench = node as IndustrialWorkbench
+						best_distance = distance
+	if workbench == null:
+		return
+	workbench.apply_authoritative_workbench_state(state)
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not node is GamePlayer or (node as GamePlayer).is_remote_proxy:
+			continue
+		var page := (node as GamePlayer).industrial_workbench_page
+		if is_instance_valid(page) and page.has_method("refresh_if_open"):
+			page.call("refresh_if_open")
 
 
 func _apply_ingredient_pickup_state(state_value: Variant) -> void:
@@ -2243,9 +2324,37 @@ func _apply_vehicle_placed_event(event: Dictionary) -> void:
 	if vehicle == null:
 		return
 	var position: Variant = event.get("position", Vector3.ZERO)
+	if str(event.get("spawn_mode", "")) == "airdrop":
+		position = event.get("drop_start_position", position)
 	if position is Vector3:
 		vehicle.global_position = position
-	vehicle.rotation.y = float(event.get("yaw", 0.0))
+		vehicle.rotation.y = float(event.get("yaw", 0.0))
+	var vehicle_state_value: Variant = event.get("vehicle_state", null)
+	if vehicle_state_value is Dictionary:
+		var vehicle_state := (vehicle_state_value as Dictionary).duplicate(true)
+		vehicle_state["position"] = position
+		vehicle_state["yaw"] = float(event.get("yaw", vehicle.rotation.y))
+		vehicle.apply_network_state(vehicle_state)
+
+
+func _apply_vehicle_spawn_drop_finished_event(event: Dictionary) -> void:
+	var vehicle := _find_vehicle_visual(str(event.get("vehicle_id", "")))
+	if vehicle == null:
+		return
+	var state_value: Variant = event.get("vehicle_state", null)
+	if state_value is Dictionary:
+		vehicle.apply_network_state(state_value as Dictionary)
+	else:
+		var position: Variant = event.get("position", vehicle.global_position)
+		if position is Vector3:
+			vehicle.global_position = position
+		vehicle.rotation.y = float(event.get("yaw", vehicle.rotation.y))
+
+
+func _apply_vehicle_spawn_drop_failed_event(event: Dictionary) -> void:
+	var vehicle := _find_vehicle_visual(str(event.get("vehicle_id", "")))
+	if vehicle != null:
+		vehicle.queue_free()
 
 
 func _apply_trap_triggered_event(event: Dictionary) -> void:
@@ -2865,6 +2974,10 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 	if farm_summary is Dictionary and is_instance_valid(GameAuthority) \
 			and GameAuthority.has_method("apply_authoritative_farm_summary_state"):
 		GameAuthority.apply_authoritative_farm_summary_state(farm_summary as Dictionary)
+	var embedded_lab_teams: Variant = snapshot.get("embedded_lab_teams", {})
+	if embedded_lab_teams is Dictionary and is_instance_valid(GameAuthority) \
+			and GameAuthority.has_method("apply_authoritative_team_embedded_lab_states"):
+		GameAuthority.apply_authoritative_team_embedded_lab_states(embedded_lab_teams as Dictionary)
 	var weather_forecast: Variant = snapshot.get("weather_forecast", {})
 	if weather_forecast is Dictionary and not (weather_forecast as Dictionary).is_empty():
 		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
@@ -2949,6 +3062,10 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 	if livestock_chops is Array:
 		for state_value: Variant in livestock_chops:
 			_apply_livestock_chop_state(state_value)
+	var industrial_workbenches: Variant = snapshot.get("industrial_workbenches", [])
+	if industrial_workbenches is Array:
+		for state_value: Variant in industrial_workbenches:
+			_apply_industrial_workbench_state(state_value)
 	_sync_dropped_items(snapshot.get("dropped_items", []))
 
 

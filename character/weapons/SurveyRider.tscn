@@ -37,6 +37,7 @@ two_wheel_max_lean_degrees = 22.0
 two_wheel_lean_response = 8.0
 two_wheel_lean_sign = 1.0
 max_hp = 1000.0
+ramming_mass_factor = 0.55
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_vehicle"]
 size = Vector3(1, 1.1, 2.6)

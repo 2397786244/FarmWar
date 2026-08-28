@@ -10,6 +10,24 @@ signal invite_feedback(message: String)
 
 const COOPERATIVE_MODE_TAG := "farmwar_pve_coop"
 const LOBBY_SCHEMA_VERSION := "1"
+const STEAM_RESULT_NAMES := {
+	1: "k_EResultOK",
+	2: "k_EResultFail",
+	3: "k_EResultNoConnection",
+	5: "k_EResultInvalidPassword",
+	6: "k_EResultLoggedInElsewhere",
+	7: "k_EResultInvalidProtocolVer",
+	8: "k_EResultInvalidParam",
+	9: "k_EResultFileNotFound",
+	10: "k_EResultBusy",
+	11: "k_EResultInvalidState",
+	15: "k_EResultAccessDenied",
+	16: "k_EResultTimeout",
+	20: "k_EResultLimitExceeded",
+	25: "k_EResultDuplicateRequest",
+	26: "k_EResultAlreadyOwned",
+	84: "k_EResultLimitExceeded",
+}
 
 var initialized := false
 var initialization_finished := false
@@ -52,14 +70,19 @@ func suspend_callbacks(frame_count := 2) -> void:
 
 func create_cooperative_lobby(world: Dictionary) -> bool:
 	if not initialized:
-		cooperative_lobby_error.emit("Steam 尚未初始化，无法创建合作房间。")
+		var initialization_error := "Steam 尚未初始化，无法创建合作房间。\n%s" % get_cooperative_lobby_debug_text()
+		_log_cooperative_debug("create rejected: Steam is not initialized")
+		cooperative_lobby_error.emit(initialization_error)
 		return false
 	if world.is_empty():
+		_log_cooperative_debug("create rejected: empty world")
 		cooperative_lobby_error.emit("合作世界数据无效。")
 		return false
 	var map_validation := GameMapRegistry.validate_world_map(world)
 	if not bool(map_validation.get("valid", false)):
-		cooperative_lobby_error.emit(str(map_validation.get("error", "房主选择的地图不可用。")))
+		var map_error := str(map_validation.get("error", "房主选择的地图不可用。"))
+		_log_cooperative_debug("create rejected: map validation failed: %s" % map_error)
+		cooperative_lobby_error.emit(map_error)
 		return false
 	var local_map: Dictionary = map_validation.get("map", {}) as Dictionary
 	if not local_map.is_empty():
@@ -70,13 +93,21 @@ func create_cooperative_lobby(world: Dictionary) -> bool:
 		world["map_version"] = str(local_map.get("map_version", world.get("map_version", "")))
 		world["map_hash"] = str(local_map.get("map_hash", world.get("map_hash", "")))
 	_pending_world = world.duplicate(true)
-	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, clampi(int(world.get("max_players", 4)), 1, 4))
+	var max_players := clampi(int(world.get("max_players", 4)), 1, 4)
+	_log_cooperative_debug("create requested: max_players=%d world=%s map=%s" % [
+		max_players,
+		str(world.get("world_id", "")),
+		str(world.get("map_id", "")),
+	])
+	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, max_players)
 	return true
 
 
 func join_cooperative_lobby(lobby_id: int) -> bool:
 	if not initialized or lobby_id <= 0:
+		_log_cooperative_debug("join rejected: initialized=%s lobby_id=%d" % [initialized, lobby_id])
 		return false
+	_log_cooperative_debug("join requested: lobby_id=%d" % lobby_id)
 	Steam.joinLobby(lobby_id)
 	return true
 
@@ -211,15 +242,18 @@ func is_current_lobby_host() -> bool:
 
 
 func _initialize_steam() -> void:
+	_log_cooperative_debug("initializing Steam")
 	initialized = Steam.steamInit()
 	initialization_finished = true
 	if not initialized:
 		initialization_message = "Steam 初始化失败：请启动 Steam 客户端并确认 steam_appid.txt。"
+		_log_cooperative_debug("Steam initialization failed")
 		initialization_completed.emit(false, initialization_message)
 		return
 	steam_id = Steam.getSteamID()
 	persona_name = Steam.getPersonaName()
 	initialization_message = "Steam 已登录：%s" % persona_name
+	_log_cooperative_debug("Steam initialized successfully")
 	initialization_completed.emit(true, initialization_message)
 	_check_connect_lobby_argument()
 
@@ -233,8 +267,16 @@ func _check_connect_lobby_argument() -> void:
 
 
 func _on_lobby_created(result: int, lobby_id: int) -> void:
+	var result_name := _steam_result_name(result)
+	_log_cooperative_debug("lobby_created callback: result=%d (%s) lobby_id=%d" % [
+		result, result_name, lobby_id
+	])
 	if result != Steam.Result.RESULT_OK:
-		cooperative_lobby_error.emit("创建 Steam 合作房间失败：%s" % result)
+		cooperative_lobby_error.emit(
+			"创建 Steam 合作房间失败：%d（%s）\n%s" % [
+				result, result_name, get_cooperative_lobby_debug_text()
+			]
+		)
 		return
 	cooperative_lobby_id = lobby_id
 	cooperative_lobby_host_steam_id = steam_id
@@ -263,6 +305,7 @@ func _on_lobby_join_requested(lobby_id: int, _friend_id: int) -> void:
 
 
 func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: int, response: int) -> void:
+	_log_cooperative_debug("lobby_joined callback: lobby_id=%d response=%d" % [lobby_id, response])
 	if response != Steam.ChatRoomEnterResponse.CHAT_ROOM_ENTER_RESPONSE_SUCCESS:
 		cooperative_lobby_error.emit("加入 Steam 合作房间失败，响应码：%d" % response)
 		return
@@ -289,6 +332,66 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: int, response: 
 	cooperative_lobby_host_steam_id = int(Steam.getLobbyData(lobby_id, "host_steam_id"))
 	cooperative_lobby_joined.emit(lobby_id, get_current_lobby_data())
 	cooperative_lobby_members_changed.emit()
+
+
+func get_cooperative_lobby_debug_info() -> Dictionary:
+	var executable_path := OS.get_executable_path()
+	var executable_directory := executable_path.get_base_dir()
+	var configured_app_id := int(ProjectSettings.get_setting(
+		"steam/initialization/app_data/app_id", 0
+	))
+	var runtime_app_id := 0
+	if initialized and Steam.has_method("getAppID"):
+		runtime_app_id = int(Steam.call("getAppID"))
+	return {
+		"initialized": initialized,
+		"initialization_finished": initialization_finished,
+		"initialization_message": initialization_message,
+		"configured_app_id": configured_app_id,
+		"runtime_app_id": runtime_app_id,
+		"steam_id": steam_id,
+		"persona_name": persona_name,
+		"current_lobby_id": cooperative_lobby_id,
+		"pending_world_id": str(_pending_world.get("world_id", "")),
+		"pending_map_id": str(_pending_world.get("map_id", "")),
+		"executable_path": executable_path,
+		"project_path": ProjectSettings.globalize_path("res://"),
+		"steam_appid_in_working_directory": FileAccess.file_exists("steam_appid.txt"),
+		"steam_appid_next_to_executable": FileAccess.file_exists(
+			executable_directory.path_join("steam_appid.txt")
+		) if not executable_directory.is_empty() else false,
+	}
+
+
+func get_cooperative_lobby_debug_text() -> String:
+	var info := get_cooperative_lobby_debug_info()
+	return "Steam调试：初始化=%s；配置AppID=%d；运行时AppID=%d；SteamID=%d；当前Lobby=%d；地图=%s；steam_appid.txt(工作目录=%s/可执行文件目录=%s)" % [
+		bool(info.get("initialized", false)),
+		int(info.get("configured_app_id", 0)),
+		int(info.get("runtime_app_id", 0)),
+		int(info.get("steam_id", 0)),
+		int(info.get("current_lobby_id", 0)),
+		str(info.get("pending_map_id", "")),
+		bool(info.get("steam_appid_in_working_directory", false)),
+		bool(info.get("steam_appid_next_to_executable", false)),
+	]
+
+
+func _steam_result_name(result: int) -> String:
+	return str(STEAM_RESULT_NAMES.get(result, "UnknownSteamResult"))
+
+
+func _log_cooperative_debug(message: String) -> void:
+	var info := get_cooperative_lobby_debug_info()
+	print("[SteamService][CoopLobby] %s | initialized=%s configured_app_id=%d runtime_app_id=%d steam_id=%d lobby_id=%d pending_map=%s" % [
+		message,
+		bool(info.get("initialized", false)),
+		int(info.get("configured_app_id", 0)),
+		int(info.get("runtime_app_id", 0)),
+		int(info.get("steam_id", 0)),
+		int(info.get("current_lobby_id", 0)),
+		str(info.get("pending_map_id", "")),
+	])
 
 
 func _on_lobby_chat_update(lobby_id: int, _changed_id: int, _making_change_id: int, _chat_state: int) -> void:

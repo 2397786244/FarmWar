@@ -45,6 +45,8 @@ var grid_coordinate := Vector2i.ZERO
 var field_id := ""
 var tile_spacing := 2.2
 var growth_value := 0
+var growth_progress_value := 0.0
+var growth_cycle := 0
 var plant_children: Array[Node3D] = []
 var crop_positions: Array[Vector3] = []
 var tool_child: Node3D
@@ -67,12 +69,14 @@ var bug_effects:bool = false  #
 var fertilizer_multiplier := 1.0
 var fertilizer_blocked := false
 var _crop_status_label_nearby := false
+var _mature_crop_glow: MatureCropGlow
 
 func _ready() -> void:
 	add_to_group("farm_tiles")
+	_ensure_mature_crop_glow()
 	get_crop_visual_manager(true)
 	Farmlandmanager.register_land(self)
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	_update_owner_visual(false)
 
 
@@ -89,6 +93,7 @@ func has_crop_status_label_content() -> bool:
 func set_crop_status_label_nearby(nearby: bool) -> void:
 	_crop_status_label_nearby = nearby
 	_refresh_crop_status_label()
+	_refresh_mature_crop_glow()
 
 
 func _refresh_crop_status_label() -> void:
@@ -101,6 +106,34 @@ func _refresh_crop_status_label() -> void:
 		return
 	label.text = "可收获" if can_harvest else "生长中"
 	label.visible = _crop_status_label_nearby
+
+
+func _refresh_crop_visuals() -> void:
+	_refresh_crop_status_label()
+	_refresh_mature_crop_glow()
+
+
+func _refresh_mature_crop_glow() -> void:
+	var glow := _ensure_mature_crop_glow()
+	if glow == null:
+		return
+	glow.set_active(
+		can_harvest
+			and not seed_record.is_empty()
+			and not plant_children.is_empty()
+	)
+
+
+func _ensure_mature_crop_glow() -> MatureCropGlow:
+	if is_instance_valid(_mature_crop_glow):
+		return _mature_crop_glow
+	_mature_crop_glow = get_node_or_null("MatureCropGlow") as MatureCropGlow
+	if _mature_crop_glow != null:
+		return _mature_crop_glow
+	_mature_crop_glow = MatureCropGlow.new()
+	_mature_crop_glow.name = "MatureCropGlow"
+	add_child(_mature_crop_glow)
+	return _mature_crop_glow
 
 
 func _register_crop_visuals() -> void:
@@ -146,14 +179,33 @@ func step() -> void:
 		_publish_farm_tile_delta("flame")
 		
 	if seed_record.is_empty() or can_harvest:
-		_refresh_crop_status_label()
+		_refresh_crop_visuals()
 		return
 	# freeze 不暂停作物生长。
-	var base_growth := randi_range(1, 3)
-	growth_value = mini(100, growth_value + roundi(float(base_growth) * fertilizer_multiplier))
-	if growth_value >= 100:
+	# FarmTile.step() runs once per second.  The crop definition owns the
+	# maturity duration, so every crop reaches 100% after its configured number
+	# of real seconds (fertilizer still accelerates the same progress).
+	if growth_progress_value <= 0.0 and growth_value > 0:
+		# Compatibility for older saves/tests that only persisted the integer value.
+		growth_progress_value = float(growth_value)
+	var growth_time_seconds := IngredientCatalog.get_growth_time_seconds(
+		seed_record,
+		growth_cycle > 0
+	)
+	if growth_time_seconds <= 0.0:
+		growth_time_seconds = 60.0
+	growth_progress_value = minf(
+		100.0,
+		growth_progress_value + 100.0 / growth_time_seconds * fertilizer_multiplier
+	)
+	growth_value = clampi(roundi(growth_progress_value), 0, 100)
+	# Avoid making a crop wait one extra simulation tick because repeated
+	# floating-point additions landed just below 100.0 (for example 100 / 120
+	# accumulated across a 120-second grape regrowth cycle).
+	if growth_progress_value >= 100.0 - 0.001:
+		growth_value = 100
 		can_harvest = true
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	if growth_value != growth_before or can_harvest != harvest_before:
 		_publish_farm_tile_delta("growth")
 
@@ -550,6 +602,8 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 	can_harvest = false
 	seed_record = seed_name
 	current_hp = max_hp
+	growth_progress_value = 0.0
+	growth_cycle = 0
 	burn_remaining = 0.0
 	burn_dps = 0.0
 	last_effect = ""
@@ -569,7 +623,7 @@ func _plant_crop_internal(seed_name: String, tool_owner: String, allow_neutral: 
 		_clear_crop()
 		return false
 	_register_crop_visuals()
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	if not allow_neutral:
 		claim_land(tool_owner)
 	else:
@@ -585,7 +639,9 @@ func apply_authoritative_plant(
 	tool_owner: String,
 	growth := 0,
 	ready := false,
-	authoritative_positions: Array = []
+	authoritative_positions: Array = [],
+	authoritative_growth_progress := -1.0,
+	authoritative_growth_cycle := 0
 ) -> bool:
 	if seed_name.is_empty() or not IngredientCatalog.is_plantable(seed_name):
 		return false
@@ -601,8 +657,12 @@ func apply_authoritative_plant(
 	if packed_scene == null:
 		return false
 	plant_mode = "Plant"
-	growth_value = clampi(growth, 0, 100)
-	can_harvest = ready or growth_value >= 100
+	_apply_growth_state(
+		growth,
+		authoritative_growth_progress,
+		ready,
+		authoritative_growth_cycle
+	)
 	seed_record = seed_name
 	current_hp = max_hp
 	bug_effects = false
@@ -626,7 +686,7 @@ func apply_authoritative_plant(
 	var planted := not plant_children.is_empty()
 	if planted:
 		_register_crop_visuals()
-		_refresh_crop_status_label()
+		_refresh_crop_visuals()
 	_notify_manager_state_changed()
 	return planted
 
@@ -656,7 +716,7 @@ func apply_authoritative_tool_destroyed() -> void:
 	var runner_home := get_node_or_null("RunnerHome")
 	if is_instance_valid(runner_home):
 		runner_home.queue_free()
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	_notify_manager_state_changed()
 
 
@@ -673,6 +733,8 @@ func get_authoritative_state() -> Dictionary:
 		"plant_mode": plant_mode,
 		"seed_record": seed_record,
 		"growth_value": growth_value,
+		"growth_progress": growth_progress_value,
+		"growth_cycle": growth_cycle,
 		"can_harvest": can_harvest,
 		"crop_positions": crop_positions.duplicate(true),
 		"tool_record": tool_record,
@@ -712,6 +774,8 @@ func apply_authoritative_state(state: Dictionary) -> void:
 			tool_child.rotation.y = next_tool_yaw
 	elif not next_seed.is_empty():
 		var next_growth := int(state.get("growth_value", growth_value))
+		var next_growth_progress := float(state.get("growth_progress", -1.0))
+		var next_growth_cycle := int(state.get("growth_cycle", growth_cycle))
 		var next_ready := bool(state.get("can_harvest", can_harvest))
 		var next_positions: Variant = state.get("crop_positions", null)
 		var positions_changed := next_positions is Array and not _crop_positions_match(next_positions as Array)
@@ -725,12 +789,18 @@ func apply_authoritative_state(state: Dictionary) -> void:
 				next_owner,
 				next_growth,
 				next_ready,
-				next_positions as Array if next_positions is Array else []
+				next_positions as Array if next_positions is Array else [],
+				next_growth_progress,
+				next_growth_cycle
 			)
 		else:
-			growth_value = clampi(next_growth, 0, 100)
-			can_harvest = next_ready
-			_refresh_crop_status_label()
+			_apply_growth_state(
+				next_growth,
+				next_growth_progress,
+				next_ready,
+				next_growth_cycle
+			)
+			_refresh_crop_visuals()
 	else:
 		_clear_crop()
 		if is_instance_valid(tool_child):
@@ -765,6 +835,8 @@ func apply_authoritative_delta(delta: Dictionary) -> void:
 		_clear_crop()
 	else:
 		var next_growth := clampi(int(delta.get("growth_value", growth_value)), 0, 100)
+		var next_growth_progress := float(delta.get("growth_progress", -1.0))
+		var next_growth_cycle := int(delta.get("growth_cycle", growth_cycle))
 		var next_ready := bool(delta.get("can_harvest", can_harvest))
 		var next_positions: Variant = delta.get("crop_positions", null)
 		var positions_changed := next_positions is Array and not _crop_positions_match(next_positions as Array)
@@ -774,12 +846,18 @@ func apply_authoritative_delta(delta: Dictionary) -> void:
 				land_owner,
 				next_growth,
 				next_ready,
-				next_positions as Array if next_positions is Array else []
+				next_positions as Array if next_positions is Array else [],
+				next_growth_progress,
+				next_growth_cycle
 			)
 		else:
-			growth_value = next_growth
-			can_harvest = next_ready
-			_refresh_crop_status_label()
+			_apply_growth_state(
+				next_growth,
+				next_growth_progress,
+				next_ready,
+				next_growth_cycle
+			)
+			_refresh_crop_visuals()
 		current_hp = maxf(0.0, float(delta.get("current_hp", current_hp)))
 		burn_remaining = maxf(0.0, float(delta.get("burn_remaining", burn_remaining)))
 		burn_dps = maxf(0.0, float(delta.get("burn_dps", burn_dps)))
@@ -804,6 +882,8 @@ func get_farm_tile_delta(effect: String) -> Dictionary:
 		"land_owner": land_owner,
 		"seed_record": seed_record,
 		"growth_value": growth_value,
+		"growth_progress": growth_progress_value,
+		"growth_cycle": growth_cycle,
 		"can_harvest": can_harvest,
 		"crop_positions": crop_positions.duplicate(true),
 		"current_hp": current_hp,
@@ -905,6 +985,26 @@ func _tick_burn(delta: float) -> void:
 		burn_dps = 0.0
 
 
+func _apply_growth_state(
+		fallback_growth_value: int,
+		authoritative_progress := -1.0,
+		ready := false,
+		authoritative_cycle := 0
+	) -> void:
+	var resolved_progress := float(fallback_growth_value) if authoritative_progress < 0.0 else authoritative_progress
+	growth_progress_value = clampf(resolved_progress, 0.0, 100.0)
+	growth_value = clampi(roundi(growth_progress_value), 0, 100)
+	growth_cycle = maxi(0, int(authoritative_cycle))
+	# When a newer state explicitly carries can_harvest, trust that flag.  This
+	# also prevents a stale progress field from reviving a crop that the
+	# authoritative state has already marked immature.  Older states without a
+	# fractional progress field retain the historic 100% fallback.
+	can_harvest = ready or (authoritative_progress < 0.0 and growth_progress_value >= 100.0)
+	if can_harvest:
+		growth_progress_value = 100.0
+		growth_value = 100
+
+
 func _clear_crop() -> void:
 	var crop_visual_manager := get_crop_visual_manager(false)
 	if crop_visual_manager != null:
@@ -915,6 +1015,8 @@ func _clear_crop() -> void:
 	plant_children.clear()
 	crop_positions.clear()
 	growth_value = 0
+	growth_progress_value = 0.0
+	growth_cycle = 0
 	current_hp = 0.0
 	seed_record = ""
 	can_harvest = false
@@ -923,12 +1025,14 @@ func _clear_crop() -> void:
 	bug_effects = false
 	apply_authoritative_fertilizer(1.0, false)
 	plant_mode = "Plant"
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	_notify_manager_state_changed()
 
 
 func _reset_crop_for_regrowth() -> void:
 	growth_value = 0
+	growth_progress_value = 0.0
+	growth_cycle += 1
 	can_harvest = false
 	current_hp = max_hp
 	burn_remaining = 0.0
@@ -937,7 +1041,7 @@ func _reset_crop_for_regrowth() -> void:
 	last_effect = ""
 	apply_authoritative_fertilizer(1.0, false)
 	plant_mode = "Plant"
-	_refresh_crop_status_label()
+	_refresh_crop_visuals()
 	_notify_manager_state_changed()
 
 

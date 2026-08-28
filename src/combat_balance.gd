@@ -196,6 +196,18 @@ const PROFILES := {
 		"damage": 500.0, "radius_four_wheel": 8.5, "radius_two_wheel": 5.2,
 		"knockback": 30.0,
 	},
+	"vehicle_impact": {
+		"minimum_speed": 2.0, "damage_per_excess_speed": 25.0,
+		"maximum_target_damage": 300.0, "self_damage_ratio": 0.25,
+		"maximum_self_damage": 75.0, "contact_rearm_seconds": 0.30,
+		"pair_cooldown_seconds": 0.65, "impact_speed_retention": 0.35,
+		"push_velocity_per_force": 0.02, "empty_push_max_speed": 1.2,
+		"occupied_push_multiplier": 0.20, "occupied_push_max_speed": 0.25,
+		"push_decay": 2.5, "topple_window_seconds": 3.0,
+		"topple_required_sources": 3, "topple_required_force": 60.0,
+		"topple_angle_degrees": 82.0, "topple_response": 7.0,
+		"upright_response": 10.0,
+	},
 	"small_mouse": {
 		"range": 60.0, "damage": 5.0, "visual_speed": 60.0,
 		"primary_cooldown": 1.0, "labeled_duration": 6.0,

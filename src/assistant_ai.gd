@@ -139,7 +139,7 @@ func _ready() -> void:
 	current_hp = max_hp
 	collision_layer = 8
 	# 519 + 工具层 128：已放置的 TallLogWall 等防御建筑必须阻挡 Assistant。
-	collision_mask = 647
+	collision_mask = 647 | GameAuthority.COLLISION_LAYER_VEHICLES
 	add_to_group("assistant_ai")
 	add_to_group("combat_characters")
 	_create_hand_mount()
@@ -1380,7 +1380,7 @@ func _respawn() -> void:
 	is_dead = false
 	action_animation_locked = false
 	collision_layer = 8
-	collision_mask = 647
+	collision_mask = 647 | GameAuthority.COLLISION_LAYER_VEHICLES
 	if body_collision != null:
 		body_collision.set_deferred("disabled", false)
 	if hit_collision != null:

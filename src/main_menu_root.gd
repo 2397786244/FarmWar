@@ -111,9 +111,25 @@ func _on_singleplayer_requested() -> void:
 
 func _start_singleplayer_map(map_definition: Dictionary) -> void:
 	var scene_path := str(map_definition.get("scene_path", ""))
-	if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
+	if scene_path.is_empty():
 		push_error("[MenuFlow] Single-player map is unavailable: %s" % scene_path)
 		return
+	MapLoading.begin_loading(
+		str(map_definition.get("display_name", "Harvest Operation Map")),
+		str(map_definition.get("loading_images_directory", "")),
+		"res://data/loading_tips.json"
+	)
+	MapLoading.update_progress(0.02, "正在验证地图")
+	await get_tree().process_frame
+	var map_validation := GameMapRegistry.validate_map_definition(map_definition)
+	if not bool(map_validation.get("is_compatible", false)):
+		MapLoading.cancel_loading()
+		push_error("[MenuFlow] Single-player map is incompatible: %s" % str(
+			map_validation.get("validation_errors", [])
+		))
+		return
+	var validated_map: Dictionary = map_validation
+	scene_path = str(validated_map.get("scene_path", scene_path))
 	var selection := {
 		"peer_id": GameAuthority.LOCAL_PLAYER_ID,
 		"display_name": "LocalPlayer",
@@ -125,12 +141,6 @@ func _start_singleplayer_map(map_definition: Dictionary) -> void:
 	}
 	GameAuthority.start_local_mode(selection)
 	GlobalVar.pending_player_selection = selection
-	MapLoading.begin_loading(
-		str(map_definition.get("display_name", "Harvest Operation Map")),
-		str(map_definition.get("loading_images_directory", "")),
-		"res://data/loading_tips.json"
-	)
-	await get_tree().process_frame
 	get_tree().change_scene_to_file(scene_path)
 
 

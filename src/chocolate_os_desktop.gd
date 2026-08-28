@@ -9,6 +9,13 @@ const HEARTBEAT_SECONDS := 10.0
 const DESKTOP_DOUBLE_CLICK_INTERVAL_MSEC := 450
 const ICON_CELL_SIZE := Vector2(92.0, 98.0)
 const ICON_ORIGIN := Vector2(20.0, 20.0)
+const SUPPLY_RELAY_PAGE_SCRIPT := preload("res://src/supply_relay_page.gd")
+const S_CHAT_PAGE_SCRIPT := preload("res://src/s_chat_page.gd")
+const RANGE_LEDGER_PAGE_SCRIPT := preload("res://src/range_ledger_page.gd")
+const SOFIA_ON_WHEELS_PAGE_SCRIPT := preload("res://src/sofia_on_wheels_page.gd")
+const CIRCUIT_AND_CHAI_PAGE_SCRIPT := preload("res://src/circuit_and_chai_page.gd")
+const MERCER_SEED_PAGE_SCRIPT := preload("res://src/mercer_seed_page.gd")
+const BELLWRENCH_PAGE_SCRIPT := preload("res://src/bellwrench_page.gd")
 
 var player: GamePlayer
 var computer: ComputerTerminal
@@ -39,6 +46,8 @@ var last_icon_click_msec := 0
 var suppressed_icon_activation_app_id := ""
 var dock_refresh_queued := false
 var shutting_down := false
+var pending_s_chat_like_ids: Array[String] = []
+var s_chat_like_write_pending := false
 
 
 func _ready() -> void:
@@ -157,6 +166,8 @@ func open_for(target: ComputerTerminal, owner: GamePlayer, state: Dictionary) ->
 	player = owner
 	computer = target
 	computer_state = state.duplicate(true)
+	pending_s_chat_like_ids.clear()
+	s_chat_like_write_pending = false
 	shutting_down = false
 	_reset_icon_click_state()
 	shutdown_overlay.visible = false
@@ -183,6 +194,8 @@ func close(request_release := true) -> void:
 	shutdown_overlay.visible = false
 	_close_all_windows()
 	_reset_icon_click_state()
+	pending_s_chat_like_ids.clear()
+	s_chat_like_write_pending = false
 	Input.set_custom_mouse_cursor(null)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	computer = null
@@ -209,8 +222,31 @@ func apply_action_result(result: Dictionary) -> void:
 	var action := str(result.get("action", ""))
 	if action in ["install_app", "uninstall_app"]:
 		_refresh_open_management_pages()
-	if not bool(result.get("ok", false)) and action != "heartbeat":
+	if action.begins_with("embedded_lab_"):
+		var lab_instance: Variant = app_instances.get("embedded_lab", null)
+		if lab_instance != null and is_instance_valid(lab_instance) and lab_instance.has_method("apply_authoritative_result"):
+			lab_instance.call("apply_authoritative_result", result)
+	if action == "supply_draw":
+		_apply_supply_result_to_browser(result)
+	if action == "write_app_data" and str(result.get("app_id", "")) == "browser":
+		_apply_browser_storage_result(result)
+	if not bool(result.get("ok", false)) and action != "heartbeat" \
+			and str(result.get("reason", "")) != "revision_conflict":
 		_show_notice(_reason_text(str(result.get("reason", "操作失败"))))
+
+
+func _apply_supply_result_to_browser(result: Dictionary) -> void:
+	for session_value: Variant in browser_sessions.values():
+		if not session_value is Dictionary:
+			continue
+		var session := session_value as Dictionary
+		var page := session.get("page", null) as Control
+		if page == null or not is_instance_valid(page):
+			continue
+		for child: Node in page.get_children():
+			if child.has_method("apply_supply_result"):
+				child.call("apply_supply_result", result)
+				return
 
 
 func _process(delta: float) -> void:
@@ -708,6 +744,10 @@ func _build_browser(content: Control, app_id: String) -> void:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Web pages are laid out to the browser content width. Horizontal scrolling
+	# only creates a bottom bar and can hide the final row when a vertical bar is
+	# also present; page components keep their grids within this width.
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
 	var page := VBoxContainer.new()
 	page.name = "Page"
@@ -786,6 +826,13 @@ func _render_browser_url(app_id: String, url: String) -> void:
 	match str(route.get("page_kind", "404")):
 		"store": _render_store_page(page)
 		"store_detail": _render_store_detail(page, str(route.get("app_id", "")))
+		"supply_relay", "fake_supply": _render_supply_page(page, str(route.get("site_id", "supplyrelay")))
+		"s_chat": _render_s_chat_page(page, app_id)
+		"range_ledger": _render_range_ledger_page(page, str(route.get("page_id", "catalog")), app_id)
+		"sofia_on_wheels": _render_sofia_on_wheels_page(page, str(route.get("page_id", "home")), app_id)
+		"circuit_and_chai": _render_circuit_and_chai_page(page, str(route.get("page_id", "os08")), app_id)
+		"mercer_seed": _render_mercer_seed_page(page, str(route.get("page_id", "home")), app_id)
+		"bellwrench": _render_bellwrench_page(page, str(route.get("page_id", "vehicles")), app_id)
 		"invalid": _render_browser_error(page, "地址无效", "请输入类似 www.osapp.store 的有效地址。")
 		_: _render_browser_error(page, "404\n找不到网页", "无法找到 %s\n请检查地址是否正确。" % str(route.get("display_url", url)))
 
@@ -861,6 +908,182 @@ func _request_store_install(program_id: String, button: Button) -> void:
 	button.disabled = true
 	button.text = "安装中…"
 	player.request_computer_action(computer, "install_app", {"program_id": program_id, "source": "app_store"})
+
+
+func _render_supply_page(page: VBoxContainer, site_id: String) -> void:
+	var supply_page := SUPPLY_RELAY_PAGE_SCRIPT.new() as SupplyRelayPage
+	if supply_page == null:
+		_render_browser_error(page, "页面加载失败", "Supply Relay 页面组件不可用。")
+		return
+	page.add_child(supply_page)
+	supply_page.setup(self, site_id)
+
+
+func _render_s_chat_page(page: VBoxContainer, app_id: String) -> void:
+	var s_chat_page := S_CHAT_PAGE_SCRIPT.new() as SChatPage
+	if s_chat_page == null:
+		_render_browser_error(page, "页面加载失败", "s.com 页面组件不可用。")
+		return
+	page.add_child(s_chat_page)
+	s_chat_page.setup(self, app_id, get_browser_s_chat_liked_post_ids())
+
+
+func _render_range_ledger_page(page: VBoxContainer, page_id: String, app_id: String) -> void:
+	var range_ledger_page := RANGE_LEDGER_PAGE_SCRIPT.new() as RangeLedgerPage
+	if range_ledger_page == null:
+		_render_browser_error(page, "页面加载失败", "Range Ledger 页面组件不可用。")
+		return
+	page.add_child(range_ledger_page)
+	range_ledger_page.setup(self, page_id, app_id)
+
+
+func _render_sofia_on_wheels_page(page: VBoxContainer, page_id: String, app_id: String) -> void:
+	var sofia_page := SOFIA_ON_WHEELS_PAGE_SCRIPT.new() as SofiaOnWheelsPage
+	if sofia_page == null:
+		_render_browser_error(page, "页面加载失败", "Sofia on Wheels 页面组件不可用。")
+		return
+	page.add_child(sofia_page)
+	sofia_page.setup(self, page_id, app_id)
+
+
+func _render_circuit_and_chai_page(page: VBoxContainer, page_id: String, app_id: String) -> void:
+	var circuit_page := CIRCUIT_AND_CHAI_PAGE_SCRIPT.new() as CircuitAndChaiPage
+	if circuit_page == null:
+		_render_browser_error(page, "页面加载失败", "Circuit & Chai 页面组件不可用。")
+		return
+	page.add_child(circuit_page)
+	circuit_page.setup(self, page_id, app_id)
+
+
+func _render_mercer_seed_page(page: VBoxContainer, page_id: String, app_id: String) -> void:
+	var mercer_page := MERCER_SEED_PAGE_SCRIPT.new() as MercerSeedPage
+	if mercer_page == null:
+		_render_browser_error(page, "页面加载失败", "Mercer Seed 页面组件不可用。")
+		return
+	page.add_child(mercer_page)
+	mercer_page.setup(self, page_id, app_id)
+
+
+func _render_bellwrench_page(page: VBoxContainer, page_id: String, app_id: String) -> void:
+	var bellwrench_page := BELLWRENCH_PAGE_SCRIPT.new() as BellwrenchPage
+	if bellwrench_page == null:
+		_render_browser_error(page, "页面加载失败", "Bellwrench 页面组件不可用。")
+		return
+	page.add_child(bellwrench_page)
+	bellwrench_page.setup(self, page_id, app_id)
+
+
+func navigate_browser_from_page(app_id: String, url: String) -> void:
+	if not is_open() or not browser_sessions.has(app_id):
+		return
+	_browser_navigate(url, app_id, true)
+
+
+func request_supply_draw(site_id: String) -> void:
+	if not is_open() or not is_instance_valid(player) or not is_instance_valid(computer):
+		return
+	player.request_computer_action(computer, "supply_draw", {"site_id": site_id})
+
+
+func get_browser_s_chat_liked_post_ids() -> Array[String]:
+	var storage := read_app_storage("browser")
+	var payload_value: Variant = storage.get("payload", {})
+	if not payload_value is Dictionary:
+		return []
+	var s_chat_value: Variant = (payload_value as Dictionary).get("s_chat", {})
+	if not s_chat_value is Dictionary:
+		return []
+	return _as_string_array((s_chat_value as Dictionary).get("liked_post_ids", []))
+
+
+func set_browser_s_chat_like_state(app_id: String, liked_ids_value: Variant) -> void:
+	if app_id != "browser" or not is_open() or not is_instance_valid(player) or not is_instance_valid(computer):
+		return
+	pending_s_chat_like_ids = _as_string_array(liked_ids_value)
+	_flush_browser_s_chat_like_write()
+
+
+func _flush_browser_s_chat_like_write() -> void:
+	if s_chat_like_write_pending or not is_open() or not is_instance_valid(player) \
+			or not is_instance_valid(computer):
+		return
+	var storage := read_app_storage("browser")
+	var revision := int(storage.get("revision", 0))
+	var payload_value: Variant = storage.get("payload", {})
+	var payload: Dictionary = (payload_value as Dictionary).duplicate(true) \
+		if payload_value is Dictionary else {}
+	var s_chat_value: Variant = payload.get("s_chat", {})
+	var s_chat: Dictionary = (s_chat_value as Dictionary).duplicate(true) \
+		if s_chat_value is Dictionary else {}
+	s_chat["schema_version"] = 1
+	s_chat["liked_post_ids"] = pending_s_chat_like_ids.duplicate()
+	payload["s_chat"] = s_chat
+	s_chat_like_write_pending = true
+	player.request_computer_action(computer, "write_app_data", {
+		"app_id": "browser",
+		"payload": payload,
+		"expected_revision": revision,
+	})
+
+
+func _apply_browser_storage_result(result: Dictionary) -> void:
+	var is_revision_conflict := str(result.get("reason", "")) == "revision_conflict"
+	if is_revision_conflict:
+		# The authoritative computer_state has already been applied by the player.
+		# Keep the newest desired local set and retry against the new app revision.
+		s_chat_like_write_pending = false
+		_flush_browser_s_chat_like_write()
+		return
+	s_chat_like_write_pending = false
+	if not bool(result.get("ok", false)):
+		var page := _find_s_chat_page()
+		if page != null and page.has_method("restore_liked_post_ids"):
+			page.call("restore_liked_post_ids", get_browser_s_chat_liked_post_ids())
+		return
+	var saved_ids := _browser_s_chat_liked_ids_from_app_state(result.get("app_state", {}))
+	if saved_ids != pending_s_chat_like_ids:
+		# A second click may have changed the desired set while the first request
+		# was in flight. Submit that newer set using the newly returned revision.
+		_flush_browser_s_chat_like_write()
+	else:
+		pending_s_chat_like_ids.clear()
+
+
+func _find_s_chat_page() -> Control:
+	var session_value: Variant = browser_sessions.get("browser", {})
+	if not session_value is Dictionary:
+		return null
+	var page := (session_value as Dictionary).get("page", null) as Control
+	if page == null or not is_instance_valid(page):
+		return null
+	for child: Node in page.get_children():
+		if child is SChatPage:
+			return child as Control
+	return null
+
+
+func _browser_s_chat_liked_ids_from_app_state(app_state_value: Variant) -> Array[String]:
+	if not app_state_value is Dictionary:
+		return []
+	var app_state := app_state_value as Dictionary
+	var payload_value: Variant = app_state.get("payload", {})
+	if not payload_value is Dictionary:
+		return []
+	var s_chat_value: Variant = (payload_value as Dictionary).get("s_chat", {})
+	if not s_chat_value is Dictionary:
+		return []
+	return _as_string_array((s_chat_value as Dictionary).get("liked_post_ids", []))
+
+
+func _as_string_array(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if not value is Array:
+		return result
+	for item: Variant in value:
+		var text := str(item)
+		if not text.is_empty() and not result.has(text):
+			result.append(text)
+	return result
 
 
 func _render_browser_error(page: VBoxContainer, heading: String, detail: String) -> void:
@@ -953,11 +1176,18 @@ func _refresh_my_computer_root(root: VBoxContainer) -> void:
 			found = true
 			var program_id := str(item.get("program_id", ""))
 			var manifest := ChocolateOSCatalog.get_manifest_for_program(program_id)
+			var program_name := "空白"
+			if not program_id.is_empty():
+				if manifest != null:
+					program_name = manifest.display_name
+				else:
+					var embedded_definition := EmbeddedLabCatalog.get_definition(program_id)
+					program_name = str(embedded_definition.get("display_name", "未知程序：%s" % program_id))
 			var row := HBoxContainer.new()
 			root.add_child(row)
 			var label := Label.new()
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			label.text = "硬盘（空白）" if program_id.is_empty() else "硬盘（%s）" % (manifest.display_name if manifest != null else "未知程序：%s" % program_id)
+			label.text = "硬盘（%s）" % program_name
 			row.add_child(label)
 			if manifest != null and not _installed_ids().has(manifest.app_id):
 				var install := Button.new()
@@ -1042,6 +1272,31 @@ func query_app_service(app_id: String, service: String, _request: Dictionary) ->
 			return {"ok": true, "ready": false, "team": team}
 		"network.read":
 			return {"ok": true, "connected": true}
+		"embedded_lab.read":
+			if not is_instance_valid(computer) or computer.os_id != "OS26":
+				return {"ok": false, "reason": "embedded_lab_incompatible_os"}
+			var drives: Array[Dictionary] = []
+			if is_instance_valid(player):
+				for slot_index in range(player.backpack_items.size()):
+					var item: Dictionary = player.backpack_items[slot_index]
+					var item_id := str(item.get("item_id", item.get("ingredient_id", "")))
+					if item_id != "hard_drive":
+						continue
+					drives.append({
+						"slot_index": slot_index,
+						"drive_instance_id": str(item.get("drive_instance_id", "")),
+						"program_id": str(item.get("program_id", "")),
+					})
+			var team := str(player.team) if is_instance_valid(player) else ""
+			return {
+				"ok": true,
+				# Research and unlocks belong to the player's team. The current
+				# computer only supplies the OS26 UI and the exclusive lock.
+				"state": GameAuthority.get_team_embedded_lab_state(team) \
+					if is_instance_valid(GameAuthority) else EmbeddedLabCatalog.get_default_state(),
+				"team_money": GlobalVar.check_team_item_amount(team, "money"),
+				"hard_drives": drives,
+			}
 	return {"ok": false, "reason": "unknown_service"}
 
 
@@ -1055,6 +1310,10 @@ func command_app_service(app_id: String, service: String, _action: String, paylo
 			"payload": payload,
 			"expected_revision": expected_revision,
 		})
+		return true
+	if service == "embedded_lab" and is_open():
+		var action_name := "embedded_lab_%s" % _action
+		player.request_computer_action(computer, action_name, payload)
 		return true
 	return false
 
@@ -1084,7 +1343,19 @@ func _reason_text(reason: String) -> String:
 		"missing_dependency": return "缺少应用依赖"
 		"app_not_removable": return "系统应用不能卸载"
 		"program_drive_not_found": return "背包中没有对应的程序硬盘"
+		"embedded_lab_incompatible_os": return "Embedded Lab 只能在 ChocolateOS26 上运行"
+		"embedded_lab_busy": return "当前已有其他程序正在开发"
+		"embedded_lab_prerequisite_missing": return "缺少前置程序"
+		"embedded_lab_already_unlocked": return "程序已经解锁"
+		"embedded_program_not_unlocked": return "程序尚未解锁"
+		"insufficient_money": return "队伍资金不足"
+		"blank_hard_drive_not_found": return "没有空白硬盘"
+		"hard_drive_slot_invalid": return "所选硬盘无效"
+		"hard_drive_already_programmed": return "所选硬盘已经写入程序"
+		"invalid_hard_drive_layout": return "硬盘必须作为独立物品占用一个背包格"
 		"required_by_app": return "其他应用仍依赖这个程序"
+		"invalid_supply_site": return "供应网页地址无效"
+		"supply_reward_failed": return "奖励发放失败，付款已退回"
 		_: return "电脑操作失败：%s" % reason
 
 

@@ -185,7 +185,9 @@ func _fill_product_list(container: VBoxContainer, is_buy: bool) -> void:
 		container.remove_child(child)
 		child.queue_free()
 	for product: Dictionary in current_shop.get_shop_list():
-		var allowed := bool(product["can_buy"] if is_buy else product["can_sell"])
+		var product_id := str(product.get("id", ""))
+		var allowed := current_shop.can_buy_product(product_id) if is_buy \
+			else current_shop.can_sell_product(product_id)
 		if allowed:
 			container.add_child(_create_product_row(product, is_buy))
 
@@ -236,7 +238,7 @@ func _create_product_row(product: Dictionary, is_buy: bool) -> Control:
 	var step := _get_trade_step(product)
 	quantity.min_value = step
 	quantity.step = step
-	quantity.max_value = 1.0 if str(product.get("kind", "")) in ["weapon", "livestock"] \
+	quantity.max_value = 1.0 if str(product.get("kind", "")) in ["weapon", "ammo_supply_box", "livestock"] \
 		else (99.0 if is_buy else maxf(step, owned))
 	quantity.value = step
 	quantity.suffix = " kg" if unit == "kg" else " 件"

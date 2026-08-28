@@ -1,0 +1,456 @@
+{
+  "recipe_order": [
+    "furnace_iron_ingot",
+    "furnace_copper_ingot",
+    "furnace_steel_ingot",
+    "furnace_steel_plate",
+    "furnace_glass_panes",
+    "wood_lumber",
+    "wood_chest_armor",
+    "wood_legwear",
+    "material_plant_fiber_cloth",
+    "material_cotton_thread",
+    "material_cotton_cloth",
+    "material_engineering_plastic",
+    "material_rubber_parts",
+    "material_copper_wire",
+    "material_metal_connector",
+    "material_bearing",
+    "material_gear_set",
+    "material_hydraulic_component",
+    "material_metal_defense_net",
+    "material_composite_armor_panel",
+    "material_plant_fiber_chest_armor",
+    "material_plant_fiber_legwear",
+    "material_cotton_chest_armor",
+    "material_cotton_legwear",
+    "material_plastic_chest_armor",
+    "material_plastic_legwear",
+    "material_police_vest",
+    "material_military_vest",
+    "material_brown_backpack",
+    "material_cotton_backpack",
+    "material_military_backpack",
+    "material_vehicle_harvest_reel",
+    "material_vehicle_extended_seat",
+    "electronic_circuit_board",
+    "electronic_battery_pack",
+    "electronic_hard_drive",
+    "electronic_high_performance_motor",
+    "electronic_vehicle_control_module",
+    "electronic_detonator_module",
+    "electronic_signal_augment",
+    "electronic_roof_cooling_system",
+    "electronic_vehicle_machine_gun",
+    "electronic_nitro_boost",
+    "electronic_roof_headlights",
+    "electronic_laptop"
+  ],
+  "recipes": [
+    {
+      "recipe_id": "furnace_iron_ingot",
+      "display_name": "冶炼铁锭",
+      "workbench_id": "industrial_furnace",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "iron", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "coal", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "iron_ingot", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "furnace_copper_ingot",
+      "display_name": "冶炼铜锭",
+      "workbench_id": "industrial_furnace",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "copper", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "coal", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "copper_ingot", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "furnace_steel_ingot",
+      "display_name": "冶炼钢锭",
+      "workbench_id": "industrial_furnace",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "iron_ingot", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "coal", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "steel_ingot", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "furnace_steel_plate",
+      "display_name": "轧制钢板",
+      "workbench_id": "industrial_furnace",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "steel_ingot", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "furnace_glass_panes",
+      "display_name": "烧制玻璃板",
+      "workbench_id": "industrial_furnace",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "limestone", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "coal", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "wood_lumber",
+      "display_name": "锯切木板",
+      "workbench_id": "wood_processing_table",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "log", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "lumber", "amount": 2.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "wood_chest_armor",
+      "display_name": "制作木制胸甲",
+      "workbench_id": "wood_processing_table",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 3.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "chest_armor_wood", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "wood_legwear",
+      "display_name": "制作木制护腿",
+      "workbench_id": "wood_processing_table",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "legwear_wood", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_plant_fiber_cloth",
+      "display_name": "编织植物纤维布",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "plant_fiber", "amount": 3.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "plant_fiber_cloth", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "material_cotton_thread",
+      "display_name": "纺制棉线",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "cotton", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "cotton_thread", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "material_cotton_cloth",
+      "display_name": "织造棉布",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "cotton_thread", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "cotton_cloth", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "material_engineering_plastic",
+      "display_name": "加工工程塑料颗粒",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "rubber_barrel", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "coal", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 2.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "material_rubber_parts",
+      "display_name": "加工橡胶零件",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "rubber_barrel", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "rubber_parts", "amount": 2.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_copper_wire",
+      "display_name": "拉制铜线",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 1,
+      "complexity": 1,
+      "inputs": [{"kind": "ingredient", "id": "copper_ingot", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}
+    },
+    {
+      "recipe_id": "material_metal_connector",
+      "display_name": "冲压金属连接件",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "iron_ingot", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_bearing",
+      "display_name": "装配轴承",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "steel_ingot", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "bearing", "amount": 2.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_gear_set",
+      "display_name": "加工齿轮组",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "steel_ingot", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "bearing", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "gear_set", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_hydraulic_component",
+      "display_name": "装配液压组件",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "rubber_parts", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "hydraulic_component", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_metal_defense_net",
+      "display_name": "编织金属防护网",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "metal_defense_net", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_composite_armor_panel",
+      "display_name": "压制复合装甲板",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_defense_net", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "composite_armor_panel", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_plant_fiber_chest_armor",
+      "display_name": "制作植物纤维胸甲",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "plant_fiber_cloth", "amount": 3.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "chest_armor_plant_fiber", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_plant_fiber_legwear",
+      "display_name": "制作植物纤维护腿",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "plant_fiber_cloth", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "legwear_plant_fiber", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_cotton_chest_armor",
+      "display_name": "制作棉布胸甲",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 3.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "chest_armor_cotton", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_cotton_legwear",
+      "display_name": "制作棉布护腿",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 2.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "legwear_cotton", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_plastic_chest_armor",
+      "display_name": "制作工程塑料胸甲",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 4.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "chest_armor_engineering_plastic", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_plastic_legwear",
+      "display_name": "制作工程塑料护腿",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 3.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "legwear_engineering_plastic", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_police_vest",
+      "display_name": "制作警用防弹背心",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}],
+      "output": {"kind": "equipment", "id": "chest_armor_police_vest", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_military_vest",
+      "display_name": "制作军用防弹背心",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 3.0, "unit": "kg"}, {"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_defense_net", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}],
+      "output": {"kind": "equipment", "id": "chest_armor_military_vest", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_brown_backpack",
+      "display_name": "缝制棕色皮革背包",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "animal_hide", "amount": 3.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton_thread", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "equipment", "id": "backpack_brown", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_cotton_backpack",
+      "display_name": "缝制棉布背包",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 10.0, "unit": "kg"}],
+      "output": {"kind": "equipment", "id": "backpack_cotton", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_military_backpack",
+      "display_name": "缝制军用背包",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "cotton_cloth", "amount": 10.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_defense_net", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}],
+      "output": {"kind": "equipment", "id": "backpack_military", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_vehicle_harvest_reel",
+      "display_name": "组装收割模块",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "gear_set", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "hydraulic_component", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "high_performance_motor", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_harvest_reel", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "material_vehicle_extended_seat",
+      "display_name": "组装扩展座椅",
+      "workbench_id": "comprehensive_material_processing_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton_cloth", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_extended_seat", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_circuit_board",
+      "display_name": "焊接电路板",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 2,
+      "complexity": 2,
+      "inputs": [{"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_battery_pack",
+      "display_name": "组装电池组",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 2,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_hard_drive",
+      "display_name": "装配空白硬盘",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 3,
+      "complexity": 3,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "hard_drive", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_high_performance_motor",
+      "display_name": "组装高性能电机",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 3,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "gear_set", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "high_performance_motor", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_vehicle_control_module",
+      "display_name": "装配载具控制模块",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_control_module", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_detonator_module",
+      "display_name": "制作电子引爆模块",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 3,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "saltpeter", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "electronic_detonator_module", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_signal_augment",
+      "display_name": "组装车载信号增强塔",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "ingredient", "id": "vehicle_signal_augment", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_roof_cooling_system",
+      "display_name": "组装车载冷却系统",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 5,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "rubber_parts", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "high_performance_motor", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_roof_cooling_system", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_vehicle_machine_gun",
+      "display_name": "组装车载机枪",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 5,
+      "complexity": 5,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "vehicle_control_module", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_machine_gun", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_nitro_boost",
+      "display_name": "组装氮气加速装置",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 5,
+      "complexity": 5,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "rubber_parts", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "vehicle_control_module", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_nitro_boost", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_roof_headlights",
+      "display_name": "组装车顶大灯",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "ingredient", "id": "vehicle_roof_headlights", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_laptop",
+      "display_name": "装配笔记本电脑",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 5,
+      "complexity": 5,
+      "inputs": [{"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "hard_drive", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "engineering_plastic_pellets", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
+      "output": {"kind": "tool", "id": "laptop", "amount": 1.0, "unit": "item"}
+    }
+  ]
+}

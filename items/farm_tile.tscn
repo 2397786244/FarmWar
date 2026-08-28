@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dn62n7osp58a7" path="res://src/farm_tile.gd" id="1_fal0d"]
 [ext_resource type="Shader" uid="uid://dmqkg4hidmajl" path="res://src/farm_owner_tint.gdshader" id="3_owner_shader"]
+[ext_resource type="Script" path="res://src/mature_crop_glow.gd" id="4_mature_crop_glow"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_owner_tint"]
 render_priority = 1
@@ -32,3 +33,7 @@ no_depth_test = true
 text = "生长中"
 font_size = 32
 outline_size = 6
+
+[node name="MatureCropGlow" type="Node3D" parent="." unique_id=2177008142]
+visible = false
+script = ExtResource("4_mature_crop_glow")

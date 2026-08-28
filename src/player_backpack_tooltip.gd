@@ -168,6 +168,8 @@ func _resolve_ingredient(item: Dictionary) -> Dictionary:
 	var definition := IngredientCatalog.get_definition(ingredient_id)
 	if definition.is_empty():
 		return {}
+	if ingredient_id == "hard_drive":
+		return _resolve_hard_drive(item, definition)
 	var display_name := str(definition.get("display_name", ingredient_id))
 	if _is_chopped_ingredient(item):
 		display_name = "切碎的" + display_name
@@ -178,6 +180,34 @@ func _resolve_ingredient(item: Dictionary) -> Dictionary:
 		"description": str(definition.get("description", "暂无说明。")),
 		"stats": "携带量：%.2f kg" % float(item.get("weight_kg", 0.0)),
 		"price": _get_price_text(ingredient_id),
+	}
+
+
+func _resolve_hard_drive(item: Dictionary, definition: Dictionary) -> Dictionary:
+	var program_id := str(item.get("program_id", "")).strip_edges()
+	var weight_text := "重量：%.2f kg" % float(item.get("weight_kg", 0.0))
+	if program_id.is_empty():
+		return {
+			"title": str(definition.get("display_name", "硬盘")),
+			"type": "工业制品 · 存储介质",
+			"description": str(definition.get("description", "用于存储程序的硬盘。")),
+			"stats": "状态：空白硬盘\n%s" % weight_text,
+			"price": _get_price_text("hard_drive"),
+		}
+	var program := HardDriveProgramCatalog.describe(program_id)
+	var version := str(program.get("version", ""))
+	var version_text := "\n版本：%s" % version if not version.is_empty() else ""
+	return {
+		"title": str(definition.get("display_name", "硬盘")),
+		"type": "工业制品 · " + str(program.get("program_type", "程序")),
+		"description": "已烧录：%s\n程序标识：%s%s\n%s" % [
+			str(program.get("display_name", program_id)),
+			program_id,
+			version_text,
+			str(program.get("description", "暂无程序说明。")),
+		],
+		"stats": "状态：已写入程序\n%s" % weight_text,
+		"price": _get_price_text("hard_drive"),
 	}
 
 
@@ -207,8 +237,11 @@ func _get_price_text(item_id: String, item: Dictionary = {}) -> String:
 	var unit := "kg" if str(product.get("unit", "item")) == "kg" else "件"
 	var buy_text := "%d 金币/%s" % [int(product.get("buy_price", 0)), unit] if bool(product.get("can_buy", false)) else "不可购买"
 	var sell_price := int(product.get("sell_price", 0))
-	var sell_text := "%d 金币/%s" % [sell_price, unit] if bool(product.get("can_sell", false)) else "不可回收"
-	if str(product.get("kind", "")) == "livestock" and bool(product.get("can_sell", false)):
+	var can_sell := bool(product.get("can_sell", false))
+	if str(product.get("kind", "")) in ["weapon", "ammo_supply_box"]:
+		can_sell = GlobalVar.is_shop_product_sellable("gun_store", item_id, product)
+	var sell_text := "%d 金币/%s" % [sell_price, unit] if can_sell else "不可回收"
+	if str(product.get("kind", "")) == "livestock" and can_sell:
 		var progress := clampf(float(item.get("growth_progress", 0.0)), 0.0, 100.0)
 		var current_sell_price := roundi(float(sell_price) * (1.0 + 2.0 * progress / 100.0))
 		sell_text = "%d 金币/件（成熟价 %d）" % [current_sell_price, sell_price * 3]

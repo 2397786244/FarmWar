@@ -426,7 +426,7 @@ var grenade_use_chance: float = 1.0
 
 ## Character 层为 8；mask 额外包含工具层 128，使其能够阻挡已放置的防御墙。
 @export var body_collision_layer: int = 8
-@export_flags_3d_physics var body_collision_mask: int = 647
+@export_flags_3d_physics var body_collision_mask: int = 647 | GameAuthority.COLLISION_LAYER_VEHICLES
 
 ## 与现有玩家/AI Hit3D 设置一致。
 @export var hit_area_collision_layer: int = 0
@@ -3642,7 +3642,12 @@ func _is_ai_hitscan_weapon(slot: int) -> bool:
 
 
 func _fire_ai_hitscan_weapon() -> bool:
-	if not is_instance_valid(held_weapon):
+	# server_ai_hitscan() can synchronously damage a vehicle or explosive target.
+	# That path may kill this AI before it returns, and _die() then queues and
+	# clears held_weapon. Keep the original reference and validate it again
+	# before asking it to render the local-only tracer.
+	var firing_weapon := held_weapon
+	if not is_instance_valid(firing_weapon):
 		return false
 	if not GameAuthority.has_method("server_ai_hitscan"):
 		push_warning("[FutureWarriorAI] GameAuthority has no AI hitscan endpoint")
@@ -3652,8 +3657,8 @@ func _fire_ai_hitscan_weapon() -> bool:
 	var weapon_id := str(weapon_data.get(current_weapon_slot, {}).get("id", ""))
 	if weapon_id.is_empty():
 		weapon_id = ar15_tool_id
-	var origin := held_weapon.call("get_fire_origin") as Vector3
-	var direction := held_weapon.call("get_fire_direction") as Vector3
+	var origin := firing_weapon.call("get_fire_origin") as Vector3
+	var direction := firing_weapon.call("get_fire_direction") as Vector3
 	if direction.length_squared() <= 0.001:
 		return false
 	var result: Dictionary = GameAuthority.server_ai_hitscan(
@@ -3675,14 +3680,16 @@ func _fire_ai_hitscan_weapon() -> bool:
 			"visual_distance",
 			CombatBalance.get_float(weapon_id, "range")
 		))
-		if held_weapon.has_method("emit_visual_only_tracer"):
-			held_weapon.call(
+		if is_instance_valid(firing_weapon) and not firing_weapon.is_queued_for_deletion() \
+				and firing_weapon.has_method("emit_visual_only_tracer"):
+			firing_weapon.call(
 				"emit_visual_only_tracer",
 				direction,
 				travel_distance
 			)
-		elif held_weapon.has_method("emit_visual_only"):
-			held_weapon.call("emit_visual_only")
+		elif is_instance_valid(firing_weapon) and not firing_weapon.is_queued_for_deletion() \
+				and firing_weapon.has_method("emit_visual_only"):
+			firing_weapon.call("emit_visual_only")
 	return true
 
 

@@ -177,6 +177,10 @@ func write_app_data(app_id: String, payload: Dictionary, expected_revision: int)
 
 func get_computer_state() -> Dictionary:
 	_ensure_default_state()
+	var saved_app_data := app_data.duplicate(true)
+	# Embedded Lab research is team-shared.  Older saves may still contain its
+	# former per-computer payload; never serialize that legacy copy again.
+	saved_app_data.erase("embedded_lab")
 	return {
 		"computer_id": get_computer_id(),
 		"station_path": str(get_path()) if is_inside_tree() else "",
@@ -188,7 +192,7 @@ func get_computer_state() -> Dictionary:
 		"state_revision": state_revision,
 		"installed_app_ids": installed_app_ids.duplicate(),
 		"desktop_layout": desktop_layout.duplicate(true),
-		"app_data": app_data.duplicate(true),
+		"app_data": saved_app_data,
 	}
 
 
@@ -196,6 +200,8 @@ func get_computer_summary_state() -> Dictionary:
 	var state := get_computer_state()
 	var data_revisions := {}
 	for app_id: Variant in app_data.keys():
+		if str(app_id) == "embedded_lab":
+			continue
 		var value: Variant = app_data[app_id]
 		if value is Dictionary:
 			data_revisions[str(app_id)] = int((value as Dictionary).get("revision", 0))
@@ -227,6 +233,9 @@ func apply_computer_state(state: Dictionary) -> void:
 	var app_data_value: Variant = state.get("app_data", null)
 	if app_data_value is Dictionary:
 		app_data = (app_data_value as Dictionary).duplicate(true)
+	# Do not restore the old per-computer Embedded Lab payload.  The authority
+	# restores the team-level state separately from the world save.
+	app_data.erase("embedded_lab")
 	state_changed.emit(get_computer_state())
 
 

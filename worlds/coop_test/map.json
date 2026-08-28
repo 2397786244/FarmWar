@@ -2,12 +2,13 @@
   "content": {
     "ai_configuration": [],
     "ai_count": 0,
-    "building_count": 22,
+    "building_count": 26,
     "defense_facility_count": 0,
     "editor_objects": "editor_objects.dat",
-    "facility_count": 5,
+    "facility_count": 9,
     "farmland_count": 1,
     "ground_rock_count": 0,
+    "industrial_facility_count": 4,
     "kitchen_facility_count": 0,
     "manual_grass": "manual_grass.dat",
     "neutral_crop_generator_count": 0,
@@ -16,12 +17,12 @@
     "promotional_vehicle_driver_dummy_count": 0,
     "road_count": 0,
     "roads": "roads.dat",
-    "spawn_count": 8,
+    "spawn_count": 10,
     "squad_generator_count": 0,
     "tree_count": 53,
     "water_bodies": "water_bodies.dat",
     "water_count": 0,
-    "zombie_generator_count": 4
+    "zombie_generator_count": 6
   },
   "display_name": "coop_test",
   "features": {

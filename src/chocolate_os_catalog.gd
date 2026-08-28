@@ -10,6 +10,7 @@ const MANIFEST_PATHS := [
 	"res://computer/apps/shutdown/manifest.tres",
 	"res://computer/apps/farm_info/manifest.tres",
 	"res://computer/apps/weather/manifest.tres",
+	"res://computer/apps/embedded_lab/manifest.tres",
 ]
 
 static var _manifests: Dictionary = {}

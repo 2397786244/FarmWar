@@ -173,7 +173,7 @@ func _build_interface() -> void:
 	leave_lobby_button.pressed.connect(_on_leave_pressed)
 	footer.add_child(leave_lobby_button)
 	var map_notice := Label.new()
-	map_notice.text = "房主启动 Redpine County 后，可通过 Steam Overlay 邀请好友；好友完成首次角色选择后可进入同一世界。"
+	map_notice.text = "房主启动 Creston Town 后，可通过 Steam Overlay 邀请好友；好友完成首次角色选择后可进入同一世界。"
 	map_notice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	map_notice.add_theme_font_size_override("font_size", 18)

@@ -31,9 +31,9 @@ func setup(owner_page: IngredientPickupPage, next_item_kind: String, next_item_i
 	item_id = next_item_id
 	custom_minimum_size = Vector2(86.0, 70.0)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var definition := DishCatalog.get_definition(item_id) if item_kind == "dish" else IngredientCatalog.get_definition(item_id)
+	var definition := _get_definition()
 	tooltip_text = "%s\n%s\n连续右键可逐个增加提取量。" % [
-		str(definition.get("display_name", item_id)),
+		_display_name(definition),
 		str(definition.get("description", "")),
 	]
 	var content := HBoxContainer.new()
@@ -46,6 +46,8 @@ func setup(owner_page: IngredientPickupPage, next_item_kind: String, next_item_i
 	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if item_kind == "dish":
 		_icon.set_dish(item_id)
+	elif item_kind in ["tool", "equipment"]:
+		_icon.set_item_id(item_id)
 	else:
 		_icon.set_ingredient(item_id)
 	content.add_child(_icon)
@@ -61,11 +63,32 @@ func setup(owner_page: IngredientPickupPage, next_item_kind: String, next_item_i
 
 func set_amount(amount: float, selected: bool) -> void:
 	available_weight_kg = maxf(0.0, amount)
-	var definition := DishCatalog.get_definition(item_id) if item_kind == "dish" else IngredientCatalog.get_definition(item_id)
-	_label.text = "%s\n%d份" % [str(definition.get("display_name", item_id)), roundi(available_weight_kg)] \
-		if item_kind == "dish" else "%s\n%.2fkg" % [str(definition.get("display_name", item_id)), available_weight_kg]
+	var definition := _get_definition()
+	var display_name := _display_name(definition)
+	if item_kind == "dish":
+		_label.text = "%s\n%d份" % [display_name, roundi(available_weight_kg)]
+	elif item_kind in ["tool", "equipment"]:
+		_label.text = "%s\n%d件" % [display_name, roundi(available_weight_kg)]
+	else:
+		_label.text = "%s\n%.2fkg" % [display_name, available_weight_kg]
 	modulate = Color.WHITE if available_weight_kg > 0.0001 else Color(0.55, 0.55, 0.55)
 	_refresh_style(selected)
+
+
+func _get_definition() -> Dictionary:
+	if item_kind == "dish":
+		return DishCatalog.get_definition(item_id)
+	if item_kind == "ingredient":
+		return IngredientCatalog.get_definition(item_id)
+	if item_kind == "equipment":
+		var equipment := EquipmentCatalog.get_definition(item_id)
+		if not equipment.is_empty():
+			return equipment
+	return GlobalVar.get_shop_product(item_id)
+
+
+func _display_name(definition: Dictionary) -> String:
+	return str(definition.get("display_name", definition.get("name", item_id)))
 
 
 func _can_drop_data(_position: Vector2, data: Variant) -> bool:

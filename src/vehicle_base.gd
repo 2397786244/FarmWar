@@ -4,6 +4,8 @@ class_name VehicleBase
 signal vehicle_destroyed()
 signal vehicle_damaged(current_hp: float, max_hp: float)
 signal cargo_manifest_changed(manifest: Array[Dictionary])
+signal spawn_drop_finished(success: bool)
+signal topple_state_changed(toppled: bool)
 
 const GROUND_COLLISION_LAYER := 1
 const BULLET_COLLISION_LAYER := 32
@@ -14,6 +16,17 @@ const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const NETWORK_INTERPOLATION_RATE := 18.0
 const NETWORK_SNAP_DISTANCE := 6.0
 const CARGO_SLOT_COUNT := 12
+const WILD_ANIMAL_COLLISION_LAYER := 32768
+const TOOL_COLLISION_LAYER := 128
+const NATURE_RESOURCE_COLLISION_LAYER := 16384
+const DEFAULT_SPAWN_DROP_TIMEOUT := 3.0
+const NAVIGATION_ONLY_OBSTACLE_GROUP := "ai_navigation_obstacle"
+## DynamicNavigationChunkGrid intentionally discovers this canonical node
+## name on every registered owner. Keep vehicles on the same convention as
+## buildings and defense facilities so their AABBs enter the bake queue.
+const VEHICLE_NAVIGATION_OBSTACLE_NAME := "NavigationObstacle3D"
+const NAVIGATION_IDLE_SPEED_EPSILON := 0.08
+const NAVIGATION_OBSTACLE_MARGIN := 0.10
 ## A faster vehicle earns a wider top-speed view. The configured camera_max_fov
 ## remains an optional per-vehicle ceiling, while the actual maximum forward
 ## speed determines how much of that ceiling can be reached.
@@ -66,6 +79,9 @@ var wheel_spin_angle := 0.0
 var cargo_weight_kg := 0.0
 var cargo_manifest: Array[Dictionary] = []
 var cargo_user_peer_id := 0
+var toppled := false
+var tip_axis := Vector3.FORWARD
+var tip_angle := 0.0
 
 var _wheel_rest_bases: Dictionary = {}
 var _steering_wheel_rest_basis := Basis.IDENTITY
@@ -81,6 +97,22 @@ var _network_target_steering := 0.0
 var _shield_visual: VehicleShieldBubble
 var _last_available_cargo_slots := CARGO_SLOT_COUNT
 var _network_cargo_occupied_slots: Array[int] = []
+var _spawn_drop_active := false
+var _spawn_drop_elapsed := 0.0
+var _spawn_drop_timeout := DEFAULT_SPAWN_DROP_TIMEOUT
+var _spawn_drop_landing_position := Vector3.ZERO
+var _spawn_drop_collision_layer_before := 0
+var _spawn_drop_collision_mask_before := 0
+var _vehicle_navigation_obstacle: NavigationObstacle3D
+var _vehicle_navigation_obstacle_active := false
+var _external_push_velocity := Vector3.ZERO
+var _active_impact_contacts: Dictionary = {}
+var _topple_sources: Dictionary = {}
+var _topple_force_accumulator := 0.0
+var _visual_tip_angle := 0.0
+var _topple_visual_applied := false
+var _body_visual_unrotated_basis := Basis.IDENTITY
+var _cargo_visual_unrotated_basis := Basis.IDENTITY
 
 
 func _ready() -> void:
@@ -97,6 +129,10 @@ func _ready() -> void:
 	add_to_group("ai_combat_targets")
 	_configure_physics_nodes()
 	_apply_vehicle_config()
+	# Vehicle scenes may use one chassis collider or multiple body colliders.
+	# Build their combined navigation footprint after the config has applied its
+	# final dimensions, so every drivable vehicle follows the same rule.
+	call_deferred("_initialize_vehicle_navigation_obstacle")
 	_create_cargo_interaction_areas()
 	if not hit_area.body_entered.is_connected(_on_hit_3d_body_entered):
 		hit_area.body_entered.connect(_on_hit_3d_body_entered)
@@ -112,6 +148,12 @@ func _physics_process(delta: float) -> void:
 	if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
 		return
 	simulate_authority(delta)
+
+
+func _exit_tree() -> void:
+	# The navigation grid keeps a separate registry. Explicitly remove this
+	# vehicle before its node is released so the old affected chunks are rebuilt.
+	_unregister_vehicle_navigation_obstacle()
 
 
 func set_drive_input(throttle: float, steering: float, brake: float = 0.0) -> void:
@@ -168,7 +210,16 @@ func simulate_authority(delta: float) -> void:
 	if not vehicle_deployed or vehicle_config == null or not is_inside_tree() \
 			or is_queued_for_deletion() or get_world_3d() == null:
 		return
+	if _spawn_drop_active:
+		_simulate_spawn_drop(delta)
+		_refresh_vehicle_navigation_obstacle()
+		return
 	_tick_vehicle_shield(delta)
+	_tick_external_push(delta)
+	if toppled:
+		drive_throttle = 0.0
+		drive_steering = 0.0
+		drive_brake = 1.0
 	var target_speed := get_max_forward_speed() * maxf(drive_throttle, 0.0)
 	if drive_throttle < 0.0:
 		target_speed = get_max_reverse_speed() * drive_throttle
@@ -202,8 +253,9 @@ func simulate_authority(delta: float) -> void:
 	var forward := global_transform.basis * vehicle_config.forward_axis
 	forward.y = 0.0
 	forward = forward.normalized()
-	velocity.x = forward.x * current_speed
-	velocity.z = forward.z * current_speed
+	var drive_velocity := forward * current_speed
+	velocity.x = drive_velocity.x + _external_push_velocity.x
+	velocity.z = drive_velocity.z + _external_push_velocity.z
 	ground_probe.force_raycast_update()
 	if ground_probe.is_colliding():
 		velocity.y = -vehicle_config.ground_stick_speed
@@ -213,9 +265,533 @@ func simulate_authority(delta: float) -> void:
 		var gravity_direction := gravity_direction_value as Vector3 if gravity_direction_value is Vector3 else Vector3.DOWN
 		velocity += gravity_direction.normalized() * gravity_strength * delta
 	move_and_slide()
+	_process_vehicle_slide_impacts(drive_velocity)
 	rotation.x = 0.0
 	rotation.z = 0.0
+	_update_vehicle_presentation(delta)
+	_refresh_vehicle_navigation_obstacle()
+
+
+func _process_vehicle_slide_impacts(drive_velocity: Vector3) -> void:
+	var now_msec := Time.get_ticks_msec()
+	var rearm_msec := int(COMBAT_BALANCE.get_float(
+		"vehicle_impact", "contact_rearm_seconds", 0.30
+	) * 1000.0)
+	for contact_key_value: Variant in _active_impact_contacts.keys():
+		if now_msec - int(_active_impact_contacts[contact_key_value]) > rearm_msec:
+			_active_impact_contacts.erase(contact_key_value)
+	if toppled or _spawn_drop_active or current_hp <= 0.0:
+		return
+	var minimum_speed := COMBAT_BALANCE.get_float("vehicle_impact", "minimum_speed", 2.0)
+	var processed_this_frame: Dictionary = {}
+	for collision_index in range(get_slide_collision_count()):
+		var collision := get_slide_collision(collision_index)
+		if collision == null:
+			continue
+		var collider := collision.get_collider()
+		if collider == null or not is_instance_valid(collider):
+			continue
+		var impact_target := _vehicle_impact_target_node(collider)
+		var normal := collision.get_normal()
+		# Only an upward contact with a non-damageable world body is floor support.
+		# Capsule-shaped actors and animals often produce an upward-slanted normal
+		# when struck by a bumper, so they must keep a horizontal impact normal.
+		if normal.y > 0.55 and impact_target == null:
+			continue
+		if impact_target != null:
+			normal.y = 0.0
+			if normal.length_squared() <= 0.001 and impact_target is Node3D:
+				normal = global_position - (impact_target as Node3D).global_position
+				normal.y = 0.0
+		if normal.length_squared() <= 0.001:
+			continue
+		normal = normal.normalized()
+		var contact_key := _vehicle_impact_contact_key(collider)
+		if contact_key <= 0 or processed_this_frame.has(contact_key):
+			continue
+		processed_this_frame[contact_key] = true
+		if _active_impact_contacts.has(contact_key):
+			continue
+		var collider_velocity := collision.get_collider_velocity()
+		if impact_target is CharacterBody3D:
+			collider_velocity = (impact_target as CharacterBody3D).velocity
+		var closing_speed := maxf(
+			0.0,
+			-(drive_velocity - collider_velocity).dot(normal)
+		)
+		if closing_speed < minimum_speed:
+			continue
+		_active_impact_contacts[contact_key] = now_msec
+		var result := GameAuthority.apply_authoritative_vehicle_impact(
+			self,
+			impact_target if impact_target != null else collider,
+			collision.get_position(),
+			normal,
+			closing_speed
+		)
+		if bool(result.get("accepted", false)):
+			current_speed *= COMBAT_BALANCE.get_float(
+				"vehicle_impact", "impact_speed_retention", 0.35
+			)
+
+
+func _vehicle_impact_contact_key(collider: Variant) -> int:
+	if not collider is Node:
+		return 0
+	var best := _vehicle_impact_target_node(collider)
+	if best == null:
+		best = collider as Node
+	if best == self or is_ancestor_of(best):
+		return 0
+	var peer_id := GameAuthority.get_authority_player_peer_id(best)
+	if peer_id > 0:
+		if seat_occupants.values().has(peer_id):
+			return 0
+		return 1000000000 + peer_id
+	return best.get_instance_id()
+
+
+func _vehicle_impact_target_node(collider: Variant) -> Node:
+	if not collider is Node:
+		return null
+	var cursor := collider as Node
+	var resolved: Node = null
+	while cursor != null and cursor != self:
+		if cursor is VehicleBase or cursor is CharacterBody3D \
+				or cursor.has_method("impact") or cursor.has_method("impact_from_peer") \
+				or cursor.is_in_group("wild_animals"):
+			resolved = cursor
+		cursor = cursor.get_parent()
+	return resolved
+
+
+func receive_melee_push(attacker_position: Vector3, force: float, source_instance_id: int) -> void:
+	if GameAuthority.should_send_network_requests() or current_hp <= 0.0 \
+			or _spawn_drop_active or force <= 0.0:
+		return
+	var push_direction := global_position - attacker_position
+	push_direction.y = 0.0
+	if push_direction.length_squared() <= 0.001:
+		push_direction = global_transform.basis.x
+	push_direction = push_direction.normalized()
+	var occupied := not seat_occupants.is_empty()
+	var multiplier := COMBAT_BALANCE.get_float(
+		"vehicle_impact", "occupied_push_multiplier", 0.20
+	) if occupied else 1.0
+	var max_push_speed := COMBAT_BALANCE.get_float(
+		"vehicle_impact", "occupied_push_max_speed", 0.25
+	) if occupied else COMBAT_BALANCE.get_float(
+		"vehicle_impact", "empty_push_max_speed", 1.2
+	)
+	_external_push_velocity += push_direction * force \
+		* COMBAT_BALANCE.get_float("vehicle_impact", "push_velocity_per_force", 0.02) \
+		* multiplier
+	_external_push_velocity.y = 0.0
+	_external_push_velocity = _external_push_velocity.limit_length(max_push_speed)
+	if occupied or toppled or absf(current_speed) >= 0.2 or source_instance_id <= 0:
+		return
+	var now_msec := Time.get_ticks_msec()
+	var source_state: Dictionary = _topple_sources.get(source_instance_id, {})
+	source_state["last_msec"] = now_msec
+	source_state["force"] = float(source_state.get("force", 0.0)) + force
+	_topple_sources[source_instance_id] = source_state
+	_prune_topple_sources(now_msec)
+	var required_sources := COMBAT_BALANCE.get_int(
+		"vehicle_impact", "topple_required_sources", 3
+	)
+	var required_force := COMBAT_BALANCE.get_float(
+		"vehicle_impact", "topple_required_force", 60.0
+	)
+	if _topple_sources.size() < required_sources or _topple_force_accumulator < required_force:
+		return
+	var local_push := global_transform.basis.inverse() * push_direction
+	var axis := Vector3(local_push.z, 0.0, -local_push.x)
+	if axis.length_squared() <= 0.001:
+		axis = Vector3.FORWARD
+	set_toppled(true, axis.normalized())
+
+
+func _tick_external_push(delta: float) -> void:
+	_external_push_velocity = _external_push_velocity.move_toward(
+		Vector3.ZERO,
+		COMBAT_BALANCE.get_float("vehicle_impact", "push_decay", 2.5) * maxf(delta, 0.0)
+	)
+	_prune_topple_sources(Time.get_ticks_msec())
+
+
+func _prune_topple_sources(now_msec: int) -> void:
+	var window_msec := int(COMBAT_BALANCE.get_float(
+		"vehicle_impact", "topple_window_seconds", 3.0
+	) * 1000.0)
+	_topple_force_accumulator = 0.0
+	for source_value: Variant in _topple_sources.keys():
+		var source_state: Dictionary = _topple_sources[source_value]
+		if now_msec - int(source_state.get("last_msec", 0)) > window_msec:
+			_topple_sources.erase(source_value)
+		else:
+			_topple_force_accumulator += float(source_state.get("force", 0.0))
+
+
+func set_toppled(
+	value: bool,
+	axis := Vector3.FORWARD,
+	angle := -1.0,
+	notify_authority := true
+) -> bool:
+	if value and (_spawn_drop_active or current_hp <= 0.0 or not seat_occupants.is_empty()):
+		return false
+	var changed := toppled != value
+	toppled = value
+	if axis.length_squared() > 0.001:
+		tip_axis = axis.normalized()
+	if angle >= 0.0:
+		tip_angle = maxf(0.0, angle)
+	else:
+		tip_angle = deg_to_rad(COMBAT_BALANCE.get_float(
+			"vehicle_impact", "topple_angle_degrees", 82.0
+		)) if value else 0.0
+	if value:
+		current_speed = 0.0
+		drive_throttle = 0.0
+		drive_steering = 0.0
+		drive_brake = 1.0
+		_external_push_velocity = Vector3.ZERO
+	else:
+		_topple_sources.clear()
+		_topple_force_accumulator = 0.0
+	if changed:
+		topple_state_changed.emit(toppled)
+		_refresh_vehicle_navigation_obstacle(true)
+		if notify_authority and (GameAuthority.is_local_authority() \
+				or GameAuthority.is_server_authority()):
+			GameAuthority.notify_vehicle_topple_state(self)
+	return true
+
+
+func can_be_uprighted() -> bool:
+	return toppled and current_hp > 0.0 and not _spawn_drop_active \
+		and seat_occupants.is_empty() and absf(current_speed) < 0.2
+
+
+func upright_vehicle() -> bool:
+	if not can_be_uprighted():
+		return false
+	return set_toppled(false, tip_axis)
+
+
+func _update_vehicle_presentation(delta: float) -> void:
+	_remove_topple_visual_transform()
 	_update_vehicle_visuals(delta)
+	var target_angle := tip_angle if toppled else 0.0
+	var response_key := "topple_response" if toppled else "upright_response"
+	var response := COMBAT_BALANCE.get_float("vehicle_impact", response_key, 7.0)
+	_visual_tip_angle = move_toward(
+		_visual_tip_angle,
+		target_angle,
+		response * maxf(delta, 0.0)
+	)
+	_apply_topple_visual_transform()
+
+
+func _remove_topple_visual_transform() -> void:
+	if not _topple_visual_applied:
+		return
+	if is_instance_valid(body_visual):
+		body_visual.basis = _body_visual_unrotated_basis
+	if is_instance_valid(_cargo_container):
+		_cargo_container.basis = _cargo_visual_unrotated_basis
+	_topple_visual_applied = false
+
+
+func _apply_topple_visual_transform() -> void:
+	if absf(_visual_tip_angle) <= 0.0001:
+		return
+	if is_instance_valid(body_visual):
+		_body_visual_unrotated_basis = body_visual.basis
+		body_visual.rotate_object_local(tip_axis, _visual_tip_angle)
+	if is_instance_valid(_cargo_container):
+		_cargo_visual_unrotated_basis = _cargo_container.basis
+		_cargo_container.rotate_object_local(tip_axis, _visual_tip_angle)
+	_topple_visual_applied = true
+
+
+## Start an authority-owned delivery drop. The placement resolver has already
+## checked the landing point and the hard-obstacle path; this method owns the
+## short-lived physics state until the vehicle reaches the ground.
+func begin_spawn_drop(landing_position: Vector3, timeout := DEFAULT_SPAWN_DROP_TIMEOUT) -> void:
+	if _spawn_drop_active:
+		return
+	_spawn_drop_active = true
+	_spawn_drop_elapsed = 0.0
+	_spawn_drop_timeout = maxf(0.5, timeout)
+	_spawn_drop_landing_position = landing_position
+	_spawn_drop_collision_layer_before = collision_layer
+	_spawn_drop_collision_mask_before = collision_mask
+	# The normal vehicle mask already includes characters. Add wild animals
+	# only during the drop so the fallback cannot silently pass through them.
+	collision_mask = collision_mask | WILD_ANIMAL_COLLISION_LAYER
+	drive_throttle = 0.0
+	drive_steering = 0.0
+	drive_brake = 1.0
+	current_speed = 0.0
+	current_steering = 0.0
+	velocity = Vector3.ZERO
+	_refresh_vehicle_navigation_obstacle(true)
+
+
+func is_spawn_drop_active() -> bool:
+	return _spawn_drop_active
+
+
+func get_spawn_drop_landing_position() -> Vector3:
+	return _spawn_drop_landing_position
+
+
+func get_spawn_drop_remaining() -> float:
+	if not _spawn_drop_active:
+		return 0.0
+	return maxf(0.0, _spawn_drop_timeout - _spawn_drop_elapsed)
+
+
+func _simulate_spawn_drop(delta: float) -> void:
+	_spawn_drop_elapsed += maxf(0.0, delta)
+	_tick_vehicle_shield(delta)
+	current_speed = 0.0
+	current_steering = 0.0
+	drive_throttle = 0.0
+	drive_steering = 0.0
+	drive_brake = 1.0
+	velocity.x = 0.0
+	velocity.z = 0.0
+	var gravity_strength := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity_direction_value: Variant = ProjectSettings.get_setting(
+		"physics/3d/default_gravity_vector",
+		Vector3.DOWN
+	)
+	var gravity_direction := gravity_direction_value as Vector3 \
+		if gravity_direction_value is Vector3 else Vector3.DOWN
+	velocity += gravity_direction.normalized() * gravity_strength * delta
+	move_and_slide()
+	rotation.x = 0.0
+	rotation.z = 0.0
+	_update_vehicle_presentation(delta)
+
+	# Do not consider landing on the top of an AI to be a completed drop. The
+	# resolver's ground height is the only valid resting height; if the dynamic
+	# actor moves away, the vehicle continues falling naturally.
+	var reached_ground_height := global_position.y <= _spawn_drop_landing_position.y + 0.12
+	if reached_ground_height and is_on_floor():
+		global_position.y = _spawn_drop_landing_position.y
+		_finish_spawn_drop(true)
+	elif _spawn_drop_elapsed >= _spawn_drop_timeout:
+		_finish_spawn_drop(false)
+
+
+func _finish_spawn_drop(success: bool) -> void:
+	if not _spawn_drop_active:
+		return
+	_spawn_drop_active = false
+	collision_layer = _spawn_drop_collision_layer_before
+	collision_mask = _spawn_drop_collision_mask_before
+	_spawn_drop_collision_layer_before = 0
+	_spawn_drop_collision_mask_before = 0
+	velocity = Vector3.ZERO
+	current_speed = 0.0
+	drive_throttle = 0.0
+	drive_steering = 0.0
+	drive_brake = 1.0
+	_refresh_vehicle_navigation_obstacle(true)
+	spawn_drop_finished.emit(success)
+
+
+## A parked vehicle is a true navigation obstacle, while a driven, moving or
+## falling vehicle must never trigger repeated navmesh rebuilds. The dynamic
+## grid receives the whole vehicle footprint and determines every 64m chunk
+## intersected by it (including vehicles crossing a chunk boundary).
+func _initialize_vehicle_navigation_obstacle() -> void:
+	if not vehicle_deployed or not is_inside_tree() or is_queued_for_deletion():
+		return
+	var existing := get_node_or_null(VEHICLE_NAVIGATION_OBSTACLE_NAME) as NavigationObstacle3D
+	if existing != null:
+		_vehicle_navigation_obstacle = existing
+	else:
+		var bounds_data := _vehicle_navigation_collision_bounds()
+		if not bool(bounds_data.get("found", false)):
+			return
+		var bounds := bounds_data.get("bounds", AABB()) as AABB
+		if bounds.size.x <= 0.01 or bounds.size.z <= 0.01:
+			return
+		var obstacle := NavigationObstacle3D.new()
+		obstacle.name = VEHICLE_NAVIGATION_OBSTACLE_NAME
+		obstacle.carve_navigation_mesh = true
+		obstacle.position = Vector3(0.0, bounds.position.y, 0.0)
+		obstacle.height = maxf(0.1, bounds.size.y)
+		var min_x := bounds.position.x - NAVIGATION_OBSTACLE_MARGIN
+		var max_x := bounds.end.x + NAVIGATION_OBSTACLE_MARGIN
+		var min_z := bounds.position.z - NAVIGATION_OBSTACLE_MARGIN
+		var max_z := bounds.end.z + NAVIGATION_OBSTACLE_MARGIN
+		obstacle.vertices = PackedVector3Array([
+			Vector3(min_x, 0.0, min_z),
+			Vector3(max_x, 0.0, min_z),
+			Vector3(max_x, 0.0, max_z),
+			Vector3(min_x, 0.0, max_z),
+		])
+		# Start disabled: the state refresh below registers it only if the
+		# vehicle is genuinely parked.
+		obstacle.affect_navigation_mesh = false
+		obstacle.avoidance_enabled = false
+		add_child(obstacle)
+		_vehicle_navigation_obstacle = obstacle
+	add_to_group(NAVIGATION_ONLY_OBSTACLE_GROUP)
+	_refresh_vehicle_navigation_obstacle(true)
+
+
+func _vehicle_navigation_collision_bounds() -> Dictionary:
+	var result := {"found": false, "bounds": AABB()}
+	if vehicle_config != null and vehicle_config.collision_size.length_squared() > 0.0001:
+		_merge_vehicle_navigation_bounds(
+			result,
+			AABB(
+				vehicle_config.collision_offset - vehicle_config.collision_size * 0.5,
+				vehicle_config.collision_size
+			)
+		)
+	_collect_vehicle_navigation_collision_bounds(self, Transform3D.IDENTITY, result)
+	return result
+
+
+func _collect_vehicle_navigation_collision_bounds(
+	node: Node,
+	parent_transform: Transform3D,
+	result: Dictionary
+) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	# Hit3D and attached accessories have their own CollisionObject3D roots;
+	# they are combat/interaction volumes, not vehicle chassis geometry.
+	if node != self and (node is Area3D or node is CollisionObject3D):
+		return
+	var node_transform := parent_transform
+	if node is Node3D and node != self:
+		node_transform = parent_transform * (node as Node3D).transform
+	if node is CollisionShape3D:
+		var collision_shape := node as CollisionShape3D
+		if not collision_shape.disabled and collision_shape.shape != null:
+			_merge_vehicle_navigation_bounds(
+				result,
+				_vehicle_navigation_shape_bounds(collision_shape.shape, node_transform)
+			)
+	elif node is CollisionPolygon3D:
+		var collision_polygon := node as CollisionPolygon3D
+		if not collision_polygon.disabled and not collision_polygon.polygon.is_empty() \
+				and collision_polygon.depth > 0.0:
+			var minimum := Vector3(INF, INF, INF)
+			var maximum := Vector3(-INF, -INF, -INF)
+			var half_depth := collision_polygon.depth * 0.5
+			for point_2d: Vector2 in collision_polygon.polygon:
+				for local_z: float in [-half_depth, half_depth]:
+					var point := node_transform * Vector3(point_2d.x, point_2d.y, local_z)
+					minimum = minimum.min(point)
+					maximum = maximum.max(point)
+			_merge_vehicle_navigation_bounds(result, AABB(minimum, maximum - minimum))
+	for child: Node in node.get_children():
+		_collect_vehicle_navigation_collision_bounds(child, node_transform, result)
+
+
+func _vehicle_navigation_shape_bounds(shape: Shape3D, transform: Transform3D) -> AABB:
+	var points: Array[Vector3] = []
+	if shape is BoxShape3D:
+		var half_size := (shape as BoxShape3D).size * 0.5
+		for x: float in [-half_size.x, half_size.x]:
+			for y: float in [-half_size.y, half_size.y]:
+				for z: float in [-half_size.z, half_size.z]:
+					points.append(transform * Vector3(x, y, z))
+	elif shape is SphereShape3D:
+		var radius := (shape as SphereShape3D).radius
+		for x: float in [-radius, radius]:
+			for y: float in [-radius, radius]:
+				for z: float in [-radius, radius]:
+					points.append(transform * Vector3(x, y, z))
+	elif shape is CapsuleShape3D:
+		var capsule := shape as CapsuleShape3D
+		var capsule_radius := capsule.radius
+		var half_capsule_height := capsule.height * 0.5
+		for x: float in [-capsule_radius, capsule_radius]:
+			for y: float in [-half_capsule_height, half_capsule_height]:
+				for z: float in [-capsule_radius, capsule_radius]:
+					points.append(transform * Vector3(x, y, z))
+	elif shape is CylinderShape3D:
+		var cylinder := shape as CylinderShape3D
+		var half_cylinder_height := cylinder.height * 0.5
+		for x: float in [-cylinder.radius, cylinder.radius]:
+			for y: float in [-half_cylinder_height, half_cylinder_height]:
+				for z: float in [-cylinder.radius, cylinder.radius]:
+					points.append(transform * Vector3(x, y, z))
+	elif shape is ConvexPolygonShape3D:
+		for point: Vector3 in (shape as ConvexPolygonShape3D).points:
+			points.append(transform * point)
+	elif shape is ConcavePolygonShape3D:
+		for point: Vector3 in (shape as ConcavePolygonShape3D).get_faces():
+			points.append(transform * point)
+	if points.is_empty():
+		return AABB()
+	var bounds := AABB(points[0], Vector3.ZERO)
+	for point: Vector3 in points:
+		bounds = bounds.expand(point)
+	return bounds
+
+
+func _merge_vehicle_navigation_bounds(result: Dictionary, candidate: AABB) -> void:
+	if candidate.size.length_squared() <= 0.0001:
+		return
+	if not bool(result.get("found", false)):
+		result["found"] = true
+		result["bounds"] = candidate
+		return
+	var current := result.get("bounds", AABB()) as AABB
+	result["bounds"] = current.merge(candidate)
+
+
+func _should_vehicle_navigation_obstacle_be_active() -> bool:
+	if not vehicle_deployed or not is_inside_tree() or is_queued_for_deletion():
+		return false
+	if current_hp <= 0.0 or _spawn_drop_active or driver_peer_id > 0:
+		return false
+	return absf(current_speed) <= NAVIGATION_IDLE_SPEED_EPSILON \
+		and Vector2(velocity.x, velocity.z).length() <= NAVIGATION_IDLE_SPEED_EPSILON
+
+
+func _refresh_vehicle_navigation_obstacle(force := false) -> void:
+	if not is_instance_valid(_vehicle_navigation_obstacle):
+		return
+	var active := _should_vehicle_navigation_obstacle_be_active()
+	# Clients receive replicated vehicle transforms and never bake navigation.
+	if GameAuthority.is_client_proxy():
+		active = false
+	if not force and active == _vehicle_navigation_obstacle_active:
+		return
+	_vehicle_navigation_obstacle_active = active
+	var scene_tree := get_tree()
+	if scene_tree == null:
+		return
+	var navigation_grid := scene_tree.get_first_node_in_group("dynamic_navigation_chunk_grids")
+	if navigation_grid != null and navigation_grid.has_method("request_dynamic_obstacle_rebuild"):
+		navigation_grid.call("request_dynamic_obstacle_rebuild", self, active)
+	else:
+		_vehicle_navigation_obstacle.set_deferred("affect_navigation_mesh", active)
+		_vehicle_navigation_obstacle.set_deferred("avoidance_enabled", active)
+
+
+func _unregister_vehicle_navigation_obstacle() -> void:
+	if not is_instance_valid(_vehicle_navigation_obstacle):
+		return
+	_vehicle_navigation_obstacle_active = false
+	var scene_tree := get_tree()
+	if scene_tree == null:
+		return
+	var navigation_grid := scene_tree.get_first_node_in_group("dynamic_navigation_chunk_grids")
+	if navigation_grid != null and navigation_grid.has_method("unregister_dynamic_obstacle"):
+		navigation_grid.call("unregister_dynamic_obstacle", self)
 
 
 func get_network_state() -> Dictionary:
@@ -235,6 +811,12 @@ func get_network_state() -> Dictionary:
 		"cargo_occupied_slots": get_cargo_occupied_slots(),
 		"cargo_available_slots": get_available_cargo_slot_count(),
 		"owner_team": owner_team,
+		"spawn_drop_active": _spawn_drop_active,
+		"spawn_drop_landing_position": _spawn_drop_landing_position,
+		"spawn_drop_remaining": get_spawn_drop_remaining(),
+		"toppled": toppled,
+		"tip_axis": tip_axis,
+		"tip_angle": tip_angle,
 	}
 
 
@@ -244,6 +826,37 @@ func apply_network_state(state: Dictionary) -> void:
 	var next_yaw := float(state.get("yaw", rotation.y))
 	var next_speed := float(state.get("speed", current_speed))
 	var next_steering := float(state.get("steering", current_steering))
+	var next_toppled := bool(state.get("toppled", toppled))
+	var next_tip_axis_value: Variant = state.get("tip_axis", tip_axis)
+	var next_tip_axis := next_tip_axis_value as Vector3 \
+		if next_tip_axis_value is Vector3 else tip_axis
+	var next_tip_angle := float(state.get("tip_angle", tip_angle))
+	var network_drop_active := bool(state.get("spawn_drop_active", false))
+	var network_drop_remaining := maxf(0.0, float(state.get("spawn_drop_remaining", 0.0)))
+	var network_drop_landing: Variant = state.get(
+		"spawn_drop_landing_position",
+		_spawn_drop_landing_position
+	)
+	if network_drop_landing is Vector3:
+		_spawn_drop_landing_position = network_drop_landing as Vector3
+	var was_spawn_drop_active := _spawn_drop_active
+	if network_drop_active:
+		if not was_spawn_drop_active:
+			_spawn_drop_collision_layer_before = collision_layer
+			_spawn_drop_collision_mask_before = collision_mask
+		_spawn_drop_active = true
+		collision_mask = collision_mask | WILD_ANIMAL_COLLISION_LAYER
+		_spawn_drop_timeout = maxf(DEFAULT_SPAWN_DROP_TIMEOUT, network_drop_remaining)
+		_spawn_drop_elapsed = _spawn_drop_timeout - network_drop_remaining
+	else:
+		_spawn_drop_active = false
+		if was_spawn_drop_active:
+			collision_layer = _spawn_drop_collision_layer_before
+			collision_mask = _spawn_drop_collision_mask_before
+			_spawn_drop_collision_layer_before = 0
+			_spawn_drop_collision_mask_before = 0
+		_spawn_drop_elapsed = 0.0
+		_spawn_drop_timeout = DEFAULT_SPAWN_DROP_TIMEOUT
 	if GameAuthority.is_client_proxy() and position is Vector3:
 		_network_target_position = position as Vector3
 		_network_target_yaw = next_yaw
@@ -290,8 +903,10 @@ func apply_network_state(state: Dictionary) -> void:
 			var peer_id := int((occupants_value as Array)[seat_index])
 			if peer_id > 0:
 				seat_occupants[seat_index] = peer_id
+	set_toppled(next_toppled, next_tip_axis, next_tip_angle, false)
 	_refresh_driver_peer_id()
-	_update_vehicle_visuals(0.0)
+	_refresh_vehicle_navigation_obstacle()
+	_update_vehicle_presentation(0.0)
 
 
 func _interpolate_network_state(delta: float) -> void:
@@ -306,7 +921,7 @@ func _interpolate_network_state(delta: float) -> void:
 		rotation.y = lerp_angle(rotation.y, _network_target_yaw, weight)
 		current_speed = lerpf(current_speed, _network_target_speed, weight)
 		current_steering = lerpf(current_steering, _network_target_steering, weight)
-	_update_vehicle_visuals(delta)
+	_update_vehicle_presentation(delta)
 
 
 func can_team_enter(player_team: String) -> bool:
@@ -383,7 +998,8 @@ func get_driver_seat_index() -> int:
 
 
 func can_enter_seat(peer_id: int, seat_index: int = -1) -> bool:
-	if peer_id <= 0 or current_hp <= 0.0 or get_seat_index_for_peer(peer_id) >= 0:
+	if _spawn_drop_active or toppled or peer_id <= 0 or current_hp <= 0.0 \
+			or get_seat_index_for_peer(peer_id) >= 0:
 		return false
 	var requested_index := get_available_seat_index() if seat_index < 0 else seat_index
 	return requested_index >= 0 and requested_index < get_seat_count() and not seat_occupants.has(requested_index)
@@ -399,7 +1015,7 @@ func enter_seat(peer_id: int, seat_index: int = -1) -> bool:
 
 
 func can_switch_seat(peer_id: int, target_seat_index: int) -> bool:
-	if peer_id <= 0 or current_hp <= 0.0:
+	if _spawn_drop_active or toppled or peer_id <= 0 or current_hp <= 0.0:
 		return false
 	var current_seat_index := get_seat_index_for_peer(peer_id)
 	return current_seat_index >= 0 \
@@ -515,6 +1131,22 @@ func get_player_interaction_position() -> Vector3:
 
 func get_player_interaction_range() -> float:
 	return 4.0
+
+
+## Horizontal distance from a world point to the chassis footprint. AI melee
+## uses this instead of the vehicle origin because long vehicles can be touched
+## at a bumper while their root remains several metres away.
+func get_horizontal_distance_to_chassis(world_point: Vector3) -> float:
+	var bounds_data := _vehicle_navigation_collision_bounds()
+	if not bool(bounds_data.get("initialized", false)):
+		var root_offset := world_point - global_position
+		root_offset.y = 0.0
+		return root_offset.length()
+	var bounds: AABB = bounds_data.get("bounds", AABB())
+	var local_point := to_local(world_point)
+	var closest_x := clampf(local_point.x, bounds.position.x, bounds.end.x)
+	var closest_z := clampf(local_point.z, bounds.position.z, bounds.end.z)
+	return Vector2(local_point.x - closest_x, local_point.z - closest_z).length()
 
 
 func get_cargo_capacity_kg() -> float:
@@ -759,6 +1391,8 @@ func _seat_definitions() -> Array[VehicleSeatConfig]:
 
 func _refresh_driver_peer_id() -> void:
 	driver_peer_id = int(seat_occupants.get(get_driver_seat_index(), 0))
+	# Disable the obstacle as soon as a driver sits down, before acceleration.
+	_refresh_vehicle_navigation_obstacle()
 
 
 func impact(_effect: String, strength: float, _attacker_team: String = "") -> bool:
@@ -782,6 +1416,7 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	vehicle_damaged.emit(current_hp, vehicle_config.max_hp)
 	GameAuthority.notify_vehicle_damaged(self, strength)
 	if current_hp <= 0.0:
+		_refresh_vehicle_navigation_obstacle(true)
 		GameAuthority.destroy_vehicle_with_occupants(self)
 		vehicle_destroyed.emit()
 		if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
@@ -872,7 +1507,10 @@ func _spawn_destruction_effect() -> void:
 
 func _configure_physics_nodes() -> void:
 	collision_layer = 8192
-	collision_mask = 12427
+	# Vehicles must physically meet all damageable world bodies. Tool is already
+	# part of the legacy mask; nature resources and wild animals are added here.
+	collision_mask = 12427 | TOOL_COLLISION_LAYER | NATURE_RESOURCE_COLLISION_LAYER \
+		| WILD_ANIMAL_COLLISION_LAYER
 	ground_probe.enabled = true
 	ground_probe.collision_mask = GROUND_COLLISION_LAYER
 	ground_probe.exclude_parent = true

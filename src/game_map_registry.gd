@@ -25,6 +25,11 @@ const REQUIRED_ROOT_NODES := [
 	"SpawnPoints/BlueTeamSpawn",
 ]
 
+# Map metadata is cheap enough to rebuild when a selector is opened or
+# refreshed. Runtime scene validation is deliberately kept separate and cached
+# here so only the map that is actually about to run is instantiated.
+var _validated_map_cache: Dictionary = {}
+
 const BUILTIN_MAPS: Array[Dictionary] = [
 	{
 		"map_id": "creston_town",
@@ -36,28 +41,8 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"source": "builtin",
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:creston_town:%s" % DEFAULT_MAP_VERSION,
-	},
-	{
-		"map_id": "redpine_county",
-		"display_name": "Redpine County",
-		"scene_path": "res://worlds/redpine_county/redpine_county.tscn",
-		"icon_path": "res://worlds/redpine_county/map_icon.svg",
-		"loading_images_directory": "res://assets/loading/redpine_county",
-		"size": Vector2i(1024, 1024),
-		"source": "builtin",
-		"map_version": DEFAULT_MAP_VERSION,
-		"map_hash": "builtin:redpine_county:%s" % DEFAULT_MAP_VERSION,
-	},
-	{
-		"map_id": "multiplayer_test",
-		"display_name": "multiplayer test",
-		"scene_path": "res://worlds/multiplayer_test/multiplayer_test.tscn",
-		"icon_path": "res://worlds/multiplayer_test/map_icon.png",
-		"loading_images_directory": "",
-		"size": Vector2i(256, 256),
-		"source": "builtin",
-		"map_version": DEFAULT_MAP_VERSION,
-		"map_hash": "builtin:multiplayer_test:%s" % DEFAULT_MAP_VERSION,
+		"metadata_compatible": true,
+		"compatibility_checked": true,
 	},
 	{
 		"map_id": "coop_test",
@@ -69,6 +54,8 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"source": "builtin",
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:coop_test:%s" % DEFAULT_MAP_VERSION,
+		"metadata_compatible": true,
+		"compatibility_checked": true,
 	},
 	{
 		"map_id": "xuanchuanmap",
@@ -80,6 +67,8 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"source": "builtin",
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:xuanchuanmap:%s" % DEFAULT_MAP_VERSION,
+		"metadata_compatible": true,
+		"compatibility_checked": true,
 	},
 	{
 		"map_id": "xuanchuan2",
@@ -91,16 +80,20 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 		"source": "builtin",
 		"map_version": DEFAULT_MAP_VERSION,
 		"map_hash": "builtin:xuanchuan2:%s" % DEFAULT_MAP_VERSION,
+		"metadata_compatible": true,
+		"compatibility_checked": true,
 	},
 ]
 
 
 func list_singleplayer_maps() -> Array[Dictionary]:
+	# This method is used by menu selectors. It must stay metadata-only: do not
+	# call _validated_map here, because a selector should not instantiate maps.
 	var maps: Array[Dictionary] = []
 	for definition_value: Dictionary in BUILTIN_MAPS:
-		maps.append(_validated_map(definition_value.duplicate(true)))
+		maps.append(_map_metadata(definition_value.duplicate(true)))
 	for definition: Dictionary in _discover_portable_maps():
-		maps.append(_validated_map(definition))
+		maps.append(_map_metadata(definition))
 	return maps
 
 
@@ -110,10 +103,11 @@ func list_singleplayer_maps() -> Array[Dictionary]:
 func list_local_saved_maps() -> Array[Dictionary]:
 	var maps: Array[Dictionary] = []
 	for definition: Dictionary in _discover_user_maps():
-		maps.append(_validated_map(definition))
+		maps.append(_map_metadata(definition))
 	return maps
 
 
+## Metadata-only lookup. Use validate_map_by_id before entering a map.
 func get_map_by_id(map_id: String) -> Dictionary:
 	for definition: Dictionary in list_singleplayer_maps():
 		if str(definition.get("map_id", "")) == map_id:
@@ -121,7 +115,8 @@ func get_map_by_id(map_id: String) -> Dictionary:
 	return {}
 
 
-## Dedicated servers use the package directory name in server_config.json.
+## Metadata-only lookup. Dedicated servers use the package directory name in
+## server_config.json; they must call validate_map_by_package_name before load.
 ## For user-created packages this is normally the same as manifest.map_id, but
 ## keeping both identifiers lets a published folder retain a stable filename.
 func get_map_by_package_name(package_name: String) -> Dictionary:
@@ -140,6 +135,30 @@ func get_server_map_by_package_name(package_name: String) -> Dictionary:
 	# Dedicated servers must never depend on an operator's user:// editor
 	# saves; only built-in and executable-adjacent packages are authoritative.
 	return get_map_by_package_name(package_name)
+
+
+## Full scene validation is an explicit operation. Callers that are about to
+## enter a map (or start a dedicated server) use this instead of making the
+## map selector instantiate every available map.
+func validate_map_by_id(map_id: String) -> Dictionary:
+	var definition := get_map_by_id(map_id)
+	return validate_map_definition(definition)
+
+
+func validate_map_by_package_name(package_name: String) -> Dictionary:
+	var definition := get_map_by_package_name(package_name)
+	return validate_map_definition(definition)
+
+
+func validate_map_definition(definition: Dictionary) -> Dictionary:
+	if definition.is_empty():
+		return {}
+	var cache_key := _validation_cache_key(definition)
+	if _validated_map_cache.has(cache_key):
+		return (_validated_map_cache[cache_key] as Dictionary).duplicate(true)
+	var validated := _validated_map(definition.duplicate(true))
+	_validated_map_cache[cache_key] = validated.duplicate(true)
+	return validated
 
 
 func get_portable_maps_root() -> String:
@@ -174,6 +193,7 @@ func validate_world_map(world: Dictionary) -> Dictionary:
 			"valid": false,
 			"error": "本地没有地图“%s”，请先安装相同的地图包。" % str(world.get("map_name", map_id)),
 		}
+	definition = validate_map_definition(definition)
 	if not bool(definition.get("is_compatible", false)):
 		return {
 			"valid": false,
@@ -231,6 +251,10 @@ func _discover_map_packages(root: String, source: String) -> Array[Dictionary]:
 				var map_version := str(manifest.get("version", DEFAULT_MAP_VERSION)).strip_edges()
 				if map_version.is_empty():
 					map_version = DEFAULT_MAP_VERSION
+				var compatibility_declared := manifest.has("is_compatible") or manifest.has("compatible")
+				var metadata_compatible := bool(manifest.get(
+					"is_compatible", manifest.get("compatible", true)
+				))
 				result.append({
 					"map_id": str(manifest.get("map_id", entry)),
 					"display_name": str(manifest.get("display_name", entry)),
@@ -243,6 +267,9 @@ func _discover_map_packages(root: String, source: String) -> Array[Dictionary]:
 					"manifest_path": manifest_path,
 					"map_version": map_version,
 					"map_hash": _manifest_hash(manifest_path),
+					"metadata_compatible": metadata_compatible,
+					"compatibility_checked": compatibility_declared,
+					"validation_errors": _string_array(manifest.get("validation_errors", [])),
 				})
 		entry = directory.get_next()
 	directory.list_dir_end()
@@ -270,10 +297,49 @@ func _read_manifest(path: String) -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary else {}
 
 
+func _map_metadata(definition: Dictionary) -> Dictionary:
+	var result := definition.duplicate(true)
+	var errors: Array[String] = _string_array(result.get("validation_errors", []))
+	var scene_path := str(result.get("scene_path", ""))
+	if scene_path.is_empty() or not _resource_exists(scene_path):
+		errors.append("找不到地图场景")
+	result["is_compatible"] = errors.is_empty() and bool(result.get("metadata_compatible", true))
+	result["validation_errors"] = errors
+	result["validation_mode"] = "metadata"
+	result["needs_runtime_validation"] = not bool(result.get("compatibility_checked", false))
+	return result
+
+
+func _resource_exists(path: String) -> bool:
+	if path.is_empty():
+		return false
+	if path.begins_with("res://") or path.begins_with("uid://"):
+		return ResourceLoader.exists(path)
+	return FileAccess.file_exists(path)
+
+
+func _string_array(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if value is Array:
+		for item: Variant in value:
+			result.append(str(item))
+	return result
+
+
+func _validation_cache_key(definition: Dictionary) -> String:
+	return "%s|%s|%s|%s|%s" % [
+		str(definition.get("map_id", "")),
+		str(definition.get("package_name", "")),
+		str(definition.get("scene_path", "")),
+		str(definition.get("map_version", DEFAULT_MAP_VERSION)),
+		str(definition.get("map_hash", "")),
+	]
+
+
 func _validated_map(definition: Dictionary) -> Dictionary:
 	var scene_path := str(definition.get("scene_path", ""))
 	var errors: Array[String] = []
-	if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
+	if scene_path.is_empty() or not _resource_exists(scene_path):
 		errors.append("找不到地图场景")
 	else:
 		var scene := load(scene_path) as PackedScene
@@ -294,4 +360,7 @@ func _validated_map(definition: Dictionary) -> Dictionary:
 			root.free()
 	definition["is_compatible"] = errors.is_empty()
 	definition["validation_errors"] = errors
+	definition["validation_mode"] = "runtime"
+	definition["compatibility_checked"] = true
+	definition["needs_runtime_validation"] = false
 	return definition

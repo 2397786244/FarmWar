@@ -109,7 +109,8 @@ func _register_static_map_facilities() -> void:
 			continue
 		var facility := node as Node3D
 		var category := "defense" if facility is MapDefenseFacility \
-			else "interior" if facility is ComputerTerminal else "kitchen"
+			else "interior" if facility is ComputerTerminal \
+			else "industrial" if facility is IndustrialWorkbench else "kitchen"
 		facility.add_to_group("network_map_facilities")
 		var editor_uuid := str(facility.get_meta("map_editor_uuid", ""))
 		var runtime_id := str(facility.get_meta("network_map_facility_id", ""))
@@ -134,7 +135,7 @@ func _register_static_map_facilities() -> void:
 
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
-	if node is KitchenAppliance or node is MapDefenseFacility or node is ComputerTerminal:
+	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility or node is ComputerTerminal:
 		result.append(node)
 	for child in node.get_children():
 		_collect_static_facilities(child, result)

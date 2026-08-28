@@ -2,6 +2,7 @@ extends Node3D
 class_name PlacementPreviewController
 
 const PlacementQueryScript = preload("res://src/placement_query.gd")
+const VEHICLE_PREVIEW_CACHE_MSEC := 100
 
 const PREVIEW_GREEN := Color(0.15, 1.0, 0.30, 0.42)
 const PREVIEW_RED := Color(1.0, 0.12, 0.12, 0.42)
@@ -62,6 +63,9 @@ var wall_snap_active := false
 var wall_snap_position := Vector3.ZERO
 var wall_snap_source_id := ""
 var wall_snap_source_rid := RID()
+var _vehicle_preview_cache_key := ""
+var _vehicle_preview_cache_until_msec := 0
+var _vehicle_preview_cache_result: Dictionary = {}
 
 
 func setup(next_player: Node3D) -> void:
@@ -111,6 +115,9 @@ func clear_selection() -> void:
 	wall_snap_position = Vector3.ZERO
 	wall_snap_source_id = ""
 	wall_snap_source_rid = RID()
+	_vehicle_preview_cache_key = ""
+	_vehicle_preview_cache_until_msec = 0
+	_vehicle_preview_cache_result.clear()
 	if is_instance_valid(preview_root):
 		preview_root.visible = false
 	if is_instance_valid(preview_model):
@@ -348,6 +355,23 @@ func _update_surface_preview(request: Dictionary, yaw: float, cooldown_active :=
 func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := false) -> void:
 	var fallback_distance := 3.0 if current_mode == "livestock" else 4.0
 	var requested_position := _resolve_fallback_target(request, fallback_distance)
+	if current_mode == "vehicle":
+		var vehicle_result := _resolve_vehicle_preview(requested_position, yaw)
+		var vehicle_preview_position := requested_position
+		if bool(vehicle_result.get("ok", false)):
+			vehicle_preview_position = _vector3_from_value(
+				vehicle_result.get(
+					"drop_start_position",
+					vehicle_result.get("position", requested_position)
+				)
+			)
+		_set_preview_transform(
+			vehicle_preview_position,
+			yaw,
+			bool(vehicle_result.get("ok", false)),
+			cooldown_active
+		)
+		return
 	var placement_position := requested_position
 	var placement_exceptions := _placement_exceptions()
 	_reset_wall_snap()
@@ -377,6 +401,41 @@ func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := fa
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
 	if wall_snap_active:
 		wall_snap_position = position
+
+
+func _resolve_vehicle_preview(requested_position: Vector3, yaw: float) -> Dictionary:
+	var exceptions := _placement_exceptions()
+	var key_parts: Array[String] = [
+		current_scene_path,
+		"%.1f" % snappedf(requested_position.x, 0.1),
+		"%.1f" % snappedf(requested_position.y, 0.1),
+		"%.1f" % snappedf(requested_position.z, 0.1),
+		"%.2f" % snappedf(yaw, 0.01),
+	]
+	for rid_value: Variant in exceptions:
+		key_parts.append(str(rid_value))
+	var cache_key := "|".join(key_parts)
+	var now_msec := Time.get_ticks_msec()
+	if cache_key == _vehicle_preview_cache_key and now_msec < _vehicle_preview_cache_until_msec:
+		return _vehicle_preview_cache_result.duplicate(true)
+	var result := PlacementQueryScript.resolve_vehicle_spawn(
+		player.get_world_3d(),
+		requested_position,
+		current_scene_path,
+		{
+			"yaw": yaw,
+			"exclude_rids": exceptions,
+			"max_search_radius": 12.0,
+			"search_step": 1.0,
+			"max_slope_degrees": 5.0,
+			"clearance": 0.15,
+			"max_candidates": 512,
+		}
+	)
+	_vehicle_preview_cache_key = cache_key
+	_vehicle_preview_cache_until_msec = now_msec + VEHICLE_PREVIEW_CACHE_MSEC
+	_vehicle_preview_cache_result = result.duplicate(true)
+	return result
 
 
 func _placement_blocking_mask() -> int:
@@ -626,6 +685,10 @@ func _placement_exceptions() -> Array:
 		if physics_node is CollisionObject3D:
 			result.append((physics_node as CollisionObject3D).get_rid())
 	return result
+
+
+func _vector3_from_value(value: Variant) -> Vector3:
+	return value as Vector3 if value is Vector3 else Vector3.ZERO
 
 
 func _set_preview_transform(

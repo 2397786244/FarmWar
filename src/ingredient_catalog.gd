@@ -23,6 +23,26 @@ static func is_plantable(ingredient_id: String) -> bool:
 	return source is Dictionary and bool((source as Dictionary).get("plantable", false))
 
 
+static func get_planting_cost(ingredient_id: String) -> int:
+	var source: Variant = get_definition(ingredient_id).get("source", {})
+	if not source is Dictionary or not bool((source as Dictionary).get("plantable", false)):
+		return 0
+	# Keep older hand-authored crop definitions from becoming free seeds. New
+	# definitions should always declare the tier cost explicitly.
+	return maxi(1, int((source as Dictionary).get("planting_cost", 1)))
+
+
+static func get_growth_time_seconds(ingredient_id: String, for_regrowth := false) -> float:
+	var source: Variant = get_definition(ingredient_id).get("source", {})
+	if not source is Dictionary or not bool((source as Dictionary).get("plantable", false)):
+		return 0.0
+	var source_data := source as Dictionary
+	var growth_time := float(source_data.get("growth_time_seconds", 60.0))
+	if for_regrowth and source_data.has("regrowth_time_seconds"):
+		growth_time = float(source_data.get("regrowth_time_seconds", growth_time))
+	return maxf(1.0, growth_time)
+
+
 static func get_plantable_ids() -> Array[String]:
 	_ensure_loaded()
 	var ids: Array[String] = []

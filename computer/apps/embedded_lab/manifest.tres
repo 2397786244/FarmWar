@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="ChocolateOSAppManifest" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/chocolate_os_app_manifest.gd" id="1_manifest"]
+[ext_resource type="PackedScene" path="res://computer/apps/embedded_lab/embedded_lab.tscn" id="2_embedded_lab"]
+
+[resource]
+script = ExtResource("1_manifest")
+app_id = "embedded_lab"
+program_id = "app_embedded_lab"
+display_name = "Embedded Lab"
+description = "在 ChocolateOS26 中研发嵌入式程序，并将已解锁的程序写入或替换到硬盘。"
+icon_os08 = "res://assets/icons/ChocolateOS/OS08/system/my_computer.png"
+icon_os26 = "res://assets/icons/ChocolateOS/OS26/system/my_computer.png"
+supported_os = PackedStringArray("OS26")
+entry_kind = "embedded_lab"
+entry_scene = ExtResource("2_embedded_lab")
+system_app = false
+removable = true
+single_instance = true
+app_store_distribution = true
+default_installed = false
+default_grid_position = Vector2i(4, 0)
+permissions = PackedStringArray("embedded_lab.read", "embedded_lab")

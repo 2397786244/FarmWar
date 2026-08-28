@@ -14,7 +14,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "常见多汁蔬果，可直接烹调、切配或作为汤品和酱料原料。",
-      "source": {"plantable": true, "farm_scene": "res://items/tomato.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/tomato.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 2, "growth_time_seconds": 75},
       "models": {"plant_visual": "res://assets/plants/Tomato.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_tomato.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_tomato.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Tomato.glb"}
     },
     "corn": {
@@ -23,7 +23,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "谷物作物，适合烧烤、汤品、配菜与加工料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/corn.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/corn.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 60},
       "models": {"plant_visual": "res://assets/plants/Corn.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_corn.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_corn.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Corn.glb"}
     },
     "wheat": {
@@ -31,7 +31,7 @@
       "kind": "food",
       "category": "grain",
 	  "description": "基础粮食作物，可加工为面粉并用于面包和主食料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/wheat.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/wheat.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 55},
       "models": {"plant_visual": "res://assets/plants/Wheat.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_wheat.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_wheat.glb", "chopped_item": ""}
     },
     "pepper": {
@@ -40,7 +40,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "辛香蔬菜，切配后可为料理提供辣味与调味用途。",
-      "source": {"plantable": true, "farm_scene": "res://items/pepper.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/pepper.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 4, "growth_time_seconds": 120},
       "models": {"plant_visual": "res://assets/plants/Pepper.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pepper.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pepper.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_ChiliPepper.glb"}
     },
     "strawberry": {
@@ -49,7 +49,7 @@
       "category": "fruit",
 	  "pickup_unit_kg": 1.0,
 	  "description": "甜味水果，可用于甜点、饮品与果味料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/strawberry.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/strawberry.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 4, "growth_time_seconds": 180},
       "models": {"plant_visual": "res://assets/plants/Strawberry.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_strawberry.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_strawberry.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Strawberry.glb"}
     },
     "eggplant": {
@@ -58,7 +58,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "适合煎烤和切配的蔬菜，是常见热菜原料。",
-      "source": {"plantable": true, "farm_scene": "res://items/eggplant.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/eggplant.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 2, "growth_time_seconds": 90},
       "models": {"plant_visual": "res://assets/plants/Eggplant.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_eggplant.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_eggplant.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Eggplant.glb"}
     },
     "pumpkin": {
@@ -67,7 +67,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "体型较大的蔬菜，可切配制作汤品、烤制料理和甜食。",
-      "source": {"plantable": true, "farm_scene": "res://items/pumpkin.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/pumpkin.tscn", "farm_tile_count": 2, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 50},
       "models": {"plant_visual": "res://assets/plants/Pumpkin.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pumpkin.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pumpkin.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Pumpkin.glb"}
     },
     "watermelon": {
@@ -76,7 +76,7 @@
       "category": "fruit",
 	  "pickup_unit_kg": 1.0,
 	  "description": "高水分水果，可切块制作饮品、甜点或恢复类料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/watermelon.tscn", "farm_tile_count": 1, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/watermelon.tscn", "farm_tile_count": 1, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 45},
       "models": {"plant_visual": "res://assets/plants/Watermelon.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_watermelon.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_watermelon.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Watermelon.glb"}
     },
     "beet": {
@@ -85,7 +85,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "根茎蔬菜，色泽鲜明，适合汤品、腌制和切配料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/beet.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/beet.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 2, "growth_time_seconds": 75},
       "models": {"plant_visual": "res://assets/plants/Beet.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_beet.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_beet.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Beet.glb"}
     },
     "cabbage": {
@@ -94,7 +94,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "叶菜类食材，可切配用于汤品、炒菜和卷菜料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/cabbage.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/cabbage.tscn", "farm_tile_count": 2, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 50},
       "models": {"plant_visual": "res://assets/plants/Cabbage.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_cabbage.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_cabbage.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Cabbage.glb"}
     },
     "cotton": {
@@ -102,7 +102,7 @@
       "kind": "material",
       "category": "fiber_crop",
 	  "description": "纤维作物，用于制造和交易，不属于可食用食材。",
-      "source": {"plantable": true, "farm_scene": "res://items/cotton.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/cotton.tscn", "farm_tile_count": 2, "reharvestable": false, "planting_cost": 4, "growth_time_seconds": 105},
       "models": {"plant_visual": "res://assets/plants/Cotton.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_cotton.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_cotton.glb", "chopped_item": ""}
     },
     "lettuce": {
@@ -111,7 +111,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "清爽叶菜，可切配制作沙拉、配菜和冷食料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/lettuce.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/lettuce.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 2, "growth_time_seconds": 75},
       "models": {"plant_visual": "res://assets/plants/Lettuce.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_lettuce.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_lettuce.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Lettuce.glb"}
     },
     "mint": {
@@ -119,7 +119,7 @@
       "kind": "cooking_material",
       "category": "herb",
 	  "description": "芳香香草，可作为饮品、甜点和料理的清凉调味料。",
-      "source": {"plantable": true, "farm_scene": "res://items/mint.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/mint.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 4, "growth_time_seconds": 150},
       "models": {"plant_visual": "res://assets/plants/Mint.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_mint.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_mint.glb", "chopped_item": ""}
     },
     "peanut": {
@@ -127,7 +127,7 @@
       "kind": "food",
       "category": "nut",
 	  "description": "坚果类食材，可直接烹调或加工为碎粒、酱料和配料。",
-      "source": {"plantable": true, "farm_scene": "res://items/peanut.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/peanut.tscn", "farm_tile_count": 2, "reharvestable": false, "planting_cost": 2, "growth_time_seconds": 80},
       "models": {"plant_visual": "res://assets/plants/Peanut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_peanut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_peanut.glb", "chopped_item": ""}
     },
     "sugarcane": {
@@ -135,7 +135,7 @@
       "kind": "cooking_material",
       "category": "sweetener_crop",
 	  "description": "甜味原料，可加工为糖分并用于饮品和甜点调味。",
-      "source": {"plantable": true, "farm_scene": "res://items/sugarcane.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/sugarcane.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 60},
       "models": {"plant_visual": "res://assets/plants/Sugarcane.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_sugarcane.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_sugarcane.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Sugarcane.glb"}
     },
     "tobacco": {
@@ -143,7 +143,7 @@
       "kind": "material",
       "category": "leaf_crop",
 	  "description": "叶片经济作物，用于交易或工业加工，不可食用。",
-      "source": {"plantable": true, "farm_scene": "res://items/tobacco.tscn", "farm_tile_count": 2, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/tobacco.tscn", "farm_tile_count": 2, "reharvestable": false, "planting_cost": 8, "growth_time_seconds": 165},
       "models": {"plant_visual": "res://assets/plants/Tobacco.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_tobacco.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_tobacco.glb", "chopped_item": ""}
     },
     "grape": {
@@ -152,7 +152,7 @@
       "category": "fruit",
 	  "pickup_unit_kg": 1.0,
 	  "description": "可重复收获的水果，可分离果粒用于饮品、甜点和果酱。",
-      "source": {"plantable": true, "farm_scene": "res://items/grape.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "source": {"plantable": true, "farm_scene": "res://items/grape.tscn", "farm_tile_count": 1, "reharvestable": true, "planting_cost": 2, "growth_time_seconds": 80, "regrowth_time_seconds": 120},
       "models": {"plant_visual": "res://assets/plants/Grape.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_grape.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_grape.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Separated_Grapes.glb"}
     },
     "kiwi": {
@@ -161,7 +161,7 @@
       "category": "fruit",
 	  "pickup_unit_kg": 1.0,
 	  "description": "可重复收获的水果，可切片用于甜点、饮品和水果料理。",
-      "source": {"plantable": true, "farm_scene": "res://items/kiwi.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "source": {"plantable": true, "farm_scene": "res://items/kiwi.tscn", "farm_tile_count": 1, "reharvestable": true, "planting_cost": 2, "growth_time_seconds": 90, "regrowth_time_seconds": 135},
       "models": {"plant_visual": "res://assets/plants/Kiwi.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_kiwi.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_kiwi.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Sliced_Kiwi.glb"}
     },
     "hazelnut": {
@@ -169,7 +169,7 @@
       "kind": "food",
       "category": "nut",
 	  "description": "坚果食材，适合烘焙、甜点和酱料配方。",
-      "source": {"plantable": true, "farm_scene": "res://items/hazelnut.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "source": {"plantable": true, "farm_scene": "res://items/hazelnut.tscn", "farm_tile_count": 1, "reharvestable": true, "planting_cost": 4, "growth_time_seconds": 135},
       "models": {"plant_visual": "res://assets/plants/Hazelnut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_hazelnut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_hazelnut.glb", "chopped_item": ""}
     },
     "pistachio": {
@@ -177,7 +177,7 @@
       "kind": "food",
       "category": "nut",
 	  "description": "坚果食材，可作烘焙、甜点和咸味料理配料。",
-      "source": {"plantable": true, "farm_scene": "res://items/pistachio.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "source": {"plantable": true, "farm_scene": "res://items/pistachio.tscn", "farm_tile_count": 1, "reharvestable": true, "planting_cost": 8, "growth_time_seconds": 180, "regrowth_time_seconds": 270},
       "models": {"plant_visual": "res://assets/plants/Pistachio.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_pistachio.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_pistachio.glb", "chopped_item": ""}
     },
     "walnut": {
@@ -185,7 +185,7 @@
       "kind": "food",
       "category": "nut",
 	  "description": "油脂丰富的坚果，适合烘焙、酱料和料理配料。",
-      "source": {"plantable": true, "farm_scene": "res://items/walnut.tscn", "farm_tile_count": 1, "reharvestable": true},
+      "source": {"plantable": true, "farm_scene": "res://items/walnut.tscn", "farm_tile_count": 1, "reharvestable": true, "planting_cost": 4, "growth_time_seconds": 120, "regrowth_time_seconds": 180},
       "models": {"plant_visual": "res://assets/plants/Walnut.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_walnut.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_walnut.glb", "chopped_item": ""}
     },
     "soybean": {
@@ -193,7 +193,7 @@
       "kind": "food",
       "category": "legume",
 	  "description": "豆类食材，可煮制、发酵或加工为多种植物蛋白原料。",
-      "source": {"plantable": true, "farm_scene": "res://items/soybean.tscn", "farm_tile_count": 4, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/soybean.tscn", "farm_tile_count": 4, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 60},
       "models": {"plant_visual": "res://assets/plants/Soybean.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_soybean.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_soybean.glb", "chopped_item": ""}
     },
     "blackpepper": {
@@ -202,7 +202,7 @@
       "category": "spice",
       "description": "辛香调味作物，可加工为黑胡椒并用于咸味料理。",
       "pickup_unit_kg": 0.01,
-      "source": {"plantable": true, "farm_scene": "res://items/blackpepper.tscn", "farm_tile_count": 4, "harvest_kg_per_instance": 0.1, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/blackpepper.tscn", "farm_tile_count": 4, "harvest_kg_per_instance": 0.1, "reharvestable": false, "planting_cost": 8, "growth_time_seconds": 150},
       "models": {"plant_visual": "res://assets/plants/BlackPepper.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_blackpepper.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_blackpepper.glb", "chopped_item": ""}
     },
     "potato": {
@@ -211,7 +211,7 @@
       "category": "vegetable",
 	  "pickup_unit_kg": 1.0,
 	  "description": "耐储存根茎蔬菜，可切配、煎烤、炖煮或制成配菜。",
-      "source": {"plantable": true, "farm_scene": "res://items/potato.tscn", "farm_tile_count": 1, "reharvestable": false},
+      "source": {"plantable": true, "farm_scene": "res://items/potato.tscn", "farm_tile_count": 1, "reharvestable": false, "planting_cost": 1, "growth_time_seconds": 45},
       "models": {"plant_visual": "res://assets/plants/Potato.glb", "harvest_drop": "res://assets/plants/drop_items/harvest_drop_potato.glb", "whole_item": "res://assets/plants/drop_items/harvest_drop_potato.glb", "chopped_item": "res://assets/food/chopped_items/FTF_Ingredient_Chopped_Potato.glb"}
     },
     "chicken": {
@@ -340,6 +340,24 @@
       "source": {"plantable": false},
       "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/AnimalHide.glb", "whole_item": "res://assets/other_items/Material/AnimalHide.glb", "chopped_item": ""}
     },
+    "rubber_barrel": {
+      "display_name": "橡胶桶",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "可直接用于工程塑料颗粒加工，也可以在综合材料加工台加工成橡胶零件的橡胶原料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/Material/FTF_Resource_RawRubber_Barrel_Drop.glb", "whole_item": "res://assets/other_items/Material/FTF_Resource_RawRubber_Barrel_Drop.glb", "chopped_item": ""}
+    },
+    "rubber_parts": {
+      "display_name": "橡胶零件",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "由橡胶桶加工出的弹性工业零件，可用于液压组件、载具冷却系统和氮气加速装置等需要密封或软连接的制品。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_RubberParts.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_RubberParts.glb", "chopped_item": ""}
+    },
     "plant_fiber": {
       "display_name": "植物纤维",
       "kind": "material",
@@ -453,18 +471,178 @@
       "kind": "material",
       "category": "industrial_product",
       "pickup_unit_kg": 1.0,
-      "description": "安装在载具上的散热与冷却模块，用于降低高负荷运行时的热量并维持载具性能。",
+      "description": "安装在载具上的散热与冷却模块，用于降低高负荷运行时的热量并维持载具性能；制作完成后必须交由载具店安装，玩家不能直接安装。",
       "source": {"plantable": false},
-      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "whole_item": "res://assets/other_items/industrials/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "chopped_item": ""}
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "whole_item": "res://assets/vehicles/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb", "chopped_item": ""}
     },
     "vehicle_signal_augment": {
       "display_name": "车载信号增强模块",
       "kind": "material",
       "category": "industrial_product",
       "pickup_unit_kg": 1.0,
-      "description": "安装在载具上的通信与信号放大模块，用于提升载具和团队设备之间的信息覆盖与协同能力。",
+      "description": "安装在载具上的通信与信号放大模块，用于提升载具和团队设备之间的信息覆盖与协同能力；制作完成后必须交由载具店安装，玩家不能直接安装。",
       "source": {"plantable": false},
-      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "whole_item": "res://assets/other_items/industrials/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "chopped_item": ""}
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "whole_item": "res://assets/vehicles/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb", "chopped_item": ""}
+    },
+    "vehicle_harvest_reel": {
+      "display_name": "收割模块",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "载具用自动收割模块，可在移动过程中处理成熟作物；制作完成后必须交由载具店安装，玩家不能直接安装。",
+      "source": {"plantable": false},
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/HarvestReel.glb", "whole_item": "res://assets/vehicles/HarvestReel.glb", "chopped_item": ""}
+    },
+    "vehicle_machine_gun": {
+      "display_name": "车载机枪",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "安装在载具平台上的车载机枪模块；制作完成后必须交由载具店安装，玩家不能直接安装。",
+      "source": {"plantable": false},
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/PlatformMachineGun.glb", "whole_item": "res://assets/vehicles/PlatformMachineGun.glb", "chopped_item": ""}
+    },
+    "vehicle_nitro_boost": {
+      "display_name": "氮气加速装置",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于提升载具短时加速能力的氮气模块；制作完成后必须交由载具店安装，玩家不能直接安装。",
+      "source": {"plantable": false},
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/VehicleNitroBoost.glb", "whole_item": "res://assets/vehicles/VehicleNitroBoost.glb", "chopped_item": ""}
+    },
+    "vehicle_extended_seat": {
+      "display_name": "扩展座椅",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "载具外部平台使用的扩展乘员座椅；制作完成后必须交由载具店安装，玩家不能直接安装。",
+      "source": {"plantable": false},
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/PlatformSeat.glb", "whole_item": "res://assets/vehicles/PlatformSeat.glb", "chopped_item": ""}
+    },
+    "vehicle_roof_headlights": {
+      "display_name": "车顶大灯",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "安装在载具车顶的辅助照明模块；制作完成后必须交由载具店安装，玩家不能直接安装。",
+      "source": {"plantable": false},
+      "installation": {"required": true, "station": "vehicle_shop"},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/vehicles/RoofHeadlights.glb", "whole_item": "res://assets/vehicles/RoofHeadlights.glb", "chopped_item": ""}
+    },
+    "steel_ingot": {
+      "display_name": "钢锭",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由铁锭进一步精炼出的高强度金属中间材料，可轧制成钢板或加工成机械部件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_SteelIngots.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_SteelIngots.glb", "chopped_item": ""}
+    },
+    "lumber": {
+      "display_name": "木板",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "原木经过切割和整平得到的木材板，可用于木制装备、座椅和基础结构。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_LumberBoards.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_LumberBoards.glb", "chopped_item": ""}
+    },
+    "copper_wire": {
+      "display_name": "铜线",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "由铜锭拉制出的导电线材，是电路板、电池和载具电子模块的基础材料。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_CopperWireSpool.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_CopperWireSpool.glb", "chopped_item": ""}
+    },
+    "glass_panes": {
+      "display_name": "玻璃板",
+      "kind": "material",
+      "category": "industrial_material",
+      "pickup_unit_kg": 1.0,
+      "description": "经过熔融和成型的透明板材，可用于电子设备、灯具和工业设施。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_GlassPanes.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_GlassPanes.glb", "chopped_item": ""}
+    },
+    "battery_pack": {
+      "display_name": "电池组",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "可重复使用的工业电源组件，为电脑、载具模块和其他电子设备提供储能。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_BatteryPack.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_BatteryPack.glb", "chopped_item": ""}
+    },
+    "bearing": {
+      "display_name": "轴承",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于降低旋转部件摩擦的精密机械件，可用于电机、齿轮和载具机构。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_Bearing.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_Bearing.glb", "chopped_item": ""}
+    },
+    "gear_set": {
+      "display_name": "齿轮组",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于传递和改变机械动力的配套齿轮，可用于电机、载具和工业设备。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_GearSet.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_GearSet.glb", "chopped_item": ""}
+    },
+    "hydraulic_component": {
+      "display_name": "液压组件",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于传递液压力的工业组件，可用于收割设备、载具和重型机械。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Product_HydraulicComponent.glb", "whole_item": "res://assets/other_items/industrials/FTF_Product_HydraulicComponent.glb", "chopped_item": ""}
+    },
+    "high_performance_motor": {
+      "display_name": "高性能电机",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "输出功率和响应速度更高的工业电机，可用于高级载具模块和自动化设备。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Advanced_HighPerformanceMotor.glb", "whole_item": "res://assets/other_items/industrials/FTF_Advanced_HighPerformanceMotor.glb", "chopped_item": ""}
+    },
+    "vehicle_control_module": {
+      "display_name": "车辆控制模块",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "用于协调载具动力、模块和控制信号的电子控制组件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Advanced_VehicleControlModule.glb", "whole_item": "res://assets/other_items/industrials/FTF_Advanced_VehicleControlModule.glb", "chopped_item": ""}
+    },
+    "composite_armor_panel": {
+      "display_name": "复合装甲板",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "由金属和工程塑料复合而成的高强度防护板，可用于高级防护装备和载具装甲。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/FTF_Advanced_CompositeArmorPanel.glb", "whole_item": "res://assets/other_items/industrials/FTF_Advanced_CompositeArmorPanel.glb", "chopped_item": ""}
+    },
+    "circuit_board": {
+      "display_name": "电路板",
+      "kind": "material",
+      "category": "industrial_product",
+      "pickup_unit_kg": 1.0,
+      "description": "承载电子线路和控制逻辑的工业电路板，是电脑、电池和载具电子模块的核心部件。",
+      "source": {"plantable": false},
+      "models": {"plant_visual": "", "harvest_drop": "res://assets/other_items/industrials/CircuitBoard.glb", "whole_item": "res://assets/other_items/industrials/CircuitBoard.glb", "chopped_item": ""}
     },
     "coal": {
       "display_name": "煤矿",

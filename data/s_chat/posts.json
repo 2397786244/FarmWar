@@ -1,0 +1,1506 @@
+{
+  "schema_version": 1,
+  "platform": "s.chat",
+  "posts": [
+	{
+	  "post_id": "aiko_mori_rain_after",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "rain_after",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/rain_after/rain_trail_profile_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/rain_after/rain_lakeside_03q_02.png"
+	  ],
+	  "text": "雨停以后，森林小路像被轻轻擦亮了一遍，湖面和远处的山也变成了淡淡的蓝灰色。今天撑着透明伞慢慢走，鞋底踩过湿叶子的声音特别清楚，风吹乱了裙摆，却让照片更真实。相机里装满了雾气、绿色和一点点刚刚恢复的好心情。你们喜欢雨后的味道吗？☔🌿📷",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 812, "comments": 64, "reposts": 38}
+	},
+	{
+	  "post_id": "aiko_mori_cafe",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "cafe_indoor",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/cafe_indoor/cafe_window_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/cafe_indoor/cafe_side_02.png"
+	  ],
+	  "text": "今天把工位换到了安静的咖啡馆，靠书架的位置光线柔柔的，咖啡和相机也安静地放在桌边。我试着拍了一张侧脸，发现没有刻意准备的自己反而更自然，像被朋友悄悄记录下来一样。希望大家今天也能给自己留一点不必表现、只需要舒服的时间。☕📚",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 746, "comments": 58, "reposts": 29}
+	},
+	{
+	  "post_id": "aiko_mori_greenhouse",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "greenhouse",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/greenhouse/greenhouse_crouch_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/greenhouse/greenhouse_watering_side_02.png"
+	  ],
+	  "text": "今天给温室里的小花做了例行检查，新叶子终于长出来了！蹲下来整理泥土时袖口沾了灰，鞋子也不再干净，可看到它们慢慢变得有精神，就觉得这点狼狈很值得。浇水之前和之后各拍了一张，才发现同一片绿意也会有不同的性格。植物每天长一点，我也想学会这种节奏。🌱💧",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 689, "comments": 44, "reposts": 24}
+	},
+	{
+	  "post_id": "aiko_mori_lakeside",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "lakeside",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/lakeside/lake_profile_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/lakeside/coast_v_sign_02.png"
+	  ],
+	  "text": "湖边的风比想象中大，刚整理好的头发很快就不听话了。可是站在水边看着远处的山，反而觉得这样更真实：旅行不一定要安排得完美，衣角被吹乱、鞋边沾上草屑，也都是照片里很重要的部分。按下快门前做了个小小的手势，差点被风吹得站不稳，结果笑着拍了好几次。🌊📷",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 901, "comments": 72, "reposts": 41}
+	},
+	{
+	  "post_id": "aiko_mori_makeup",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "makeup_reveal",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/makeup_reveal/makeup_reveal_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/makeup_reveal/makeup_reveal_02.png"
+	  ],
+	  "text": "今天第一次认真记录自己刚完成的妆，腮红的颜色比想象中更温柔，镜头里像偷偷加了一点好天气。妆画完以后在镜子前看了好几次，最后留下最自然的这一张。眼线有一点点不对称，笑容也不是刻意练习的，但这正是我最喜欢的部分。把自己收拾得漂漂亮亮，再去完成普通的一天吧。💄🌷✨",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1180, "comments": 96, "reposts": 55}
+	},
+	{
+	  "post_id": "aiko_mori_workstation",
+	  "npc_id": "npc_aiko_mori",
+	  "theme_id": "workstation_manicure",
+	  "images": [
+		"res://assets/icons/s_chat/posts/aiko_mori/workstation_manicure/workstation_mirror_01.png",
+        "res://assets/icons/s_chat/posts/aiko_mori/workstation_manicure/workstation_manicure_02.png"
+	  ],
+	  "text": "上班前在工位的小镜子前拍了一张，确认妆容没有花，也给今天的心情留个证据。桌面上还是熟悉的键盘、便签和一杯水，只有指尖换成了紫色和薄荷色的小美甲，打字时总会忍不住多看两眼。生活里让人开心的事情不一定很大，认真涂好指甲也可以成为一天的小小奖励。💻💅💜",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1040, "comments": 83, "reposts": 48}
+	},
+	{
+	  "post_id": "eddie_vale_fakesupply_01",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_supply_promo",
+	  "image": null,
+	  "text": "【内部放货消息】有人把一批军用胸甲、背包和武器资源偷偷放进了补给池，价格还是旧价！我刚刚试过入口，页面还在工作，手慢就只剩普通弹药了。别在评论区问我真假，自己进去看最快，今天可能随时关门。💜⚠️",
+	  "links": ["www.fakesupply.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 386, "comments": 22, "reposts": 67}
+	},
+	{
+	  "post_id": "eddie_vale_fakesupply_02",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_supply_promo",
+	  "image": null,
+	  "text": "刚收到消息，补给站今晚会把 200 发弹药盒和几种稀有枪械一起放出来，听说每次只要 500 元，抽到高价值装备就能直接赚回好几倍。别等所谓的公告，真正的机会从来不会提前通知所有人。入口我放这儿了，自己判断，别怪我没提醒。📦🔥",
+	  "links": ["www.fakesupply.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 512, "comments": 34, "reposts": 84}
+	},
+	{
+	  "post_id": "eddie_vale_fakesupply_03",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_supply_promo",
+	  "image": null,
+	  "text": "有人问为什么最近总有人抽到军用背包，我只能说你们还没找到真正的补给页面。听说系统正在做一次短暂的库存切换，里面可能出现平时看不到的高级物品。页面能不能打开、奖品会不会变，全部看运气，但现在确实是最值得试的时候。🎒🟣",
+	  "links": ["www.fakesupply.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 448, "comments": 28, "reposts": 71}
+	},
+	{
+	  "post_id": "eddie_vale_fakesupply_04",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_supply_promo",
+	  "image": null,
+	  "text": "最后提醒一次：那个补给页面今晚可能会换地址，已经进去的人说滚动奖励里出现了 M4、Shotgun 和整盒弹药。有人觉得这是陷阱，也有人已经拿到东西了。反正 500 元只够买一顿普通饭，想试的人自己抓紧，过期以后别来找我。⏳🎁",
+	  "links": ["www.fakesupply.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 601, "comments": 39, "reposts": 96}
+	},
+	{
+	  "post_id": "eddie_vale_daily_01",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "听说南边仓库正在清理一批旧农机配件，原价几千的东西现在只收几十块，连没有损坏的发动机外壳都要一起处理。消息还没有正式贴出来，但我认识的人已经去排队了。想省钱的最好早点去，等商店挂出牌子，估计就轮不到普通人了。🚜📢",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 274, "comments": 15, "reposts": 32}
+	},
+	{
+	  "post_id": "eddie_vale_daily_02",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "【车店小道消息】下周会有一次隐藏的车辆升级折扣，听说高性能电机和车载大灯都能按半价安装。店员嘴上说没有这回事，可我已经看到他们把配件搬到后门了。现在买车不一定划算，但先把钱准备好总没错，机会一般只留给消息灵通的人。🚗💸",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 333, "comments": 19, "reposts": 41}
+	},
+	{
+	  "post_id": "eddie_vale_daily_03",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "今天有人在工业区捡到一张所谓的旧库存清单，上面写着工程塑料、铜线和冷却系统全部打折。我看过那张纸，印得还挺像真的，不过日期被人故意撕掉了。想去碰碰运气可以，但别把全部现金都带上，仓库的门可不是每天都会开。🧰🧾",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 298, "comments": 17, "reposts": 36}
+	},
+	{
+	  "post_id": "eddie_vale_daily_04",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "刚听到一个离谱的传闻：有人把几辆状态不错的二手车登记成了报废车，只为了绕过正常售价卖给熟人。要是真有这种内部价，估计当天就会被抢光。大家最近买东西一定要看清楚手续，当然，如果你有靠谱的联系人，也可以私下告诉我。😉🔧",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 359, "comments": 23, "reposts": 44}
+	},
+	{
+	  "post_id": "eddie_vale_daily_05",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "今晚可能会有一场临时补贴，听说只要在指定时间把钱交出去，就能换回两倍的农场用品额度。是真是假我不敢保证，毕竟这种消息每周都会冒出来一次。不过上次有人真的拿到了东西，所以我建议大家先观察，不要错过，也别冲动到把生活费全压进去。📣🌾",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 420, "comments": 26, "reposts": 51}
+	},
+	{
+	  "post_id": "eddie_vale_daily_06",
+	  "npc_id": "npc_eddie_vale",
+	  "theme_id": "fake_discount_news",
+	  "image": null,
+	  "text": "有人说农场用品店准备推出一项‘旧物换新券’，拿任意旧工具过去就能换到高级种子和加工材料。我还没亲眼见到兑换柜台，但已经有人在门口排队了。消息越离谱，传播得越快，大家最好先问清楚规则，别为了一个听起来很划算的承诺白跑一趟。🌱🧾",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 311, "comments": 18, "reposts": 38}
+	},
+	{
+	  "post_id": "jordan_kim_truck_selfie",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "truck_selfie",
+	  "images": [
+        "res://assets/icons/s_chat/posts/jordan_kim/truck_selfie/truck_selfie_01.png"
+	  ],
+	  "text": "今天把车稳稳停在停车场，趁着等下一张调度单的时间留张照片。长途跑久了，驾驶室几乎像第二个小房间：水杯、旧帽子和一堆路线单都在原来的位置。窗外没什么特别的风景，但能安静坐几分钟也挺好。🚚📱",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 196, "comments": 12, "reposts": 7}
+	},
+	{
+	  "post_id": "jordan_kim_rural_wheat",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "rural_wheat",
+	  "images": [
+        "res://assets/icons/s_chat/posts/jordan_kim/road_views/nature/rural_wheat_01.png"
+	  ],
+	  "text": "今天的路穿过一大片金色麦田，风一吹，田野像一整块慢慢起伏的布。旧手机拍出来有点糊，颜色也不太准，不过我反而喜欢这种不完美，像是把路上匆匆看到的几秒钟原样留下来了。🌾🛣️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 248, "comments": 16, "reposts": 9}
+	},
+	{
+	  "post_id": "jordan_kim_mountain_lake",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "mountain_lake",
+	  "images": [
+        "res://assets/icons/s_chat/posts/jordan_kim/road_views/nature/mountain_lake_02.png"
+	  ],
+	  "text": "绕过林区的时候看见远处的山和湖，找了安全的位置停下来拍了一张。那会儿云刚好从山顶移开，水面亮了几分钟。手机镜头有些老，细节没能留下多少，但当时那种突然安静下来的感觉，我还记得。🏔️🌲",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 284, "comments": 19, "reposts": 11}
+	},
+	{
+	  "post_id": "jordan_kim_smalltown_main_street",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "smalltown_main_street",
+	  "images": [
+        "res://assets/icons/s_chat/posts/jordan_kim/road_views/towns/smalltown_main_street_03.png"
+	  ],
+	  "text": "经过一个不太大的镇子，主街比我想象中热闹：车位几乎停满，街角有人推着购物车聊天，远处的水塔在阳光下特别显眼。这里没有大城市的喧闹，却有一种大家都认识彼此的踏实感。📷🏘️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 211, "comments": 14, "reposts": 8}
+	},
+	{
+	  "post_id": "jordan_kim_smalltown_residential",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "smalltown_residential",
+	  "images": [
+        "res://assets/icons/s_chat/posts/jordan_kim/road_views/towns/smalltown_residential_04.png"
+	  ],
+	  "text": "小镇边缘的住宅区总有一种很特别的安静。路边的电线杆、旧谷仓和刚修剪过的草地，看起来都普通得不能再普通，可我每次经过还是会多看几眼。可能长途司机的风景，就是这些不会出现在旅游手册里的地方。🌳🚚",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 178, "comments": 9, "reposts": 5}
+	},
+	{
+	  "post_id": "jordan_kim_route_detour",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "route_daily",
+	  "image": null,
+	  "text": "今天的路线临时多了一站，调度员说只是顺路，结果绕出去比原计划多了快一个小时。好在那段路不堵车，车况也很稳定。跑运输最考验的不是速度，而是遇到变化之后还能不能把节奏稳住。🚚",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 152, "comments": 8, "reposts": 4}
+	},
+	{
+	  "post_id": "jordan_kim_truck_maintenance",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "truck_daily",
+	  "image": null,
+	  "text": "卡车最可靠的时候，往往是你愿意花时间照顾它的时候。今天检查了轮胎、灯和冷却液，还把驾驶室里积了几天的灰擦掉。修理和保养看起来都很琐碎，但它们能让一整天的路程少很多麻烦。🔧",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 221, "comments": 13, "reposts": 6}
+	},
+	{
+	  "post_id": "jordan_kim_coffee_stop",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "rest_stop",
+	  "image": null,
+	  "text": "早上的第一杯咖啡是在一个很小的路边休息站买的。店里只有老板和我，收音机放着不太清楚的天气预报。我们聊了几句今天的路况，临走时他还提醒我前面可能有施工。陌生人的一句提醒，有时候比导航更有用。☕",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 167, "comments": 10, "reposts": 4}
+	},
+	{
+	  "post_id": "jordan_kim_weather_route",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "road_weather",
+	  "image": null,
+	  "text": "出发前看天气预报只能算个开始，真正上路以后还是要留意云层、风向和路面。今天上午阳光很好，下午却突然起了大风。我把车速放慢了一点，提前找好能停车的位置，按时到达很重要，但安全回去更重要。🌤️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 239, "comments": 15, "reposts": 7}
+	},
+	{
+	  "post_id": "jordan_kim_longhaul_evening",
+	  "npc_id": "npc_jordan_kim",
+	  "theme_id": "longhaul_life",
+	  "image": null,
+	  "text": "有人问长途司机会不会觉得每天都在重复。答案是会，但每条路又不完全一样：不同的天气、不同的车流，还有不同地方的人。等最后一批货交完，把车停好，听着发动机慢慢安静下来，那一刻总会觉得今天也算顺利结束了。🌙",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 205, "comments": 12, "reposts": 6}
+	},
+	{
+	  "post_id": "seo_yeon_han_coffee",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "coffee_theme",
+	  "images": [
+		"res://assets/icons/s_chat/posts/seo_yeon_han/coffee_theme/coffee_selfie_01.png",
+        "res://assets/icons/s_chat/posts/seo_yeon_han/coffee_theme/coffee_01.png"
+	  ],
+	  "text": "今天拍完一段广告，终于可以坐下来喝杯咖啡。店里的光线很温柔，自拍时头发还有点乱，反而比正式造型更像平时的我。先把这份短暂的休息留在这里。☕📷",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1560, "comments": 122, "reposts": 74}
+	},
+	{
+	  "post_id": "seo_yeon_han_studio",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "studio_theme",
+	  "images": [
+        "res://assets/icons/s_chat/posts/seo_yeon_han/studio_theme/studio_ad_shoot_01.png"
+	  ],
+	  "text": "影棚里从早上换了好几套造型，灯一亮就要立刻进入状态。导演说“再自然一点”的时候，我差点笑出来。收工后看监视器，发现最满意的居然是没有准备好的那一瞬间。🎬✨",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1380, "comments": 97, "reposts": 65}
+	},
+	{
+	  "post_id": "seo_yeon_han_restaurant",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "restaurant_theme",
+	  "images": [
+		"res://assets/icons/s_chat/posts/seo_yeon_han/restaurant_theme/restaurant_meal_01.png",
+        "res://assets/icons/s_chat/posts/seo_yeon_han/restaurant_theme/restaurant_evening_02.png"
+	  ],
+	  "text": "今天和工作人员去吃饭，点了喜欢的牛排和一杯气泡水。拍摄结束后不用赶着整理表情，安安静静吃一顿热饭，才发现这也是工作日里最期待的奖励。🍽️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1492, "comments": 110, "reposts": 71}
+	},
+	{
+	  "post_id": "seo_yeon_han_morning_routine",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "daily_life",
+	  "image": null,
+	  "text": "今天比闹钟早醒了十分钟，窗外的光刚好落在地板上。没有急着看手机，先慢慢喝水、整理头发，再出门工作。偶尔把早晨过得慢一点，心情真的会不一样。🌤️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 924, "comments": 54, "reposts": 28}
+	},
+	{
+	  "post_id": "seo_yeon_han_work_complaint",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "work_life",
+	  "image": null,
+	  "text": "今天连续拍了六个小时同一个笑容，脸颊已经开始抗议了。最难的不是换衣服，而是每次听到“最后一条”都要相信它真的会是最后一条。收工时只想穿着拖鞋直接回家。😵‍💫",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1011, "comments": 61, "reposts": 34}
+	},
+	{
+	  "post_id": "seo_yeon_han_life_complaint",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "life_complaint",
+	  "image": null,
+	  "text": "最近总是把耳机放在一个很安全的地方，然后立刻忘记那个地方在哪里。今天找了二十分钟，最后发现它一直在外套口袋里。成年人生活的谜题，有时候真的很朴素。🎧",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 812, "comments": 43, "reposts": 21}
+	},
+	{
+	  "post_id": "seo_yeon_han_animation",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "fictional_animation",
+	  "image": null,
+	  "text": "昨晚看完虚构动画电影《月光邮局》，被里面那只会替人保存秘密的蓝色小鸟感动到了。故事很简单，却让我想起小时候相信每封信都会抵达的感觉。今天也想写点温柔的话给自己。🌙🐦",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1184, "comments": 70, "reposts": 39}
+	},
+	{
+	  "post_id": "seo_yeon_han_new_try",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "new_try",
+	  "image": null,
+	  "text": "第一次尝试自己做柠檬罗勒意面，厨房最后像经历了一场小型风暴。味道居然还不错，只是罗勒放得有点多。下次会记得先看清食谱，不再凭感觉把整把香草都倒进去。🍋🌿",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 1055, "comments": 62, "reposts": 32}
+	},
+	{
+	  "post_id": "seo_yeon_han_schedule",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "schedule",
+	  "image": null,
+	  "text": "下周的行程表已经排满，拍摄、试装和录音挤在一起，看着就有点头大。不过中间有一天晚上可以早点回家，我已经把那段时间圈起来了，准备什么都不安排。📅",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 766, "comments": 38, "reposts": 19}
+	},
+	{
+	  "post_id": "seo_yeon_han_small_joy",
+	  "npc_id": "npc_seo_yeon_han",
+	  "theme_id": "small_joy",
+	  "image": null,
+	  "text": "今天在便利店买到了小时候喜欢的水果糖，包装换了，味道却还是熟悉的。工作结束后含一颗走在路上，突然觉得很开心。成年以后也应该给自己买一点没有理由的小礼物。🍬",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 883, "comments": 49, "reposts": 25}
+	},
+	{
+	  "post_id": "dana_ortiz_home_dinner",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "home_dinner",
+	  "images": [
+        "res://assets/icons/s_chat/posts/dana_ortiz/home_dinner/home_dinner_selfie_01.png"
+	  ],
+	  "text": "今晚在家给家人做晚饭，厨房一下子变得特别热闹。锅里炖着酱汁，旁边还在煎蔬菜，忙到头发都散了，心情却特别好。能看着家人坐在桌边等饭，就是我最喜欢的时刻。🍳🏠",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 642, "comments": 42, "reposts": 24}
+	},
+	{
+	  "post_id": "dana_ortiz_mashed_potato_plate",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "mashed_potato_plate",
+	  "images": [
+        "res://assets/icons/s_chat/posts/dana_ortiz/mashed_potato_plate/mashed_potato_steak_01.png"
+	  ],
+	  "text": "今天的主菜是奶油土豆泥配煎肉排，外层煎到微焦，切开还保留着汁水。再加一点绿豆和番茄，颜色和味道都很舒服。家人说可以再做一次，我就当作今天最大的夸奖啦。🥔🍽️",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 781, "comments": 57, "reposts": 31}
+	},
+	{
+	  "post_id": "dana_ortiz_garden_salad",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_garden_salad",
+	  "image": null,
+	  "text": "田园沙拉是我最常做的快手菜。生菜、番茄和薄荷切好，在备料台拌在一起就完成了。颜色很漂亮，吃起来也清爽，忙了一天不想开大火时特别合适。🥗",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 358, "comments": 21, "reposts": 12}
+	},
+	{
+	  "post_id": "dana_ortiz_tomato_soup",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_farm_tomato_soup",
+	  "image": null,
+	  "text": "今天试做农场番茄汤，把番茄切好后放进锅里，在电磁炉上慢慢煮。最后加一点黑胡椒，酸甜味会更完整。天气凉的时候端一碗出来，厨房马上就有家的感觉了。🍅🥣",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 329, "comments": 18, "reposts": 9}
+	},
+	{
+	  "post_id": "dana_ortiz_crispy_potatoes",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_crispy_potatoes",
+	  "image": null,
+	  "text": "脆皮煎土豆看起来简单，其实火候很重要。土豆切块后先擦干水分，再放到煎台上慢慢煎，最后撒黑胡椒。外面金黄、里面柔软，配煎肉排特别好吃。🥔",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 411, "comments": 24, "reposts": 13}
+	},
+	{
+	  "post_id": "dana_ortiz_beef_patty",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_black_pepper_beef_patty",
+	  "image": null,
+	  "text": "黑胡椒牛肉饼是家人点名率最高的一道菜。牛肉拌好面粉和调味料后，在煎台上压成厚厚的一块，煎到两面有焦香就可以了。做多一点，第二天夹面包也很方便。🥩",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 469, "comments": 31, "reposts": 17}
+	},
+	{
+	  "post_id": "dana_ortiz_chicken_chowder",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_corn_chicken_chowder",
+	  "image": null,
+	  "text": "玉米鸡肉浓汤很适合一家人一起喝。鸡肉、玉米和土豆切好后放进锅里，在电磁炉上煮到汤汁变浓。它不需要太复杂的调味，食材本身的香味就已经很足了。🌽🍲",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 386, "comments": 22, "reposts": 11}
+	},
+	{
+	  "post_id": "dana_ortiz_roast_pumpkin",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_sweet_roast_pumpkin",
+	  "image": null,
+	  "text": "第一次做甜烤南瓜时没想到它会这么香。南瓜切块后拌一点糖和油，放进烤箱等到边缘微微焦黄，甜味就出来了。作为晚餐配菜很温柔，也很适合小朋友。🎃",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 301, "comments": 17, "reposts": 8}
+	},
+	{
+	  "post_id": "dana_ortiz_cornbread",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_farm_cornbread",
+	  "image": null,
+	  "text": "农场玉米面包是我最近很喜欢的烤箱食谱。面团里加入甜玉米和一点糖，烤好以后外层松软，咬开有淡淡的玉米香。早餐配热饮，或者晚餐配汤都很合适。🌽🍞",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 344, "comments": 19, "reposts": 10}
+	},
+	{
+	  "post_id": "dana_ortiz_strawberry_pie",
+	  "npc_id": "npc_dana_ortiz",
+	  "theme_id": "recipe_strawberry_pie",
+	  "image": null,
+	  "text": "今天挑战草莓派，酥皮铺好以后放入切好的草莓和糖，再交给烤箱完成最后一步。刚出炉时香味太犯规了，只好先拍照再切。甜点偶尔失败一点，也还是值得尝试。🍓🥧",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 437, "comments": 27, "reposts": 14}
+	},
+	{
+	  "post_id": "leah_mercer_sprout_blaster",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "给刚拿到播种枪的新农场主一个提醒：换种子时先确认枪膛里装的是哪一种，瞄准属于自家队伍的空地再播下。每次播种都会从队伍账上记一笔成本，别在没算预算之前一口气铺满整片田。🌱",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 214, "comments": 18, "reposts": 31}
+	},
+	{
+	  "post_id": "leah_mercer_seed_costs",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "播种预算可以先按四档记：小麦、玉米、南瓜这些基础作物每格 1 元；番茄、茄子、甜菜等普通作物每格 2 元；草莓、棉花、薄荷等高级作物每格 4 元；烟草、开心果和黑胡椒一类稀有作物每格 8 元。单格看着不多，铺满大片农田时差别会很明显。",
+	  "links": ["www.mercerseed.com/seed-guide"],
+	  "published_at": null,
+	  "engagement": {"likes": 286, "comments": 22, "reposts": 54}
+	},
+	{
+	  "post_id": "leah_mercer_basic_crops",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "想快速周转就从土豆、西瓜、南瓜和小麦开始。它们成本低、容易照料，也适合熟悉播种、照料和收获的节奏。第一次经营农场时，稳定收回一轮往往比追最高单价更重要。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 247, "comments": 15, "reposts": 39}
+	},
+	{
+	  "post_id": "leah_mercer_long_cycle_crops",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "草莓和烟草需要更多照料，暴露在敌人、火灾和虫害下的风险也更高。不过它们的售价更能补偿这部分压力。建议先留出一块容易巡查的核心农田种高价值作物，外围继续种便宜、周转快的品种，不要把全部资金压在同一轮上。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 331, "comments": 34, "reposts": 46}
+	},
+	{
+	  "post_id": "leah_mercer_regrowth_crops",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "葡萄和猕猴桃首次成熟后还能进入再次生长，开心果与核桃也有类似优势。第一次收获后别急着把地块当成空地，它们会回到生长状态；第二轮通常要等得更久，但不需要重新播种。规划好巡田路线，这类作物能减少重复操作。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 198, "comments": 17, "reposts": 28}
+	},
+	{
+	  "post_id": "leah_mercer_mature_glow",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "最近有人问地块外沿那圈金黄色微光是什么：那表示作物已经成熟。走近看看叶色和果实，再动手收割；还在生长的田地不会有这圈光。夜里巡田时它特别好认，但也可能让远处的人发现你的成熟作物。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 309, "comments": 21, "reposts": 35}
+	},
+	{
+	  "post_id": "leah_mercer_weather_planning",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "出门播种前先在电脑里的 Weather 查看未来七天的天气和温度，日食也会提前出现在预报里。笔记本和高端台式机都能查看。把需要细心照料的作物安排在你有时间守田的日子，会省下很多麻烦。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 222, "comments": 16, "reposts": 41}
+	},
+	{
+	  "post_id": "leah_mercer_cotton_chain",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "棉花不是只能卖原料。2 kg 棉花能在综合材料加工台纺成 1 kg 棉线，再用 2 kg 棉线织成 1 kg 棉布。棉布可以继续制作护甲和背包，其中棉布背包需要整整 10 kg 棉布。准备做装备的队伍最好提前留出棉田，不要把每一批棉花都直接卖掉。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 264, "comments": 20, "reposts": 49}
+	},
+	{
+	  "post_id": "leah_mercer_crop_hazards",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "高价值作物最怕的不是等，而是没人看。火焰和虫害都会打断正常生长，敌人也可能直接收走成熟作物。大片种植时至少留一条便于巡查和灭火的通道，发现异常先处理受影响的地块，不要只盯着已经发光的成熟区。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 176, "comments": 13, "reposts": 32}
+	},
+	{
+	  "post_id": "leah_mercer_store_notice",
+	  "npc_id": "npc_leah_mercer",
+	  "theme_id": "farm_advice",
+	  "images": [],
+	  "text": "本周农场用品区会把基础种植说明、作物成熟表和加工去向放在同一页，第一次来的朋友不用站在柜台前翻半天纸。网站目前只是公告入口，页面找不到时请直接来店里问，别相信私信里所谓的“半价稀有种子兑换码”。",
+	  "links": ["www.mercerseed.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 193, "comments": 11, "reposts": 27}
+	},
+	{
+	  "post_id": "marcus_bell_atv",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "越野摩托车是我会推荐给单人跑农场边路的入门车：车身小、转向灵活，只有驾驶位，售价在两万元档的起点附近。它不是装甲车，撞击和枪火都扛不了多久，但穿过窄路、赶去处理一块出问题的田很方便。",
+	  "links": ["www.bellwrench.com/vehicles"],
+	  "published_at": null,
+	  "engagement": {"likes": 186, "comments": 24, "reposts": 19}
+	},
+	{
+	  "post_id": "marcus_bell_mini_car",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "迷你车有两个座位，速度不算快，但比越野摩托车多一个乘客位，价格仍在两万元档。适合两个人短途巡视或去镇上办事。别拿“迷你”当成可以从任何缝里挤过去，车门和轮子一样会在乱撞后进维修单。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 171, "comments": 16, "reposts": 13}
+	},
+	{
+	  "post_id": "marcus_bell_farm_base_vehicle",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "农用基础车是干活的底盘，不是用来比直线速度的，报价通常进入三万元档。真正的价值在扩展：收割模块、扩展座椅、车顶大灯、冷却系统和其他设备都能围绕它规划。想做长期农场生产，比买一辆快车更值得先算清楚。",
+	  "links": ["www.bellwrench.com/farm-base"],
+	  "published_at": null,
+	  "engagement": {"likes": 244, "comments": 31, "reposts": 36}
+	},
+	{
+	  "post_id": "marcus_bell_sedan",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "轿车是四座车型，车身稳，跑起来也利落，价格在三万元档。队伍里常有四个人一起出门的话，它比两台小车省心。驾驶座和其他座位最好提前分好，空出位置再换人，别在交火中为了抢方向盘添乱。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 205, "comments": 18, "reposts": 15}
+	},
+	{
+	  "post_id": "marcus_bell_sport_car",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "运动型跑车有两个座位，车身轻快，是这批民用车型里最适合追求速度的一辆，价格也接近四万元。高速行驶时前方更开阔，但快不等于耐撞，更不等于刹得住。买它的人最好把改色预算和第一次大修预算分开留着。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 318, "comments": 42, "reposts": 28}
+	},
+	{
+	  "post_id": "marcus_bell_repair_quotes",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "维修报价先看车体和受损部位：小擦碰通常几百，明显影响驾驶的中度损坏会上千，接近报废的大修可能到数千。车种和是否带改装件都会影响最终报价。把车停稳再送检，别一边冒烟一边问我能不能继续开五公里。",
+	  "links": ["www.bellwrench.com/service"],
+	  "published_at": null,
+	  "engagement": {"likes": 151, "comments": 27, "reposts": 21}
+	},
+	{
+	  "post_id": "marcus_bell_cooling",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "载具冷却系统不是放进后备箱就算装好了。模块制作完成后要带到载具店，由设备完成固定、接线和测试。经常长时间工作或准备继续加装高负荷设备的车，先做冷却比事后拖回来换一堆烧坏的零件便宜。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 138, "comments": 12, "reposts": 18}
+	},
+	{
+	  "post_id": "marcus_bell_farm_modules",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "农用基础车常见的三项实用改装：收割模块负责生产作业，扩展座椅增加侧面乘坐位置，车顶大灯改善夜间视野。扩展座椅从车侧上下，不能从驾驶舱里临时换过去。零件都需要在载具店安装，工时通常从几百起算。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 197, "comments": 19, "reposts": 25}
+	},
+	{
+	  "post_id": "marcus_bell_performance_upgrades",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "车载机枪、氮气加速装置和高性能电机都不是路边拿扳手就能装的东西。机枪涉及固定座与供弹，氮气要检查控制和冷却，高性能电机还要确认车辆控制模块。安装费会随车型和改装复杂度从几百到数千，先做兼容检查再交钱。",
+	  "links": ["www.bellwrench.com/upgrades"],
+	  "published_at": null,
+	  "engagement": {"likes": 227, "comments": 29, "reposts": 33}
+	},
+	{
+	  "post_id": "marcus_bell_paint_and_inspection",
+	  "npc_id": "npc_marcus_bell",
+	  "theme_id": "vehicle_service",
+	  "images": [],
+	  "text": "改色前我们会先查车体、灯光、轮子和已有模块。外壳颜色能换，裂开的结构不会因为喷了新漆就自动恢复。还有一条：已经严重受损的车别停在人群和油料旁边，彻底损毁的载具爆炸范围可不是装饰效果。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 164, "comments": 15, "reposts": 22}
+	},
+	{
+	  "post_id": "calvin_reed_mpx",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "MPX 冲锋枪售价 2400，射程 100 米。枪身紧凑，适合仓库、窄路等距离较近的场合。第一次买自动武器时，记得给弹药留出预算。",
+	  "links": ["www.rangeledger.com/catalog"],
+	  "published_at": null,
+	  "engagement": {"likes": 178, "comments": 20, "reposts": 17}
+	},
+	{
+	  "post_id": "calvin_reed_m4",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "M4 卡宾枪售价 3000，射程适合中远距离。它是比较均衡的选择，仓库、道路和农田都能用。第一次购买主武器，不确定活动地点时，可以先考虑它。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 236, "comments": 26, "reposts": 24}
+	},
+	{
+	  "post_id": "calvin_reed_ar15",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "AR15 步枪售价 4000，射程较远，更适合开阔农田和长直道路。近距离环境里别只看射程，先确认周围是否有更合适的选择。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 261, "comments": 33, "reposts": 26}
+	},
+	{
+	  "post_id": "calvin_reed_shotgun",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "双管猎枪售价 2200，有效范围主要在近距离。它适合门口、窄路和突然贴近的威胁，不是用来隔着整块农田碰运气的。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 289, "comments": 37, "reposts": 31}
+	},
+	{
+	  "post_id": "calvin_reed_hunting_rifle",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "栓动猎枪售价 2500，射程 120 米。适合在远处先找好位置再开火；如果威胁已经贴脸，就不如换一件更适合近处使用的装备。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 194, "comments": 18, "reposts": 20}
+	},
+	{
+	  "post_id": "calvin_reed_crossbow",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "弩售价 1600，射程 120 米。预算有限又愿意耐心瞄准的人会喜欢它；装填时请退到掩体后，不要站在原地低头看弩臂。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 145, "comments": 14, "reposts": 13}
+	},
+	{
+	  "post_id": "calvin_reed_suppressed_pistol",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "消音手枪售价 800，射程 100 米。价格低、单手持握方便，适合作为备用武器，但它不是“安静版步枪”。面对穿戴厚重防护的目标时，先确认距离和退路。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 201, "comments": 23, "reposts": 16}
+	},
+	{
+	  "post_id": "calvin_reed_future_weapons",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "FutureMPX 售价 3200，射程 100 米；FutureM4 售价 3800，射程适合中远距离。它们属于传统型号的强化版本，别只因为外形新就买，先想清楚自己经常在哪类环境里用枪。",
+	  "links": ["www.rangeledger.com/future-series"],
+	  "published_at": null,
+	  "engagement": {"likes": 312, "comments": 39, "reposts": 34}
+	},
+	{
+	  "post_id": "calvin_reed_ammo_and_grenade",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "200 发弹药盒售价 200，手雷售价 200。买弹药时按自己常用的武器准备，投掷手雷前确认队友位置，爆炸不会因为一句“我以为他走开了”就收回伤害。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 167, "comments": 22, "reposts": 29}
+	},
+	{
+	  "post_id": "calvin_reed_trade_and_safety",
+	  "npc_id": "npc_calvin_reed",
+	  "theme_id": "firearms_guide",
+	  "images": [],
+	  "text": "本店只回收枪械、手雷和弹药盒，回收价低于购买价，别把频繁倒卖当成赚钱方式。交枪前请退下弹匣、枪口朝向安全处，并说明膛内是否还有弹药。安全说明可以在网页查看，但真正碰枪时，安全步骤永远排在促销前面。",
+	  "links": ["www.rangeledger.com/safety"],
+	  "published_at": null,
+	  "engagement": {"likes": 133, "comments": 11, "reposts": 24}
+	},
+	{
+	  "post_id": "evelyn_shaw_after_rain",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "雨停后的农田最适合慢慢走。泥土颜色变深，叶片上的水珠会把很小的光也放大，远处的机器声反而显得更安静。别急着踩进种植区，沿着地块之间的通道走，能看见许多平时被尘土遮住的脚印。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 243, "comments": 18, "reposts": 28}
+	},
+	{
+	  "post_id": "evelyn_shaw_mature_fields",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "夜里经过成熟农田时，地块外沿那圈低低的金色光辉很漂亮，像有人给每一小块土地描了边。它其实是在告诉农场主作物已经可以收获。欣赏可以，别擅自跨进别人队伍的田里；漂亮的提示依然代表有归属的劳动成果。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 318, "comments": 25, "reposts": 33}
+	},
+	{
+	  "post_id": "evelyn_shaw_woods_and_wheat",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "从树林的阴影里望出去，远处金色麦田会显得格外亮。小麦容易照料、周转稳定，能把一片空地很快变成有层次的风景。我们常把基础作物看成账目里的数字，但它们也是这片土地上最容易被忽略的季节感。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 271, "comments": 16, "reposts": 30}
+	},
+	{
+	  "post_id": "evelyn_shaw_bear_sighting",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "今天在林缘看见了黑熊留下的痕迹。请不要为了动物皮主动追进视野不好的树林，也别把所有动物掉落物叫成某一种熊皮；现在统一处理为动物皮。看见熊先留距离、观察退路，活着回家比多带一件材料重要。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 229, "comments": 29, "reposts": 47}
+	},
+	{
+	  "post_id": "evelyn_shaw_mushrooms",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "林地里的普通蘑菇、牛肝菌、红白蘑菇和松露价值相差很大，辨认时别只看颜色。牛肝菌和松露常让人兴奋，红白蘑菇也很醒目；稳妥的做法是先核对采集手册上的名称和用途，再决定是否带走，别凭过去的经验猜测。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 184, "comments": 17, "reposts": 22}
+	},
+	{
+	  "post_id": "evelyn_shaw_eclipse_forecast",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "如果未来一周会发生日食，Weather 应用会把它列进预报。日食值得停下工作看一会儿，但别直接盯着太阳，也别因为天色变化把车辆停在道路中央。提前知道日期，就能把收获和运输安排到更从容的时间。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 354, "comments": 31, "reposts": 58}
+	},
+	{
+	  "post_id": "evelyn_shaw_night_safety",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "夜间去林地或偏远农田，请带照明并告诉队友大致方向。成熟地块有金色提示，野生动物和敌人可没有。听见灌木后有连续脚步声时，先停下来判断，不要一边后退一边把自己逼到水边或陡坡。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 196, "comments": 14, "reposts": 35}
+	},
+	{
+	  "post_id": "evelyn_shaw_long_growth_risk",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "草莓、烟草和开心果都更需要细致照料，田地暴露在敌人、火灾和虫害下的风险也更高。它们的售价通常能补偿这份守护成本。这样的田地很像花园：不是播下以后就结束，而是要求主人常常回来看看。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 167, "comments": 12, "reposts": 18}
+	},
+	{
+	  "post_id": "evelyn_shaw_burned_field",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "烧过的农田不会因为旁边还有成熟作物就显得不那么可惜。火焰能破坏正在生长的作物，也会让原本整齐的田块突然出现空洞。灭火和确认危险结束以后再补种，别为了抢几十秒成熟时间走进还在受影响的区域。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 151, "comments": 19, "reposts": 27}
+	},
+	{
+	  "post_id": "evelyn_shaw_observe_respectfully",
+	  "npc_id": "npc_evelyn_shaw",
+	  "theme_id": "nature_notes",
+	  "images": [],
+	  "text": "观察动物最好的距离，是它还愿意继续做自己的事，而不是开始盯着你、逃跑或冲过来。关闭不必要的强光，别用载具追赶，拍不到近景也没关系。地图上的自然环境不是只有材料和目标，它也负责让长途运输之间的几分钟不那么单调。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 287, "comments": 23, "reposts": 32}
+	},
+	{
+	  "post_id": "theo_grant_night_unloading",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "今晚第一车货到的时候我刚把仓库地面拖完。司机说“只有一点泥”，然后货运车留下了一条可以从门口追踪到货架的完整路线。夜班工作的好处是安静，坏处是所有人都觉得你闲得能再拖一次。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 92, "comments": 14, "reposts": 5}
+	},
+	{
+	  "post_id": "theo_grant_inventory_jump",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "队伍仓库从“快空了”变得堆满，只用了不长时间。有人在大面积收割，有人在把工业材料送进来，账目自然会一阵一阵地跳。共享库存不是某一个人的私人物品，领料前先看看最新清单，省得把刚入库的货又到处找。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 131, "comments": 21, "reposts": 8}
+	},
+	{
+	  "post_id": "theo_grant_workbench_wait",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "工业工作台最会制造的不是零件，是“还要多久”的问题。简单的配件很快就能完成，复杂的东西要等一阵；机器一旦开工就会自己继续，忙完手头的活再回来取就好。别守在旁边每两秒问我一次进度。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 156, "comments": 18, "reposts": 12}
+	},
+	{
+	  "post_id": "theo_grant_weight_limit",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "钢板、矿石和一堆零件不会因为你很有决心就变轻。领成品前先给搬运留出空间；实在装不下的货只能暂放在身边，但拥挤的仓库里再找它可不轻松。能进队伍仓库的就及时整理，别把地面当成长期货架。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 113, "comments": 12, "reposts": 10}
+	},
+	{
+	  "post_id": "theo_grant_cheap_night_food",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "夜班预算餐：12 元薯条加 8 元汽水。健康吗？不。能让我在凌晨两点继续数金属连接件吗？勉强可以。要是再加一份 16 元炸鸡块，我会短暂相信今天的交接单没有漏项。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 177, "comments": 25, "reposts": 7}
+	},
+	{
+	  "post_id": "theo_grant_rainy_warehouse",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "下雨天仓库门口会同时出现湿轮胎、湿箱子和三个声称“我马上就走”的司机。Weather 已经预报了雨，仍然没人提前盖货。今晚如果你的棉布带着水印入库，请不要在备注里写“自然纹理”。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 142, "comments": 17, "reposts": 6}
+	},
+	{
+	  "post_id": "theo_grant_handover_note",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "白班交接单写着“有一批货待处理”，没写是什么、在哪、多少。最后我在角落找到一堆橡胶桶和一张画着问号的纸。请大家记住：神秘感适合电影，不适合库存管理。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 126, "comments": 16, "reposts": 5}
+	},
+	{
+	  "post_id": "theo_grant_computer_lock",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "我只是想用电脑查一下 Farm Info，结果同事还在看帖子。电脑一次只能让一个人操作，用完记得主动退出，别坐着发呆占住位置；等上一位离开，其他人才能接着查自己的事。排队能防止两个人同时乱动设备，却防不了有人忘记自己为什么坐在那里。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 164, "comments": 22, "reposts": 9}
+	},
+	{
+	  "post_id": "theo_grant_fake_supply_warning",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "今晚又有人发“500 元必得高级补给”的链接。真正的 Supply Relay 会把奖励送进队伍库存，仿冒页面只会让钱消失。域名里多一个 fake 已经够明显了，别因为滚动动画会发光就觉得它可信。",
+	  "links": ["www.supplyrelay.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 203, "comments": 31, "reposts": 38}
+	},
+	{
+	  "post_id": "theo_grant_overtime",
+	  "npc_id": "npc_theo_grant",
+	  "theme_id": "night_shift",
+	  "images": [],
+	  "text": "连续夜班的第三天，我对着一箱齿轮组说了“早上好”，然后它没有回应，这算是本周最顺利的一次沟通。下班以后不接电话，除非仓库着火；如果真的着火，也请先联系离现场更近的人。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 188, "comments": 27, "reposts": 11}
+	},
+	{
+	  "post_id": "grace_chen_inventory_order",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "队伍库存整理建议：农产品、矿石、工业半成品和载具模块分开登记，不要只按名称记位置。农场信息终端和仓库清单采用同一套名称、数量和单位；数字突然变化时，先确认是不是有人正在收获或领取工作台成品。",
+	  "links": ["www.grainroute.com/inventory"],
+	  "published_at": null,
+	  "engagement": {"likes": 142, "comments": 13, "reposts": 29}
+	},
+	{
+	  "post_id": "grace_chen_bulk_harvest",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "大面积收获前请先清出仓库余量。收下的作物会按实际重量进入队伍库存，多名队员同时收割时，仓库账目自然会不断更新。我们按最后核对的总量安排车辆，不会因为某一次临时盘点的数字变化就改派整条路线。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 126, "comments": 10, "reposts": 24}
+	},
+	{
+	  "post_id": "grace_chen_cargo_car",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "货运车速度不快，但工作是稳定运输，不是追运动型跑车。装货前确认目的地、货物重量和卸货顺序，最先交付的货不要压在最里面。慢车提前出发，通常比快车迟到以后解释十分钟更有效。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 118, "comments": 12, "reposts": 20}
+	},
+	{
+	  "post_id": "grace_chen_cold_chain",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "冷链运输的重点不是买到载具冷却系统，而是完成安装并确认运行。模块需要在载具店安装，不能作为普通货物放在车里就宣称已经制冷。准备运送需要低温保存的货物时，请把安装和测试时间算进发车计划。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 137, "comments": 11, "reposts": 27}
+	},
+	{
+	  "post_id": "grace_chen_weather_route",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "本周路线提醒：出车前看看 Weather 里的七天预报。降雨会影响道路观察和装卸效率，日食期间也应提前开启车灯、避免临时停车看景。出发前认准气象记录来源，别临时相信来路不明的天气链接。",
+	  "links": ["www.grainroute.com/route-notice"],
+	  "published_at": null,
+	  "engagement": {"likes": 153, "comments": 14, "reposts": 35}
+	},
+	{
+	  "post_id": "grace_chen_industrial_sorting",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "工业货物请按原材料、半成品和模块分类。铁矿与铁锭不是同一状态，钢板、金属连接件、轴承和齿轮组也不能因为都含金属就写成“零件若干”。准确名称能让工作台配料和后续盘点少走很多弯路。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 109, "comments": 9, "reposts": 23}
+	},
+	{
+	  "post_id": "grace_chen_large_orders",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "大批量订单的利润来自按时完成，不来自把所有货物堆到最后一分钟。接单后先核对库存，再安排种植、加工、装车和交付四个阶段。缺一批基础原料，后面的高价值工业制品就可能整单停住。",
+	  "links": ["www.grainroute.com/contracts"],
+	  "published_at": null,
+	  "engagement": {"likes": 165, "comments": 18, "reposts": 31}
+	},
+	{
+	  "post_id": "grace_chen_weight_audit",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "数量相同不代表重量相同。库存盘点时同时看单位和总重量，尤其注意按 kg 记录的农产品、矿石与布料，别和按件记录的电池组、硬盘、轴承混算。运输表里少写一个单位，装车时就可能多出整整一车。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 97, "comments": 8, "reposts": 19}
+	},
+	{
+	  "post_id": "grace_chen_loading_queue",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "装卸区同一时间只处理一辆车。后车请留出倒车和转向空间，不要因为账上已经记了货物离库就堵在门口催货。排队看起来慢，但两辆车互相卡住、再叫拖车来，会更慢。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 88, "comments": 12, "reposts": 16}
+	},
+	{
+	  "post_id": "grace_chen_coop_notice",
+	  "npc_id": "npc_grace_chen",
+	  "theme_id": "logistics_notice",
+	  "images": [],
+	  "text": "合作社公告：本周优先接收小麦、玉米、棉花及已分类工业材料。交货前请确认队伍、物品名称、数量和单位；无标签混装货物将进入人工复核队列。公告页面可能仍在维护，出现 404 时以仓库现场清单为准。",
+	  "links": ["www.grainroute.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 121, "comments": 10, "reposts": 34}
+	},
+	{
+	  "post_id": "nolan_fraser_mud_tow",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "今天第一单：车主为了绕过一小段泥路，成功开进了一大片更深的泥里。拖车能把你拉出来，但不能把判断力装回去。下雨后看不清路面就慢一点，尤其别用满油门证明自己“应该能过去”。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 112, "comments": 16, "reposts": 8}
+	},
+	{
+	  "post_id": "nolan_fraser_atv_breakdown",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "越野摩托车灵活但不算结实。撞过障碍以后如果方向、速度或声音不对，就别继续往偏远林地里硬闯。小车好拖，但从林地找一条能让救援车进去的路线一点也不好玩。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 84, "comments": 11, "reposts": 6}
+	},
+	{
+	  "post_id": "nolan_fraser_mini_car_rescue",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "迷你车有两个座位，所以今天我见到两个人一起坐在路边解释是谁让谁开上坡的。它适合短途，不适合拿车身去试每一块石头有多硬。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 103, "comments": 19, "reposts": 7}
+	},
+	{
+	  "post_id": "nolan_fraser_farm_base_tow",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "拖农用基础车前先说明它装了什么。底盘本来就重，再加收割模块、扩展座椅或其他设备，固定点和拖行路线都要重新判断。电话里只说“是一辆农用车”，不会让它自动变轻。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 91, "comments": 13, "reposts": 9}
+	},
+	{
+	  "post_id": "nolan_fraser_sport_car_crash",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "运动型跑车跑得快，今天这位车主用很短时间体验了速度，又用很长时间等拖车。它是轻快的民用车，车身耐久不如重型底盘，快车一样会坏。视线变得开阔时，别把那种速度感误认为道路也跟着变宽了。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 148, "comments": 24, "reposts": 12}
+	},
+	{
+	  "post_id": "nolan_fraser_bad_weather",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "坏天气救援最难的不是找到车，是让后来的车别再撞上来。打开车灯，把还能移动的载具挪离主路，在安全位置等。日食或暴雨让光线突然变差时，先处理可见性，再处理你迟到几分钟的问题。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 96, "comments": 10, "reposts": 18}
+	},
+	{
+	  "post_id": "nolan_fraser_overheating",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "持续高负荷工作后出现异常，就停车检查。载具冷却系统能改善高负荷设备的运行条件，但需要在载具店正确安装。把一个冷却模块扔进车里、继续开到冒烟，然后告诉我“明明带着冷却系统”，不会得到折扣。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 121, "comments": 17, "reposts": 15}
+	},
+	{
+	  "post_id": "nolan_fraser_explosion_distance",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "四轮车和双轮车严重损毁后都可能爆炸，四轮车的冲击范围更大。看见起火、冒烟或已经失去响应的载具时，第一件事是让人离开危险区域，不是围上去讨论还能拆下什么。残骸稳定以后再安排拖运。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 174, "comments": 26, "reposts": 39}
+	},
+	{
+	  "post_id": "nolan_fraser_night_tow",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "夜间叫拖车请说清楚附近的道路、灯光和车身颜色。只发一句“我在树旁边”通常不够，因为地图上树不少。能开车顶灯就开，不能开就站到安全而明显的位置，别站在损毁车辆正前方挥手。",
+	  "links": ["www.nolanpulls.com/rescue"],
+	  "published_at": null,
+	  "engagement": {"likes": 82, "comments": 12, "reposts": 10}
+	},
+	{
+	  "post_id": "nolan_fraser_stop_driving",
+	  "npc_id": "npc_nolan_fraser",
+	  "theme_id": "roadside_rescue",
+	  "images": [],
+	  "text": "如果车已经明显失去控制、车况很差或持续冒烟，请停止驾驶。继续开可能把几百到上千的维修变成数千的大修，也可能让车辆彻底报废。你省下的那段步行距离，不值得让全队一起躲蘑菇云。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 137, "comments": 20, "reposts": 28}
+	},
+	{
+	  "post_id": "ren_takahashi_lumber",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "木材加工台上，2 kg 原木可以锯切成 2 kg 木板。听起来只是把形状变整齐，但木板才方便进入后续装配。原木先检查干燥和裂纹，别把每一块弯木都交给锯台，再怪成品不肯自己变直。",
+	  "links": ["www.renbuilds.com/woodshop"],
+	  "published_at": null,
+	  "engagement": {"likes": 144, "comments": 12, "reposts": 22}
+	},
+	{
+	  "post_id": "ren_takahashi_wood_armor",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "木制胸甲和木制护腿都能在木材加工台制作。它们不是金属装甲，但材料路径清楚，适合作为容易理解的防护装备。木纹方向、边缘处理和绑带位置都比把板子做得越厚越好更重要，否则防护还没用上，人先被自己的装备卡住。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 131, "comments": 14, "reposts": 17}
+	},
+	{
+	  "post_id": "ren_takahashi_bearings",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "轴承配方是 1 kg 钢锭加 1 个金属连接件，产出 2 个轴承。装好以后仍要注意灰尘、异响和阻力变化。轴承通常不是最显眼的部件，却很擅长用一个小故障让整套机器停下来。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 119, "comments": 9, "reposts": 18}
+	},
+	{
+	  "post_id": "ren_takahashi_gear_noise",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "齿轮组需要 2 kg 钢锭和 1 个轴承。机器开始规律地敲击、啮合发涩或负载一上来声音就变，不要先把音乐开大。停机、卸载、检查齿面与轴承，比等它把邻近零件一起磨坏便宜。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 156, "comments": 17, "reposts": 24}
+	},
+	{
+	  "post_id": "ren_takahashi_hydraulics",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "液压组件由钢板、金属连接件和橡胶零件各 1 份装配。橡胶零件负责的不只是“塞住缝”，密封状态会直接影响压力。发现渗漏先清洁并确认位置，别一边补液一边假装地上的痕迹是雨水。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 137, "comments": 13, "reposts": 20}
+	},
+	{
+	  "post_id": "ren_takahashi_rubber_parts",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "一个橡胶桶能在综合材料加工台加工成 2 个橡胶零件。它们会进入液压、冷却等更高级组件，用来密封、缓冲和隔离振动。不要把工程塑料颗粒当成橡胶零件的替代品，两者看起来都能塑形，承担的工作并不相同。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 112, "comments": 8, "reposts": 16}
+	},
+	{
+	  "post_id": "ren_takahashi_motor_build",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "高性能电机要用 1 kg 铜线、1 个齿轮组、1 个电池组和 1 kg 钢板，在电子装配台完成。做完只是获得模块，真正装进载具仍要去载具店。电气、传动和结构三部分都通过检查，才叫升级，不是只看电机能不能转。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 181, "comments": 19, "reposts": 26}
+	},
+	{
+	  "post_id": "ren_takahashi_workbench_time",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "工业工作台的加工速度会随项目的复杂程度和材料多少变化。简单的零件很快能出炉，复杂组件要等一阵；材料交给机器后，它会继续工作，不必一直守在旁边。趁这段时间准备下一批材料和搬运空间吧。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 128, "comments": 10, "reposts": 19}
+	},
+	{
+	  "post_id": "ren_takahashi_old_tools",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "旧工具不一定该扔。先看握把、连接点和真正承受载荷的部分；表面旧但结构完整的，清洁调整以后还能继续用。反过来，外壳擦得再亮，内部裂纹也不会消失。维修是判断哪些东西值得保留，不是给所有东西刷一层新颜色。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 173, "comments": 16, "reposts": 21}
+	},
+	{
+	  "post_id": "ren_takahashi_wood_and_connectors",
+	  "npc_id": "npc_ren_takahashi",
+	  "theme_id": "workshop_notes",
+	  "images": [],
+	  "text": "木板与金属连接件搭配时，连接件不是越多越牢。孔位太密会削弱木材，位置不对还会让受力集中。先确定载荷方向，再决定连接点；做工坊项目时多花一分钟画线，通常能少花十分钟拆错装的零件。",
+	  "links": ["www.renbuilds.com/notes"],
+	  "published_at": null,
+	  "engagement": {"likes": 149, "comments": 11, "reposts": 18}
+	},
+	{
+	  "post_id": "priya_nair_os08_laptop",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "笔记本电脑售价 1200，运行 ChocolateOS08。它能使用 Browser、Farm Info、Weather 等基础应用，便于带到不同的工作地点使用。OS08 界面简单、像素感强，很适合查看农场和天气；需要更高配置的 Embedded Lab，则要用 ChocolateOS26。",
+	  "links": ["www.circuitandchai.com/os08"],
+	  "published_at": null,
+	  "engagement": {"likes": 226, "comments": 21, "reposts": 31}
+	},
+	{
+	  "post_id": "priya_nair_os26_desktop",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "高端台式机售价 2600，运行 ChocolateOS26。除了共享的桌面、浏览器和基础应用，它还能安装并使用 Embedded Lab。台式机目前只能购买，不能通过工业工作台生产；如果你的队伍准备研究机器人固件，它才是正确的平台。",
+	  "links": ["www.circuitandchai.com/os26"],
+	  "published_at": null,
+	  "engagement": {"likes": 302, "comments": 34, "reposts": 47}
+	},
+	{
+	  "post_id": "priya_nair_embedded_tracks",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "Embedded Lab 目前按四个方向安排研发：采集、运输、战斗和防御。每个方向都从基础方案开始，前一阶段完成测试并稳定后，才会继续推进更高阶版本。现在先做程序和硬盘的准备，真正的机器人机体还在后续计划里。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 277, "comments": 29, "reposts": 42}
+	},
+	{
+	  "post_id": "priya_nair_research_costs",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "程序研究费用分为五级：I 级 10000、II 级 20000、III 级 30000、IV 级 40000、V 级 50000。级别越高，需要的准备、测试和经费越多。开工前先确认队伍资金和前置成果，研究报告通过后才算完成。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 246, "comments": 25, "reposts": 51}
+	},
+	{
+	  "post_id": "priya_nair_team_research",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "Embedded Lab 的研发成果归队伍共同使用，不属于某一台电脑。两名队员如果同时提交同一个项目，实验室只会保留一份有效申请；即使两边差不多同时完成，也只登记一次成果。打开实验室时，以队伍最新的研发记录为准。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 198, "comments": 17, "reposts": 36}
+	},
+	{
+	  "post_id": "priya_nair_hard_drive_overwrite",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "空白硬盘售价 480，一块硬盘只保存一个程序标识。写入新程序时可以覆盖原有内容，不论原来是机器人固件还是可安装电脑应用；动手前先确认拿的是哪块硬盘。硬盘不会因为用过一次就报废，但旧程序会被新程序替换。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 263, "comments": 32, "reposts": 45}
+	},
+	{
+	  "post_id": "priya_nair_apps_vs_firmware",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "硬盘里记录的程序可能是电脑应用，也可能是嵌入式固件。前者可以由 My Computer 识别并安装到电脑；采集、运输、战斗和防御程序则是给未来机器人准备的。两者共用同一块存储介质，不代表电脑应用能直接操纵机器人，也不代表固件能像桌面应用一样打开。",
+	  "links": ["www.osapp.store"],
+	  "published_at": null,
+	  "engagement": {"likes": 239, "comments": 23, "reposts": 39}
+	},
+	{
+	  "post_id": "priya_nair_harvest_robot_future",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "未来的收割机器人不能只会埋头采集。它得先认出成熟作物，靠近目标，完成采收，再判断携带的货物是否足够、该继续工作还是回去卸货。采集程序负责识别和采收，运输程序负责装载与交付；后续版本会再提高效率和应对复杂环境的能力。现在我们还在实验室做台架测试，第一台机体还没出厂。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 331, "comments": 41, "reposts": 54}
+	},
+	{
+	  "post_id": "priya_nair_transport_robot_future",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "货运机器人的基础工作是找到取货点、核对货物、装载、规划交付、卸货，再返回。若要让它进入危险地区，还得配备防御或战斗模块。别一开始就把所有研发经费撒出去，先看农场眼下最缺的是采收、运输，还是护卫。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 284, "comments": 27, "reposts": 46}
+	},
+	{
+	  "post_id": "priya_nair_computer_security",
+	  "npc_id": "npc_priya_nair",
+	  "theme_id": "electronics_tech",
+	  "images": [],
+	  "text": "电脑使用提醒：一台终端同一时间只让一个人操作，用完记得退出，离开太久也会自动让出位置。浏览器的点赞偏好保存在这台电脑里，换一台不会跟着走。另请核对补给站域名，仿冒网站可能扣走队伍账户的钱，却不会把奖励送进仓库。",
+	  "links": ["www.supplyrelay.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 358, "comments": 36, "reposts": 73}
+	},
+	{
+	  "post_id": "sofia_marin_burger",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "今天餐车的汉堡还是 25 元。面包、肉饼和新鲜配菜叠起来，看上去简单，真正难的是让最后一个客人拿到的也和第一个一样热。有人问能不能只买肉饼——可以，但请别在我刚装好以后才问。🍔",
+	  "links": ["www.sofiaonwheels.com/menu"],
+	  "published_at": null,
+	  "engagement": {"likes": 291, "comments": 24, "reposts": 19}
+	},
+	{
+	  "post_id": "sofia_marin_fries",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "薯条 12 元，最好的食用时间是拿到手以后立刻，而不是带着它逛完整个镇再回来评价“不够脆”。土豆、油温和出锅时间都很诚实，拖得越久，它们越不会配合你假装刚炸好。🍟",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 267, "comments": 20, "reposts": 13}
+	},
+	{
+	  "post_id": "sofia_marin_taco",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "18 元一份塔可，脆饼皮里有肉馅和蔬菜，适合赶路时吃。唯一的技巧是别一只手拿塔可、一只手开车；我见过有人把晚餐、方向盘和尊严同时弄得一团糟。🌮",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 238, "comments": 18, "reposts": 12}
+	},
+	{
+	  "post_id": "sofia_marin_chicken_nuggets",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "炸鸡块 16 元一份。外层要脆，里面要保持鸡肉的水分，所以我宁愿让客人等一会儿，也不愿把已经放软的那份重新递出去。忙的时候听见油锅声会很安心，因为至少它不会临时改订单。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 254, "comments": 21, "reposts": 15}
+	},
+	{
+	  "post_id": "sofia_marin_egg_tart",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "蛋挞 9 元，酥皮和蛋奶馅都不复杂，却很适合在一顿咸味食物后收尾。今天第一盘边缘烤得有点深，我自己吃掉了——经营餐车偶尔也需要勇敢承担错误，尤其错误闻起来很香的时候。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 312, "comments": 28, "reposts": 20}
+	},
+	{
+	  "post_id": "sofia_marin_ice_cream",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "冰淇淋 10 元。天气越热卖得越快，也融得越快，所以付款以后请先接住它，再慢慢找适合拍照的角度。冷却系统正常工作的日子，餐车里的每个人脾气都会好一点。🍨",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 346, "comments": 31, "reposts": 22}
+	},
+	{
+	  "post_id": "sofia_marin_cornbread",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "农场玉米面包需要酵母面团、切好的玉米和一点糖，进烤箱以后会有很温和的谷物香。它适合配番茄汤或炖菜，也能单独当早餐。玉米如果刚从队伍库存送来，味道会让人觉得今天的物流值得原谅。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 223, "comments": 16, "reposts": 18}
+	},
+	{
+	  "post_id": "sofia_marin_smoked_food",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "烟熏黑胡椒猪肉和烟熏辣椒牛肉都值得等，但成品完成后别继续把它们忘在烟熏炉里。加工结束不等于时间停止，放得太久仍会烧焦。好烟熏是耐心，烧焦以后说“风味更深”只是嘴硬。",
+	  "links": [],
+	  "published_at": null,
+	  "engagement": {"likes": 276, "comments": 25, "reposts": 23}
+	},
+	{
+	  "post_id": "sofia_marin_supply_shortage",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "今天玉米到晚了，鸡肉比清单少，唯一准时出现的是排队的客人。餐车菜单依赖农田、仓库和运输，不是我在窗口后面挥一下锅铲就能凭空补货。遇到供应中断会临时调整菜单，也请给负责送货的人留一点喘气时间。",
+	  "links": ["www.sofiaonwheels.com/today"],
+	  "published_at": null,
+	  "engagement": {"likes": 198, "comments": 22, "reposts": 14}
+	},
+	{
+	  "post_id": "sofia_marin_rainy_rush",
+	  "npc_id": "npc_sofia_marin",
+	  "theme_id": "food_truck_diary",
+	  "images": [],
+	  "text": "下雨天大家会突然同时决定买热食，窗口前挤满湿外套和伞。繁忙时段请先想好订单：汉堡 25、薯条 12、塔可 18、汽水 8、冰淇淋 10、蛋挞 9、炸鸡块 16。你少犹豫半分钟，后面的人就能少淋半分钟雨。",
+	  "links": ["www.sofiaonwheels.com"],
+	  "published_at": null,
+	  "engagement": {"likes": 329, "comments": 37, "reposts": 26}
+	}
+  ]
+}

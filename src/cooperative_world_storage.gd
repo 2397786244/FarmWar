@@ -4,8 +4,9 @@ class_name CooperativeWorldStorageService
 const WORLD_ROOT := "user://pve_worlds"
 const PROFILE_ROOT := "user://pve_player_profiles"
 const SAVE_VERSION := 1
-const REDPINE_MAP_ICON := "res://worlds/redpine_county/map_icon.svg"
-const REDPINE_MAP_SCENE := "res://worlds/redpine_county/redpine_county.tscn"
+const DEFAULT_MAP_ICON := "res://worlds/creston_town/map_icon.svg"
+const DEFAULT_MAP_SCENE := "res://worlds/creston_town/creston_town.tscn"
+const REMOVED_BUILTIN_MAP_IDS := ["multiplayer_test", "redpine_county"]
 
 var active_world: Dictionary = {}
 
@@ -37,10 +38,10 @@ func create_world(config: Dictionary) -> Dictionary:
 		"save_version": SAVE_VERSION,
 		"world_id": world_id,
 		"display_name": str(config.get("display_name", "合作农场")),
-		"map_id": str(config.get("map_id", "redpine_county")),
-		"map_name": str(config.get("map_name", "Redpine County")),
-		"map_icon_path": str(config.get("map_icon_path", REDPINE_MAP_ICON)),
-		"map_scene_path": str(config.get("map_scene_path", REDPINE_MAP_SCENE)),
+		"map_id": str(config.get("map_id", "creston_town")),
+		"map_name": str(config.get("map_name", "Creston Town")),
+		"map_icon_path": str(config.get("map_icon_path", DEFAULT_MAP_ICON)),
+		"map_scene_path": str(config.get("map_scene_path", DEFAULT_MAP_SCENE)),
 		"map_version": str(config.get("map_version", "1.0.0")),
 		"map_hash": str(config.get("map_hash", "")),
 		"map_source": str(config.get("map_source", "builtin")),
@@ -319,7 +320,7 @@ func _map_icon_for_id(map_id: String) -> String:
 		"creston_town":
 			return "res://worlds/creston_town/map_icon.svg"
 		_:
-			return REDPINE_MAP_ICON
+			return DEFAULT_MAP_ICON
 
 
 func _map_scene_for_id(map_id: String) -> String:
@@ -330,11 +331,23 @@ func _map_scene_for_id(map_id: String) -> String:
 		"creston_town":
 			return "res://worlds/creston_town/creston_town.tscn"
 		_:
-			return REDPINE_MAP_SCENE
+			return DEFAULT_MAP_SCENE
 
 
 func _apply_map_defaults(world: Dictionary) -> void:
 	var map_id := str(world.get("map_id", ""))
+	if REMOVED_BUILTIN_MAP_IDS.has(map_id):
+		# The old scene files are intentionally no longer shipped. Migrate an
+		# existing world to the remaining default map instead of leaving it with
+		# a path that can never be loaded.
+		world["map_id"] = "creston_town"
+		world["map_name"] = "Creston Town"
+		world["map_icon_path"] = DEFAULT_MAP_ICON
+		world["map_scene_path"] = DEFAULT_MAP_SCENE
+		world["map_version"] = "1.0.0"
+		world["map_hash"] = "builtin:creston_town:1.0.0"
+		world["map_source"] = "builtin"
+		return
 	var definition := GameMapRegistry.get_map_by_id(map_id)
 	if definition.is_empty():
 		definition = GameMapRegistry.get_map_by_package_name(map_id)

@@ -259,7 +259,7 @@ func _apply_config_dictionary(data: Dictionary) -> void:
 
 
 func _resolve_configured_map() -> bool:
-	var definition := GameMapRegistry.get_server_map_by_package_name(current_map_id)
+	var definition := GameMapRegistry.validate_map_by_package_name(current_map_id)
 	if definition.is_empty():
 		push_error("服务器找不到地图包：%s。请将地图文件夹放入可执行文件同目录的 maps/ 下。" % current_map_id)
 		return false
@@ -968,6 +968,15 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 		var shield_owner_peer_id := int(event.get("peer_id", 0))
 		if shield_owner_peer_id > 0 and _is_peer_connected(shield_owner_peer_id):
 			receive_reliable_world_event.rpc_id(shield_owner_peer_id, event)
+		return
+	if event_type == "computer_action_result":
+		# Full computer app_data is private to the active user. Other clients get
+		# summary-only computer_state events for lock and visible terminal state.
+		var computer_data: Variant = event.get("data", {})
+		var computer_peer_id := int((computer_data as Dictionary).get("peer_id", 0)) \
+			if computer_data is Dictionary else 0
+		if computer_peer_id > 0 and _is_peer_connected(computer_peer_id):
+			receive_reliable_world_event.rpc_id(computer_peer_id, event)
 		return
 	if event_type in ["cargo_car_action_result", "cargo_delivery_preview", "cargo_delivery_result"]:
 		var cargo_peer_id := int(event.get("peer_id", 0))

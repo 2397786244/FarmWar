@@ -57,7 +57,9 @@ func is_modified_talk_event(event: InputEvent) -> bool:
 	if not event is InputEventKey:
 		return false
 	var key_event := event as InputEventKey
-	if not key_event.pressed or key_event.echo or not (key_event.ctrl_pressed or key_event.meta_pressed):
+	# Chat open/close/channel switching is deliberately a single shortcut. Do
+	# not accept plain Y or Command/Meta+Y as alternate entry points.
+	if not key_event.pressed or key_event.echo or not key_event.ctrl_pressed:
 		return false
 	for binding: InputEvent in InputMap.action_get_events("talk"):
 		if not binding is InputEventKey:
@@ -89,8 +91,8 @@ func open_chat(mode := MODE_TEAM) -> void:
 	if is_instance_valid(input_blocker):
 		input_blocker.visible = true
 	_set_chat_mouse_enabled(true)
-	input.placeholder_text = "[All] 输入消息；Ctrl/Cmd+Y 切换" if chat_mode == MODE_ALL else \
-		"[Team] 输入消息；Ctrl/Cmd+Y 切换"
+	input.placeholder_text = "[All] 输入消息；Ctrl+Y 切换" if chat_mode == MODE_ALL else \
+		"[Team] 输入消息；Ctrl+Y 切换"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	input.grab_focus()
 	call_deferred("_focus_input")

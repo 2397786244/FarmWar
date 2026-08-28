@@ -2,6 +2,9 @@ extends Node3D
 
 const COMBINE_SCENE := preload("res://vehicles/combine_car.tscn")
 const PLAYER_SCENE := preload("res://character/player.tscn")
+const ZOMBIE_SCENE := preload("res://character/Zombie.tscn")
+const FUTURE_WARRIOR_SCENE := preload("res://character/FutureWarriorAI.tscn")
+const BLACK_BEAR_SCENE := preload("res://items/BlackBear.tscn")
 const FARM_TILE_COLLISION_MASK := GameAuthority.COLLISION_LAYER_FARM_TILE
 const VALIDATION_DRIVER_PEER_ID := 1
 const VALIDATION_TEAM := "blue"
@@ -50,7 +53,13 @@ func _run() -> void:
 	_vehicle.toggle_headlights()
 	_check(not _vehicle.headlights_on and headlight != null and not headlight.visible, "headlight toggle turns off the Light3D")
 	_check(_vehicle.collision_layer == GameAuthority.COLLISION_LAYER_VEHICLES, "vehicle layer matches VehicleBase")
-	_check(_vehicle.collision_mask == 12427, "vehicle mask matches CargoCar/FarmBaseVehicle")
+	var expected_vehicle_mask := 12427 \
+		| GameAuthority.COLLISION_LAYER_NATURE_RESOURCE \
+		| GameAuthority.COLLISION_LAYER_WILD_ANIMAL
+	_check(
+		_vehicle.collision_mask == expected_vehicle_mask,
+		"vehicle mask includes resources and wild animals"
+	)
 	_check(_vehicle.is_in_group("vehicle_bases"), "vehicle is registered in vehicle_bases")
 	var hit_area := _vehicle.get_node_or_null("Hit3D") as Area3D
 	_check(hit_area != null, "Hit3D exists")
@@ -100,6 +109,30 @@ func _run() -> void:
 	_check(is_equal_approx(_vehicle.get_max_forward_speed(), 3.0), "forward speed is 3 m/s")
 	_check(is_equal_approx(_vehicle.get_max_reverse_speed(), 3.0), "reverse speed is 3 m/s")
 	_check(is_equal_approx(_vehicle.vehicle_config.max_hp, 7000.0), "HP is configured to 7000")
+	_check(
+		is_equal_approx(_vehicle.vehicle_config.ramming_mass_factor, 2.5),
+		"CombineCar uses the heavy ramming coefficient"
+	)
+	var impact_wall := StaticBody3D.new()
+	impact_wall.name = "VehicleImpactValidationWall"
+	add_child(impact_wall)
+	var hp_before_impact := _vehicle.current_hp
+	var impact_result := GameAuthority.apply_authoritative_vehicle_impact(
+		_vehicle,
+		impact_wall,
+		_vehicle.global_position,
+		Vector3.BACK,
+		3.0
+	)
+	_check(
+		bool(impact_result.get("accepted", false))
+			and is_equal_approx(float(impact_result.get("target_damage", 0.0)), 62.5)
+			and is_equal_approx(float(impact_result.get("self_damage", 0.0)), 15.625)
+			and is_equal_approx(_vehicle.current_hp, hp_before_impact - 15.625),
+		"3 m/s impact uses the configured mass-scaled damage and self-damage formula"
+	)
+	impact_wall.free()
+	_vehicle.current_hp = _vehicle.vehicle_config.max_hp
 	var hp_before_explosion := _vehicle.current_hp
 	var explosion_damage_count := GameAuthority._damage_vehicles_in_radius(
 		_vehicle.global_position,
@@ -110,6 +143,31 @@ func _run() -> void:
 	)
 	_check(explosion_damage_count == 1 and _vehicle.current_hp < hp_before_explosion, "explosion radius damages CombineCar")
 	_vehicle.current_hp = _vehicle.vehicle_config.max_hp
+	_vehicle.receive_melee_push(Vector3(-2.0, 0.0, 0.0), 20.0, 101)
+	_vehicle.receive_melee_push(Vector3(-2.0, 0.0, 0.0), 20.0, 102)
+	_check(not _vehicle.toppled, "two zombie sources do not topple an empty vehicle")
+	_vehicle.receive_melee_push(Vector3(-2.0, 0.0, 0.0), 20.0, 103)
+	_check(_vehicle.toppled, "three zombie sources topple an empty vehicle")
+	_check(not _vehicle.can_enter_driver(VALIDATION_DRIVER_PEER_ID), "toppled vehicle rejects entry")
+	var toppled_state := _vehicle.get_network_state()
+	_check(
+		bool(toppled_state.get("toppled", false))
+			and float(toppled_state.get("tip_angle", 0.0)) > 0.0,
+		"topple state is included in vehicle networking"
+	)
+	_check(_vehicle.can_be_uprighted(), "empty toppled vehicle can be uprighted")
+	if _interaction_player != null:
+		var upright_target := _interaction_player._build_interaction_target(_vehicle)
+		_check(
+			str(upright_target.get("kind", "")) == "vehicle_upright"
+				and str(upright_target.get("hint", "")) == "[E] 扶正载具",
+			"toppled vehicle interaction prioritizes the upright action"
+		)
+	GameAuthority.local_vehicle_action(VALIDATION_DRIVER_PEER_ID, {
+		"vehicle_id": _vehicle.get_vehicle_id(),
+		"action": "upright_vehicle",
+	})
+	_check(not _vehicle.toppled, "authority validates and uprights the nearby empty vehicle")
 
 	_check(_vehicle.enter_driver(VALIDATION_DRIVER_PEER_ID), "driver enters the only seat")
 	_check(not _vehicle.can_enter_driver(2), "second player cannot enter a full CombineCar")
@@ -227,7 +285,59 @@ func _run() -> void:
 			_check(duplicate_count == 1, "duplicate FarmTile detections harvest once")
 			_check(is_equal_approx(after_duplicate - before_duplicate, 1.0), "duplicate detection produces one crop result")
 
+	await _validate_vehicle_actor_impact_routes()
 	_finish()
+
+
+func _validate_vehicle_actor_impact_routes() -> void:
+	var impact_targets: Array[Node3D] = [
+		ZOMBIE_SCENE.instantiate() as Node3D,
+		FUTURE_WARRIOR_SCENE.instantiate() as Node3D,
+		BLACK_BEAR_SCENE.instantiate() as Node3D,
+	]
+	var impact_target_names := ["Zombie", "FutureWarriorAI", "BlackBear"]
+	for impact_index in range(impact_targets.size()):
+		var impact_target := impact_targets[impact_index]
+		impact_target.position = Vector3(40.0 + impact_index * 4.0, 0.0, 40.0)
+		if impact_target is FutureWarriorAI:
+			(impact_target as FutureWarriorAI).team_id = "red"
+		add_child(impact_target)
+		await get_tree().process_frame
+		impact_target.set_process(false)
+		impact_target.set_physics_process(false)
+		if impact_target is Zombie:
+			_vehicle.current_speed = 0.0
+			impact_target.global_position = _vehicle.global_position
+			var finds_stationary_vehicle := false
+			for candidate_value: Variant in (impact_target as Zombie)._target_candidates():
+				var candidate := candidate_value as Dictionary
+				if candidate.get("node", null) == _vehicle:
+					finds_stationary_vehicle = true
+					break
+			_check(
+				finds_stationary_vehicle,
+				"nearby Zombie treats a stationary vehicle chassis as a target"
+			)
+			(impact_target as Zombie)._set_target(_vehicle, 0)
+			_check(
+				(impact_target as Zombie)._is_target_in_attack_range(),
+				"Zombie melee range uses the vehicle chassis instead of its root origin"
+			)
+		var target_hp_before := float(impact_target.get("current_hp"))
+		var actor_impact_result := GameAuthority.apply_authoritative_vehicle_impact(
+			_vehicle,
+			impact_target,
+			impact_target.global_position,
+			Vector3.BACK,
+			3.0
+		)
+		_check(
+			bool(actor_impact_result.get("target_damaged", false))
+				and float(impact_target.get("current_hp")) < target_hp_before,
+			"vehicle impact damages %s through its authoritative route" % impact_target_names[impact_index]
+		)
+		impact_target.free()
+		_vehicle.current_hp = _vehicle.vehicle_config.max_hp
 
 
 func _finish() -> void:

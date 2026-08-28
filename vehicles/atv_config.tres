@@ -31,3 +31,4 @@ rolling_deceleration = 2.8
 max_steering_angle_degrees = 32.0
 min_steering_angle_degrees = 10.0
 max_hp = 500.0
+ramming_mass_factor = 0.6

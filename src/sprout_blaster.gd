@@ -27,7 +27,21 @@ func emit():
 			var plantable_ids := IngredientCatalog.get_plantable_ids()
 			seed_id = "potato" if plantable_ids.has("potato") else (plantable_ids[0] if not plantable_ids.is_empty() else "")
 		if not seed_id.is_empty():
-			tile.plant(seed_id, tool_owner)
+			_try_plant_with_cost(tile, seed_id)
+
+
+func _try_plant_with_cost(tile: FarmTile, seed_id: String) -> bool:
+	if tile == null or GameAuthority.should_send_network_requests():
+		return false
+	var planting_cost := IngredientCatalog.get_planting_cost(seed_id)
+	if planting_cost <= 0 or GlobalVar.check_team_item_amount(tool_owner, "money") + 0.001 < planting_cost:
+		return false
+	if not GlobalVar.remove_item(tool_owner, "money", float(planting_cost)):
+		return false
+	if tile.plant(seed_id, tool_owner):
+		return true
+	GlobalVar.add_item(tool_owner, "money", float(planting_cost))
+	return false
 
 
 func play_muzzle_visual() -> void:
@@ -40,7 +54,7 @@ func play_muzzle_visual() -> void:
 
 
 func get_held_item_info_text(_item: Dictionary, definition: Dictionary) -> String:
-	var tool_name := str(definition.get("name", definition.get("short", "播种炮")))
-	var seed_definition := IngredientCatalog.get_definition(selected_seed_id)
-	var seed_name := str(seed_definition.get("display_name", selected_seed_id))
-	return "%s\n当前播种:%s" % [tool_name, seed_name]
+	# The seed carousel is the single source of visual seed-selection feedback.
+	# Keep the lower-left gameplay notice intentionally short and do not expose
+	# the crop name or planting cost there.
+	return "播种枪"

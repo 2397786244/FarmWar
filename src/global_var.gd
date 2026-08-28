@@ -6,34 +6,63 @@ signal team_score_changed(team: String, delta: float, new_score: float)
 
 const INITIAL_MONEY := 1000
 
+# 商店侧的回收政策。武器的商品数据只保存估值 sell_price，是否能将
+# 物品卖回武器商店由这里的白名单决定，不把商店渠道规则写进武器物品定义。
+# 弹药盒也允许卖回武器商店；它的回收权仍然只由本白名单决定。
+const GUN_STORE_SELL_WHITELIST := {
+	"m4": true,
+	"ar15": true,
+	"suppressed_pistol": true,
+	"grenade": true,
+	"shotgun": true,
+	"hunting_rifle": true,
+	"crossbow": true,
+	"mpx": true,
+	"ammo_supply_box": true,
+}
+
+# 武器商店的采购目录同样由商店侧白名单控制。FutureM4/FutureMPX
+# 仍保留在商品数据中供敌人、调查页面和估值使用，但不属于可采购目录。
+const GUN_STORE_BUY_WHITELIST := {
+	"m4": true,
+	"ar15": true,
+	"suppressed_pistol": true,
+	"grenade": true,
+	"shotgun": true,
+	"hunting_rifle": true,
+	"crossbow": true,
+	"mpx": true,
+	"ammo_supply_box": true,
+}
+
 var gameworld: Node3D = null
 
 # 商品价格以每 kg 计；非食材设备以每件计。
 var shop_products: Array[Dictionary] = [
-	{"id": "tomato", "name": "西红柿", "unit": "kg", "buy_price": 6, "sell_price": 4, "can_buy": true, "can_sell": true},
+	{"id": "tomato", "name": "西红柿", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
 	{"id": "corn", "name": "玉米", "unit": "kg", "buy_price": 5, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "wheat", "name": "小麦", "unit": "kg", "buy_price": 3, "sell_price": 2, "can_buy": true, "can_sell": true},
-	{"id": "pepper", "name": "辣椒", "unit": "kg", "buy_price": 10, "sell_price": 7, "can_buy": true, "can_sell": true},
-	{"id": "strawberry", "name": "草莓", "unit": "kg", "buy_price": 26, "sell_price": 18, "can_buy": true, "can_sell": true},
-	{"id": "eggplant", "name": "茄子", "unit": "kg", "buy_price": 7, "sell_price": 5, "can_buy": true, "can_sell": true},
-	{"id": "pumpkin", "name": "南瓜", "unit": "kg", "buy_price": 5, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "watermelon", "name": "西瓜", "unit": "kg", "buy_price": 4, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "beet", "name": "甜菜", "unit": "kg", "buy_price": 6, "sell_price": 4, "can_buy": true, "can_sell": true},
-	{"id": "cabbage", "name": "卷心菜", "unit": "kg", "buy_price": 4, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "cotton", "name": "棉花", "unit": "kg", "buy_price": 14, "sell_price": 10, "can_buy": true, "can_sell": true},
-	{"id": "lettuce", "name": "生菜", "unit": "kg", "buy_price": 6, "sell_price": 4, "can_buy": true, "can_sell": true},
-	{"id": "mint", "name": "薄荷", "unit": "kg", "buy_price": 20, "sell_price": 14, "can_buy": true, "can_sell": true},
-	{"id": "peanut", "name": "花生", "unit": "kg", "buy_price": 12, "sell_price": 8, "can_buy": true, "can_sell": true},
-	{"id": "sugarcane", "name": "甘蔗", "unit": "kg", "buy_price": 4, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "tobacco", "name": "烟草", "unit": "kg", "buy_price": 18, "sell_price": 13, "can_buy": true, "can_sell": true},
-	{"id": "grape", "name": "葡萄", "unit": "kg", "buy_price": 16, "sell_price": 11, "can_buy": true, "can_sell": true},
-	{"id": "kiwi", "name": "猕猴桃", "unit": "kg", "buy_price": 20, "sell_price": 14, "can_buy": true, "can_sell": true},
-	{"id": "hazelnut", "name": "榛子", "unit": "kg", "buy_price": 45, "sell_price": 32, "can_buy": true, "can_sell": true},
-	{"id": "pistachio", "name": "开心果", "unit": "kg", "buy_price": 65, "sell_price": 46, "can_buy": true, "can_sell": true},
-	{"id": "walnut", "name": "核桃", "unit": "kg", "buy_price": 38, "sell_price": 27, "can_buy": true, "can_sell": true},
+	{"id": "wheat", "name": "小麦", "unit": "kg", "buy_price": 5, "sell_price": 3, "can_buy": true, "can_sell": true},
+	{"id": "pepper", "name": "辣椒", "unit": "kg", "buy_price": 14, "sell_price": 9, "can_buy": true, "can_sell": true},
+	{"id": "strawberry", "name": "草莓", "unit": "kg", "buy_price": 18, "sell_price": 12, "can_buy": true, "can_sell": true},
+	{"id": "eggplant", "name": "茄子", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "pumpkin", "name": "南瓜", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "watermelon", "name": "西瓜", "unit": "kg", "buy_price": 14, "sell_price": 9, "can_buy": true, "can_sell": true},
+	{"id": "beet", "name": "甜菜", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "cabbage", "name": "卷心菜", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "cotton", "name": "棉花", "unit": "kg", "buy_price": 23, "sell_price": 15, "can_buy": true, "can_sell": true},
+	{"id": "lettuce", "name": "生菜", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
+	{"id": "mint", "name": "薄荷", "unit": "kg", "buy_price": 15, "sell_price": 10, "can_buy": true, "can_sell": true},
+	{"id": "peanut", "name": "花生", "unit": "kg", "buy_price": 14, "sell_price": 9, "can_buy": true, "can_sell": true},
+	{"id": "sugarcane", "name": "甘蔗", "unit": "kg", "buy_price": 5, "sell_price": 3, "can_buy": true, "can_sell": true},
+	{"id": "tobacco", "name": "烟草", "unit": "kg", "buy_price": 41, "sell_price": 27, "can_buy": true, "can_sell": true},
+	{"id": "grape", "name": "葡萄", "unit": "kg", "buy_price": 27, "sell_price": 18, "can_buy": true, "can_sell": true},
+	{"id": "kiwi", "name": "猕猴桃", "unit": "kg", "buy_price": 30, "sell_price": 20, "can_buy": true, "can_sell": true},
+	{"id": "hazelnut", "name": "榛子", "unit": "kg", "buy_price": 56, "sell_price": 37, "can_buy": true, "can_sell": true},
+	{"id": "pistachio", "name": "开心果", "unit": "kg", "buy_price": 86, "sell_price": 57, "can_buy": true, "can_sell": true},
+	{"id": "walnut", "name": "核桃", "unit": "kg", "buy_price": 50, "sell_price": 33, "can_buy": true, "can_sell": true},
 	{"id": "soybean", "name": "大豆", "unit": "kg", "buy_price": 5, "sell_price": 3, "can_buy": true, "can_sell": true},
-	{"id": "blackpepper", "name": "黑胡椒", "unit": "kg", "buy_price": 80, "sell_price": 56, "can_buy": true, "can_sell": true},
-	{"id": "potato", "name": "土豆", "unit": "kg", "buy_price": 4, "sell_price": 3, "can_buy": true, "can_sell": true},
+	{"id": "blackpepper", "name": "黑胡椒", "unit": "kg", "buy_price": 183, "sell_price": 122, "can_buy": true, "can_sell": true},
+	{"id": "potato", "name": "土豆", "unit": "kg", "buy_price": 14, "sell_price": 9, "can_buy": true, "can_sell": true},
 	{"id": "chicken", "name": "鸡肉", "unit": "kg", "buy_price": 16, "sell_price": 11, "can_buy": true, "can_sell": true},
 	{"id": "egg", "name": "鸡蛋", "unit": "kg", "buy_price": 6, "sell_price": 4, "can_buy": true, "can_sell": true},
 	{"id": "golden_egg", "name": "大金蛋", "unit": "kg", "buy_price": 600, "sell_price": 400, "can_buy": true, "can_sell": true},
@@ -55,18 +84,53 @@ var shop_products: Array[Dictionary] = [
 	{"id": "stone", "name": "石头", "unit": "kg", "buy_price": 8, "sell_price": 5, "can_buy": true, "can_sell": true},
 	{"id": "iron_ingot", "name": "铁锭", "unit": "kg", "buy_price": 80, "sell_price": 55, "can_buy": true, "can_sell": true},
 	{"id": "copper_ingot", "name": "铜锭", "unit": "kg", "buy_price": 100, "sell_price": 70, "can_buy": true, "can_sell": true},
+	{"id": "steel_ingot", "name": "钢锭", "unit": "kg", "buy_price": 130, "sell_price": 90, "can_buy": true, "can_sell": true},
 	{"id": "steel_plate", "name": "钢板", "unit": "kg", "buy_price": 240, "sell_price": 165, "can_buy": true, "can_sell": true},
 	{"id": "metal_connector", "name": "金属连接件", "unit": "item", "buy_price": 180, "sell_price": 125, "can_buy": true, "can_sell": true},
+	{"id": "lumber", "name": "木板", "unit": "kg", "buy_price": 35, "sell_price": 24, "can_buy": true, "can_sell": true},
 	{"id": "cotton_thread", "name": "棉线", "unit": "kg", "buy_price": 70, "sell_price": 48, "can_buy": true, "can_sell": true},
 	{"id": "cotton_cloth", "name": "棉布", "unit": "kg", "buy_price": 150, "sell_price": 105, "can_buy": true, "can_sell": true},
 	{"id": "engineering_plastic_pellets", "name": "工程塑料颗粒", "unit": "kg", "buy_price": 130, "sell_price": 90, "can_buy": true, "can_sell": true},
+	{"id": "rubber_barrel", "name": "橡胶桶", "unit": "item", "buy_price": 160, "sell_price": 110, "can_buy": true, "can_sell": true},
+	{"id": "rubber_parts", "name": "橡胶零件", "unit": "item", "buy_price": 100, "sell_price": 70, "can_buy": true, "can_sell": true},
+	{"id": "copper_wire", "name": "铜线", "unit": "kg", "buy_price": 125, "sell_price": 88, "can_buy": true, "can_sell": true},
+	{"id": "glass_panes", "name": "玻璃板", "unit": "kg", "buy_price": 55, "sell_price": 38, "can_buy": true, "can_sell": true},
+	{"id": "circuit_board", "name": "电路板", "unit": "item", "buy_price": 320, "sell_price": 225, "can_buy": true, "can_sell": true},
+	{"id": "battery_pack", "name": "电池组", "unit": "item", "buy_price": 280, "sell_price": 195, "can_buy": true, "can_sell": true},
+	{"id": "bearing", "name": "轴承", "unit": "item", "buy_price": 150, "sell_price": 105, "can_buy": true, "can_sell": true},
+	{"id": "gear_set", "name": "齿轮组", "unit": "item", "buy_price": 220, "sell_price": 155, "can_buy": true, "can_sell": true},
+	{"id": "hydraulic_component", "name": "液压组件", "unit": "item", "buy_price": 360, "sell_price": 250, "can_buy": true, "can_sell": true},
+	{"id": "high_performance_motor", "name": "高性能电机", "unit": "item", "buy_price": 900, "sell_price": 630, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_control_module", "name": "车辆控制模块", "unit": "item", "buy_price": 800, "sell_price": 560, "can_buy": true, "can_sell": true},
+	{"id": "composite_armor_panel", "name": "复合装甲板", "unit": "item", "buy_price": 550, "sell_price": 385, "can_buy": true, "can_sell": true},
 	{"id": "hard_drive", "name": "硬盘", "unit": "item", "buy_price": 480, "sell_price": 330, "can_buy": true, "can_sell": true},
 	{"id": "laptop", "name": "笔记本电脑", "kind": "tool", "unit": "item", "buy_price": 1200, "sell_price": 840, "can_buy": true, "can_sell": true},
 	{"id": "desktop", "name": "高端台式机", "kind": "tool", "unit": "item", "buy_price": 2600, "sell_price": 1820, "can_buy": true, "can_sell": true},
+	# 装备价格先登记在独立分类中，等待载具/装备商店 UI 接入；这不会把装备误加入普通交易站。
+	{"id": "backpack_brown", "name": "棕色皮革背包", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 1000, "sell_price": 700, "can_buy": true, "can_sell": true},
+	{"id": "backpack_cotton", "name": "棉布背包", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 1600, "sell_price": 1120, "can_buy": true, "can_sell": true},
+	{"id": "backpack_military", "name": "军用背包", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 2800, "sell_price": 1960, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_plant_fiber", "name": "植物纤维胸甲", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 500, "sell_price": 350, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_cotton", "name": "棉布胸甲", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 700, "sell_price": 490, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_pumpkin", "name": "南瓜胸甲", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 850, "sell_price": 595, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_wood", "name": "木制胸甲", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 1100, "sell_price": 770, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_engineering_plastic", "name": "工程塑料胸甲", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 1500, "sell_price": 1050, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_police_vest", "name": "警用防弹背心", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 2000, "sell_price": 1400, "can_buy": true, "can_sell": true},
+	{"id": "chest_armor_military_vest", "name": "军用防弹背心", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 2600, "sell_price": 1820, "can_buy": true, "can_sell": true},
+	{"id": "legwear_plant_fiber", "name": "植物纤维护腿", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 400, "sell_price": 280, "can_buy": true, "can_sell": true},
+	{"id": "legwear_cotton", "name": "棉布护腿", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 550, "sell_price": 385, "can_buy": true, "can_sell": true},
+	{"id": "legwear_pumpkin", "name": "南瓜护腿", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 700, "sell_price": 490, "can_buy": true, "can_sell": true},
+	{"id": "legwear_wood", "name": "木制护腿", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 850, "sell_price": 595, "can_buy": true, "can_sell": true},
+	{"id": "legwear_engineering_plastic", "name": "工程塑料护腿", "kind": "equipment", "shop_category": "equipment_store", "unit": "item", "buy_price": 1200, "sell_price": 840, "can_buy": true, "can_sell": true},
 	{"id": "metal_defense_net", "name": "金属防护网", "unit": "item", "buy_price": 260, "sell_price": 180, "can_buy": true, "can_sell": true},
 	{"id": "electronic_detonator_module", "name": "电子引爆模块", "unit": "item", "buy_price": 420, "sell_price": 290, "can_buy": true, "can_sell": true},
 	{"id": "vehicle_roof_cooling_system", "name": "载具冷却系统", "unit": "item", "buy_price": 650, "sell_price": 455, "can_buy": true, "can_sell": true},
 	{"id": "vehicle_signal_augment", "name": "车载信号增强模块", "unit": "item", "buy_price": 700, "sell_price": 490, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_harvest_reel", "name": "收割模块", "unit": "item", "buy_price": 900, "sell_price": 630, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_machine_gun", "name": "车载机枪", "unit": "item", "buy_price": 1500, "sell_price": 1050, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_nitro_boost", "name": "氮气加速装置", "unit": "item", "buy_price": 950, "sell_price": 665, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_extended_seat", "name": "扩展座椅", "unit": "item", "buy_price": 420, "sell_price": 295, "can_buy": true, "can_sell": true},
+	{"id": "vehicle_roof_headlights", "name": "车顶大灯", "unit": "item", "buy_price": 550, "sell_price": 385, "can_buy": true, "can_sell": true},
 	{"id": "normal_mushroom", "name": "普通蘑菇", "unit": "kg", "buy_price": 16, "sell_price": 10, "can_buy": true, "can_sell": true},
 	{"id": "bolete_mushroom", "name": "牛肝菌", "unit": "kg", "buy_price": 42, "sell_price": 30, "can_buy": true, "can_sell": true},
 	{"id": "redwhite_mushroom", "name": "红白蘑菇", "unit": "kg", "buy_price": 68, "sell_price": 48, "can_buy": true, "can_sell": true},
@@ -80,11 +144,18 @@ var shop_products: Array[Dictionary] = [
 	{"id": "ice_cream", "name": "冰淇淋", "kind": "dish", "shop_category": "food_car", "unit": "item", "buy_price": 10, "sell_price": 4, "can_buy": true, "can_sell": true},
 	{"id": "egg_tart", "name": "蛋挞", "kind": "dish", "shop_category": "food_car", "unit": "item", "buy_price": 9, "sell_price": 4, "can_buy": true, "can_sell": true},
 	{"id": "fried_chicken_nuggets", "name": "炸鸡块", "kind": "dish", "shop_category": "food_car", "unit": "item", "buy_price": 16, "sell_price": 7, "can_buy": true, "can_sell": true},
-	{"id": "m4", "name": "M4卡宾枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3000, "sell_price": 0, "can_buy": true, "can_sell": false},
-	{"id": "ar15", "name": "AR15步枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 4000, "sell_price": 0, "can_buy": true, "can_sell": false},
-	{"id": "suppressed_pistol", "name": "消音手枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 800, "sell_price": 0, "can_buy": true, "can_sell": false},
-	{"id": "ammo_supply_box", "name": "弹药盒", "kind": "ammo_supply_box", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 0, "can_buy": true, "can_sell": false},
-	{"id": "grenade", "name": "手雷", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 0, "can_buy": true, "can_sell": false},
+	# 枪械和弹药保留回收估值；武器商店是否允许回收由上方白名单决定。
+	{"id": "m4", "name": "M4卡宾枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3000, "sell_price": 2100, "can_buy": true},
+	{"id": "ar15", "name": "AR15步枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 4000, "sell_price": 2800, "can_buy": true},
+	{"id": "suppressed_pistol", "name": "消音手枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 800, "sell_price": 560, "can_buy": true},
+	{"id": "ammo_supply_box", "name": "弹药盒", "kind": "ammo_supply_box", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 140, "can_buy": true},
+	{"id": "grenade", "name": "手雷", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 140, "can_buy": true},
+	{"id": "shotgun", "name": "双管猎枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2200, "sell_price": 1540, "can_buy": true},
+	{"id": "hunting_rifle", "name": "栓动猎枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2500, "sell_price": 1750, "can_buy": true},
+	{"id": "crossbow", "name": "弩", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 1600, "sell_price": 1120, "can_buy": true},
+	{"id": "mpx", "name": "MPX冲锋枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2400, "sell_price": 1680, "can_buy": true},
+	{"id": "future_m4", "name": "FutureM4", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3800, "sell_price": 2660, "can_buy": true},
+	{"id": "future_mpx", "name": "FutureMPX", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3200, "sell_price": 2240, "can_buy": true},
 ]
 
 var plant_item_list: Array = IngredientCatalog.get_plantable_ids()
@@ -140,6 +211,22 @@ func get_shop_product(item_name: String) -> Dictionary:
 		if product["id"] == item_name:
 			return product
 	return {}
+
+
+func is_shop_product_sellable(shop_category: String, item_name: String, product: Dictionary = {}) -> bool:
+	# gun_store 是唯一由商店侧白名单决定出售权的商店。其他商店继续
+	# 使用各自商品的 can_sell，避免改变现有食材、牲畜和菜品交易规则。
+	if shop_category == "gun_store":
+		return GUN_STORE_SELL_WHITELIST.has(item_name)
+	return bool(product.get("can_sell", false))
+
+
+func is_shop_product_buyable(shop_category: String, item_name: String, product: Dictionary = {}) -> bool:
+	# Future 系列的武器数据仍然保留，但采购渠道由白名单明确排除。
+	# 其他商店沿用商品自身的 can_buy 字段。
+	if shop_category == "gun_store":
+		return GUN_STORE_BUY_WHITELIST.has(item_name)
+	return bool(product.get("can_buy", false))
 
 
 func add_item(team: String, item_name: String, amount: float) -> bool:

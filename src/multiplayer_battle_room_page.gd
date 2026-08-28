@@ -71,7 +71,7 @@ func setup_from_selection(new_selection: Dictionary, auto_load_map := false) -> 
 func apply_match_start_info(info: Dictionary) -> void:
 	var configured_map_id := str(info.get("map_id", ""))
 	if not configured_map_id.is_empty():
-		var local_map := GameMapRegistry.get_map_by_package_name(configured_map_id)
+		var local_map := GameMapRegistry.validate_map_by_package_name(configured_map_id)
 		if not local_map.is_empty() and bool(local_map.get("is_compatible", false)):
 			map_definition = local_map.duplicate(true)
 			map_name = str(local_map.get("display_name", info.get("map_name", map_name)))

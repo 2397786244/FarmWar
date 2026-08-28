@@ -1105,6 +1105,15 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 		# own broadcast paths.
 		_send_reliable_event_to_peer(int(event.get("peer_id", 0)), event)
 		return
+	if event_type == "computer_action_result":
+		# Computer action results can contain complete per-app storage. Deliver the
+		# result only to its requester; lock changes are broadcast separately as a
+		# summary-only computer_state event.
+		var computer_data: Variant = event.get("data", {})
+		var computer_peer_id := int((computer_data as Dictionary).get("peer_id", 0)) \
+			if computer_data is Dictionary else 0
+		_send_reliable_event_to_peer(computer_peer_id, event)
+		return
 	if event_type in ["cargo_car_action_result", "cargo_crate_action_result"]:
 		var action_data: Variant = event.get("data", {})
 		var action_peer_id := int((action_data as Dictionary).get("peer_id", 0)) \
@@ -2050,6 +2059,8 @@ func _capture_persistent_world_state() -> Dictionary:
 		"placed_tools": placed_tools,
 		"livestock": livestock,
 		"stations": _capture_persistent_station_states(),
+		"embedded_lab_teams": GameAuthority.get_persistent_team_embedded_lab_states() \
+			if is_instance_valid(GameAuthority) else {},
 		"weather": weather_state,
 	}
 
@@ -2060,6 +2071,8 @@ func _capture_persistent_station_states() -> Array[Dictionary]:
 		"ingredient_pickups", "chopping_stations", "ingredient_extractors", "auto_cookers", "stand_mixers",
 		"oven_stations", "smoker_stations", "freezer_stations", "griddle_stations",
 		"induction_counters", "plating_stations", "livestock_chops", "computer_terminals",
+		"industrial_furnaces", "comprehensive_material_processing_stations",
+		"electronic_assembly_stations", "wood_processing_tables",
 	]
 	for group_name: String in groups:
 		for node in get_tree().get_nodes_in_group(group_name):
@@ -2078,6 +2091,8 @@ func _capture_persistent_station_states() -> Array[Dictionary]:
 				state = node.call("get_chop_state") as Dictionary
 			elif node.has_method("get_computer_state"):
 				state = node.call("get_computer_state") as Dictionary
+			elif node.has_method("get_workbench_state"):
+				state = node.call("get_workbench_state") as Dictionary
 			if not state.is_empty():
 				state["facility_id"] = str(node.get_meta("network_map_facility_id", ""))
 				entries.append({"group": group_name, "state": state})
@@ -2092,6 +2107,10 @@ func _restore_persistent_world_state(scene: Node3D) -> void:
 	# 仓库不依赖场景节点，先恢复它。这样 HUD、房主权威端和随后加入的
 	# 客户端在世界初始化期间就能读到同一份资金与物资。
 	_restore_saved_team_storage(world_state)
+	var embedded_lab_teams: Variant = world_state.get("embedded_lab_teams", null)
+	if is_instance_valid(GameAuthority) and GameAuthority.has_method("apply_persistent_team_embedded_lab_states"):
+		if embedded_lab_teams is Dictionary:
+			GameAuthority.apply_persistent_team_embedded_lab_states(embedded_lab_teams)
 	var weather_state: Variant = world_state.get("weather", {})
 	if weather_state is Dictionary and not (weather_state as Dictionary).is_empty():
 		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
@@ -2336,9 +2355,14 @@ func _restore_persistent_stations(value: Variant) -> void:
 			station.call("apply_authoritative_cook_state", state)
 		elif station.has_method("apply_authoritative_mixer_state"):
 			station.call("apply_authoritative_mixer_state", state)
+		elif station.has_method("apply_authoritative_workbench_state"):
+			station.call("apply_authoritative_workbench_state", state)
 		elif station.has_method("apply_authoritative_chop_state"):
 			station.call("apply_authoritative_chop_state", state)
 		elif station.has_method("apply_computer_state"):
+			if is_instance_valid(GameAuthority) and GameAuthority.has_method(
+					"import_legacy_embedded_lab_state_from_computer_state"):
+				GameAuthority.import_legacy_embedded_lab_state_from_computer_state(state)
 			station.call("apply_computer_state", state)
 
 

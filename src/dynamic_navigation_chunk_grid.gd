@@ -23,6 +23,10 @@ const NAVIGATION_ONLY_OBSTACLE_GROUP := "ai_navigation_obstacle"
 const GENERATED_BUILDING_OBSTACLE_META := "dynamic_building_navigation_obstacle"
 const SCANNED_BUILDING_META := "dynamic_building_navigation_scanned"
 const GROUND_GROUP := "navigation_ground"
+const MINIMUM_TILE_BORDER_SIZE := 1.0
+const TILE_BORDER_EXTRA_CELLS := 2.0
+const MAX_TILE_EDGE_ERROR := 1.0
+const VERTEX_SNAP_CELL_FACTOR := 0.1
 
 @export_category("Grid")
 @export var map_origin := Vector2(-128.0, -128.0)
@@ -38,7 +42,10 @@ const GROUND_GROUP := "navigation_ground"
 @export var bake_vertical_range := Vector2(-50.0, 150.0)
 @export var agent_height := 1.8
 @export var agent_radius := 0.4
-@export var bake_border_size := 1.0
+## 分块烘焙时，烘焙 AABB 和 border 必须使用同一个扩展值。这样
+## agent_radius 的侵蚀发生在区块外侧，border 再把结果裁回 64m 边界。
+## 实际值还会保证不小于“取整后的 agent_radius + 两个栅格”。
+@export_range(0.0, 4.0, 0.05) var bake_border_size := 1.0
 @export var bake_cell_size := 0.25
 @export var bake_cell_height := 0.25
 
@@ -138,8 +145,12 @@ func _initialize_grid() -> void:
 	if chunk_size <= 0.0 or map_size.x <= 0.0 or map_size.y <= 0.0:
 		push_error("DynamicNavigationChunkGrid: map_size and chunk_size must be positive")
 		return
+	if bake_cell_size <= 0.0 or bake_cell_height <= 0.0:
+		push_error("DynamicNavigationChunkGrid: bake cell size and height must be positive")
+		return
 
 	_collect_ground_meshes()
+	_configure_navigation_map()
 	_create_regions()
 	_ensure_building_navigation_obstacles()
 	_scan_demolition_obstacles()
@@ -168,10 +179,7 @@ func _drop_navigation_for_client() -> void:
 	_dirty_chunks.clear()
 	_initial_bakes_remaining = 0
 	_initialized = false
-	for region_value in _regions.values():
-		var region := region_value as NavigationRegion3D
-		if is_instance_valid(region):
-			region.queue_free()
+	_remove_child_navigation_regions()
 	_regions.clear()
 	_client_navigation_dropped = true
 
@@ -197,9 +205,9 @@ func _collect_meshes_recursive(node: Node) -> void:
 
 
 func _create_regions() -> void:
-	for child in get_children():
-		if child is NavigationRegion3D:
-			child.queue_free()
+	## 地图场景中可能保留旧的预烘焙 NavigationRegion。先立即停用并清空
+	## 网格，避免初始异步 bake 期间调试视图和 AI 继续使用带缝隙的旧数据。
+	_remove_child_navigation_regions()
 	_regions.clear()
 
 	var count_x := maxi(1, ceili(map_size.x / chunk_size))
@@ -210,11 +218,55 @@ func _create_regions() -> void:
 			var region := NavigationRegion3D.new()
 			region.name = "NavigationRegion_%02d_%02d" % [x, z]
 			region.navigation_layers = 1
-			region.use_edge_connections = true
+			## 顶点会被吸附到同一栅格并通过共享边键合并，不使用可能跨越
+			## 障碍物的宽距离边缘连接。
+			region.use_edge_connections = false
 			region.set_meta("navigation_chunk_coordinate", chunk_id)
 			region.set_meta("navigation_chunk_size", chunk_size)
 			add_child(region)
 			_regions[chunk_id] = region
+
+
+func _remove_child_navigation_regions() -> void:
+	for child in get_children():
+		if not child is NavigationRegion3D:
+			continue
+		var old_region := child as NavigationRegion3D
+		old_region.enabled = false
+		old_region.use_edge_connections = false
+		old_region.navigation_mesh = null
+		old_region.queue_free()
+
+
+func _configure_navigation_map() -> void:
+	var world := get_world_3d()
+	if world == null:
+		return
+	var navigation_map := world.navigation_map
+	if not navigation_map.is_valid():
+		return
+	## NavigationMesh 和 NavigationMap 的体素尺寸必须一致，否则独立烘焙的
+	## 区块即使边界相同，也可能因为栅格量化不同而无法共享边键。
+	NavigationServer3D.map_set_cell_size(navigation_map, bake_cell_size)
+	NavigationServer3D.map_set_cell_height(navigation_map, bake_cell_height)
+	NavigationServer3D.map_set_use_edge_connections(navigation_map, false)
+
+
+func _rounded_agent_radius() -> float:
+	if bake_cell_size <= 0.0:
+		return maxf(0.0, agent_radius)
+	return ceilf(maxf(0.0, agent_radius) / bake_cell_size) * bake_cell_size
+
+
+func _effective_bake_border_size() -> float:
+	return maxf(
+		maxf(MINIMUM_TILE_BORDER_SIZE, bake_border_size),
+		_rounded_agent_radius() + TILE_BORDER_EXTRA_CELLS * bake_cell_size,
+	)
+
+
+func _navigation_vertex_snap_size() -> float:
+	return maxf(0.0001, bake_cell_size * VERTEX_SNAP_CELL_FACTOR)
 
 
 func _chunk_bounds(chunk_id: Vector2i, expanded: float = 0.0) -> AABB:
@@ -660,7 +712,10 @@ func _set_obstacle_active(obstacle: NavigationObstacle3D, active: bool) -> void:
 func _mark_bounds_dirty(bounds: AABB) -> void:
 	if bounds.size.length_squared() <= 0.0001:
 		return
-	var expanded := bounds.grow(maxf(agent_radius, 0.75))
+	## 障碍靠近分界线时，它的 agent_radius 侵蚀范围会同时影响另一侧区块。
+	## 使用与烘焙相同的栅格取整规则，保证接缝两侧一起进入 dirty 队列。
+	var dirty_margin := _rounded_agent_radius() + bake_cell_size
+	var expanded := bounds.grow(dirty_margin)
 	for chunk_id in _chunk_ids_for_aabb(expanded):
 		_dirty_chunks[chunk_id] = true
 	if _batch_first_frame < 0:
@@ -714,20 +769,25 @@ func _start_next_bake() -> void:
 
 func _make_navigation_mesh(chunk_id: Vector2i) -> NavigationMesh:
 	var navigation_mesh := NavigationMesh.new()
+	var tile_border := _effective_bake_border_size()
 	navigation_mesh.agent_height = agent_height
 	navigation_mesh.agent_radius = agent_radius
 	navigation_mesh.cell_size = bake_cell_size
 	navigation_mesh.cell_height = bake_cell_height
-	navigation_mesh.border_size = bake_border_size
+	navigation_mesh.border_size = tile_border
+	navigation_mesh.edge_max_error = minf(MAX_TILE_EDGE_ERROR, tile_border)
 	navigation_mesh.sample_partition_type = NavigationMesh.SAMPLE_PARTITION_LAYERS
-	navigation_mesh.filter_baking_aabb = _chunk_bounds(chunk_id)
+	## AABB 向外扩展多少，最终 border 就裁掉多少。agent_radius 因而只会
+	## 侵蚀扩展区域，不会再把两个 64m 区块的共享边界各缩进去 0.5m。
+	navigation_mesh.filter_baking_aabb = _chunk_bounds(chunk_id, tile_border)
 	return navigation_mesh
 
 
 func _make_source_geometry(chunk_id: Vector2i) -> NavigationMeshSourceGeometryData3D:
 	var source := NavigationMeshSourceGeometryData3D.new()
 	_prune_stale_obstacle_registry()
-	var bake_bounds := _chunk_bounds(chunk_id, bake_border_size + agent_radius)
+	var source_overlap := _effective_bake_border_size() + _rounded_agent_radius()
+	var bake_bounds := _chunk_bounds(chunk_id, source_overlap)
 	var added_ground := false
 	for mesh_instance in _ground_meshes:
 		if not is_instance_valid(mesh_instance) or mesh_instance.mesh == null:
@@ -737,7 +797,9 @@ func _make_source_geometry(chunk_id: Vector2i) -> NavigationMeshSourceGeometryDa
 		if _add_mesh_geometry_to_source(source, mesh_instance):
 			added_ground = true
 	if not added_ground:
-		_add_fallback_ground(source, _chunk_bounds(chunk_id))
+		## 后备平面同样必须覆盖 border；否则平面本身的边缘仍会被
+		## agent_radius 侵蚀，测试场景和无地形网格地图会再次产生缝隙。
+		_add_fallback_ground(source, bake_bounds)
 
 	for obstacle_value in _obstacles.values():
 		if not obstacle_value is Dictionary:
@@ -853,7 +915,11 @@ func _finish_bake(
 		return
 	var region := _regions.get(chunk_id, null) as NavigationRegion3D
 	if region != null and baked_mesh != null:
+		_finalize_baked_navigation_mesh(baked_mesh)
 		region.navigation_mesh = baked_mesh
+		## NavigationMap 可能在初始化时仍处于注册阶段；区域真正写入后
+		## 再次应用体素尺寸，确保运行时重建结果继续使用同一栅格。
+		_configure_navigation_map()
 	_bake_active = false
 	_initial_bakes_remaining = maxi(0, _initial_bakes_remaining - 1)
 
@@ -869,19 +935,38 @@ func _finish_bake(
 		navigation_idle.emit()
 
 
+func _finalize_baked_navigation_mesh(baked_mesh: NavigationMesh) -> void:
+	## 烘焙边界只参与生成，不应作为最终调试显示的一部分。
+	baked_mesh.filter_baking_aabb = AABB()
+	var vertices := baked_mesh.vertices
+	var snap_size := _navigation_vertex_snap_size()
+	for vertex_index in range(vertices.size()):
+		vertices[vertex_index] = vertices[vertex_index].snappedf(snap_size)
+	baked_mesh.vertices = vertices
+
+
 func _notify_ai_navigation_updated(chunk_ids: Array[Vector2i]) -> void:
 	var candidates: Array[Node] = []
 	candidates.append_array(get_tree().get_nodes_in_group("future_warrior_ai"))
 	candidates.append_array(get_tree().get_nodes_in_group("assistant_ai"))
+	candidates.append_array(get_tree().get_nodes_in_group("wild_animals"))
+	var notified_instance_ids: Dictionary = {}
 	for node in candidates:
 		if not is_instance_valid(node) or not node is Node3D \
 				or not node.has_method("notify_navigation_chunks_rebuilt"):
 			continue
+		var instance_id := node.get_instance_id()
+		if notified_instance_ids.has(instance_id):
+			continue
+		notified_instance_ids[instance_id] = true
 		var should_notify := false
 		var current_position: Vector3 = (node as Node3D).global_position
-		var target_value: Variant = node.get("target")
+		var target_value: Variant = node.call("get_navigation_target_position") \
+			if node.has_method("get_navigation_target_position") else node.get("target")
 		var target_position := Vector3.INF
-		if target_value is Node3D and is_instance_valid(target_value):
+		if target_value is Vector3:
+			target_position = target_value as Vector3
+		elif target_value is Node3D and is_instance_valid(target_value):
 			target_position = (target_value as Node3D).global_position
 		for chunk_id in chunk_ids:
 			var bounds := _chunk_bounds(chunk_id, agent_radius + 1.0)

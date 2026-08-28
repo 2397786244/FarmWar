@@ -13,7 +13,7 @@ height = 1.72
 
 [node name="BanditAI" type="CharacterBody3D" unique_id=970001891]
 collision_layer = 8
-collision_mask = 647
+collision_mask = 8839
 script = ExtResource("1_bandit_script")
 max_hp = 160.0
 starting_grenade_count = 0

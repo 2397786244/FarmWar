@@ -29,6 +29,14 @@ const DEFENSE_ASSETS: Array[Dictionary] = [
 	{"id": "wire_mesh_gate", "label": "铁丝网门", "path": "res://character/weapons/WireMeshGate.tscn", "category": "defense"},
 ]
 
+const INDUSTRIAL_ASSETS: Array[Dictionary] = [
+	{"id": "industrial_furnace", "label": "工业熔炉", "path": "res://facilities/industrial/industrial_furnace.tscn", "category": "industrial"},
+	{"id": "comprehensive_material_processing_station", "label": "综合材料加工台", "path": "res://facilities/industrial/comprehensive_material_processing_station.tscn", "category": "industrial"},
+	{"id": "electronic_assembly_station", "label": "电子装配台", "path": "res://facilities/industrial/electronic_assembly_station.tscn", "category": "industrial"},
+	{"id": "robot_assembly_pod", "label": "机器人装配舱", "path": "res://facilities/industrial/robot_assembly_pod.tscn", "category": "industrial"},
+	{"id": "wood_processing_table", "label": "木材加工台", "path": "res://facilities/industrial/wood_processing_table.tscn", "category": "industrial"},
+]
+
 
 static func get_assets(category := "") -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -36,6 +44,8 @@ static func get_assets(category := "") -> Array[Dictionary]:
 		result.append_array(KITCHEN_ASSETS.duplicate(true))
 	if category.is_empty() or category == "defense":
 		result.append_array(DEFENSE_ASSETS.duplicate(true))
+	if category.is_empty() or category == "industrial":
+		result.append_array(INDUSTRIAL_ASSETS.duplicate(true))
 	if category.is_empty() or category == "interior":
 		result.append_array(_scan_interior_assets())
 	return result

@@ -23,12 +23,12 @@
     "nut_fruit_salad": {"display_name": "坚果水果沙拉", "description": "水果与坚果搭配的清爽高能量沙拉。", "serving_weight_kg": 0.06, "model_path": "res://assets/food/dish_items/nut_fruit_salad.glb"},
     "burnt_plate": {"display_name": "烧焦的食物", "description": "成品在烟熏炉、烤箱或煎台中放置过久后烧焦。", "serving_weight_kg": 0.001, "value": 0, "model_path": "res://assets/food/BurntPlate.glb"},
     "ruined_soup": {"display_name": "煮糊的汤", "description": "成品在电磁炉中放置过久后煮糊。", "serving_weight_kg": 0.001, "value": 0, "model_path": "res://assets/food/RuinedSoup.glb"},
-    "burger": {"display_name": "汉堡", "description": "面包、肉饼和新鲜配菜叠成的饱腹快餐。", "serving_weight_kg": 0.25, "model_path": "res://assets/food/fast_food/Burger.glb"},
-    "fries": {"display_name": "薯条", "description": "外层金黄酥脆、适合趁热食用的一份薯条。", "serving_weight_kg": 0.15, "model_path": "res://assets/food/fast_food/Fries.glb"},
-    "taco": {"display_name": "塔可", "description": "脆饼皮中包着肉馅和蔬菜的便携快餐。", "serving_weight_kg": 0.18, "model_path": "res://assets/food/fast_food/Taco.glb"},
-    "soda": {"display_name": "汽水", "description": "冰凉带气泡的甜味饮料，包含容器重量。", "serving_weight_kg": 0.35, "model_path": "res://assets/food/fast_food/Soda.glb"},
-    "ice_cream": {"display_name": "冰淇淋", "description": "口感细腻、需要尽快享用的冰凉甜品。", "serving_weight_kg": 0.12, "model_path": "res://assets/food/fast_food/IceCream.glb"},
-    "egg_tart": {"display_name": "蛋挞", "description": "酥脆挞皮中盛着柔滑蛋奶馅的小份烘焙点心。", "serving_weight_kg": 0.08, "model_path": "res://assets/food/fast_food/Eggtart.glb"},
-    "fried_chicken_nuggets": {"display_name": "炸鸡块", "description": "裹上酥脆外衣油炸的一份鸡肉小食。", "serving_weight_kg": 0.18, "model_path": "res://assets/food/fast_food/FriedChickenNuggets.glb"}
+    "burger": {"display_name": "汉堡", "description": "面包、肉饼和新鲜配菜叠成的饱腹快餐。", "serving_weight_kg": 0.25, "model_path": "res://assets/food/fast_food/Burger.glb", "icon": "res://assets/icons/food_car/burger.png"},
+    "fries": {"display_name": "薯条", "description": "外层金黄酥脆、适合趁热食用的一份薯条。", "serving_weight_kg": 0.15, "model_path": "res://assets/food/fast_food/Fries.glb", "icon": "res://assets/icons/food_car/fries.png"},
+    "taco": {"display_name": "塔可", "description": "脆饼皮中包着肉馅和蔬菜的便携快餐。", "serving_weight_kg": 0.18, "model_path": "res://assets/food/fast_food/Taco.glb", "icon": "res://assets/icons/food_car/taco.png"},
+    "soda": {"display_name": "汽水", "description": "冰凉带气泡的甜味饮料，包含容器重量。", "serving_weight_kg": 0.35, "model_path": "res://assets/food/fast_food/Soda.glb", "icon": "res://assets/icons/food_car/soda.png"},
+    "ice_cream": {"display_name": "冰淇淋", "description": "口感细腻、需要尽快享用的冰凉甜品。", "serving_weight_kg": 0.12, "model_path": "res://assets/food/fast_food/IceCream.glb", "icon": "res://assets/icons/food_car/ice_cream.png"},
+    "egg_tart": {"display_name": "蛋挞", "description": "酥脆挞皮中盛着柔滑蛋奶馅的小份烘焙点心。", "serving_weight_kg": 0.08, "model_path": "res://assets/food/fast_food/Eggtart.glb", "icon": "res://assets/icons/food_car/egg_tart.png"},
+    "fried_chicken_nuggets": {"display_name": "炸鸡块", "description": "裹上酥脆外衣油炸的一份鸡肉小食。", "serving_weight_kg": 0.18, "model_path": "res://assets/food/fast_food/FriedChickenNuggets.glb", "icon": "res://assets/icons/food_car/fried_chicken_nuggets.png"}
   }
 }

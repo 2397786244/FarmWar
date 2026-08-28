@@ -110,6 +110,14 @@ func _build_storage_grid() -> void:
 				entries.append({"kind": "dish", "id": item_id})
 			elif not IngredientCatalog.get_definition(item_id).is_empty():
 				entries.append({"kind": "ingredient", "id": item_id})
+			else:
+				var product := GlobalVar.get_shop_product(item_id)
+				var product_kind := str(product.get("kind", ""))
+				if product_kind in ["weapon", "ammo_supply_box", "tool"]:
+					entries.append({"kind": "tool", "id": item_id})
+				elif product_kind == "equipment" \
+						or not EquipmentCatalog.get_definition(item_id).is_empty():
+					entries.append({"kind": "equipment", "id": item_id})
 	entries.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
 		return _storage_display_name(first) < _storage_display_name(second)
 	)
@@ -145,9 +153,14 @@ func _refresh() -> void:
 func _storage_display_name(entry: Dictionary) -> String:
 	var item_kind := str(entry.get("kind", ""))
 	var item_id := str(entry.get("id", ""))
-	var definition := DishCatalog.get_definition(item_id) if item_kind == "dish" \
-		else IngredientCatalog.get_definition(item_id)
-	return str(definition.get("display_name", item_id))
+	if item_kind == "dish":
+		return str(DishCatalog.get_definition(item_id).get("display_name", item_id))
+	if item_kind == "ingredient":
+		return str(IngredientCatalog.get_definition(item_id).get("display_name", item_id))
+	if item_kind == "equipment":
+		var equipment_definition := EquipmentCatalog.get_definition(item_id)
+		return str(equipment_definition.get("name", GlobalVar.get_shop_product(item_id).get("name", item_id)))
+	return str(GlobalVar.get_shop_product(item_id).get("name", item_id))
 
 
 func make_storage_drag_data(item_kind: String, item_id: String, one_unit: bool) -> Dictionary:
@@ -168,7 +181,7 @@ func make_storage_drag_data(item_kind: String, item_id: String, one_unit: bool) 
 			"weight_kg": float(definition.get("serving_weight_kg", 0.0)) * amount,
 			"display_name": str(definition.get("display_name", item_id)),
 		}
-	else:
+	elif item_kind == "ingredient":
 		var definition := IngredientCatalog.get_definition(item_id)
 		if definition.is_empty():
 			return {}
@@ -177,6 +190,26 @@ func make_storage_drag_data(item_kind: String, item_id: String, one_unit: bool) 
 			"kind": "ingredient", "ingredient_id": item_id, "is_chopped": false,
 			"weight_kg": amount, "display_name": str(definition.get("display_name", item_id)),
 		}
+	elif item_kind == "tool":
+		amount = 1.0 if one_unit else floorf(available)
+		if amount <= 0.0 or not GameAuthority.authoritative_tool_definitions.has(item_id):
+			return {}
+		item = {
+			"kind": "tool", "tool_id": item_id, "count": int(amount),
+			"weight_kg": amount, "unit_weight_kg": 1.0,
+			"display_name": _storage_display_name({"kind": item_kind, "id": item_id}),
+		}
+	elif item_kind == "equipment":
+		amount = 1.0 if one_unit else floorf(available)
+		if amount <= 0.0 or EquipmentCatalog.get_definition(item_id).is_empty():
+			return {}
+		item = {
+			"kind": "equipment", "equipment_id": item_id, "count": int(amount),
+			"weight_kg": amount, "unit_weight_kg": 1.0,
+			"display_name": _storage_display_name({"kind": item_kind, "id": item_id}),
+		}
+	else:
+		return {}
 	return {
 		"unit_weight_transfer": one_unit,
 		"unit_weight_kg": UnitWeightItem.get_weight_kg(item),
@@ -218,7 +251,7 @@ func drop_item(target_kind: String, target_index: int, data: Dictionary) -> void
 			if bool(data.get("unit_weight_transfer", false)) else _item_storage_amount(source_item)
 		_request_action(
 			"deposit", str(source_item.get("kind", "")),
-			str(source_item.get("dish_id", source_item.get("ingredient_id", ""))), amount
+			str(source_item.get("dish_id", source_item.get("ingredient_id", source_item.get("tool_id", source_item.get("equipment_id", ""))))), amount
 		)
 	else:
 		_request_action(
@@ -230,6 +263,10 @@ func drop_item(target_kind: String, target_index: int, data: Dictionary) -> void
 func _is_storable_item(item: Dictionary) -> bool:
 	if str(item.get("kind", "")) == "dish":
 		return not DishCatalog.get_definition(str(item.get("dish_id", ""))).is_empty()
+	if str(item.get("kind", "")) in ["tool", "weapon"]:
+		return GameAuthority.authoritative_tool_definitions.has(str(item.get("tool_id", "")))
+	if str(item.get("kind", "")) == "equipment":
+		return not EquipmentCatalog.get_definition(str(item.get("equipment_id", ""))).is_empty()
 	if str(item.get("kind", "")) != "ingredient":
 		return false
 	var is_chopped := bool(item.get("is_chopped", false)) \
@@ -239,8 +276,12 @@ func _is_storable_item(item: Dictionary) -> bool:
 
 
 func _item_storage_amount(item: Dictionary) -> float:
-	return float(item.get("servings", 0)) if str(item.get("kind", "")) == "dish" \
-		else float(item.get("weight_kg", 0.0))
+	var kind := str(item.get("kind", ""))
+	if kind == "dish":
+		return float(item.get("servings", 0))
+	if kind in ["tool", "weapon", "equipment"]:
+		return 1.0
+	return float(item.get("weight_kg", 0.0))
 
 
 func _can_player_accept_item(item: Dictionary) -> bool:
@@ -248,6 +289,8 @@ func _can_player_accept_item(item: Dictionary) -> bool:
 		return player.can_add_personal_dish(
 			str(item.get("dish_id", "")), int(item.get("servings", 0)), float(item.get("weight_kg", 0.0))
 		)
+	if str(item.get("kind", "")) in ["tool", "weapon", "equipment"]:
+		return player._dropped_item_rejection_notice(item).is_empty()
 	return player.can_add_personal_ingredient(
 		str(item.get("ingredient_id", "")), float(item.get("weight_kg", 0.0)), false
 	)
