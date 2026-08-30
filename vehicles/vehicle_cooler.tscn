@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dcfs5mhkaagbc"]
+
+[ext_resource type="PackedScene" uid="uid://cwramk7tv6srd" path="res://assets/vehicles/FTF_Tool_VehicleRoofCoolingSystem_White_2_3m.glb" id="1_kdjkm"]
+
+[node name="VehicleCooler" type="Node3D" unique_id=652865789]
+
+[node name="FTF_Tool_VehicleRoofCoolingSystem_White_2_3m2" parent="." unique_id=722543941 instance=ExtResource("1_kdjkm")]

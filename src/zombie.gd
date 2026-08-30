@@ -5,11 +5,10 @@ class_name Zombie
 ## authoritative state machine uses the shared navigation map but never runs on
 ## visual network proxies.
 
-const PLAYER_SPEED_REFERENCE := GamePlayer.SPEED
 const MALE_HP := 120.0
 const FEMALE_HP := 80.0
-const MALE_SPEED := PLAYER_SPEED_REFERENCE * 0.80
-const FEMALE_SPEED := PLAYER_SPEED_REFERENCE * 0.90
+const MALE_SPEED := 3.6
+const FEMALE_SPEED := 3.9
 const DEFAULT_DEATH_CLEANUP_SECONDS := 10.0
 const DEFAULT_FLAME_DURATION := 3.0
 const DEFAULT_FLAME_DAMAGE_PER_SECOND := 15.0
@@ -18,9 +17,6 @@ const DEFAULT_LIGHTNING_STUN_DURATION := 2.0
 const RIGHT_EYE_GLOW_COLOR := Color(1.0, 0.0, 0.0, 1.0)
 const RIGHT_EYE_GLOW_ENERGY := 4.0
 const RIGHT_EYE_GLOW_RANGE := 0.7
-## Temporary combat diagnostics: prints HEAD/BODY and the resolved collider path
-## on every authoritative zombie hit so host-side headshot routing is visible.
-const DEBUG_HIT_LOG := true
 ## The visual scan is a full 3D sphere.  Targets in the front 120 degree
 ## sector are identified immediately; targets elsewhere build awareness.
 const VISION_DISTANCE := 20.0
@@ -79,11 +75,6 @@ const STATE_NAMES := {
 @export_range(0.05, 1.0, 0.05) var rear_awareness_multiplier := 0.35
 @export_range(0.0, 10.0, 0.1) var awareness_memory_seconds := 1.5
 @export_range(0.05, 4.0, 0.05) var awareness_decay_per_second := 0.60
-@export_category("Navigation Diagnostics")
-## Temporarily enabled by default while Zombie locomotion is being integrated.
-## It is throttled and can be disabled per scene once cooptest is confirmed.
-@export var navigation_debug_enabled := true
-@export_range(0.2, 5.0, 0.1) var navigation_debug_interval := 0.75
 @export var network_proxy := false
 
 var zombie_id := ""
@@ -131,7 +122,6 @@ var _wander_path_wait_remaining := 0.0
 var _chase_path_wait_remaining := 0.0
 var _last_navigation_goal := Vector3.INF
 var _using_direct_chase_fallback := false
-var _navigation_debug_remaining := 0.0
 var _target_awareness: Dictionary = {}
 var _target_awareness_last_seen_msec: Dictionary = {}
 var _stuck_remaining := 0.0
@@ -163,7 +153,6 @@ func _ready() -> void:
 	_begin_idle()
 	_set_collision_enabled(not network_proxy and not GameAuthority.is_client_proxy())
 	_play_idle_animation()
-	_debug_navigation("ready", false)
 
 
 func _process(delta: float) -> void:
@@ -189,16 +178,13 @@ func _physics_process(delta: float) -> void:
 	if interest_sleeping:
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("interest-sleep", false)
 		return
 	if _is_immobilized():
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("immobilized", false)
 		return
 	_tick_target_scan(delta)
 	_tick_state(delta)
-	_debug_navigation("physics", _navigation_agent != null and not _navigation_agent.is_navigation_finished())
 
 
 func can_enter_interest_sleep() -> bool:
@@ -214,9 +200,6 @@ func set_interest_sleeping(value: bool) -> void:
 		_clear_target()
 		state = State.IDLE
 		_play_idle_animation()
-		_debug_navigation("interest-sleep-enter", false, true)
-	else:
-		_debug_navigation("interest-sleep-leave", false, true)
 
 
 func get_combat_team() -> String:
@@ -272,7 +255,6 @@ func impact(effect: String, strength: float, attacker_team: String = "") -> bool
 	var hit_collider := _pending_hit_collider
 	_pending_headshot = false
 	_pending_hit_collider = null
-	_debug_log_hit(hit_collider, headshot, normalized_effect, strength, attacker_team)
 	if headshot:
 		# A valid Head3D hit is an immediate fatal hit, independent of the
 		# projectile's numeric damage. Body hits continue through normal HP
@@ -411,7 +393,6 @@ func _setup_right_eye_glow() -> void:
 		return
 	var right_eye := _mesh_root.find_child("RightEye", true, false) as Node3D
 	if right_eye == null:
-		push_warning("Zombie: could not find RightEye recursively in %s." % _mesh_root.name)
 		return
 
 	if _right_eye_glow_material == null or not is_instance_valid(_right_eye_glow_material):
@@ -577,33 +558,6 @@ func _is_head_collider(collider: Node) -> bool:
 	return collider == _head_area or _head_area.is_ancestor_of(collider)
 
 
-func _debug_log_hit(
-	collider: Node,
-	headshot: bool,
-	effect: String,
-	strength: float,
-	attacker_team: String
-) -> void:
-	if not DEBUG_HIT_LOG:
-		return
-	var collider_path := "<callback>"
-	if collider != null and is_instance_valid(collider):
-		collider_path = str(collider.get_path())
-	print(
-		"[ZombieHitDebug] zombie=%s gender=%s part=%s collider=%s "
-		+ "effect=%s damage=%.2f attacker_team=%s attacker_peer=%d hp_before=%.2f",
-		zombie_id,
-		zombie_gender,
-		"HEAD" if headshot else "BODY",
-		collider_path,
-		effect,
-		strength,
-		attacker_team,
-		_last_attacker_peer_id,
-		current_hp
-	)
-
-
 func _ensure_runtime_navigation_nodes() -> void:
 	_navigation_agent = get_node_or_null("ZombieNavigationAgent") as NavigationAgent3D
 	if _navigation_agent == null:
@@ -646,6 +600,10 @@ func _begin_idle() -> void:
 
 
 func _tick_state(delta: float) -> void:
+	# Vehicle entry can happen after this zombie has already committed to a
+	# player chase or started an attack animation. Redirect every authority tick
+	# so navigation, facing and the eventual hit all use the occupied vehicle.
+	_redirect_player_target_to_occupied_vehicle()
 	if state == State.ATTACK or state == State.ATTACK_FINISH:
 		_tick_attack(delta)
 		return
@@ -730,9 +688,19 @@ func _tick_target_scan(delta: float) -> void:
 
 func _target_candidates() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	var included_vehicle_ids: Dictionary = {}
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is Node3D and _is_alive_player_candidate(node as Node3D):
-			result.append({"node": node, "peer_id": _player_peer_id(node as Node)})
+		if not node is Node3D or not _is_alive_player_candidate(node as Node3D):
+			continue
+		var peer_id := _player_peer_id(node as Node)
+		var occupied_vehicle := _occupied_vehicle_for_player(peer_id)
+		if occupied_vehicle != null:
+			var occupied_vehicle_id := occupied_vehicle.get_vehicle_id()
+			if not included_vehicle_ids.has(occupied_vehicle_id):
+				included_vehicle_ids[occupied_vehicle_id] = true
+				result.append({"node": occupied_vehicle, "peer_id": 0})
+		else:
+			result.append({"node": node, "peer_id": peer_id})
 	for group_name in [&"future_warrior_ai", &"farmer_ai", &"assistant_ai", &"wild_animals"]:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if node is Node3D and _is_valid_node_target(node as Node3D):
@@ -741,6 +709,8 @@ func _target_candidates() -> Array[Dictionary]:
 		if not node is VehicleBase:
 			continue
 		var vehicle := node as VehicleBase
+		if included_vehicle_ids.has(vehicle.get_vehicle_id()):
+			continue
 		var close_to_chassis := vehicle.get_horizontal_distance_to_chassis(
 			global_position
 		) <= ATTACK_DISTANCE + 1.0
@@ -806,6 +776,35 @@ func _set_target(node: Node3D, peer_id := 0) -> void:
 		_chase_path_wait_remaining = CHASE_PATH_WAIT_SECONDS
 		_last_navigation_goal = Vector3.INF
 		_using_direct_chase_fallback = false
+
+
+func _redirect_player_target_to_occupied_vehicle() -> bool:
+	if _target_player_peer_id <= 0:
+		return false
+	var occupied_vehicle := _occupied_vehicle_for_player(_target_player_peer_id)
+	if occupied_vehicle == null:
+		return false
+	_set_target(occupied_vehicle, 0)
+	return true
+
+
+func _occupied_vehicle_for_player(peer_id: int) -> VehicleBase:
+	if peer_id <= 0 or not is_instance_valid(GameAuthority) \
+			or not GameAuthority.player_states.has(peer_id):
+		return null
+	var player_state: Dictionary = GameAuthority.player_states[peer_id]
+	var vehicle_id := str(player_state.get("vehicle_id", ""))
+	if vehicle_id.is_empty():
+		return null
+	for node in get_tree().get_nodes_in_group("vehicle_bases"):
+		if not node is VehicleBase:
+			continue
+		var vehicle := node as VehicleBase
+		if vehicle.get_vehicle_id() == vehicle_id and vehicle.current_hp > 0.0 \
+				and vehicle.vehicle_deployed and not vehicle.is_queued_for_deletion() \
+				and vehicle.get_seat_index_for_peer(peer_id) >= 0:
+			return vehicle
+	return null
 
 
 func _clear_target() -> void:
@@ -977,11 +976,10 @@ func _tick_navigation_move(delta: float, goal: Vector3, chase_target: bool) -> v
 		return
 	if not _navigation_is_ready():
 		if chase_target:
-			_tick_direct_chase_fallback(delta, goal, "nav-map-wait")
+			_tick_direct_chase_fallback(delta, goal)
 		else:
 			velocity = Vector3.ZERO
 			_play_idle_animation()
-		_debug_navigation("nav-map-unavailable", false)
 		return
 	_navigation_refresh_remaining -= delta
 	var needs_repath := _last_navigation_goal == Vector3.INF \
@@ -998,7 +996,6 @@ func _tick_navigation_move(delta: float, goal: Vector3, chase_target: bool) -> v
 		# unreachable target.
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("path-requested", false)
 		return
 	var next_position := _navigation_agent.get_next_path_position()
 	var direction := next_position - global_position
@@ -1014,11 +1011,10 @@ func _tick_navigation_move(delta: float, goal: Vector3, chase_target: bool) -> v
 			# normal idle delay instead of remaining in a permanent Walk state.
 			_begin_idle()
 			return
-		_tick_direct_chase_fallback(delta, goal, "no-local-path")
+		_tick_direct_chase_fallback(delta, goal)
 		return
 	_chase_path_wait_remaining = 0.0
 	_using_direct_chase_fallback = false
-	_debug_navigation("navigation-path", true)
 	_face_direction(direction)
 	if _should_attempt_jump(direction.normalized(), delta):
 		_begin_jump()
@@ -1035,7 +1031,7 @@ func _tick_navigation_move(delta: float, goal: Vector3, chase_target: bool) -> v
 	_play_animation(&"Walk")
 
 
-func _tick_direct_chase_fallback(delta: float, goal: Vector3, diagnostic_reason: String) -> void:
+func _tick_direct_chase_fallback(delta: float, goal: Vector3) -> void:
 	# The chunk containing this zombie can be waiting for its bake while another
 	# chunk has already advanced the shared navigation-map iteration.  Preserve a
 	# short grace period for a normal path before making the clear-line fallback.
@@ -1043,7 +1039,6 @@ func _tick_direct_chase_fallback(delta: float, goal: Vector3, diagnostic_reason:
 		_chase_path_wait_remaining = maxf(0.0, _chase_path_wait_remaining - delta)
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("%s-wait" % diagnostic_reason, false)
 		return
 	# This fallback is forbidden only by hard world blockers.  Other zombies,
 	# animals or players may be standing in the line immediately after several
@@ -1052,7 +1047,6 @@ func _tick_direct_chase_fallback(delta: float, goal: Vector3, diagnostic_reason:
 	if not _has_clear_line_to(goal, _target_node, true, _target_player_peer_id):
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("%s-blocked" % diagnostic_reason, false)
 		return
 	var direction := goal - global_position
 	direction.y = 0.0
@@ -1067,10 +1061,8 @@ func _tick_direct_chase_fallback(delta: float, goal: Vector3, diagnostic_reason:
 	if WaterBody3D.is_navigation_blocked(next_position):
 		velocity = Vector3.ZERO
 		_play_idle_animation()
-		_debug_navigation("%s-water" % diagnostic_reason, false)
 		return
 	_using_direct_chase_fallback = true
-	_debug_navigation("%s-direct" % diagnostic_reason, false)
 	_face_direction(direction)
 	if _should_attempt_jump(direction, delta):
 		_begin_jump()
@@ -1090,64 +1082,6 @@ func _tick_direct_chase_fallback(delta: float, goal: Vector3, diagnostic_reason:
 func _navigation_is_ready() -> bool:
 	return _navigation_agent != null and _navigation_agent.get_navigation_map().is_valid() \
 		and NavigationServer3D.map_get_iteration_id(_navigation_agent.get_navigation_map()) > 0
-
-
-func _debug_navigation(reason: String, has_path: bool, force := false) -> void:
-	if not navigation_debug_enabled:
-		return
-	if not force:
-		_navigation_debug_remaining -= get_physics_process_delta_time()
-		if _navigation_debug_remaining > 0.0:
-			return
-	_navigation_debug_remaining = navigation_debug_interval
-	var iteration := 0
-	var map_valid := false
-	var navigation_finished := true
-	var navigation_goal := Vector3.INF
-	if _navigation_agent != null and _navigation_agent.get_navigation_map().is_valid():
-		map_valid = true
-		iteration = NavigationServer3D.map_get_iteration_id(_navigation_agent.get_navigation_map())
-		navigation_finished = _navigation_agent.is_navigation_finished()
-		navigation_goal = _navigation_agent.target_position
-	var target_text := "none"
-	var target_distance := -1.0
-	if _has_valid_target():
-		target_text = str(_target_player_peer_id) if _target_player_peer_id > 0 else str(_target_node.get_instance_id())
-		target_distance = _horizontal_distance_to(_target_position())
-	var collision_names: Array[String] = []
-	for collision_index in get_slide_collision_count():
-		var collision := get_slide_collision(collision_index)
-		var collider := collision.get_collider() if collision != null else null
-		if collider is Node:
-			collision_names.append(str((collider as Node).get_path()))
-		else:
-			collision_names.append(str(collider))
-	print(
-		("[ZombieNav] id=%s state=%s reason=%s target=%s dist=%.2f "
-		+ "pos=%s sleep=%s freeze=%.2f stun=%.2f map=%s iter=%d finished=%s path=%s "
-		+ "fallback=%s goal=%s velocity=%s last_motion=%s floor=%s collisions=%s process=%s") % [
-			zombie_id,
-			STATE_NAMES.get(state, "unknown"),
-			reason,
-			target_text,
-			target_distance,
-			global_position,
-			interest_sleeping,
-			freeze_remaining,
-			stun_remaining,
-			map_valid,
-			iteration,
-			navigation_finished,
-			has_path,
-			_using_direct_chase_fallback,
-			navigation_goal,
-			velocity,
-			get_last_motion(),
-			is_on_floor(),
-			", ".join(collision_names),
-			is_physics_processing(),
-		]
-	)
 
 
 func _should_attempt_jump(direction: Vector3, delta: float) -> bool:
@@ -1215,6 +1149,10 @@ func _tick_attack(delta: float) -> void:
 
 
 func _apply_attack_damage() -> void:
+	# Re-resolve at the hit frame as well. A player may enter a vehicle during
+	# the attack windup after the animation and its original player target were
+	# already selected.
+	_redirect_player_target_to_occupied_vehicle()
 	if _target_player_peer_id > 0:
 		var direction := _target_position() - global_position
 		GameAuthority.damage_player_from_wild_animal(_target_player_peer_id, global_position, ATTACK_DAMAGE, ATTACK_DISTANCE, direction)

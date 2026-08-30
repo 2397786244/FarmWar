@@ -123,6 +123,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _has_navigation_authority() -> bool:
+	## 地图编辑器保存/切换地图时，地图根节点可能会短暂脱离 SceneTree。
+	## 此时 Node.multiplayer 没有可用的 MultiplayerAPI；这不表示网络
+	## 连接断开，而是当前节点没有有效的 SceneTree 上下文。
+	if not is_inside_tree():
+		return false
 	if is_instance_valid(GameAuthority):
 		if GameAuthority.has_method("is_client_proxy") \
 				and GameAuthority.is_client_proxy():
@@ -133,8 +138,9 @@ func _has_navigation_authority() -> bool:
 		if GameAuthority.has_method("is_local_authority") \
 				and GameAuthority.is_local_authority():
 			return true
-	if multiplayer.has_multiplayer_peer():
-		return multiplayer.is_server()
+	var multiplayer_api := get_multiplayer()
+	if multiplayer_api != null and multiplayer_api.has_multiplayer_peer():
+		return multiplayer_api.is_server()
 	return true
 
 
@@ -911,7 +917,14 @@ func _finish_bake(
 	baked_mesh: NavigationMesh,
 	_request_generation: int,
 ) -> void:
-	if _request_generation != _bake_generation or not _has_navigation_authority():
+	## async bake 结束时，地图可能已经被保存预览或切图流程移出当前树。
+	## 这类回调属于旧地图/旧生命周期，不能再访问 Region 或 MultiplayerAPI。
+	if not is_inside_tree():
+		return
+	if _request_generation != _bake_generation:
+		return
+	if not _has_navigation_authority():
+		_bake_active = false
 		return
 	var region := _regions.get(chunk_id, null) as NavigationRegion3D
 	if region != null and baked_mesh != null:

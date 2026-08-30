@@ -73,16 +73,6 @@ const COMMON_UPGRADES := [
 		"name": "复合装甲板",
 		"description": "增加载具的防护能力和 HP，使载具在危险环境中更耐用。",
 	},
-	{
-		"id": "vehicle_control_module",
-		"name": "车辆控制模块",
-		"description": "优化动力与转向响应，让载具在狭窄道路和复杂地形中更容易控制。",
-	},
-	{
-		"id": "battery_pack",
-		"name": "电池包",
-		"description": "提供额外储能，延长载具电子系统和相关模块的续航时间。",
-	},
 ]
 
 const FARM_BASE_UPGRADES := [

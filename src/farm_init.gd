@@ -77,12 +77,12 @@ func _ready() -> void:
 		configured_ai = _spawn_configured_ai()
 		_configured_squad_spawners = _activate_map_squad_spawners()
 	_configured_ai_nodes = configured_ai
-	var cooperative_loading := CooperativeSession.is_active()
-	if not cooperative_loading:
+	var persistent_loading := CooperativeSession.is_active() or SinglePlayerSession.is_active()
+	if not persistent_loading:
 		await MapLoading.finish_loading()
-	if is_instance_valid(player) and not cooperative_loading:
+	if is_instance_valid(player) and not persistent_loading:
 		player.process_mode = Node.PROCESS_MODE_INHERIT
-	if not cooperative_loading:
+	if not persistent_loading:
 		for ai_value in configured_ai:
 			if is_instance_valid(ai_value):
 				ai_value.process_mode = Node.PROCESS_MODE_INHERIT
@@ -109,8 +109,8 @@ func _register_static_map_facilities() -> void:
 			continue
 		var facility := node as Node3D
 		var category := "defense" if facility is MapDefenseFacility \
-			else "interior" if facility is ComputerTerminal \
-			else "industrial" if facility is IndustrialWorkbench else "kitchen"
+				else "interior" if facility is ComputerTerminal or facility is VehicleServiceTerminal \
+				else "industrial" if facility is IndustrialWorkbench else "kitchen"
 		facility.add_to_group("network_map_facilities")
 		var editor_uuid := str(facility.get_meta("map_editor_uuid", ""))
 		var runtime_id := str(facility.get_meta("network_map_facility_id", ""))
@@ -135,7 +135,8 @@ func _register_static_map_facilities() -> void:
 
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
-	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility or node is ComputerTerminal:
+	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility \
+			or node is ComputerTerminal or node is VehicleServiceTerminal:
 		result.append(node)
 	for child in node.get_children():
 		_collect_static_facilities(child, result)
@@ -322,7 +323,7 @@ func _field_display_name(field: FarmFieldGenerator) -> String:
 func _create_pending_player() -> GamePlayer:
 	if GlobalVar.pending_player_selection.is_empty():
 		return null
-	if CooperativeSession.is_active():
+	if CooperativeSession.is_active() or SinglePlayerSession.is_active():
 		GlobalVar.pending_player_selection = {}
 		return null
 	var selection := GlobalVar.pending_player_selection.duplicate(true)

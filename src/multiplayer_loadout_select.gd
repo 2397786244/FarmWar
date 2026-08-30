@@ -23,6 +23,14 @@ const COLOR_RED := Color("#FF6B6B")
 const COLOR_TEXT := Color("#F4F7FA")
 const COLOR_MUTED := Color("#AFC2D0")
 const COLOR_DISABLED := Color("#5E6A78")
+const COLOR_SINGLE_BG := Color("#15171A")
+const COLOR_SINGLE_PANEL := Color("#1D2024")
+const COLOR_SINGLE_CONTROL := Color("#272B30")
+const COLOR_SINGLE_HOVER := Color("#32373D")
+const COLOR_SINGLE_SELECTED := Color("#3C4249")
+const COLOR_SINGLE_DISABLED := Color("#202328")
+
+var presentation_mode := "multiplayer"
 
 var heroes: Array[Dictionary] = []
 var primary_weapons: Array[Dictionary] = []
@@ -179,7 +187,7 @@ func _build_interface() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var background := ColorRect.new()
-	background.color = COLOR_BG
+	background.color = _background_color()
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
 
@@ -204,8 +212,8 @@ func _build_interface() -> void:
 	header.add_child(title_box)
 
 	title_label = Label.new()
-	title_label.text = "多人游戏准备"
-	title_label.add_theme_font_size_override("font_size", 48)
+	title_label.text = "选择角色和初始道具" if _is_singleplayer_mode() else "多人游戏准备"
+	title_label.add_theme_font_size_override("font_size", 40 if _is_singleplayer_mode() else 48)
 	title_label.add_theme_color_override("font_color", COLOR_TEXT)
 	title_box.add_child(title_label)
 
@@ -227,9 +235,9 @@ func _build_interface() -> void:
 	root.add_child(body)
 
 	var left_panel := PanelContainer.new()
-	left_panel.custom_minimum_size.x = 470
+	left_panel.custom_minimum_size.x = 400 if _is_singleplayer_mode() else 470
 	left_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left_panel.add_theme_stylebox_override("panel", _style_box(COLOR_PANEL, 24))
+	left_panel.add_theme_stylebox_override("panel", _style_box(_panel_color(), 10 if _is_singleplayer_mode() else 24))
 	body.add_child(left_panel)
 
 	var left_margin := MarginContainer.new()
@@ -261,7 +269,7 @@ func _build_interface() -> void:
 	var right_panel := PanelContainer.new()
 	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right_panel.add_theme_stylebox_override("panel", _style_box(COLOR_PANEL, 24))
+	right_panel.add_theme_stylebox_override("panel", _style_box(_panel_color(), 10 if _is_singleplayer_mode() else 24))
 	body.add_child(right_panel)
 
 	var right_margin := MarginContainer.new()
@@ -326,8 +334,9 @@ func _refresh_page() -> void:
 
 	match page:
 		PAGE_HERO:
-			step_label.text = "第 1 步 / 3 · 选择队伍和角色"
-			left_title.text = "队伍与角色"
+			step_label.text = "第 1 步 / 3 · 选择角色" if _is_singleplayer_mode() \
+				else "第 1 步 / 3 · 选择队伍和角色"
+			left_title.text = "角色" if _is_singleplayer_mode() else "队伍与角色"
 			_build_hero_list()
 			_build_hero_detail()
 		PAGE_PRIMARY:
@@ -439,7 +448,7 @@ func _make_slot(index: int, item_name: String, item_id: String) -> Control:
 	panel.custom_minimum_size = Vector2(178, 96)
 	panel.add_theme_stylebox_override(
 		"panel",
-		_style_box(COLOR_PANEL_2 if not item_id.is_empty() else Color("#141E2E"), 18)
+		_style_box(_control_color() if not item_id.is_empty() else _disabled_color(), 18)
 	)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -469,12 +478,10 @@ func _build_hero_detail() -> void:
 	## TODO： 这里似乎也要修改，因为可能涉及到角色名和队伍颜色的搭配。不过队伍名由服务器的RPC确认函数来返回如何
 	#var scene_path = _hero_scene_path(hero, selected_team)
 	var body := str(hero.get("description", ""))
-	if body.is_empty():
+	if body.is_empty() and not _is_singleplayer_mode():
 		body = "角色介绍内容暂时留空，后续可在 hero_definitions.json 中补充。"
-	var meta := "%s角色场景" % [
+	var meta := str(hero.get("role", "")) if _is_singleplayer_mode() else "%s角色场景" % [
 		str(hero.get("role", "")),
-		#"蓝" if selected_team == "blue" else "红",
-		#scene_path if available else "暂未配置"
 	]
 	_set_detail(str(hero.get("name", focused_hero_id)), meta, body)
 
@@ -485,14 +492,13 @@ func _build_primary_detail() -> void:
 		_set_detail("未选择主武器", "", "左侧选择一个主武器。")
 		return
 	var body := str(weapon.get("description", ""))
-	if body.is_empty():
+	if body.is_empty() and not _is_singleplayer_mode():
 		body = "武器具体介绍暂时留空，后续可在 primary_weapon_definitions.json 中补充。"
-	var meta := "威力：%s    射速：%s    冷却：%ss\n场景：%s" % [
-		str(weapon.get("power", 0)),
-		str(weapon.get("fire_rate", 0)),
-		str(weapon.get("cooldown", 0)),
-		str(weapon.get("tool_scene", "")),
+	var meta := "威力：%s    射速：%s    冷却：%ss" % [
+		str(weapon.get("power", 0)), str(weapon.get("fire_rate", 0)), str(weapon.get("cooldown", 0)),
 	]
+	if not _is_singleplayer_mode():
+		meta += "\n场景：%s" % str(weapon.get("tool_scene", ""))
 	_set_detail(str(weapon.get("name", focused_primary_id)), meta, body)
 
 
@@ -502,13 +508,13 @@ func _build_special_detail() -> void:
 		_set_detail("未选择专属道具", "", "左侧选择一个职业专属道具。")
 		return
 	var body := str(tool.get("description", ""))
-	if body.is_empty():
+	if body.is_empty() and not _is_singleplayer_mode():
 		body = "专属武器 / 道具介绍暂时留空，后续可在 special_tool_definitions.json 中补充。"
-	var meta := "冷却：%ss    最大使用次数：%s\n场景：%s" % [
-		str(tool.get("cooldown", 0)),
-		str(tool.get("max_uses", 0)),
-		str(tool.get("tool_scene", "")),
+	var meta := "冷却：%ss    最大使用次数：%s" % [
+		str(tool.get("cooldown", 0)), str(tool.get("max_uses", 0)),
 	]
+	if not _is_singleplayer_mode():
+		meta += "\n场景：%s" % str(tool.get("tool_scene", ""))
 	_set_detail(str(tool.get("name", focused_special_id)), meta, body)
 
 
@@ -535,7 +541,7 @@ func _refresh_footer() -> void:
 			status_label.text = "主武器 %d / 3" % selected_primary_ids.size()
 		PAGE_SPECIAL:
 			choose_button.text = "选择这个"
-			next_button.text = "准备好了"
+			next_button.text = "创建并进入" if _is_singleplayer_mode() else "准备好了"
 			next_button.disabled = next_button.disabled or selected_special_ids.size() != 2
 			status_label.text = "专属道具 %d / 2%s" % [
 				selected_special_ids.size(),
@@ -701,11 +707,11 @@ func _make_list_button(text: String, selected: bool, enabled: bool) -> Button:
 	button.add_theme_color_override("font_color", COLOR_TEXT if enabled else COLOR_DISABLED)
 	button.add_theme_stylebox_override(
 		"normal",
-		_style_box(COLOR_SELECTED if selected else COLOR_PANEL_2, 16)
+		_style_box(_selected_color() if selected else _control_color(), 16)
 	)
-	button.add_theme_stylebox_override("hover", _style_box(Color("#2C405D"), 16))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_SELECTED, 16))
-	button.add_theme_stylebox_override("disabled", _style_box(Color("#172030"), 16))
+	button.add_theme_stylebox_override("hover", _style_box(_hover_color(), 16))
+	button.add_theme_stylebox_override("pressed", _style_box(_selected_color(), 16))
+	button.add_theme_stylebox_override("disabled", _style_box(_disabled_color(), 16))
 	return button
 
 
@@ -715,11 +721,39 @@ func _make_action_button(text: String) -> Button:
 	button.custom_minimum_size = Vector2(190, 58)
 	button.add_theme_font_size_override("font_size", 24)
 	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 18))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 18))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_SELECTED, 18))
-	button.add_theme_stylebox_override("disabled", _style_box(Color("#172030"), 18))
+	button.add_theme_stylebox_override("normal", _style_box(_control_color(), 18))
+	button.add_theme_stylebox_override("hover", _style_box(_hover_color(), 18))
+	button.add_theme_stylebox_override("pressed", _style_box(_selected_color(), 18))
+	button.add_theme_stylebox_override("disabled", _style_box(_disabled_color(), 18))
 	return button
+
+
+func _is_singleplayer_mode() -> bool:
+	return presentation_mode == "singleplayer"
+
+
+func _background_color() -> Color:
+	return COLOR_SINGLE_BG if _is_singleplayer_mode() else COLOR_BG
+
+
+func _panel_color() -> Color:
+	return COLOR_SINGLE_PANEL if _is_singleplayer_mode() else COLOR_PANEL
+
+
+func _control_color() -> Color:
+	return COLOR_SINGLE_CONTROL if _is_singleplayer_mode() else COLOR_PANEL_2
+
+
+func _hover_color() -> Color:
+	return COLOR_SINGLE_HOVER if _is_singleplayer_mode() else Color("#314766")
+
+
+func _selected_color() -> Color:
+	return COLOR_SINGLE_SELECTED if _is_singleplayer_mode() else COLOR_SELECTED
+
+
+func _disabled_color() -> Color:
+	return COLOR_SINGLE_DISABLED if _is_singleplayer_mode() else Color("#172030")
 
 
 func _style_box(color: Color, radius: int) -> StyleBoxFlat:

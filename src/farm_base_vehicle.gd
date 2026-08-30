@@ -37,6 +37,7 @@ const WHEEL_MESH_NODE_NAMES := [
 	"Wheel_RR_Mesh",
 ]
 const PLATFORM_MACHINE_GUN_SCENE := preload("res://vehicles/vehicle_base_machine_gun.tscn")
+const PLATFORM_SIGNAL_STATION_SCENE := preload("res://vehicles/vehicle_base_signal_station.tscn")
 const PLATFORM_SEAT_SCENE := preload("res://assets/vehicles/PlatformSeat.glb")
 const PLATFORM_INTERACTION_AREA_SCRIPT := preload("res://src/vehicle_platform_interaction_area.gd")
 const HARVEST_REEL_SCENE := preload("res://vehicles/HarvestReel.tscn")
@@ -54,11 +55,8 @@ const NITRO_BOOST_MOUNT_NODE_NAME := "NitroBoostPos"
 const NITRO_BOOST_CONTROLLER_NODE_NAME := "NitroBoostController"
 const NITRO_BOOST_VISUAL_NODE_NAME := "VehicleNitroBoost"
 
-## These are instance properties so two FarmBaseVehicle nodes can use
-## different combinations when they share the same imported model scene.
-@export var body_color := Color("000000")
-@export var wheel_color := Color("000000")
 @export var platform_machine_gun_installed := false
+@export var platform_signal_station_installed := false
 @export_range(0, 2, 1) var platform_passenger_seat_count := 0
 @export var reinforced_variant := false
 @export var nitro_boost_installed := false
@@ -74,6 +72,7 @@ var _roof_headlights_visual: Node3D
 var _roof_headlight_glows: Array[Node3D] = []
 var _roof_headlight_lights: Array[SpotLight3D] = []
 var _platform_machine_gun: VehicleBaseMachineGun
+var _platform_signal_station: VehicleBaseSignalStation
 var _platform_interaction_area: VehiclePlatformInteractionArea
 var _platform_passenger_interaction_area: VehiclePlatformInteractionArea
 var _platform_passenger_seat_definitions: Array[VehicleSeatConfig] = []
@@ -96,7 +95,10 @@ func _ready() -> void:
 	refresh_visuals()
 	_ensure_platform_interaction_area()
 	_ensure_platform_passenger_interaction_area()
-	set_platform_machine_gun_installed(platform_machine_gun_installed)
+	var wants_machine_gun := platform_machine_gun_installed
+	var wants_signal_station := platform_signal_station_installed
+	set_platform_machine_gun_installed(wants_machine_gun)
+	set_platform_signal_station_installed(wants_signal_station)
 	set_nitro_boost_installed(nitro_boost_installed)
 	set_harvest_reel_installed(harvest_reel_installed)
 	set_roof_headlights_installed(roof_headlights_installed)
@@ -109,10 +111,22 @@ func refresh_visuals() -> void:
 	_configure_platform_passenger_seats()
 	set_body_color(body_color)
 	set_wheel_color(wheel_color)
-	set_platform_machine_gun_installed(platform_machine_gun_installed)
+	var wants_machine_gun := platform_machine_gun_installed
+	var wants_signal_station := platform_signal_station_installed
+	set_platform_machine_gun_installed(wants_machine_gun)
+	set_platform_signal_station_installed(wants_signal_station)
 	set_nitro_boost_installed(nitro_boost_installed)
 	set_harvest_reel_installed(harvest_reel_installed)
 	set_roof_headlights_installed(roof_headlights_installed)
+
+
+func supports_custom_colors() -> bool:
+	if find_child(BODY_MESH_NODE_NAME, true, false) == null:
+		return false
+	for node_name: String in WHEEL_MESH_NODE_NAMES:
+		if find_child(node_name, true, false) == null:
+			return false
+	return true
 
 
 func set_reinforced_variant(enabled: bool) -> void:
@@ -232,16 +246,33 @@ func get_max_hp() -> float:
 	return vehicle_config.max_hp if vehicle_config != null else 0.0
 
 
+func supports_vehicle_service_module(module_id: String) -> bool:
+	if module_id == "composite_armor_panel":
+		return false
+	if module_id in [
+		"vehicle_harvest_reel",
+		"vehicle_extended_seat",
+		"vehicle_roof_headlights",
+		"vehicle_machine_gun",
+		"vehicle_nitro_boost",
+		"vehicle_signal_augment",
+		"vehicle_metal_defense_net",
+	]:
+		return true
+	return super(module_id)
+
+
 func get_max_forward_speed() -> float:
-	if nitro_boost_installed:
-		return NITRO_BOOST_MAX_FORWARD_SPEED
-	return super()
+	var speed := NITRO_BOOST_MAX_FORWARD_SPEED if nitro_boost_installed \
+		else get_base_max_forward_speed()
+	return apply_high_performance_motor_speed_bonus(speed)
 
 
 func get_max_reverse_speed() -> float:
+	var speed := get_base_max_reverse_speed()
 	if nitro_boost_installed:
-		return super() * NITRO_BOOST_SPEED_MULTIPLIER
-	return super()
+		speed *= NITRO_BOOST_SPEED_MULTIPLIER
+	return apply_high_performance_motor_speed_bonus(speed)
 
 
 func _prepare_effective_vehicle_config() -> void:
@@ -308,16 +339,21 @@ func _ensure_mesh_variant() -> void:
 
 
 func set_platform_machine_gun_installed(installed: bool) -> void:
+	if installed and platform_signal_station_installed:
+		remove_platform_signal_station()
 	platform_machine_gun_installed = installed
 	if not is_inside_tree():
 		return
 	if installed:
-		install_platform_machine_gun(false)
+		if install_platform_machine_gun(false) == null:
+			platform_machine_gun_installed = false
 	else:
 		remove_platform_machine_gun()
 
 
 func install_platform_machine_gun(reset_health := true) -> VehicleBaseMachineGun:
+	if platform_signal_station_installed:
+		remove_platform_signal_station()
 	platform_machine_gun_installed = true
 	if is_instance_valid(_platform_machine_gun):
 		if reset_health and _platform_machine_gun.destroyed_state:
@@ -372,6 +408,78 @@ func get_platform_machine_gun() -> VehicleBaseMachineGun:
 func on_platform_machine_gun_destroyed(former_operator_peer_id: int) -> void:
 	if former_operator_peer_id > 0 and (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()):
 		GameAuthority.force_release_mounted_machine_gun(former_operator_peer_id, get_vehicle_id())
+
+
+func set_platform_signal_station_installed(installed: bool) -> void:
+	if installed and platform_machine_gun_installed:
+		remove_platform_machine_gun()
+	platform_signal_station_installed = installed
+	if not is_inside_tree():
+		return
+	if installed:
+		if install_platform_signal_station(false) == null:
+			platform_signal_station_installed = false
+	else:
+		remove_platform_signal_station()
+
+
+func install_platform_signal_station(reset_health := true) -> VehicleBaseSignalStation:
+	if platform_machine_gun_installed:
+		remove_platform_machine_gun()
+	platform_signal_station_installed = true
+	if is_instance_valid(_platform_signal_station):
+		_platform_signal_station.tool_owner = owner_team
+		if reset_health and _platform_signal_station.destroyed_state:
+			_platform_signal_station.current_hp = VehicleBaseSignalStation.MAX_HP
+			_platform_signal_station.set_destroyed_state(false)
+		return _platform_signal_station
+	var existing := find_child("VehicleBaseSignalStation", true, false) as VehicleBaseSignalStation
+	if existing != null:
+		_platform_signal_station = existing
+		existing.tool_owner = owner_team
+		if reset_health and existing.destroyed_state:
+			existing.current_hp = VehicleBaseSignalStation.MAX_HP
+			existing.set_destroyed_state(false)
+		return existing
+	var mount := find_child("PlatformSignalStationPos", true, false) as Marker3D
+	if mount == null:
+		push_error("FarmBaseVehicle: missing recursive PlatformSignalStationPos marker.")
+		return null
+	var station := PLATFORM_SIGNAL_STATION_SCENE.instantiate() as VehicleBaseSignalStation
+	if station == null:
+		push_error("FarmBaseVehicle: failed to instantiate platform signal station.")
+		return null
+	station.name = "VehicleBaseSignalStation"
+	station.tool_owner = owner_team
+	mount.add_child(station)
+	station.transform = Transform3D.IDENTITY
+	_platform_signal_station = station
+	return station
+
+
+func remove_platform_signal_station() -> void:
+	platform_signal_station_installed = false
+	var station := get_platform_signal_station()
+	if station == null:
+		return
+	var parent := station.get_parent()
+	if parent != null:
+		parent.remove_child(station)
+	station.queue_free()
+	_platform_signal_station = null
+
+
+func get_platform_signal_station() -> VehicleBaseSignalStation:
+	if is_instance_valid(_platform_signal_station):
+		return _platform_signal_station
+	_platform_signal_station = find_child("VehicleBaseSignalStation", true, false) as VehicleBaseSignalStation
+	return _platform_signal_station
+
+
+func on_platform_signal_station_destroyed() -> void:
+	# Keep the module installed in the vehicle state. The station remains a
+	# destroyed attachment until Repair removes or replaces it.
+	platform_signal_station_installed = true
 
 
 func set_harvest_reel_installed(installed: bool) -> void:
@@ -736,6 +844,9 @@ func _seat_definitions() -> Array[VehicleSeatConfig]:
 
 func set_body_color(color: Color) -> void:
 	body_color = Color(color.r, color.g, color.b, 1.0)
+	var catalog_id := VEHICLE_COLOR_CATALOG.get_id_for_color(body_color)
+	if not catalog_id.is_empty():
+		body_color_id = catalog_id
 	# Apply the map paint only to the named chassis mesh. The reinforced
 	# DefenseNet meshes intentionally keep the material authored in the GLB.
 	var body_mesh := find_child(BODY_MESH_NODE_NAME, true, false) as MeshInstance3D
@@ -746,6 +857,9 @@ func set_body_color(color: Color) -> void:
 
 func set_wheel_color(color: Color) -> void:
 	wheel_color = Color(color.r, color.g, color.b, 1.0)
+	var catalog_id := VEHICLE_COLOR_CATALOG.get_id_for_color(wheel_color)
+	if not catalog_id.is_empty():
+		wheel_color_id = catalog_id
 	var material := _make_color_material(wheel_color)
 	for node_name: String in WHEEL_MESH_NODE_NAMES:
 		var wheel_mesh := find_child(node_name, true, false) as MeshInstance3D
@@ -793,6 +907,7 @@ func get_network_state() -> Dictionary:
 	state["body_color"] = body_color
 	state["wheel_color"] = wheel_color
 	state["platform_machine_gun_installed"] = platform_machine_gun_installed
+	state["platform_signal_station_installed"] = platform_signal_station_installed
 	state["platform_passenger_seat_count"] = platform_passenger_seat_count
 	state["nitro_boost_installed"] = nitro_boost_installed
 	state["harvest_reel_installed"] = harvest_reel_installed
@@ -811,6 +926,12 @@ func get_network_state() -> Dictionary:
 		"yaw": 0.0,
 		"elevation": 0.0,
 		"operator_peer_id": 0,
+	}
+	var signal_station := get_platform_signal_station()
+	state["platform_signal_station"] = signal_station.get_network_state() if signal_station != null else {
+		"installed": platform_signal_station_installed,
+		"hp": VehicleBaseSignalStation.MAX_HP if platform_signal_station_installed else 0.0,
+		"destroyed": false,
 	}
 	return state
 
@@ -855,6 +976,16 @@ func apply_network_state(state: Dictionary) -> void:
 	var machine_gun := get_platform_machine_gun()
 	if machine_gun != null and machine_gun_value is Dictionary:
 		machine_gun.apply_network_state(machine_gun_value as Dictionary)
+	var signal_station_installed := bool(state.get("platform_signal_station_installed", false))
+	var signal_station_value: Variant = state.get("platform_signal_station", {})
+	if signal_station_value is Dictionary:
+		signal_station_installed = bool((signal_station_value as Dictionary).get(
+			"installed", signal_station_installed
+		))
+	set_platform_signal_station_installed(signal_station_installed)
+	var signal_station := get_platform_signal_station()
+	if signal_station != null and signal_station_value is Dictionary:
+		signal_station.apply_network_state(signal_station_value as Dictionary)
 	set_harvest_reel_installed(bool(state.get("harvest_reel_installed", harvest_reel_installed)))
 	set_roof_headlights_installed(bool(state.get("roof_headlights_installed", roof_headlights_installed)))
 

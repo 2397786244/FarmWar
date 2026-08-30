@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://ig53gae2m4nq"]
+
+[ext_resource type="PackedScene" uid="uid://d4n0l6avspfuv" path="res://assets/facilities/interior/vehicle_service/RepairTerminal.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://cj1li7hyn5bic" path="res://src/vehicle_service_terminal.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_r3gal"]
+size = Vector3(0.5, 1.5, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jylck"]
+size = Vector3(1, 0.5, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_elwgs"]
+size = Vector3(7, 0.5, 5)
+
+[node name="RepairTerminal" type="StaticBody3D" unique_id=999531084 groups=["vehicle_service_facilities", "vehicle_service_terminals"]]
+collision_layer = 128
+collision_mask = 0
+script = ExtResource("2_script")
+metadata/map_can_overlap_water = false
+metadata/facility_kind = "vehicle_service"
+metadata/facility_id = "repair_terminal"
+metadata/display_name = "升级维修终端"
+metadata/interaction_enabled = true
+metadata/interaction_area_setup_pending = true
+
+[node name="Mesh" parent="." unique_id=918261393 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1874536099]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75651395, 0)
+shape = SubResource("BoxShape3D_r3gal")
+
+[node name="PlayerInteract" type="Area3D" parent="." unique_id=755157946 groups=["vehicle_service_player_interaction_areas"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.26476562, 0.12016487)
+collision_layer = 512
+collision_mask = 8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlayerInteract" unique_id=435114316]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.72034836)
+shape = SubResource("BoxShape3D_jylck")
+
+[node name="VehicleInteract" type="Area3D" parent="." unique_id=673512847 groups=["vehicle_service_vehicle_interaction_areas"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2451284, 0.55519104)
+collision_layer = 512
+collision_mask = 8200
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VehicleInteract" unique_id=1312801614]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3.48096)
+shape = SubResource("BoxShape3D_elwgs")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1001345317]
+transform = Transform3D(-0.44927332, 0.5315418, -0.7180645, 0.0057457127, 0.8054512, 0.5926342, 0.8933759, 0.26212895, -0.36492178, -3.8880866, 3.585886, 0)
+fov = 60.0

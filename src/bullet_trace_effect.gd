@@ -9,6 +9,7 @@ class_name BulletTracerSegment
 @export_range(0.10, 20.0, 0.10) var maximum_length: float = 3.5
 @export_range(1.0, 10.0, 0.1) var length_multiplier: float = 1.25
 @export_range(1.0, 30.0, 0.5) var emission_energy: float = 12.0
+@export var tracing_enabled := true
 
 var bullet_root: Node3D
 var previous_position: Vector3 = Vector3.ZERO
@@ -78,11 +79,39 @@ func refresh_visual() -> void:
 	_refresh_from_parent()
 
 
+## Arms a tracer after its projectile has been placed at the throw/fire origin.
+##
+## Projectile visuals are often process-disabled on remote clients, so the
+## caller must explicitly prime the trace instead of relying on the first
+## physics callback to establish a previous position. The segment remains
+## hidden until the projectile has actually moved, avoiding a stray line at
+## the spawn point.
+func start_tracing() -> void:
+	if not is_instance_valid(bullet_root):
+		bullet_root = get_parent() as Node3D
+	if bullet_root == null:
+		return
+	tracing_enabled = true
+	frame_counter = 2
+	previous_position = bullet_root.global_position
+	visible = false
+
+
+## Stops a tracer when a projectile is still held or has come to rest.
+func stop_tracing() -> void:
+	tracing_enabled = false
+	visible = false
+	frame_counter = 0
+
+
 func _physics_process(_delta: float) -> void:
 	_refresh_from_parent()
 
 
 func _refresh_from_parent() -> void:
+	if not tracing_enabled:
+		visible = false
+		return
 	if not is_instance_valid(bullet_root):
 		queue_free()
 		return

@@ -106,8 +106,8 @@ func _run() -> void:
 		"harvest ShapeCast uses FarmTile settings"
 	)
 	_check(shape_cast != null and is_equal_approx(shape_cast.position.y, 0.35), "harvest ShapeCast is positioned at crop height")
-	_check(is_equal_approx(_vehicle.get_max_forward_speed(), 3.0), "forward speed is 3 m/s")
-	_check(is_equal_approx(_vehicle.get_max_reverse_speed(), 3.0), "reverse speed is 3 m/s")
+	_check(is_equal_approx(_vehicle.get_max_forward_speed(), 4.0), "forward speed is 4 m/s")
+	_check(is_equal_approx(_vehicle.get_max_reverse_speed(), 4.0), "reverse speed is 4 m/s")
 	_check(is_equal_approx(_vehicle.vehicle_config.max_hp, 7000.0), "HP is configured to 7000")
 	_check(
 		is_equal_approx(_vehicle.vehicle_config.ramming_mass_factor, 2.5),
@@ -308,21 +308,63 @@ func _validate_vehicle_actor_impact_routes() -> void:
 		if impact_target is Zombie:
 			_vehicle.current_speed = 0.0
 			impact_target.global_position = _vehicle.global_position
+			var seated_player_state: Dictionary = GameAuthority.player_states[VALIDATION_DRIVER_PEER_ID]
+			seated_player_state["vehicle_id"] = _vehicle.get_vehicle_id()
+			seated_player_state["vehicle_seat_index"] = 0
+			seated_player_state["position"] = _vehicle.get_occupant_world_transform(0).origin
+			GameAuthority.player_states[VALIDATION_DRIVER_PEER_ID] = seated_player_state
 			var finds_stationary_vehicle := false
+			var finds_seated_player_directly := false
 			for candidate_value: Variant in (impact_target as Zombie)._target_candidates():
 				var candidate := candidate_value as Dictionary
 				if candidate.get("node", null) == _vehicle:
 					finds_stationary_vehicle = true
-					break
+				if int(candidate.get("peer_id", 0)) == VALIDATION_DRIVER_PEER_ID:
+					finds_seated_player_directly = true
 			_check(
 				finds_stationary_vehicle,
-				"nearby Zombie treats a stationary vehicle chassis as a target"
+				"nearby Zombie treats the occupied stationary vehicle as a target"
+			)
+			_check(
+				not finds_seated_player_directly,
+				"Zombie target scan does not expose a seated player as a direct target"
+			)
+			(impact_target as Zombie)._set_target(
+				_interaction_player,
+				VALIDATION_DRIVER_PEER_ID
+			)
+			_check(
+				(impact_target as Zombie)._redirect_player_target_to_occupied_vehicle()
+					and (impact_target as Zombie)._target_node == _vehicle
+					and (impact_target as Zombie)._target_player_peer_id == 0,
+				"Zombie switches an already locked player target to the occupied vehicle"
 			)
 			(impact_target as Zombie)._set_target(_vehicle, 0)
 			_check(
 				(impact_target as Zombie)._is_target_in_attack_range(),
 				"Zombie melee range uses the vehicle chassis instead of its root origin"
 			)
+			(impact_target as Zombie)._set_target(
+				_interaction_player,
+				VALIDATION_DRIVER_PEER_ID
+			)
+			var seated_player_hp_before := float(
+				(GameAuthority.player_states[VALIDATION_DRIVER_PEER_ID] as Dictionary).get("hp", 0.0)
+			)
+			var occupied_vehicle_hp_before := _vehicle.current_hp
+			(impact_target as Zombie)._apply_attack_damage()
+			_check(
+				is_equal_approx(
+					float((GameAuthority.player_states[VALIDATION_DRIVER_PEER_ID] as Dictionary).get("hp", 0.0)),
+					seated_player_hp_before
+				),
+				"Zombie melee does not damage a player after that player enters a vehicle"
+			)
+			_check(
+				_vehicle.current_hp < occupied_vehicle_hp_before,
+				"Zombie melee damage is applied to the occupied vehicle instead"
+			)
+			_vehicle.current_hp = _vehicle.vehicle_config.max_hp
 		var target_hp_before := float(impact_target.get("current_hp"))
 		var actor_impact_result := GameAuthority.apply_authoritative_vehicle_impact(
 			_vehicle,

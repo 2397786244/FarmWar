@@ -19,6 +19,7 @@ exit_offset = Vector3(1.3, 0.1, 0)
 
 [resource]
 script = ExtResource("1_vehicle_config")
+supports_common_service_upgrades = true
 forward_axis = Vector3(0, 0, 1)
 seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver"), SubResource("VehicleSeatConfig_passenger")])
 camera_offset = Vector3(0, 2.4, 5.8)
@@ -38,3 +39,5 @@ max_steering_angle_degrees = 32.0
 min_steering_angle_degrees = 10.0
 max_hp = 800.0
 ramming_mass_factor = 0.9
+repair_fee = 5850
+delivery_fee = 1950

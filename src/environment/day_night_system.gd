@@ -1,7 +1,6 @@
 class_name DayNightSystem3D
 extends Node3D
 
-const TICK_RATE := 60.0
 const SUNRISE_ALTITUDE := deg_to_rad(-0.833)
 const CLEAR_FOG_DENSITY := 0.00135
 const RAIN_FOG_DENSITY := 0.0085
@@ -46,10 +45,6 @@ var _game_authority: Node
 var _sun_visual: MeshInstance3D
 var _moon_visual: MeshInstance3D
 var _fallback_elapsed := 0.0
-var _client_tick_anchor := 0.0
-var _client_anchor_msec := 0
-var _last_client_snapshot_tick := -1
-var _client_world_time_anchor := -1.0
 var _update_accumulator := 0.0
 var _rain_strength := 0.0
 var _eclipse_strength := 0.0
@@ -104,6 +99,27 @@ func get_world_clock_state() -> Dictionary:
 		"day_index": floori(total_hours / 24.0),
 		"hour": fposmod(total_hours, 24.0),
 	}
+
+
+func get_persistent_state() -> Dictionary:
+	var clock := get_world_clock_state()
+	clock["schema_version"] = 1
+	clock["initial_hour"] = initial_hour
+	clock["real_day_duration_seconds"] = real_day_duration_seconds
+	return clock
+
+
+func apply_persistent_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	var elapsed_seconds := maxf(0.0, float(state.get("elapsed_seconds", 0.0)))
+	if _game_authority != null and _game_authority.has_method("set_world_elapsed_seconds") \
+			and (bool(_game_authority.call("is_server_authority")) \
+			or bool(_game_authority.call("is_local_authority"))):
+		_game_authority.call("set_world_elapsed_seconds", elapsed_seconds)
+	else:
+		_fallback_elapsed = elapsed_seconds
+	_apply_time_of_day()
 
 
 func get_current_hour() -> float:
@@ -179,31 +195,19 @@ func _is_hour_in_wrapped_range(hour: float, start_hour: float, end_hour: float) 
 
 func _synchronized_elapsed_seconds() -> float:
 	if _game_authority != null and bool(_game_authority.call("is_client_proxy")):
-		var snapshot_value: Variant = _game_authority.get("last_snapshot")
-		var snapshot := snapshot_value as Dictionary if snapshot_value is Dictionary else {}
-		var authoritative_time := float(snapshot.get("world_time_seconds", -1.0))
-		if authoritative_time >= 0.0:
-			var snapshot_tick_for_time := int(snapshot.get("tick", -1))
-			if snapshot_tick_for_time != _last_client_snapshot_tick:
-				_last_client_snapshot_tick = snapshot_tick_for_time
-				_client_world_time_anchor = authoritative_time
-				_client_anchor_msec = Time.get_ticks_msec()
-			if _client_world_time_anchor >= 0.0:
-				return _client_world_time_anchor + float(Time.get_ticks_msec() - _client_anchor_msec) * 0.001
-		var snapshot_tick := int(snapshot.get("tick", -1))
-		if snapshot_tick >= 0 and snapshot_tick != _last_client_snapshot_tick:
-			_last_client_snapshot_tick = snapshot_tick
-			_client_tick_anchor = float(snapshot_tick)
-			_client_anchor_msec = Time.get_ticks_msec()
-		if _last_client_snapshot_tick >= 0:
-			return (_client_tick_anchor + (
-				float(Time.get_ticks_msec() - _client_anchor_msec) * 0.001 * TICK_RATE
-			)) / TICK_RATE
+		if _game_authority.has_method("get_world_elapsed_seconds"):
+			# GameAuthority receives both high- and low-frequency samples and keeps
+			# the newest one. Reading that shared value avoids choosing a stale high
+			# snapshot over a newer reliable low-frequency update.
+			return float(_game_authority.call("get_world_elapsed_seconds"))
+		return _fallback_elapsed
 	if _game_authority != null and (
 		bool(_game_authority.call("is_server_authority"))
 		or bool(_game_authority.call("is_local_authority"))
 	):
-		return float(_game_authority.get("server_tick")) / TICK_RATE
+		if _game_authority.has_method("get_world_elapsed_seconds"):
+			return float(_game_authority.call("get_world_elapsed_seconds"))
+		return _fallback_elapsed
 	return _fallback_elapsed
 
 

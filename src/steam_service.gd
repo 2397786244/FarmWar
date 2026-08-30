@@ -112,9 +112,9 @@ func join_cooperative_lobby(lobby_id: int) -> bool:
 	return true
 
 
-func leave_cooperative_lobby() -> void:
+func leave_cooperative_lobby(suppress_close_signal := false) -> void:
 	if is_current_lobby_host():
-		_close_cooperative_lobby("房主已离开合作世界，Lobby 已关闭。")
+		_close_cooperative_lobby("房主已离开合作世界，Lobby 已关闭。", not suppress_close_signal)
 		return
 	if initialized and cooperative_lobby_id > 0:
 		Steam.leaveLobby(cooperative_lobby_id)
@@ -422,7 +422,7 @@ func _verify_cooperative_lobby_host(lobby_id: int) -> void:
 		_close_cooperative_lobby("房主已离开合作 Lobby，世界已关闭。")
 
 
-func _close_cooperative_lobby(reason: String) -> void:
+func _close_cooperative_lobby(reason: String, emit_close_signal := true) -> void:
 	var closing_lobby_id := cooperative_lobby_id
 	if initialized and closing_lobby_id > 0 and Steam.getLobbyOwner(closing_lobby_id) == steam_id:
 		Steam.setLobbyJoinable(closing_lobby_id, false)
@@ -433,4 +433,5 @@ func _close_cooperative_lobby(reason: String) -> void:
 	cooperative_lobby_host_steam_id = 0
 	_pending_world.clear()
 	_avatar_texture_cache.clear()
-	cooperative_lobby_closed.emit(reason)
+	if emit_close_signal:
+		cooperative_lobby_closed.emit(reason)

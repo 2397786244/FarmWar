@@ -4,6 +4,8 @@ class_name GameAuthorityService
 const CombatBalance = preload("res://src/combat_balance.gd")
 const PlacementQueryScript = preload("res://src/placement_query.gd")
 const VehicleSpawnCatalogScript = preload("res://src/vehicle_spawn_catalog.gd")
+const VehicleSalesCatalogScript = preload("res://src/vehicle_sales_catalog.gd")
+const VehicleColorCatalogScript = preload("res://src/vehicle_color_catalog.gd")
 const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const AI_INTEREST_MANAGER_SCRIPT := preload("res://src/ai_interest_manager.gd")
@@ -17,6 +19,7 @@ signal visual_world_event_ready(event: Dictionary)
 signal inventory_state_ready(state: Dictionary)
 signal player_correction_ready(peer_id: int, correction: Dictionary)
 signal team_chat_message_ready(message: Dictionary)
+signal team_garage_state_changed(team: String)
 
 const MODE_DISABLED := "disabled"
 const MODE_LOCAL := "local"
@@ -53,6 +56,45 @@ const PLAYER_SWIM_SURFACE_MARGIN := 0.20
 const PLAYER_SWIM_EXIT_PROBE_DISTANCE := 0.45
 const PLAYER_CROP_INTERACTION_RANGE := 4.0
 const PLAYER_VEHICLE_INTERACTION_RANGE := 4.0
+const VEHICLE_PURCHASE_RESULT_CACHE_TTL_MSEC := 120000
+const VEHICLE_SERVICE_REQUEST_CACHE_TTL_MSEC := 120000
+const VEHICLE_SERVICE_COLOR_FEE := 500
+const VEHICLE_SERVICE_MODULE_FEE := 500
+const VEHICLE_SERVICE_MODULES: Array[Dictionary] = [
+	{
+		"id": "high_performance_motor",
+		"name": "高性能电机",
+		"max_count": 1,
+		"item_id": "high_performance_motor",
+		"item_amount": 1.0,
+	},
+	{
+		"id": "composite_armor_panel",
+		"name": "复合装甲板",
+		"max_count": 1,
+		"item_id": "composite_armor_panel",
+		"item_amount": 1.0,
+	},
+	{"id": "vehicle_harvest_reel", "name": "收割模块", "max_count": 1},
+	{"id": "vehicle_extended_seat", "name": "扩展座椅", "max_count": 2},
+	{"id": "vehicle_roof_headlights", "name": "车顶大灯", "max_count": 1},
+	{"id": "vehicle_machine_gun", "name": "车载机枪", "max_count": 1},
+	{"id": "vehicle_nitro_boost", "name": "氮气加速装置", "max_count": 1},
+	{"id": "vehicle_signal_augment", "name": "车载信号增强塔", "max_count": 1},
+	{
+		"id": "vehicle_metal_defense_net",
+		"name": "金属网防护",
+		"max_count": 1,
+		"item_id": "metal_defense_net",
+		"item_amount": 5.0,
+	},
+]
+const VEHICLE_SERVICE_MODULE_SWAP_PAIRS := {
+	"vehicle_machine_gun": "vehicle_signal_augment",
+	"vehicle_signal_augment": "vehicle_machine_gun",
+}
+const VEHICLE_SERVICE_LOCK_TIMEOUT_MSEC := 60000
+const TEAM_GARAGE_VERSION := 1
 const BASE_PERSONAL_BAG_WEIGHT_KG := 30.0
 const BASE_PLAYER_BAG_SLOTS := 12
 const BAG_SLOTS_PER_ROW := 6
@@ -211,6 +253,11 @@ var ai_interest_manager
 var local_player_id := LOCAL_PLAYER_ID
 var tick_accumulator := 0.0
 var server_tick := 0
+## Persistent in-world time. This intentionally remains separate from
+## server_tick: the latter is a runtime/network sequence and is reset whenever
+## an authority mode starts, while this clock is restored from a world save.
+var world_elapsed_seconds := 0.0
+var world_time_snapshot_tick := -1
 var low_freq_snapshot_accumulator := 0.0
 var nature_resource_reconcile_accumulator := 0.0
 var farm_reconcile_accumulator := 0.0
@@ -233,6 +280,8 @@ var next_visual_projectile_id := 1
 var next_absorption_visual_id := 1
 var next_hit_confirmation_id := 1
 var next_dynamic_vehicle_id := 1
+var next_vehicle_purchase_sequence := 1
+var next_team_garage_sequence := 1
 var next_dropped_item_id := 1
 var next_livestock_id := 1
 var remote_device_states: Dictionary = {}
@@ -242,6 +291,15 @@ var rift_anchor_by_peer: Dictionary = {}
 var dropped_item_nodes: Dictionary = {}
 var chat_submission_times_msec: Dictionary = {}
 var vehicle_states: Dictionary = {}
+var team_garage_states: Dictionary = {"red": [], "blue": []}
+var remote_team_garage_states: Dictionary = {}
+var team_garage_revisions: Dictionary = {"red": 0, "blue": 0}
+var remote_team_garage_revisions: Dictionary = {"red": 0, "blue": 0}
+var pending_vehicle_purchase_states: Dictionary = {}
+var pending_garage_repairs_by_record: Dictionary = {}
+var pending_garage_repairs_by_vehicle: Dictionary = {}
+var shop_transaction_cache: Dictionary = {}
+var destroyed_vehicle_ids: Dictionary = {}
 var _vehicle_impact_pair_cooldowns: Dictionary = {}
 var cargo_car_respawn_states: Dictionary = {}
 var pending_farm_tile_deltas: Dictionary = {}
@@ -384,6 +442,23 @@ func stop_authority() -> void:
 	_reset_runtime_state()
 
 
+func get_world_elapsed_seconds() -> float:
+	return maxf(0.0, world_elapsed_seconds)
+
+
+func set_world_elapsed_seconds(seconds: float) -> void:
+	world_elapsed_seconds = maxf(0.0, float(seconds))
+
+
+func apply_replicated_world_time(seconds: float, snapshot_tick := -1) -> void:
+	if snapshot_tick >= 0 and world_time_snapshot_tick >= 0 \
+			and snapshot_tick < world_time_snapshot_tick:
+		return
+	if snapshot_tick >= 0:
+		world_time_snapshot_tick = snapshot_tick
+	set_world_elapsed_seconds(seconds)
+
+
 func is_server_authority() -> bool:
 	return mode == MODE_SERVER
 
@@ -467,6 +542,8 @@ func _reset_runtime_state(clear_players := true) -> void:
 		ai_interest_manager.reset()
 	tick_accumulator = 0.0
 	server_tick = 0
+	world_elapsed_seconds = 0.0
+	world_time_snapshot_tick = -1
 	low_freq_snapshot_accumulator = 0.0
 	nature_resource_reconcile_accumulator = 0.0
 	farm_reconcile_accumulator = 0.0
@@ -490,6 +567,9 @@ func _reset_runtime_state(clear_players := true) -> void:
 	next_visual_projectile_id = 1
 	next_absorption_visual_id = 1
 	next_hit_confirmation_id = 1
+	next_dynamic_vehicle_id = 1
+	next_vehicle_purchase_sequence = 1
+	next_team_garage_sequence = 1
 	next_dropped_item_id = 1
 	next_livestock_id = 1
 	_clear_dropped_items()
@@ -499,6 +579,18 @@ func _reset_runtime_state(clear_players := true) -> void:
 	gate_lockpick_states.clear()
 	rift_anchor_by_peer.clear()
 	vehicle_states.clear()
+	team_garage_states = {"red": [], "blue": []}
+	remote_team_garage_states.clear()
+	team_garage_revisions = {"red": 0, "blue": 0}
+	remote_team_garage_revisions = {"red": 0, "blue": 0}
+	pending_vehicle_purchase_states.clear()
+	pending_garage_repairs_by_record.clear()
+	pending_garage_repairs_by_vehicle.clear()
+	shop_transaction_cache.clear()
+	destroyed_vehicle_ids.clear()
+	for terminal_value in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if terminal_value is VehicleServiceTerminal and is_instance_valid(terminal_value):
+			(terminal_value as VehicleServiceTerminal).reset_runtime_state()
 	cargo_car_respawn_states.clear()
 	pending_farm_tile_deltas.clear()
 	pending_farm_reconcile_chunks.clear()
@@ -584,9 +676,11 @@ func _run_authority_tick(delta: float) -> void:
 	var simulation_delta := TARGET_TICK_INTERVAL
 	var tick_start := Time.get_ticks_usec()
 	server_tick += 1
+	world_elapsed_seconds += simulation_delta
 	_register_world_vehicles()
 	_simulate_cargo_garages(simulation_delta)
 	_simulate_embedded_labs(simulation_delta)
+	_simulate_vehicle_service_terminals(simulation_delta)
 	_simulate_vehicles(simulation_delta)
 	_simulate_players(simulation_delta)
 	if ai_interest_manager != null:
@@ -637,6 +731,15 @@ func _simulate_embedded_labs(delta: float) -> void:
 		# Completion is rare; publish immediately so every teammate's open Lab can
 		# show the newly unlocked node without waiting for the next 1 Hz snapshot.
 		_emit_embedded_lab_state(team)
+
+
+func _simulate_vehicle_service_terminals(delta: float) -> void:
+	# Keep terminal timeout decisions on the same authority tick as vehicle
+	# movement. Client-side Area3D callbacks are only presentation hints and
+	# never get to release or destroy a vehicle.
+	for node in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if node is VehicleServiceTerminal and is_instance_valid(node):
+			(node as VehicleServiceTerminal).authority_tick(delta)
 
 
 func _default_embedded_lab_state() -> Dictionary:
@@ -3346,6 +3449,10 @@ func _register_world_vehicles() -> void:
 		vehicle_states[vehicle_id] = state
 	for vehicle_id in vehicle_states.keys():
 		if not seen.has(str(vehicle_id)):
+			if _is_pending_garage_repair_vehicle(str(vehicle_id)):
+				_settle_pending_garage_repair_failure(str(vehicle_id), "vehicle_spawn_failed")
+			elif _is_pending_vehicle_purchase(str(vehicle_id)):
+				_settle_pending_vehicle_purchase_failure(str(vehicle_id), "vehicle_spawn_failed")
 			vehicle_states.erase(vehicle_id)
 
 
@@ -3355,6 +3462,10 @@ func _simulate_vehicles(delta: float) -> void:
 		var vehicle := _find_vehicle(vehicle_id)
 		if vehicle == null or not is_instance_valid(vehicle) or not vehicle.vehicle_deployed or not vehicle.is_inside_tree() \
 				or vehicle.is_queued_for_deletion() or vehicle.get_world_3d() == null:
+			if _is_pending_garage_repair_vehicle(vehicle_id):
+				_settle_pending_garage_repair_failure(vehicle_id, "vehicle_spawn_failed")
+			elif _is_pending_vehicle_purchase(vehicle_id):
+				_settle_pending_vehicle_purchase_failure(vehicle_id, "vehicle_spawn_failed")
 			vehicle_states.erase(vehicle_id)
 			continue
 		var state: Dictionary = vehicle_states[vehicle_id]
@@ -3400,26 +3511,47 @@ func _simulate_vehicles(delta: float) -> void:
 ## Vehicles are authoritative hazards: an occupied vehicle's destruction is an
 ## immediate death for every seated player, not an ejection at the wreck site.
 func destroy_vehicle_with_occupants(vehicle: VehicleBase) -> void:
+	_destroy_vehicle_internal(vehicle, "combat")
+
+
+func _destroy_vehicle_internal(vehicle: VehicleBase, reason: String) -> void:
 	if vehicle == null or not is_instance_valid(vehicle) or should_send_network_requests():
 		return
 	var vehicle_id := vehicle.get_vehicle_id()
+	var vehicle_position := vehicle.global_position
 	var occupant_peer_ids := vehicle.get_seat_occupants()
 	if vehicle is FarmBaseVehicle:
 		var machine_gun := (vehicle as FarmBaseVehicle).get_platform_machine_gun()
 		if machine_gun != null and machine_gun.operator_peer_id > 0:
-			# The gunner is also a member of the vehicle.  Do not merely eject the
+			# The gunner is also a member of the vehicle. Do not merely eject the
 			# player to the platform when the carrier itself is destroyed.
 			if not occupant_peer_ids.has(machine_gun.operator_peer_id):
 				occupant_peer_ids.append(machine_gun.operator_peer_id)
 	for peer_id in occupant_peer_ids:
 		if peer_id > 0:
 			_begin_player_respawn(peer_id)
+	var pending_settled := false
+	if _is_pending_garage_repair_vehicle(vehicle_id):
+		_settle_pending_garage_repair_failure(vehicle_id, "vehicle_spawn_failed", vehicle)
+		pending_settled = true
+	elif _is_pending_vehicle_purchase(vehicle_id):
+		# A purchased airdrop that disappears before landing is a delivery failure,
+		# not a normal garage destruction. Settle it through the one-shot refund path.
+		_settle_pending_vehicle_purchase_failure(vehicle_id, "vehicle_spawn_failed", vehicle)
+		pending_settled = true
+	if not pending_settled:
+		_mark_team_garage_vehicle_destroyed(vehicle_id, vehicle)
 	vehicle_states.erase(vehicle_id)
+	for terminal_value in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if terminal_value is VehicleServiceTerminal and is_instance_valid(terminal_value):
+			(terminal_value as VehicleServiceTerminal).on_vehicle_destroyed(vehicle_id)
 	reliable_world_event_ready.emit({
 		"type": "vehicle_destroyed",
 		"vehicle_id": vehicle_id,
-		"position": vehicle.global_position,
+		"position": vehicle_position,
 		"explosion_variant": vehicle.get_destruction_effect_variant(),
+		"suppress_effects": false,
+		"reason": reason,
 		"tick": server_tick,
 	})
 
@@ -3435,6 +3567,33 @@ func _find_vehicle(vehicle_id: String) -> VehicleBase:
 				and (node as VehicleBase).get_vehicle_id() == vehicle_id:
 			return node as VehicleBase
 	return null
+
+
+func _dynamic_vehicle_id_in_use(vehicle_id: String) -> bool:
+	if vehicle_id.is_empty():
+		return false
+	if vehicle_states.has(vehicle_id):
+		return true
+	for node in get_tree().get_nodes_in_group("vehicle_bases"):
+		if node is VehicleBase and (node as VehicleBase).get_vehicle_id() == vehicle_id:
+			return true
+	for team in ["red", "blue"]:
+		for record: Dictionary in get_team_garage_records(team):
+			if str(record.get("live_vehicle_id", "")) == vehicle_id:
+				return true
+	return false
+
+
+func _allocate_dynamic_vehicle_id(prefix: String) -> String:
+	var normalized_prefix := prefix.strip_edges()
+	if normalized_prefix.is_empty():
+		normalized_prefix = "vehicle"
+	while true:
+		var candidate := "%s_%d" % [normalized_prefix, next_dynamic_vehicle_id]
+		next_dynamic_vehicle_id += 1
+		if not _dynamic_vehicle_id_in_use(candidate):
+			return candidate
+	return ""
 
 
 func get_team_cargo_car(team: String) -> VehicleBase:
@@ -3506,6 +3665,7 @@ func _spawn_team_cargo_car(team: String, garage: TeamGarage) -> VehicleBase:
 		return null
 	world_root.add_child(vehicle)
 	vehicle.global_transform = garage.get_cargo_car_spawn_transform()
+	vehicle.set_upright_yaw(vehicle.rotation.y)
 	var scene_path := "res://vehicles/red_cargo_car.tscn" if team == "red" else "res://vehicles/blue_cargo_car.tscn"
 	var state := vehicle.get_network_state()
 	state["vehicle_id"] = vehicle_id
@@ -3518,7 +3678,7 @@ func _spawn_team_cargo_car(team: String, garage: TeamGarage) -> VehicleBase:
 		"scene_path": scene_path,
 		"owner_team": team,
 		"position": vehicle.global_position,
-		"yaw": vehicle.rotation.y,
+		"yaw": vehicle.upright_yaw,
 		"tick": server_tick,
 	})
 	return vehicle
@@ -5427,25 +5587,1895 @@ func _check_livestock_purchase_capacity(team: String, tool_id: String, amount: i
 	return {"ok": true, "available_slots": available_slots}
 
 
+func _normalize_garage_team(team: String) -> String:
+	var normalized := team.strip_edges().to_lower()
+	return normalized if normalized in ["red", "blue"] else ""
+
+
+func _normalize_team_garage_record(value: Variant, fallback_team := "") -> Dictionary:
+	if not value is Dictionary:
+		return {}
+	var source := value as Dictionary
+	var owner_team := _normalize_garage_team(str(source.get("owner_team", fallback_team)))
+	var garage_vehicle_id := str(source.get("garage_vehicle_id", ""))
+	var vehicle_id := str(source.get("vehicle_id", ""))
+	if owner_team.is_empty() or garage_vehicle_id.is_empty() or vehicle_id.is_empty():
+		return {}
+	var status := str(source.get("status", "active")).to_lower()
+	if status != "destroyed":
+		status = "active"
+	var delivery_pending := bool(source.get("delivery_pending", false)) and status == "destroyed"
+	var body_color_id := str(source.get("body_color_id", "black"))
+	var wheel_color_id := str(source.get("wheel_color_id", "black"))
+	if not VehicleColorCatalogScript.has_color(body_color_id):
+		body_color_id = "black"
+	if not VehicleColorCatalogScript.has_color(wheel_color_id):
+		wheel_color_id = "black"
+	var installed_modules: Dictionary = {}
+	var installed_modules_value: Variant = source.get("installed_modules", {})
+	if installed_modules_value is Dictionary:
+		for module_id_value: Variant in installed_modules_value.keys():
+			var module_id := str(module_id_value)
+			var module_count := maxi(0, int((installed_modules_value as Dictionary)[module_id_value]))
+			if not module_id.is_empty() and module_count > 0:
+				installed_modules[module_id] = module_count
+	return {
+		"garage_vehicle_id": garage_vehicle_id,
+		"vehicle_id": vehicle_id,
+		"display_name": str(source.get("display_name", vehicle_id)),
+		"scene_path": str(source.get("scene_path", "")),
+		"owner_team": owner_team,
+		"body_color_id": body_color_id,
+		"wheel_color_id": wheel_color_id,
+		"purchased_unix": int(source.get("purchased_unix", 0)),
+		"status": status,
+		"live_vehicle_id": "" if status == "destroyed" else str(source.get("live_vehicle_id", "")),
+		"delivery_pending": delivery_pending,
+		"destroyed_unix": int(source.get("destroyed_unix", 0)),
+		"garage_sequence": int(source.get("garage_sequence", 0)),
+		"installed_modules": installed_modules,
+	}
+
+
+func get_team_garage_records(team: String) -> Array[Dictionary]:
+	var normalized_team := _normalize_garage_team(team)
+	var records: Array[Dictionary] = []
+	if normalized_team.is_empty():
+		return records
+	var source: Variant = team_garage_states.get(normalized_team, [])
+	if is_client_proxy():
+		source = remote_team_garage_states.get(normalized_team, [])
+	if not source is Array:
+		return records
+	for value: Variant in source:
+
+		var record := _normalize_team_garage_record(value, normalized_team)
+		if not record.is_empty():
+			records.append(record)
+	return records
+
+
+func get_team_garage_record(garage_vehicle_id: String) -> Dictionary:
+	if garage_vehicle_id.is_empty():
+		return {}
+	for team in ["red", "blue"]:
+		for record in get_team_garage_records(team):
+			if str(record.get("garage_vehicle_id", "")) == garage_vehicle_id:
+				return record
+	return {}
+
+
+func get_persistent_team_garage_states() -> Dictionary:
+	return {
+		"version": TEAM_GARAGE_VERSION,
+		"next_sequence": next_team_garage_sequence,
+		"revisions": team_garage_revisions.duplicate(true),
+		"red": _get_persistent_team_garage_records("red"),
+		"blue": _get_persistent_team_garage_records("blue"),
+	}
+
+
+func get_network_team_garage_states() -> Dictionary:
+	return {
+		"version": TEAM_GARAGE_VERSION,
+		"next_sequence": next_team_garage_sequence,
+		"revisions": team_garage_revisions.duplicate(true),
+		"red": get_team_garage_records("red"),
+		"blue": get_team_garage_records("blue"),
+	}
+
+
+func get_persistent_destroyed_vehicle_ids() -> Array[String]:
+	var result: Array[String] = []
+	for vehicle_id_value: Variant in destroyed_vehicle_ids.keys():
+		var vehicle_id := str(vehicle_id_value)
+		if not vehicle_id.is_empty():
+			result.append(vehicle_id)
+	return result
+
+
+func apply_persistent_destroyed_vehicle_ids(value: Variant) -> void:
+	destroyed_vehicle_ids.clear()
+	if not value is Array:
+		return
+	for vehicle_id_value: Variant in value as Array:
+		var vehicle_id := str(vehicle_id_value)
+		if not vehicle_id.is_empty():
+			destroyed_vehicle_ids[vehicle_id] = true
+
+
+func is_persistently_destroyed_vehicle(vehicle_id: String) -> bool:
+	return not vehicle_id.is_empty() and destroyed_vehicle_ids.has(vehicle_id)
+
+
+func _get_persistent_team_garage_records(team: String) -> Array[Dictionary]:
+	var records: Array[Dictionary] = []
+	for value: Dictionary in get_team_garage_records(team):
+		var record := value.duplicate(true)
+		record["delivery_pending"] = false
+		if str(record.get("status", "active")) == "destroyed":
+			record["live_vehicle_id"] = ""
+		records.append(record)
+	return records
+
+
+func apply_persistent_team_garage_states(value: Variant) -> void:
+	if is_client_proxy():
+		apply_remote_team_garage_states(value)
+		return
+	team_garage_states = {"red": [], "blue": []}
+	team_garage_revisions = {"red": 0, "blue": 0}
+	next_team_garage_sequence = 1
+	if not value is Dictionary:
+		return
+	var source := value as Dictionary
+	next_team_garage_sequence = maxi(1, int(source.get("next_sequence", 1)))
+	var revisions_value: Variant = source.get("revisions", {})
+	for team in ["red", "blue"]:
+		var records_value: Variant = source.get(team, [])
+		var records: Array[Dictionary] = []
+		if records_value is Array:
+			for record_value: Variant in records_value:
+				var record := _normalize_team_garage_record(record_value, team)
+				if record.is_empty():
+					continue
+				record["delivery_pending"] = false
+				records.append(record)
+				next_team_garage_sequence = maxi(
+					next_team_garage_sequence,
+					int(record.get("garage_sequence", 0)) + 1
+				)
+		team_garage_states[team] = records
+		if revisions_value is Dictionary:
+			team_garage_revisions[team] = maxi(0, int((revisions_value as Dictionary).get(team, 0)))
+
+
+func apply_remote_team_garage_states(value: Variant) -> void:
+	if not value is Dictionary:
+		return
+	var source := value as Dictionary
+	var next_remote: Dictionary = remote_team_garage_states.duplicate(true)
+	var revisions_value: Variant = source.get("revisions", {})
+	for team in ["red", "blue"]:
+		var records_value: Variant = source.get(team, [])
+		if not records_value is Array:
+			continue
+		var revision := int((revisions_value as Dictionary).get(team, 0)) \
+			if revisions_value is Dictionary else 0
+		if revision < int(remote_team_garage_revisions.get(team, 0)):
+			continue
+		var records: Array[Dictionary] = []
+		for record_value: Variant in records_value:
+			var record := _normalize_team_garage_record(record_value, team)
+			if not record.is_empty():
+				records.append(record)
+		next_remote[team] = records
+		remote_team_garage_revisions[team] = revision
+	remote_team_garage_states = next_remote
+	for team in ["red", "blue"]:
+		if source.get(team, null) is Array:
+			team_garage_state_changed.emit(team)
+
+
+func apply_remote_team_garage_state(team: String, value: Variant, revision := -1) -> void:
+	var normalized_team := _normalize_garage_team(team)
+	if normalized_team.is_empty() or not value is Array:
+		return
+	if revision >= 0 and revision < int(remote_team_garage_revisions.get(normalized_team, 0)):
+		return
+	var records: Array[Dictionary] = []
+	for record_value: Variant in value as Array:
+		var record := _normalize_team_garage_record(record_value, normalized_team)
+		if not record.is_empty():
+			records.append(record)
+	remote_team_garage_states[normalized_team] = records
+	if revision >= 0:
+		remote_team_garage_revisions[normalized_team] = revision
+	team_garage_state_changed.emit(normalized_team)
+
+
+func _new_team_garage_record(
+	team: String,
+	product: Dictionary,
+	body_color_id: String,
+	wheel_color_id: String
+) -> Dictionary:
+	var normalized_team := _normalize_garage_team(team)
+	var vehicle_id := str(product.get("vehicle_id", "vehicle"))
+	var sequence := next_team_garage_sequence
+	next_team_garage_sequence += 1
+	var purchased_msec := int(round(Time.get_unix_time_from_system() * 1000.0))
+	var garage_vehicle_id := "garage_%s_%s_%s_%s_%d_%d" % [
+		normalized_team,
+		vehicle_id,
+		body_color_id,
+		wheel_color_id,
+		purchased_msec,
+		sequence,
+	]
+	return {
+		"garage_vehicle_id": garage_vehicle_id,
+		"vehicle_id": vehicle_id,
+		"display_name": str(product.get("name", vehicle_id)),
+		"scene_path": str(product.get("scene_path", "")),
+		"owner_team": normalized_team,
+		"body_color_id": body_color_id,
+		"wheel_color_id": wheel_color_id,
+		"purchased_unix": int(Time.get_unix_time_from_system()),
+		"status": "active",
+		"live_vehicle_id": "",
+		"delivery_pending": false,
+		"destroyed_unix": 0,
+		"garage_sequence": sequence,
+	}
+
+
+func _commit_team_garage_vehicle(metadata: Dictionary, vehicle_id: String) -> String:
+	var team := _normalize_garage_team(str(metadata.get("team", "")))
+	var record := _normalize_team_garage_record(metadata.get("garage_record", {}), team)
+	if team.is_empty() or record.is_empty() or vehicle_id.is_empty():
+		return ""
+	record["status"] = "active"
+	record["live_vehicle_id"] = vehicle_id
+	record["delivery_pending"] = false
+	record["destroyed_unix"] = 0
+	var records: Array = team_garage_states.get(team, [])
+	var replaced := false
+	for index in range(records.size()):
+		var existing: Variant = records[index]
+		if existing is Dictionary and str((existing as Dictionary).get("garage_vehicle_id", "")) == str(record.get("garage_vehicle_id", "")):
+			records[index] = record
+			replaced = true
+			break
+	if not replaced:
+		records.append(record)
+	team_garage_states[team] = records
+	team_garage_revisions[team] = int(team_garage_revisions.get(team, 0)) + 1
+	metadata["garage_committed"] = true
+	_emit_team_garage_state(team)
+	_request_cooperative_world_save()
+	return str(record.get("garage_vehicle_id", ""))
+
+
+func bind_restored_garage_vehicle(garage_vehicle_id: String, vehicle_id: String) -> void:
+	if garage_vehicle_id.is_empty() or vehicle_id.is_empty():
+		return
+	for team in ["red", "blue"]:
+		var records: Array = team_garage_states.get(team, [])
+		for index in range(records.size()):
+			var value: Variant = records[index]
+			if not value is Dictionary or str((value as Dictionary).get("garage_vehicle_id", "")) != garage_vehicle_id:
+				continue
+			var record := value as Dictionary
+			if str(record.get("status", "active")) == "destroyed":
+				return
+			record["status"] = "active"
+			record["live_vehicle_id"] = vehicle_id
+			records[index] = record
+			team_garage_states[team] = records
+			return
+
+
+func _mark_team_garage_vehicle_destroyed(vehicle_id: String, vehicle: VehicleBase) -> bool:
+	var state: Dictionary = vehicle_states.get(vehicle_id, {})
+	var garage_vehicle_id := str(state.get("garage_vehicle_id", ""))
+	if garage_vehicle_id.is_empty() and vehicle != null and vehicle.has_meta("garage_vehicle_id"):
+		garage_vehicle_id = str(vehicle.get_meta("garage_vehicle_id", ""))
+	if garage_vehicle_id.is_empty():
+		return false
+	for team in ["red", "blue"]:
+		var records: Array = team_garage_states.get(team, [])
+		var found := false
+		for index in range(records.size()):
+			var value: Variant = records[index]
+			if not value is Dictionary or str((value as Dictionary).get("garage_vehicle_id", "")) != garage_vehicle_id:
+				continue
+			var record := value as Dictionary
+			if str(record.get("status", "active")) == "destroyed":
+				# The caller uses the return value to distinguish a new state
+				# transition from a repeated destruction notification.
+				return false
+			record["status"] = "destroyed"
+			record["live_vehicle_id"] = ""
+			record["delivery_pending"] = false
+			record["destroyed_unix"] = int(Time.get_unix_time_from_system())
+			records[index] = record
+			found = true
+			break
+		if not found:
+			continue
+		team_garage_states[team] = records
+		team_garage_revisions[team] = int(team_garage_revisions.get(team, 0)) + 1
+		_emit_team_garage_state(team)
+		_request_cooperative_world_save()
+		return true
+	return false
+
+
+func _emit_team_garage_state(team: String) -> void:
+	var normalized_team := _normalize_garage_team(team)
+	if normalized_team.is_empty():
+		return
+	team_garage_state_changed.emit(normalized_team)
+	reliable_world_event_ready.emit({
+		"type": "team_garage_state",
+		"team": normalized_team,
+		"records": get_team_garage_records(normalized_team),
+		"revision": int(team_garage_revisions.get(normalized_team, 0)),
+		"tick": server_tick,
+	})
+
+
+func _set_team_garage_delivery_pending(garage_vehicle_id: String, pending: bool) -> bool:
+	if garage_vehicle_id.is_empty():
+		return false
+	for team in ["red", "blue"]:
+		var records: Array = team_garage_states.get(team, [])
+		for index in range(records.size()):
+			var value: Variant = records[index]
+			if not value is Dictionary or str((value as Dictionary).get("garage_vehicle_id", "")) != garage_vehicle_id:
+				continue
+			var record := value as Dictionary
+			if bool(record.get("delivery_pending", false)) == pending:
+				return true
+			if str(record.get("status", "active")) != "destroyed" and pending:
+				return false
+			record["delivery_pending"] = pending
+			record["live_vehicle_id"] = ""
+			records[index] = record
+			team_garage_states[team] = records
+			team_garage_revisions[team] = int(team_garage_revisions.get(team, 0)) + 1
+			_emit_team_garage_state(team)
+			_request_cooperative_world_save()
+			return true
+	return false
+
+
+func get_vehicle_garage_service_quote(record: Dictionary) -> Dictionary:
+	var vehicle_id := str(record.get("vehicle_id", ""))
+	var product := VehicleSalesCatalogScript.get_product(vehicle_id)
+	var purchase_price := maxi(0, int(product.get("price", 0)))
+	var scene_path := str(record.get("scene_path", product.get("scene_path", "")))
+	var repair_fee := 0
+	var delivery_fee := 0
+	var packed := load(scene_path) as PackedScene if not scene_path.is_empty() else null
+	if packed != null:
+		var probe := packed.instantiate() as VehicleBase
+		if probe != null:
+			if probe.vehicle_config != null:
+				repair_fee = maxi(0, int(probe.vehicle_config.repair_fee))
+				delivery_fee = maxi(0, int(probe.vehicle_config.delivery_fee))
+			probe.free()
+	if repair_fee <= 0:
+		repair_fee = ceili(float(purchase_price) * 0.15)
+	if delivery_fee <= 0:
+		if purchase_price <= 0:
+			return {
+				"available": false,
+				"reason": "invalid_service_fee",
+				"repair_fee": -1,
+				"delivery_fee": -1,
+				"total_fee": -1,
+			}
+		delivery_fee = ceili(float(purchase_price) * 0.05)
+	if repair_fee <= 0 or delivery_fee <= 0:
+		return {
+			"available": false,
+			"reason": "invalid_service_fee",
+			"repair_fee": -1,
+			"delivery_fee": -1,
+			"total_fee": -1,
+		}
+	return {
+		"available": true,
+		"repair_fee": repair_fee,
+		"delivery_fee": delivery_fee,
+		"total_fee": repair_fee + delivery_fee,
+	}
+
+
+func get_persistent_pending_garage_repairs() -> Array[Dictionary]:
+	var pending: Array[Dictionary] = []
+	for value: Variant in pending_garage_repairs_by_record.values():
+		if not value is Dictionary:
+			continue
+		var metadata := value as Dictionary
+		if not bool(metadata.get("charged", false)) or bool(metadata.get("settled", false)):
+			continue
+		pending.append({
+			"request_id": str(metadata.get("request_id", "")),
+			"team": str(metadata.get("team", "")),
+			"garage_vehicle_id": str(metadata.get("garage_vehicle_id", "")),
+			"total_fee": maxi(0, int(metadata.get("total_fee", metadata.get("price", 0)))),
+			"charged": true,
+			"refunded": bool(metadata.get("refunded", false)),
+		})
+	return pending
+
+
+func recover_persistent_pending_garage_repairs(value: Variant) -> void:
+	if is_client_proxy() or not value is Array:
+		return
+	var refunded_any := false
+	for value_entry: Variant in value as Array:
+		if not value_entry is Dictionary:
+			continue
+		var entry := value_entry as Dictionary
+		if not bool(entry.get("charged", false)) or bool(entry.get("refunded", false)):
+			continue
+		var team := _normalize_garage_team(str(entry.get("team", "")))
+		var amount := maxi(0, int(entry.get("total_fee", 0)))
+		if team.is_empty() or amount <= 0:
+			continue
+		if GlobalVar.add_item(team, "money", amount):
+			refunded_any = true
+			_set_team_garage_delivery_pending(str(entry.get("garage_vehicle_id", "")), false)
+	if refunded_any:
+		inventory_state_ready.emit(_build_inventory_state())
+		_request_cooperative_world_save()
+
+
+func _request_cooperative_world_save() -> void:
+	if not is_server_authority() or not is_instance_valid(CooperativeSession):
+		return
+	if CooperativeSession.has_method("request_immediate_save"):
+		CooperativeSession.call_deferred("request_immediate_save")
+
+
+func _shop_transaction_cache_key(peer_id: int, request_id: String) -> String:
+	return "%d:%s" % [peer_id, request_id] if peer_id > 0 and not request_id.is_empty() else ""
+
+
+func _prune_shop_transaction_cache() -> void:
+	var now := Time.get_ticks_msec()
+	for key_value: Variant in shop_transaction_cache.keys():
+		var entry: Variant = shop_transaction_cache[key_value]
+		if not entry is Dictionary or int((entry as Dictionary).get("expires_msec", 0)) <= now:
+			shop_transaction_cache.erase(key_value)
+
+
+func _get_cached_shop_transaction(peer_id: int, request_id: String) -> Dictionary:
+	var key := _shop_transaction_cache_key(peer_id, request_id)
+	if key.is_empty():
+		return {}
+	_prune_shop_transaction_cache()
+	var entry: Variant = shop_transaction_cache.get(key, null)
+	if not entry is Dictionary:
+		return {}
+	var result: Variant = (entry as Dictionary).get("result", {})
+	return (result as Dictionary).duplicate(true) if result is Dictionary else {}
+
+
+func _cache_shop_transaction_result(result: Dictionary) -> void:
+	var request_id := str(result.get("request_id", ""))
+	var peer_id := int(result.get("peer_id", 0))
+	var key := _shop_transaction_cache_key(peer_id, request_id)
+	if key.is_empty():
+		return
+	shop_transaction_cache[key] = {
+		"result": result.duplicate(true),
+		"expires_msec": Time.get_ticks_msec() + (
+			VEHICLE_SERVICE_REQUEST_CACHE_TTL_MSEC
+			if str(result.get("shop_category", "")) == "vehicle_service"
+			else VEHICLE_PURCHASE_RESULT_CACHE_TTL_MSEC
+		),
+	}
+
+
+func _refund_vehicle_purchase(metadata: Dictionary) -> Dictionary:
+	if bool(metadata.get("refunded", false)):
+		return {
+			"refunded": true,
+			"refund_amount": int(metadata.get("refund_amount", metadata.get("price", 0))),
+		}
+	var team := _normalize_garage_team(str(metadata.get("team", "")))
+	var price := maxi(0, int(metadata.get("price", 0)))
+	var refund_ok := price <= 0
+	if not refund_ok and not team.is_empty():
+		refund_ok = GlobalVar.add_item(team, "money", price)
+	if refund_ok:
+		metadata["refunded"] = true
+		metadata["refund_amount"] = price
+		if price > 0:
+			inventory_state_ready.emit(_build_inventory_state())
+		_request_cooperative_world_save()
+	return {
+		"refunded": refund_ok,
+		"refund_amount": price if refund_ok else 0,
+	}
+
+
 func _emit_shop_transaction_result(result: Dictionary) -> Dictionary:
+	if str(result.get("shop_category", "")) in ["vehicle_sales", "vehicle_garage", "vehicle_service"]:
+		_cache_shop_transaction_result(result)
 	reliable_world_event_ready.emit({"type": "shop_transaction", "data": result, "tick": server_tick})
 	return result
 
 
+func _vehicle_sales_shop_from_transaction(transaction: Dictionary) -> AutoSales:
+	var shop_path := str(transaction.get("shop_path", ""))
+	if not shop_path.is_empty() and get_tree() != null and get_tree().root != null:
+		var path_node := get_tree().root.get_node_or_null(NodePath(shop_path))
+		if path_node is AutoSales:
+			return path_node as AutoSales
+	var requested_position := _vector3_from_value(transaction.get("shop_position", Vector3.ZERO))
+	var closest: AutoSales
+	var closest_distance := INF
+	for shop_value: Node in get_tree().get_nodes_in_group("vehicle_sales_shops"):
+		if not shop_value is AutoSales:
+			continue
+		var shop := shop_value as AutoSales
+		var distance := shop.get_interaction_position().distance_squared_to(requested_position)
+		if closest == null or distance < closest_distance:
+			closest = shop
+			closest_distance = distance
+	return closest
+
+
+func _vehicle_purchase_spawn_points(team: String) -> Array[TeamSpawnPoint]:
+	var points: Array[TeamSpawnPoint] = []
+	if is_instance_valid(GlobalVar.gameworld) \
+			and GlobalVar.gameworld.has_method("get_team_spawn_points"):
+		var point_values: Variant = GlobalVar.gameworld.call("get_team_spawn_points", team)
+		if point_values is Array:
+			for point_value: Variant in point_values:
+				if point_value is TeamSpawnPoint:
+					points.append(point_value as TeamSpawnPoint)
+	if points.is_empty():
+		for point_value: Node in get_tree().get_nodes_in_group("team_spawn_points"):
+			if point_value is TeamSpawnPoint \
+					and str((point_value as TeamSpawnPoint).team).to_lower() == team.to_lower():
+				points.append(point_value as TeamSpawnPoint)
+	points.sort_custom(func(left: TeamSpawnPoint, right: TeamSpawnPoint) -> bool:
+		return left.spawn_point_id < right.spawn_point_id
+	)
+	return points
+
+
+func _vehicle_purchase_candidate(
+	spawn_point: TeamSpawnPoint,
+	radius: float,
+	rng: RandomNumberGenerator,
+	use_center: bool
+) -> Vector3:
+	if use_center or radius <= 0.001:
+		return spawn_point.global_position
+	var angle := rng.randf_range(0.0, TAU)
+	var distance := sqrt(rng.randf()) * radius
+	return spawn_point.global_position + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+
+
+func _resolve_vehicle_purchase_placement(
+	peer_id: int,
+	team: String,
+	vehicle_scene_path: String
+) -> Dictionary:
+	var spawn_points := _vehicle_purchase_spawn_points(team)
+	if spawn_points.is_empty():
+		return {"ok": false, "reason": "no_team_spawn_point"}
+	var world_root := GlobalVar.gameworld as Node3D
+	if world_root == null:
+		world_root = get_tree().current_scene as Node3D
+	var world := world_root.get_world_3d() if world_root != null else null
+	if world == null:
+		return {"ok": false, "reason": "no_vehicle_spawn_point"}
+
+	var purchase_sequence := next_vehicle_purchase_sequence
+	next_vehicle_purchase_sequence += 1
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("vehicle_purchase:%d:%s:%d:%d" % [
+		peer_id, team, server_tick, purchase_sequence,
+	])
+	var spawn_point := spawn_points[rng.randi_range(0, spawn_points.size() - 1)]
+	var base_options := {
+		"team": team,
+		"yaw": spawn_point.global_rotation.y,
+		"max_search_radius": 0.0,
+		"search_step": 1.0,
+		"max_candidates": 1,
+		"max_slope_degrees": FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+		"clearance": FREE_PLACEMENT_CLEARANCE,
+		"exclude_rids": _placement_exception_rids(peer_id),
+	}
+	var total_candidates := 0
+	var local_radius := maxf(0.5, spawn_point.spawn_radius)
+	for attempt in range(24):
+		var candidate := _vehicle_purchase_candidate(spawn_point, local_radius, rng, attempt == 0)
+		var placement := PlacementQueryScript.resolve_vehicle_spawn(
+			world, candidate, vehicle_scene_path, base_options
+		)
+		total_candidates += int(placement.get("candidate_count", 1))
+		if bool(placement.get("ok", false)):
+			placement["spawn_point_id"] = spawn_point.spawn_point_id
+			placement["purchase_sequence"] = purchase_sequence
+			placement["candidate_count"] = total_candidates
+			return placement
+
+	for _attempt in range(96):
+		var candidate := _vehicle_purchase_candidate(spawn_point, 12.0, rng, false)
+		var placement := PlacementQueryScript.resolve_vehicle_spawn(
+			world, candidate, vehicle_scene_path, base_options
+		)
+		total_candidates += int(placement.get("candidate_count", 1))
+		if not bool(placement.get("ok", false)):
+			continue
+		var landing := _vector3_from_value(placement.get("position", candidate))
+		var horizontal_offset := landing - spawn_point.global_position
+		horizontal_offset.y = 0.0
+		if horizontal_offset.length() > 12.01:
+			continue
+		placement["spawn_point_id"] = spawn_point.spawn_point_id
+		placement["purchase_sequence"] = purchase_sequence
+		placement["candidate_count"] = total_candidates
+		return placement
+	return {
+		"ok": false,
+		"reason": "no_vehicle_spawn_point",
+		"spawn_point_id": spawn_point.spawn_point_id,
+		"purchase_sequence": purchase_sequence,
+		"candidate_count": total_candidates,
+	}
+
+
+func _spawn_purchased_vehicle(
+	team: String,
+	product: Dictionary,
+	body_color: Color,
+	wheel_color: Color,
+	placement: Dictionary,
+	purchase_metadata: Dictionary = {}
+) -> Dictionary:
+	var scene_path := str(product.get("scene_path", ""))
+	var packed := load(scene_path) as PackedScene
+	var vehicle := packed.instantiate() as VehicleBase if packed != null else null
+	if vehicle == null or not is_instance_valid(GlobalVar.gameworld):
+		if vehicle != null:
+			vehicle.free()
+		return {
+			"ok": false,
+			"reason": "missing_vehicle_scene",
+			"garage_vehicle_id": str(purchase_metadata.get("garage_vehicle_id", "")),
+		}
+	var catalog_vehicle_id := str(product.get("vehicle_id", "vehicle"))
+	var vehicle_id := _allocate_dynamic_vehicle_id("autosales_%s" % catalog_vehicle_id)
+	vehicle.name = "AutoSales_%s" % vehicle_id
+	vehicle.network_id = vehicle_id
+	vehicle.owner_team = team
+	var body_color_id := str(purchase_metadata.get("body_color_id", "black"))
+	var wheel_color_id := str(purchase_metadata.get("wheel_color_id", "black"))
+	if vehicle.has_method("set_body_color_id"):
+		vehicle.call("set_body_color_id", body_color_id)
+	else:
+		vehicle.body_color = body_color
+	if vehicle.has_method("set_wheel_color_id"):
+		vehicle.call("set_wheel_color_id", wheel_color_id)
+	else:
+		vehicle.wheel_color = wheel_color
+	var garage_vehicle_id := str(purchase_metadata.get("garage_vehicle_id", ""))
+	if not garage_vehicle_id.is_empty():
+		vehicle.set_meta("garage_vehicle_id", garage_vehicle_id)
+	if vehicle.has_method("set_kitchen_team"):
+		vehicle.call("set_kitchen_team", team)
+	GlobalVar.gameworld.add_child(vehicle)
+	if not is_instance_valid(vehicle) or not vehicle.vehicle_deployed \
+			or not vehicle.is_inside_tree() or vehicle.get_world_3d() == null:
+		if is_instance_valid(vehicle):
+			vehicle.queue_free()
+		return {"ok": false, "reason": "vehicle_spawn_failed"}
+	if vehicle.has_method("set_body_color_id"):
+		vehicle.call("set_body_color_id", body_color_id)
+	else:
+		vehicle.set_body_color(body_color)
+	if vehicle.has_method("set_wheel_color_id"):
+		vehicle.call("set_wheel_color_id", wheel_color_id)
+	else:
+		vehicle.set_wheel_color(wheel_color)
+	var landing_position := _vector3_from_value(placement.get("position", Vector3.ZERO))
+	var spawn_mode := str(placement.get("spawn_mode", "ground"))
+	var drop_start_position := _vector3_from_value(
+		placement.get("drop_start_position", landing_position)
+	)
+	vehicle.global_position = drop_start_position if spawn_mode == "airdrop" else landing_position
+	vehicle.set_upright_yaw(float(placement.get("yaw", 0.0)))
+	if spawn_mode == "airdrop":
+		vehicle.begin_spawn_drop(landing_position, float(placement.get("drop_timeout", 3.0)))
+	var vehicle_state := vehicle.get_network_state()
+	vehicle_state["vehicle_id"] = vehicle_id
+	vehicle_state["scene_path"] = scene_path
+	vehicle_state["owner_team"] = team
+	vehicle_state["body_color"] = body_color
+	vehicle_state["wheel_color"] = wheel_color
+	vehicle_state["body_color_id"] = body_color_id
+	vehicle_state["wheel_color_id"] = wheel_color_id
+	vehicle_state["garage_vehicle_id"] = garage_vehicle_id
+	vehicle_state["catalog_vehicle_id"] = str(product.get("vehicle_id", ""))
+	vehicle_state["purchase_request_id"] = str(purchase_metadata.get("request_id", ""))
+	vehicle_state["purchase_price"] = int(purchase_metadata.get("price", 0))
+	vehicle_state["purchase_peer_id"] = int(purchase_metadata.get("peer_id", 0))
+	vehicle_state["purchase_team"] = team
+	vehicle_state["purchase_pending"] = spawn_mode == "airdrop"
+	vehicle_states[vehicle_id] = vehicle_state
+	if spawn_mode == "airdrop":
+		pending_vehicle_purchase_states[vehicle_id] = purchase_metadata
+		vehicle.spawn_drop_finished.connect(_on_vehicle_spawn_drop_finished.bind(vehicle_id))
+	reliable_world_event_ready.emit({
+		"type": "vehicle_placed",
+		"vehicle_id": vehicle_id,
+		"scene_path": scene_path,
+		"owner_team": team,
+		"position": vehicle.global_position,
+		"yaw": vehicle.upright_yaw,
+		"spawn_mode": spawn_mode,
+		"drop_start_position": drop_start_position,
+		"drop_landing_position": landing_position,
+		"vehicle_state": _public_vehicle_state(vehicle_state),
+		"tick": server_tick,
+	})
+	return {
+		"ok": true,
+		"vehicle_id": vehicle_id,
+		"position": landing_position,
+		"spawn_position": vehicle.global_position,
+		"spawn_mode": spawn_mode,
+		"yaw": vehicle.upright_yaw,
+		"garage_vehicle_id": garage_vehicle_id,
+		"vehicle_state": vehicle_state.duplicate(true),
+}
+
+
+func _public_vehicle_state(state: Dictionary) -> Dictionary:
+	var public_state := state.duplicate(true)
+	# Purchase transaction identity and price are requester-private. The shared
+	# vehicle event only needs the visual/physics state required by other clients.
+	for private_key in [
+		"purchase_request_id", "purchase_price", "purchase_peer_id", "purchase_team",
+		"garage_repair_request_id", "garage_repair_peer_id", "garage_repair_team",
+		"garage_repair_fee", "garage_delivery_fee", "garage_repair_total_fee",
+	]:
+		public_state.erase(private_key)
+	return public_state
+
+
+func _public_vehicle_service_state(state: Dictionary) -> Dictionary:
+	var service_state := _public_vehicle_state(state)
+	# Vehicle-service messages describe an operation performed on a vehicle; they
+	# are not movement snapshots. A delayed acquire/repair/customization response
+	# must never restore the transform captured when that response was created.
+	# Position and driving motion continue to come from the normal vehicle snapshot
+	# stream, which is ordered and refreshed independently.
+	for movement_key in ["position", "yaw", "speed", "steering"]:
+		service_state.erase(movement_key)
+	return service_state
+
+
+func _server_vehicle_purchase_transaction(
+	peer_id: int,
+	team: String,
+	transaction: Dictionary
+) -> Dictionary:
+	var requested_vehicle_id := str(transaction.get("vehicle_id", ""))
+	var body_color_id := str(transaction.get("body_color_id", ""))
+	var wheel_color_id := str(transaction.get("wheel_color_id", ""))
+	var request_id := str(transaction.get("request_id", ""))
+	var result := {
+		"ok": false,
+		"phase": "failed",
+		"peer_id": peer_id,
+		"team": team,
+		"shop_category": "vehicle_sales",
+		"action": "vehicle_purchase",
+		"request_id": request_id,
+		"vehicle_id": requested_vehicle_id,
+		"body_color_id": body_color_id,
+		"wheel_color_id": wheel_color_id,
+		"charged": false,
+		"refunded": false,
+		"refund_amount": 0,
+	}
+	if request_id.is_empty():
+		result["reason"] = "missing_request_id"
+		return _emit_shop_transaction_result(result)
+	var product := VehicleSalesCatalogScript.get_product(requested_vehicle_id)
+	if product.is_empty() or str(product.get("scene_path", "")).is_empty():
+		result["reason"] = "vehicle_not_available"
+		return _emit_shop_transaction_result(result)
+	if not VehicleColorCatalogScript.has_color(body_color_id) \
+			or not VehicleColorCatalogScript.has_color(wheel_color_id):
+		result["reason"] = "invalid_vehicle_color"
+		return _emit_shop_transaction_result(result)
+	body_color_id = VehicleColorCatalogScript.normalize_id(body_color_id)
+	wheel_color_id = VehicleColorCatalogScript.normalize_id(wheel_color_id)
+	var shop := _vehicle_sales_shop_from_transaction(transaction)
+	if shop == null:
+		result["reason"] = "vehicle_shop_not_found"
+		return _emit_shop_transaction_result(result)
+	if not _can_server_interact_with_position(
+		player_states[peer_id], shop.get_interaction_position(), 6.0
+	):
+		result["reason"] = "vehicle_shop_out_of_range"
+		return _emit_shop_transaction_result(result)
+	var price := maxi(0, int(product.get("price", 0)))
+	if GlobalVar.check_team_item_amount(team, "money") + 0.001 < float(price):
+		result["reason"] = "insufficient_money"
+		return _emit_shop_transaction_result(result)
+	var placement := _resolve_vehicle_purchase_placement(
+		peer_id, team, str(product.get("scene_path", ""))
+	)
+	if not bool(placement.get("ok", false)):
+		result["reason"] = str(placement.get("reason", "no_vehicle_spawn_point"))
+		return _emit_shop_transaction_result(result)
+	if not GlobalVar.remove_item(team, "money", price):
+		result["reason"] = "insufficient_money"
+		return _emit_shop_transaction_result(result)
+	var garage_record := _new_team_garage_record(
+		team, product, body_color_id, wheel_color_id
+	)
+	var purchase_metadata := {
+		"request_id": request_id,
+		"peer_id": peer_id,
+		"team": team,
+		"price": price,
+		"vehicle_id": requested_vehicle_id,
+		"body_color_id": body_color_id,
+		"wheel_color_id": wheel_color_id,
+		"garage_record": garage_record,
+		"garage_vehicle_id": str(garage_record.get("garage_vehicle_id", "")),
+		"refunded": false,
+		"refund_amount": 0,
+	}
+	result["charged"] = true
+	var spawn_result := _spawn_purchased_vehicle(
+		team,
+		product,
+		VehicleColorCatalogScript.get_color(body_color_id),
+		VehicleColorCatalogScript.get_color(wheel_color_id),
+		placement,
+		purchase_metadata
+	)
+	if not bool(spawn_result.get("ok", false)):
+		var refund_result := _refund_vehicle_purchase(purchase_metadata)
+		result.merge(refund_result, true)
+		result["reason"] = str(spawn_result.get("reason", "vehicle_spawn_failed"))
+		return _emit_shop_transaction_result(result)
+	result.merge(spawn_result, true)
+	var spawned_vehicle_id := str(spawn_result.get("vehicle_id", ""))
+	result["vehicle_id"] = requested_vehicle_id
+	result["spawned_vehicle_id"] = spawned_vehicle_id
+	result["total_price"] = price
+	result["spawn_point_id"] = str(placement.get("spawn_point_id", ""))
+	result["used_dynamic_fallback"] = bool(placement.get("used_dynamic_fallback", false))
+	result["body_color_id"] = body_color_id
+	result["wheel_color_id"] = wheel_color_id
+	result["garage_vehicle_id"] = str(garage_record.get("garage_vehicle_id", ""))
+	result["refunded"] = false
+	result["refund_amount"] = 0
+	if str(spawn_result.get("spawn_mode", "ground")) == "airdrop":
+		result["phase"] = "pending"
+		result["reason"] = "vehicle_delivery_pending"
+		# The vehicle state and the request cache now carry the complete metadata.
+		# The transaction is finalized only by _on_vehicle_spawn_drop_finished.
+		inventory_state_ready.emit(_build_inventory_state())
+		return _emit_shop_transaction_result(result)
+	_commit_team_garage_vehicle(purchase_metadata, spawned_vehicle_id)
+	result["phase"] = "completed"
+	result["ok"] = true
+	inventory_state_ready.emit(_build_inventory_state())
+	return _emit_shop_transaction_result(result)
+
+
+func _make_vehicle_garage_transaction_result(
+	peer_id: int,
+	team: String,
+	transaction: Dictionary
+) -> Dictionary:
+	return {
+		"ok": false,
+		"phase": "failed",
+		"peer_id": peer_id,
+		"team": team,
+		"shop_category": "vehicle_garage",
+		"action": str(transaction.get("action", "repair_delivery")),
+		"request_id": str(transaction.get("request_id", "")),
+		"garage_vehicle_id": str(transaction.get("garage_vehicle_id", "")),
+		"charged": false,
+		"refunded": false,
+		"refund_amount": 0,
+		"repair_fee": 0,
+		"delivery_fee": 0,
+		"total_fee": 0,
+	}
+
+
+func _server_vehicle_garage_repair_transaction(
+	peer_id: int,
+	team: String,
+	transaction: Dictionary
+) -> Dictionary:
+	var result := _make_vehicle_garage_transaction_result(peer_id, team, transaction)
+	var request_id := str(transaction.get("request_id", ""))
+	var garage_vehicle_id := str(transaction.get("garage_vehicle_id", ""))
+	if request_id.is_empty():
+		result["reason"] = "missing_request_id"
+		return _emit_shop_transaction_result(result)
+	if garage_vehicle_id.is_empty():
+		result["reason"] = "missing_garage_vehicle_id"
+		return _emit_shop_transaction_result(result)
+	var garage_record := get_team_garage_record(garage_vehicle_id)
+	if garage_record.is_empty():
+		result["reason"] = "garage_vehicle_not_found"
+		return _emit_shop_transaction_result(result)
+	if _normalize_garage_team(str(garage_record.get("owner_team", ""))) != team:
+		result["reason"] = "garage_vehicle_not_owned_by_team"
+		return _emit_shop_transaction_result(result)
+	if pending_garage_repairs_by_record.has(garage_vehicle_id) \
+			or bool(garage_record.get("delivery_pending", false)):
+		result["reason"] = "garage_vehicle_busy"
+		return _emit_shop_transaction_result(result)
+	if str(garage_record.get("status", "active")) == "active":
+		result["reason"] = "garage_vehicle_already_active"
+		result["vehicle_id"] = str(garage_record.get("vehicle_id", ""))
+		result["live_vehicle_id"] = str(garage_record.get("live_vehicle_id", ""))
+		return _emit_shop_transaction_result(result)
+	if str(garage_record.get("status", "")) != "destroyed":
+		result["reason"] = "garage_vehicle_unavailable"
+		return _emit_shop_transaction_result(result)
+	var vehicle_id := str(garage_record.get("vehicle_id", ""))
+	var scene_path := str(garage_record.get("scene_path", ""))
+	if scene_path.is_empty():
+		var product := VehicleSalesCatalogScript.get_product(vehicle_id)
+		scene_path = str(product.get("scene_path", ""))
+	if scene_path.is_empty():
+		result["reason"] = "missing_vehicle_scene"
+		return _emit_shop_transaction_result(result)
+	var quote := get_vehicle_garage_service_quote(garage_record)
+	var repair_fee := int(quote.get("repair_fee", -1))
+	var delivery_fee := int(quote.get("delivery_fee", -1))
+	var total_fee := int(quote.get("total_fee", -1))
+	result["repair_fee"] = repair_fee
+	result["delivery_fee"] = delivery_fee
+	result["total_fee"] = total_fee
+	if not bool(quote.get("available", false)) \
+			or repair_fee < 0 or delivery_fee < 0 or total_fee < 0:
+		result["reason"] = "invalid_service_fee"
+		return _emit_shop_transaction_result(result)
+	var player_state: Dictionary = player_states.get(peer_id, {})
+	var player_position := _vector3_from_value(player_state.get("position", Vector3.ZERO))
+	var placement_yaw := wrapf(float(player_state.get("yaw", 0.0)), -PI, PI)
+	var placement := _validate_vehicle_placement(peer_id, scene_path, player_position, placement_yaw)
+	if not bool(placement.get("ok", false)):
+		result["reason"] = str(placement.get("reason", "no_vehicle_spawn_point"))
+		return _emit_shop_transaction_result(result)
+	if GlobalVar.check_team_item_amount(team, "money") + 0.001 < float(total_fee):
+		result["reason"] = "insufficient_money"
+		return _emit_shop_transaction_result(result)
+	if not GlobalVar.remove_item(team, "money", total_fee):
+		result["reason"] = "insufficient_money"
+		return _emit_shop_transaction_result(result)
+	var metadata := {
+		"request_id": request_id,
+		"peer_id": peer_id,
+		"team": team,
+		"garage_vehicle_id": garage_vehicle_id,
+		"vehicle_id": vehicle_id,
+		"scene_path": scene_path,
+		"body_color_id": str(garage_record.get("body_color_id", "black")),
+		"wheel_color_id": str(garage_record.get("wheel_color_id", "black")),
+		"repair_fee": repair_fee,
+		"delivery_fee": delivery_fee,
+		"total_fee": total_fee,
+		"price": total_fee,
+		"garage_record": garage_record.duplicate(true),
+		"charged": true,
+		"refunded": false,
+		"refund_amount": 0,
+		"settled": false,
+	}
+	pending_garage_repairs_by_record[garage_vehicle_id] = metadata
+	if not _set_team_garage_delivery_pending(garage_vehicle_id, true):
+		pending_garage_repairs_by_record.erase(garage_vehicle_id)
+		var lock_refund := _refund_vehicle_purchase(metadata)
+		result["reason"] = "garage_vehicle_unavailable"
+		result["charged"] = true
+		result.merge(lock_refund, true)
+		return _emit_shop_transaction_result(result)
+	inventory_state_ready.emit(_build_inventory_state())
+	var spawn_result := _spawn_team_garage_vehicle(team, garage_record, placement, metadata)
+	if not bool(spawn_result.get("ok", false)):
+		return _settle_pending_garage_repair_failure(
+			str(spawn_result.get("vehicle_id", "")),
+			str(spawn_result.get("reason", "vehicle_spawn_failed")),
+			null,
+			str(spawn_result.get("garage_vehicle_id", garage_vehicle_id))
+		)
+	result.merge(spawn_result, true)
+	# Keep the catalog id and the live scene-node id distinct, matching the
+	# vehicle-sales transaction shape.  The live id is also needed by late
+	# airdrop-failure recovery when the node disappears before the callback.
+	result["vehicle_id"] = vehicle_id
+	result["spawned_vehicle_id"] = str(spawn_result.get("vehicle_id", ""))
+	result["ok"] = true
+	result["charged"] = true
+	result["refunded"] = false
+	result["refund_amount"] = 0
+	result["body_color_id"] = metadata["body_color_id"]
+	result["wheel_color_id"] = metadata["wheel_color_id"]
+	result["garage_vehicle_id"] = garage_vehicle_id
+	if str(spawn_result.get("spawn_mode", "ground")) == "airdrop":
+		result["phase"] = "pending"
+		result["reason"] = "vehicle_delivery_pending"
+		return _emit_shop_transaction_result(result)
+	return _settle_pending_garage_repair_success(
+		str(spawn_result.get("vehicle_id", "")),
+		_spawned_vehicle_from_result(spawn_result)
+	)
+
+
+func _spawned_vehicle_from_result(spawn_result: Dictionary) -> VehicleBase:
+	var vehicle_id := str(spawn_result.get("vehicle_id", ""))
+	return _find_vehicle(vehicle_id)
+
+
+func _vehicle_service_terminal_from_transaction(transaction: Dictionary) -> VehicleServiceTerminal:
+	var terminal_id := str(transaction.get("terminal_id", ""))
+	var terminal_path := str(transaction.get("terminal_path", ""))
+	if not terminal_path.is_empty():
+		var path_node := get_tree().root.get_node_or_null(NodePath(terminal_path))
+		if path_node is VehicleServiceTerminal:
+			var path_terminal := path_node as VehicleServiceTerminal
+			if terminal_id.is_empty() or path_terminal.get_terminal_id() == terminal_id:
+				return path_terminal
+	for node in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if node is VehicleServiceTerminal:
+			var terminal := node as VehicleServiceTerminal
+			if terminal_id.is_empty() or terminal.get_terminal_id() == terminal_id:
+				return terminal
+	return null
+
+
+func _make_vehicle_service_transaction_result(
+	peer_id: int,
+	transaction: Dictionary,
+	team := ""
+) -> Dictionary:
+	return {
+		"ok": false,
+		"phase": "failed",
+		"peer_id": peer_id,
+		"team": team,
+		"shop_category": "vehicle_service",
+		"action": str(transaction.get("action", "")),
+		"request_id": str(transaction.get("request_id", "")),
+		"terminal_id": str(transaction.get("terminal_id", "")),
+		"vehicle_id": str(transaction.get("vehicle_id", "")),
+		"charged": false,
+		"refunded": false,
+		"refund_amount": 0,
+		"service_fee": 0,
+	}
+
+
+func _vehicle_service_fail(result: Dictionary, reason: String) -> Dictionary:
+	result["reason"] = reason
+	return _emit_shop_transaction_result(result)
+
+
+func _vehicle_service_module_state(vehicle: VehicleBase, module_id: String) -> Dictionary:
+	var state := {
+		"module_id": module_id,
+		"installed_count": 0,
+		"max_count": 1,
+		"installed": false,
+	}
+	if module_id == "high_performance_motor":
+		state["installed_count"] = 1 if vehicle.high_performance_motor_installed else 0
+		state["installed"] = int(state["installed_count"]) > 0
+		return state
+	if module_id == "composite_armor_panel":
+		state["installed_count"] = 1 if vehicle.composite_armor_panel_installed else 0
+		state["installed"] = int(state["installed_count"]) > 0
+		return state
+	if not vehicle is FarmBaseVehicle:
+		return state
+	var farm_vehicle := vehicle as FarmBaseVehicle
+	match module_id:
+		"vehicle_harvest_reel":
+			state["installed_count"] = 1 if farm_vehicle.harvest_reel_installed else 0
+		"vehicle_extended_seat":
+			state["max_count"] = FarmBaseVehicle.MAX_PLATFORM_PASSENGER_SEATS
+			state["installed_count"] = farm_vehicle.platform_passenger_seat_count
+		"vehicle_roof_headlights":
+			state["installed_count"] = 1 if farm_vehicle.roof_headlights_installed else 0
+		"vehicle_machine_gun":
+			state["installed_count"] = 1 if farm_vehicle.platform_machine_gun_installed else 0
+		"vehicle_nitro_boost":
+			state["installed_count"] = 1 if farm_vehicle.nitro_boost_installed else 0
+		"vehicle_signal_augment":
+			state["installed_count"] = 1 if farm_vehicle.platform_signal_station_installed else 0
+		"vehicle_metal_defense_net":
+			state["installed_count"] = 1 if farm_vehicle.reinforced_variant else 0
+	state["installed"] = int(state["installed_count"]) > 0
+	return state
+
+
+func _vehicle_service_machine_gun_in_use(vehicle: FarmBaseVehicle) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle):
+		return false
+	var machine_gun := vehicle.get_platform_machine_gun()
+	return machine_gun != null and machine_gun.operator_peer_id > 0
+
+
+func _vehicle_service_has_platform_passenger_occupants(vehicle: FarmBaseVehicle) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle):
+		return false
+	for seat_index in vehicle.get_platform_passenger_seat_indices():
+		if int(vehicle.seat_occupants.get(seat_index, 0)) > 0:
+			return true
+	return false
+
+
+func _vehicle_service_module_definition(module_id: String) -> Dictionary:
+	for module_value: Dictionary in VEHICLE_SERVICE_MODULES:
+		if str(module_value.get("id", "")) == module_id:
+			return module_value
+	return {}
+
+
+func _vehicle_service_module_supported(vehicle: VehicleBase, module_id: String) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle):
+		return false
+	if vehicle.has_method("supports_vehicle_service_module"):
+		return bool(vehicle.call("supports_vehicle_service_module", module_id))
+	return module_id in ["high_performance_motor", "composite_armor_panel"] \
+		and vehicle.supports_common_service_upgrades()
+
+
+func _vehicle_service_module_options(vehicle: VehicleBase, peer_id: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for module_value: Dictionary in VEHICLE_SERVICE_MODULES:
+		var module := module_value.duplicate(true)
+		var module_id := str(module.get("id", ""))
+		if not _vehicle_service_module_supported(vehicle, module_id):
+			continue
+		var item_id := str(module.get("item_id", module_id))
+		var item_amount := maxf(float(module.get("item_amount", 1.0)), 1.0)
+		var module_state := _vehicle_service_module_state(vehicle, module_id)
+		var inventory_count := 0.0
+		var player_state: Dictionary = player_states.get(peer_id, {})
+		if not player_state.is_empty():
+			var personal: Variant = player_state.get("personal_ingredients", {})
+			if personal is Dictionary:
+				inventory_count = float((personal as Dictionary).get(
+					_personal_ingredient_key(item_id, false), 0.0
+				))
+		module["module_id"] = module_id
+		module["item_id"] = item_id
+		module["item_amount"] = item_amount
+		module["required_item_amount"] = item_amount
+		module["installed_count"] = int(module_state.get("installed_count", 0))
+		module["max_count"] = int(module_state.get("max_count", module.get("max_count", 1)))
+		module["installed"] = bool(module_state.get("installed", false))
+		module["inventory_count"] = floori(inventory_count)
+		var farm_vehicle: FarmBaseVehicle = null
+		if vehicle is FarmBaseVehicle:
+			farm_vehicle = vehicle as FarmBaseVehicle
+		var installed_count := int(module_state.get("installed_count", 0))
+		var max_count := int(module.get("max_count", 1))
+		var switch_module_id := str(VEHICLE_SERVICE_MODULE_SWAP_PAIRS.get(module_id, ""))
+		var switch_state := _vehicle_service_module_state(vehicle, switch_module_id) \
+			if not switch_module_id.is_empty() else {}
+		var switch_count := int(switch_state.get("installed_count", 0))
+		var machine_gun_in_use := _vehicle_service_machine_gun_in_use(farm_vehicle)
+		var passenger_occupied := _vehicle_service_has_platform_passenger_occupants(farm_vehicle) \
+			if module_id == "vehicle_extended_seat" else false
+		var target_has_capacity := installed_count < max_count
+		var target_has_item := inventory_count + 0.001 >= item_amount
+		var blocked_by_machine_gun := switch_count > 0 and machine_gun_in_use
+		var can_receive_returned_module := true
+		if switch_count > 0 and not switch_module_id.is_empty() and farm_vehicle != null:
+			var projected_player_state := player_state.duplicate(true)
+			can_receive_returned_module = _server_remove_personal_ingredient(
+				projected_player_state, item_id, item_amount, false
+			) and _server_can_add_personal_ingredient(
+				projected_player_state, switch_module_id, 1.0, false
+			)
+		module["mutually_exclusive"] = not switch_module_id.is_empty()
+		module["switch_module_id"] = switch_module_id
+		module["switch_installed_count"] = switch_count
+		module["is_mutual_exclusion_switch"] = switch_count > 0 and not switch_module_id.is_empty()
+		module["machine_gun_in_use"] = machine_gun_in_use
+		module["passenger_occupied"] = passenger_occupied
+		module["can_receive_returned_module"] = can_receive_returned_module
+		var has_mutual_counterpart := switch_count > 0 and not switch_module_id.is_empty()
+		module["can_install"] = target_has_capacity and target_has_item \
+			and not has_mutual_counterpart and not blocked_by_machine_gun
+		module["can_switch"] = target_has_capacity and target_has_item \
+			and has_mutual_counterpart and not blocked_by_machine_gun and can_receive_returned_module
+		module["can_uninstall"] = installed_count > 0 \
+			and not passenger_occupied \
+			and not (module_id == "vehicle_machine_gun" and machine_gun_in_use) \
+			and _server_can_add_personal_ingredient(player_state, item_id, item_amount, false)
+		result.append(module)
+	return result
+
+
+func _vehicle_service_repair_base_fee(vehicle: VehicleBase) -> int:
+	if vehicle == null:
+		return -1
+	if vehicle.vehicle_config != null and int(vehicle.vehicle_config.repair_fee) > 0:
+		return int(vehicle.vehicle_config.repair_fee)
+	var state: Dictionary = vehicle_states.get(vehicle.get_vehicle_id(), {})
+	var catalog_vehicle_id := str(state.get("catalog_vehicle_id", ""))
+	if catalog_vehicle_id.is_empty():
+		catalog_vehicle_id = vehicle.get_vehicle_id()
+	var product := VehicleSalesCatalogScript.get_product(catalog_vehicle_id)
+	var purchase_price := int(product.get("price", 0))
+	return ceili(float(purchase_price) * 0.15) if purchase_price > 0 else -1
+
+
+func get_vehicle_service_quote(vehicle: VehicleBase, quote_peer_id := -1) -> Dictionary:
+	if vehicle == null or not is_instance_valid(vehicle) or not vehicle.vehicle_deployed:
+		return {"available": false, "reason": "vehicle_unavailable"}
+	var maximum_hp := maxf(0.0, vehicle.get_max_hp())
+	var current := clampf(vehicle.current_hp, 0.0, maximum_hp)
+	var missing_ratio := (maximum_hp - current) / maximum_hp if maximum_hp > 0.0 else 0.0
+	var repair_base_fee := _vehicle_service_repair_base_fee(vehicle)
+	var repair_hp_fee := -1
+	if maximum_hp <= 0.0:
+		repair_hp_fee = -1
+	elif is_zero_approx(missing_ratio):
+		repair_hp_fee = 0
+	elif repair_base_fee > 0:
+		repair_hp_fee = ceili(float(repair_base_fee) * missing_ratio)
+	var result := {
+		"available": true,
+		"vehicle_id": vehicle.get_vehicle_id(),
+		"current_hp": current,
+		"max_hp": maximum_hp,
+		"missing_ratio": missing_ratio,
+		"repair_base_fee": repair_base_fee,
+		"repair_hp_fee": repair_hp_fee,
+		"repair_available": repair_hp_fee >= 0,
+		"color_fee": VEHICLE_SERVICE_COLOR_FEE,
+		"module_fee": VEHICLE_SERVICE_MODULE_FEE,
+		"supports_custom_colors": vehicle.supports_custom_colors(),
+		"body_color_id": vehicle.get_body_color_id() if vehicle.has_method("get_body_color_id") else "black",
+		"wheel_color_id": vehicle.get_wheel_color_id() if vehicle.has_method("get_wheel_color_id") else "black",
+		"modules": [],
+	}
+	var peer_id := quote_peer_id
+	if peer_id < 0:
+		peer_id = 0
+		var local_state: Variant = vehicle_states.get(vehicle.get_vehicle_id(), {})
+		if local_state is Dictionary:
+			peer_id = int((local_state as Dictionary).get("service_quote_peer_id", 0))
+	result["modules"] = _vehicle_service_module_options(vehicle, peer_id)
+	return result
+
+
+func _vehicle_service_set_module_state(vehicle: VehicleBase, module_id: String, count: int) -> bool:
+	if module_id == "high_performance_motor":
+		if not _vehicle_service_module_supported(vehicle, module_id):
+			return false
+		vehicle.set_high_performance_motor_installed(count > 0)
+		return vehicle.high_performance_motor_installed == (count > 0)
+	if module_id == "composite_armor_panel":
+		if not _vehicle_service_module_supported(vehicle, module_id):
+			return false
+		vehicle.set_composite_armor_panel_installed(count > 0)
+		return vehicle.composite_armor_panel_installed == (count > 0)
+	if not vehicle is FarmBaseVehicle:
+		return false
+	var farm_vehicle := vehicle as FarmBaseVehicle
+	match module_id:
+		"vehicle_harvest_reel":
+			farm_vehicle.set_harvest_reel_installed(count > 0)
+			return farm_vehicle.harvest_reel_installed == (count > 0)
+		"vehicle_extended_seat":
+			return farm_vehicle.set_platform_passenger_seat_count(count) == clampi(count, 0, FarmBaseVehicle.MAX_PLATFORM_PASSENGER_SEATS)
+		"vehicle_roof_headlights":
+			farm_vehicle.set_roof_headlights_installed(count > 0)
+			return farm_vehicle.roof_headlights_installed == (count > 0)
+		"vehicle_machine_gun":
+			if count > 0:
+				return farm_vehicle.install_platform_machine_gun(false) != null
+			farm_vehicle.remove_platform_machine_gun()
+			return true
+		"vehicle_nitro_boost":
+			farm_vehicle.set_nitro_boost_installed(count > 0)
+			return farm_vehicle.nitro_boost_installed == (count > 0)
+		"vehicle_signal_augment":
+			if count > 0:
+				return farm_vehicle.install_platform_signal_station(false) != null
+			farm_vehicle.remove_platform_signal_station()
+			return true
+		"vehicle_metal_defense_net":
+			farm_vehicle.set_reinforced_variant(count > 0)
+			return farm_vehicle.reinforced_variant == (count > 0)
+	return false
+
+
+func _vehicle_service_rollback_module_transaction(
+	peer_id: int,
+	team: String,
+	player_state_before: Dictionary,
+	vehicle: VehicleBase,
+	module_id: String,
+	previous_count: int,
+	replaced_module_id: String,
+	replaced_count: int,
+	replaced_runtime_state: Dictionary,
+	money_before: float,
+	previous_current_hp: float
+) -> void:
+	player_states[peer_id] = player_state_before.duplicate(true)
+	_vehicle_service_set_module_state(vehicle, module_id, previous_count)
+	if not replaced_module_id.is_empty():
+		_vehicle_service_set_module_state(vehicle, replaced_module_id, replaced_count)
+		if replaced_module_id == "vehicle_machine_gun":
+			var restored_machine_gun := (vehicle as FarmBaseVehicle).get_platform_machine_gun()
+			if restored_machine_gun != null and not replaced_runtime_state.is_empty():
+				restored_machine_gun.apply_network_state(replaced_runtime_state)
+		elif replaced_module_id == "vehicle_signal_augment":
+			var restored_signal_station := (vehicle as FarmBaseVehicle).get_platform_signal_station()
+			if restored_signal_station != null and not replaced_runtime_state.is_empty():
+				restored_signal_station.apply_network_state(replaced_runtime_state)
+	vehicle.current_hp = clampf(previous_current_hp, 0.0, vehicle.get_max_hp())
+	var current_money := GlobalVar.check_team_item_amount(team, "money")
+	var money_delta := money_before - current_money
+	if money_delta > 0.001:
+		GlobalVar.add_item(team, "money", money_delta)
+	elif money_delta < -0.001:
+		GlobalVar.remove_item(team, "money", -money_delta)
+
+
+func _vehicle_service_update_state(vehicle: VehicleBase) -> Dictionary:
+	if vehicle == null or not is_instance_valid(vehicle):
+		return {}
+	var vehicle_id := vehicle.get_vehicle_id()
+	var state: Dictionary = vehicle_states.get(vehicle_id, {}).duplicate(true)
+	state.merge(vehicle.get_network_state(), true)
+	state["vehicle_id"] = vehicle_id
+	if str(state.get("scene_path", "")).is_empty():
+		state["scene_path"] = vehicle.scene_file_path
+	state["owner_team"] = vehicle.owner_team
+	if vehicle.has_method("get_body_color_id"):
+		state["body_color_id"] = vehicle.get_body_color_id()
+	if vehicle.has_method("get_wheel_color_id"):
+		state["wheel_color_id"] = vehicle.get_wheel_color_id()
+	var garage_vehicle_id := str(state.get("garage_vehicle_id", vehicle.get_meta("garage_vehicle_id", "")))
+	state["garage_vehicle_id"] = garage_vehicle_id
+	vehicle_states[vehicle_id] = state
+	reliable_world_event_ready.emit({
+		"type": "vehicle_service_vehicle_state",
+		"terminal_id": "",
+		"vehicle_id": vehicle_id,
+		"vehicle_state": _public_vehicle_service_state(state),
+		"tick": server_tick,
+	})
+	_request_cooperative_world_save()
+	return state
+
+
+func _vehicle_service_installed_module_counts(vehicle: VehicleBase) -> Dictionary:
+	var installed: Dictionary = {}
+	for module_value: Dictionary in VEHICLE_SERVICE_MODULES:
+		var module_id := str(module_value.get("id", ""))
+		if not _vehicle_service_module_supported(vehicle, module_id):
+			continue
+		var count := int(_vehicle_service_module_state(vehicle, module_id).get("installed_count", 0))
+		if not module_id.is_empty() and count > 0:
+			installed[module_id] = count
+	return installed
+
+
+func _update_team_garage_customization_from_vehicle(vehicle: VehicleBase, state: Dictionary) -> void:
+	if vehicle == null or not is_instance_valid(vehicle):
+		return
+	var garage_vehicle_id := str(state.get("garage_vehicle_id", vehicle.get_meta("garage_vehicle_id", "")))
+	if garage_vehicle_id.is_empty():
+		return
+	for team in ["red", "blue"]:
+		var records: Array = team_garage_states.get(team, [])
+		for index in range(records.size()):
+			var record_value: Variant = records[index]
+			if not record_value is Dictionary \
+					or str((record_value as Dictionary).get("garage_vehicle_id", "")) != garage_vehicle_id:
+				continue
+			var record := record_value as Dictionary
+			record["body_color_id"] = str(state.get("body_color_id", record.get("body_color_id", "black")))
+			record["wheel_color_id"] = str(state.get("wheel_color_id", record.get("wheel_color_id", "black")))
+			record["installed_modules"] = _vehicle_service_installed_module_counts(vehicle)
+			records[index] = record
+			team_garage_states[team] = records
+			team_garage_revisions[team] = int(team_garage_revisions.get(team, 0)) + 1
+			_emit_team_garage_state(team)
+			_request_cooperative_world_save()
+			return
+
+
+func _vehicle_service_player_slots(peer_id: int) -> Array:
+	var state: Dictionary = player_states.get(peer_id, {})
+	var slots: Variant = state.get("backpack_slot_items", [])
+	return (slots as Array).duplicate(true) if slots is Array else []
+
+
+func server_vehicle_service_transaction(peer_id: int, transaction: Dictionary) -> Dictionary:
+	var team := str(player_states.get(peer_id, {}).get("team", "")) if player_states.has(peer_id) else ""
+	var result := _make_vehicle_service_transaction_result(peer_id, transaction, team)
+	var request_id := str(transaction.get("request_id", ""))
+	if request_id.is_empty():
+		return _vehicle_service_fail(result, "missing_request_id")
+	if not player_states.has(peer_id):
+		return _vehicle_service_fail(result, "unknown_player")
+	if team.is_empty():
+		return _vehicle_service_fail(result, "missing_team")
+	var terminal := _vehicle_service_terminal_from_transaction(transaction)
+	if terminal == null:
+		return _vehicle_service_fail(result, "terminal_not_found")
+	result["terminal_id"] = terminal.get_terminal_id()
+	var action_name := str(transaction.get("action", ""))
+	if action_name == "release":
+		result["ok"] = terminal.release_user(peer_id)
+		result["phase"] = "completed" if result["ok"] else "failed"
+		result["service_state"] = terminal.get_network_state()
+		if not result["ok"]:
+			result["reason"] = "service_lock_not_owned"
+		return _emit_shop_transaction_result(result)
+	if action_name == "acquire":
+		if not terminal.try_acquire_user(peer_id):
+			result["reason"] = "service_in_use" if terminal.active_user_peer_id > 0 else "vehicle_service_unavailable"
+			result["service_state"] = terminal.get_network_state()
+			return _emit_shop_transaction_result(result)
+		var active_vehicle := terminal.get_active_vehicle()
+		if active_vehicle == null:
+			terminal.release_user(peer_id)
+			return _vehicle_service_fail(result, "vehicle_service_unavailable")
+		var requested_vehicle_id := str(transaction.get("vehicle_id", ""))
+		if not requested_vehicle_id.is_empty() and requested_vehicle_id != active_vehicle.get_vehicle_id():
+			terminal.release_user(peer_id)
+			return _vehicle_service_fail(result, "vehicle_service_vehicle_mismatch")
+		result["ok"] = true
+		result["phase"] = "completed"
+		result["vehicle_id"] = active_vehicle.get_vehicle_id()
+		result["service_state"] = terminal.get_network_state()
+		result["vehicle_state"] = _public_vehicle_service_state(_vehicle_service_update_state(active_vehicle))
+		var quote := get_vehicle_service_quote(active_vehicle, peer_id)
+		result["quote"] = quote
+		result["team_money"] = int(round(GlobalVar.check_team_item_amount(team, "money")))
+		return _emit_shop_transaction_result(result)
+	if action_name == "touch":
+		result["ok"] = terminal.touch_user(peer_id)
+		result["phase"] = "completed" if result["ok"] else "failed"
+		result["service_state"] = terminal.get_network_state()
+		if not result["ok"]:
+			result["reason"] = "service_lock_lost"
+		return _emit_shop_transaction_result(result)
+	if action_name not in ["repair_hp", "change_color", "install_module", "uninstall_module"]:
+		return _vehicle_service_fail(result, "unsupported_action")
+	if terminal.active_user_peer_id != peer_id:
+		return _vehicle_service_fail(result, "service_lock_not_owned")
+	if not terminal.can_peer_access_active_vehicle(peer_id):
+		return _vehicle_service_fail(result, "service_out_of_range")
+	var vehicle := terminal.get_active_vehicle()
+	if vehicle == null or vehicle.is_queued_for_deletion() or vehicle.current_hp <= 0.0:
+		return _vehicle_service_fail(result, "vehicle_service_unavailable")
+	result["vehicle_id"] = vehicle.get_vehicle_id()
+	if not str(transaction.get("vehicle_id", "")).is_empty() and str(transaction.get("vehicle_id", "")) != vehicle.get_vehicle_id():
+		return _vehicle_service_fail(result, "vehicle_service_vehicle_mismatch")
+	if not vehicle.owner_team.is_empty() and vehicle.owner_team != team:
+		return _vehicle_service_fail(result, "vehicle_not_owned_by_team")
+	var service_fee := 0
+	var player_state: Dictionary = player_states[peer_id]
+	if action_name == "repair_hp":
+		var quote := get_vehicle_service_quote(vehicle, peer_id)
+		service_fee = int(quote.get("repair_hp_fee", -1))
+		result["quote"] = quote
+		if service_fee < 0:
+			return _vehicle_service_fail(result, "repair_unavailable")
+		if service_fee == 0:
+			result["ok"] = true
+			result["phase"] = "completed"
+			result["vehicle_state"] = _public_vehicle_service_state(_vehicle_service_update_state(vehicle))
+			result["team_money"] = int(round(GlobalVar.check_team_item_amount(team, "money")))
+			return _emit_shop_transaction_result(result)
+		if GlobalVar.check_team_item_amount(team, "money") + 0.001 < service_fee:
+			return _vehicle_service_fail(result, "insufficient_money")
+		if not GlobalVar.remove_item(team, "money", service_fee):
+			return _vehicle_service_fail(result, "insufficient_money")
+		var target_hp := vehicle.get_max_hp()
+		vehicle.current_hp = target_hp
+		if vehicle.current_hp + 0.001 < target_hp:
+			GlobalVar.add_item(team, "money", service_fee)
+			return _vehicle_service_fail(result, "repair_failed")
+		vehicle.vehicle_damaged.emit(vehicle.current_hp, vehicle.get_max_hp())
+	elif action_name == "change_color":
+		if not vehicle.supports_custom_colors():
+			return _vehicle_service_fail(result, "custom_color_unsupported")
+		var color_id := str(transaction.get("color_id", ""))
+		if not VehicleColorCatalogScript.has_color(color_id):
+			return _vehicle_service_fail(result, "invalid_vehicle_color")
+		color_id = VehicleColorCatalogScript.normalize_id(color_id)
+		var color_slot := str(transaction.get("color_slot", ""))
+		if color_slot not in ["body", "wheel"]:
+			return _vehicle_service_fail(result, "invalid_color_slot")
+		var current_color_id := vehicle.get_body_color_id() if color_slot == "body" and vehicle.has_method("get_body_color_id") else vehicle.get_wheel_color_id() if vehicle.has_method("get_wheel_color_id") else ""
+		if current_color_id == color_id:
+			result["ok"] = true
+			result["phase"] = "completed"
+			result["body_color_id"] = vehicle.get_body_color_id()
+			result["wheel_color_id"] = vehicle.get_wheel_color_id()
+			result["quote"] = get_vehicle_service_quote(vehicle, peer_id)
+			return _emit_shop_transaction_result(result)
+		service_fee = VEHICLE_SERVICE_COLOR_FEE
+		if GlobalVar.check_team_item_amount(team, "money") + 0.001 < service_fee:
+			return _vehicle_service_fail(result, "insufficient_money")
+		if not GlobalVar.remove_item(team, "money", service_fee):
+			return _vehicle_service_fail(result, "insufficient_money")
+		if color_slot == "body":
+			if vehicle.has_method("set_body_color_id"):
+				vehicle.call("set_body_color_id", color_id)
+			else:
+				vehicle.set_body_color(VehicleColorCatalogScript.get_color(color_id))
+		else:
+			if vehicle.has_method("set_wheel_color_id"):
+				vehicle.call("set_wheel_color_id", color_id)
+			else:
+				vehicle.set_wheel_color(VehicleColorCatalogScript.get_color(color_id))
+		var applied_color_id := vehicle.get_body_color_id() if color_slot == "body" else vehicle.get_wheel_color_id()
+		if applied_color_id != color_id:
+			GlobalVar.add_item(team, "money", service_fee)
+			return _vehicle_service_fail(result, "color_change_failed")
+		result["color_slot"] = color_slot
+		result["color_id"] = color_id
+	else:
+		var module_id := str(transaction.get("module_id", ""))
+		var module_definition := _vehicle_service_module_definition(module_id)
+		if module_definition.is_empty() or not _vehicle_service_module_supported(vehicle, module_id):
+			return _vehicle_service_fail(result, "module_unavailable")
+		var farm_vehicle := vehicle as FarmBaseVehicle
+		var module_state := _vehicle_service_module_state(vehicle, module_id)
+		var previous_count := int(module_state.get("installed_count", 0))
+		var max_count := int(module_state.get("max_count", module_definition.get("max_count", 1)))
+		var item_id := str(module_definition.get("item_id", module_id))
+		var item_amount := maxf(float(module_definition.get("item_amount", 1.0)), 1.0)
+		var is_uninstall := action_name == "uninstall_module"
+		var player_state_before := player_state.duplicate(true)
+		var money_before := GlobalVar.check_team_item_amount(team, "money")
+		var previous_current_hp := vehicle.current_hp
+		var replaced_module_id := ""
+		var replaced_count := 0
+		var replaced_runtime_state: Dictionary = {}
+		if not is_uninstall:
+			if previous_count >= max_count:
+				return _vehicle_service_fail(result, "module_already_installed")
+			if not _server_has_personal_ingredient(player_state, item_id, item_amount, false):
+				return _vehicle_service_fail(result, "module_item_missing")
+			replaced_module_id = str(VEHICLE_SERVICE_MODULE_SWAP_PAIRS.get(module_id, ""))
+			if not replaced_module_id.is_empty():
+				var replaced_state := _vehicle_service_module_state(vehicle, replaced_module_id)
+				replaced_count = int(replaced_state.get("installed_count", 0))
+				if replaced_count > 0:
+					if _vehicle_service_machine_gun_in_use(farm_vehicle):
+						return _vehicle_service_fail(result, "module_machine_gun_in_use")
+					if replaced_module_id == "vehicle_machine_gun":
+						var previous_machine_gun := farm_vehicle.get_platform_machine_gun()
+						if previous_machine_gun != null:
+							replaced_runtime_state = previous_machine_gun.get_network_state()
+					elif replaced_module_id == "vehicle_signal_augment":
+						var previous_signal_station := farm_vehicle.get_platform_signal_station()
+						if previous_signal_station != null:
+							replaced_runtime_state = previous_signal_station.get_network_state()
+					# The returned old module must fit after the target item is removed.
+					var projected_player_state := player_state.duplicate(true)
+					if not _server_remove_personal_ingredient(projected_player_state, item_id, item_amount, false) \
+							or not _server_can_add_personal_ingredient(projected_player_state, replaced_module_id, 1.0, false):
+						return _vehicle_service_fail(result, "module_bag_full")
+			service_fee = VEHICLE_SERVICE_MODULE_FEE
+			if GlobalVar.check_team_item_amount(team, "money") + 0.001 < service_fee:
+				return _vehicle_service_fail(result, "insufficient_money")
+			if not GlobalVar.remove_item(team, "money", service_fee):
+				return _vehicle_service_fail(result, "insufficient_money")
+			if not _server_remove_personal_ingredient(player_state, item_id, item_amount, false):
+				_vehicle_service_rollback_module_transaction(
+					peer_id, team, player_state_before, vehicle, module_id, previous_count,
+					replaced_module_id, replaced_count, replaced_runtime_state, money_before,
+					previous_current_hp
+				)
+				return _vehicle_service_fail(result, "module_install_failed")
+			if replaced_count > 0 and not _vehicle_service_set_module_state(vehicle, replaced_module_id, 0):
+				_vehicle_service_rollback_module_transaction(
+					peer_id, team, player_state_before, vehicle, module_id, previous_count,
+					replaced_module_id, replaced_count, replaced_runtime_state, money_before,
+					previous_current_hp
+				)
+				return _vehicle_service_fail(result, "module_switch_failed")
+			if not _vehicle_service_set_module_state(vehicle, module_id, previous_count + 1):
+				_vehicle_service_rollback_module_transaction(
+					peer_id, team, player_state_before, vehicle, module_id, previous_count,
+					replaced_module_id, replaced_count, replaced_runtime_state, money_before,
+					previous_current_hp
+				)
+				return _vehicle_service_fail(result, "module_install_failed")
+			if replaced_count > 0:
+				_server_add_personal_ingredient(player_state, replaced_module_id, 1.0, false)
+				if not _server_has_personal_ingredient(player_state, replaced_module_id, 1.0, false):
+					_vehicle_service_rollback_module_transaction(
+						peer_id, team, player_state_before, vehicle, module_id, previous_count,
+						replaced_module_id, replaced_count, replaced_runtime_state, money_before,
+						previous_current_hp
+					)
+					return _vehicle_service_fail(result, "module_switch_failed")
+			player_states[peer_id] = player_state
+			_emit_personal_inventory_slots(peer_id, player_state)
+			result["module_id"] = module_id
+			result["item_id"] = item_id
+			result["item_amount"] = item_amount
+			result["installed_count"] = previous_count + 1
+			result["switched"] = replaced_count > 0
+			result["replaced_module_id"] = replaced_module_id if replaced_count > 0 else ""
+			result["returned_module_id"] = replaced_module_id if replaced_count > 0 else ""
+		else:
+			if previous_count <= 0:
+				return _vehicle_service_fail(result, "module_not_installed")
+			if module_id == "vehicle_extended_seat" and _vehicle_service_has_platform_passenger_occupants(farm_vehicle):
+				return _vehicle_service_fail(result, "module_passenger_occupied")
+			if module_id == "vehicle_machine_gun" and _vehicle_service_machine_gun_in_use(farm_vehicle):
+				return _vehicle_service_fail(result, "module_machine_gun_in_use")
+			if not _server_can_add_personal_ingredient(player_state, item_id, item_amount, false):
+				return _vehicle_service_fail(result, "module_bag_full")
+			if not _vehicle_service_set_module_state(vehicle, module_id, previous_count - 1):
+				_vehicle_service_rollback_module_transaction(
+					peer_id, team, player_state_before, vehicle, module_id, previous_count,
+					"", 0, {}, money_before, previous_current_hp
+				)
+				return _vehicle_service_fail(result, "module_uninstall_failed")
+			_server_add_personal_ingredient(player_state, item_id, item_amount, false)
+			if float((player_state.get("personal_ingredients", {}) as Dictionary).get(
+					_personal_ingredient_key(item_id, false), 0.0
+				)) + 0.001 < float((player_state_before.get("personal_ingredients", {}) as Dictionary).get(
+					_personal_ingredient_key(item_id, false), 0.0
+				)) + item_amount:
+				_vehicle_service_rollback_module_transaction(
+					peer_id, team, player_state_before, vehicle, module_id, previous_count,
+					"", 0, {}, money_before, previous_current_hp
+				)
+				return _vehicle_service_fail(result, "module_uninstall_failed")
+			player_states[peer_id] = player_state
+			_emit_personal_inventory_slots(peer_id, player_state)
+			result["module_id"] = module_id
+			result["item_id"] = item_id
+			result["item_amount"] = item_amount
+			result["installed_count"] = previous_count - 1
+			result["uninstalled_count"] = 1
+			result["returned_module_id"] = module_id
+			result["returned_item_id"] = item_id
+			result["returned_item_amount"] = item_amount
+	result["service_fee"] = service_fee
+	result["charged"] = service_fee > 0
+	result["team_money"] = int(round(GlobalVar.check_team_item_amount(team, "money")))
+	var updated_state := _vehicle_service_update_state(vehicle)
+	_update_team_garage_customization_from_vehicle(vehicle, updated_state)
+	result["vehicle_state"] = _public_vehicle_service_state(updated_state)
+	result["body_color_id"] = str(updated_state.get("body_color_id", vehicle.get_body_color_id()))
+	result["wheel_color_id"] = str(updated_state.get("wheel_color_id", vehicle.get_wheel_color_id()))
+	result["quote"] = get_vehicle_service_quote(vehicle, peer_id)
+	result["ok"] = true
+	result["phase"] = "completed"
+	result["service_state"] = terminal.get_network_state()
+	inventory_state_ready.emit(_build_inventory_state())
+	return _emit_shop_transaction_result(result)
+
+
+func _spawn_team_garage_vehicle(
+	team: String,
+	record: Dictionary,
+	placement: Dictionary,
+	metadata: Dictionary
+) -> Dictionary:
+	var scene_path := str(record.get("scene_path", metadata.get("scene_path", "")))
+	var packed := load(scene_path) as PackedScene
+	var vehicle := packed.instantiate() as VehicleBase if packed != null else null
+	if vehicle == null or not is_instance_valid(GlobalVar.gameworld):
+		if vehicle != null:
+			vehicle.free()
+		return {
+			"ok": false,
+			"reason": "missing_vehicle_scene",
+			"garage_vehicle_id": str(metadata.get("garage_vehicle_id", "")),
+		}
+	var catalog_vehicle_id := str(record.get("vehicle_id", metadata.get("vehicle_id", "vehicle")))
+	var vehicle_id := _allocate_dynamic_vehicle_id("garage_delivery")
+	vehicle.name = "GarageDelivery_%s_%s" % [catalog_vehicle_id.capitalize(), vehicle_id]
+	vehicle.network_id = vehicle_id
+	vehicle.owner_team = team
+	var body_color_id := VehicleColorCatalogScript.normalize_id(str(metadata.get("body_color_id", "black")))
+	var wheel_color_id := VehicleColorCatalogScript.normalize_id(str(metadata.get("wheel_color_id", "black")))
+	if vehicle.has_method("set_body_color_id"):
+		vehicle.call("set_body_color_id", body_color_id)
+	else:
+		vehicle.body_color = VehicleColorCatalogScript.get_color(body_color_id)
+	if vehicle.has_method("set_wheel_color_id"):
+		vehicle.call("set_wheel_color_id", wheel_color_id)
+	else:
+		vehicle.wheel_color = VehicleColorCatalogScript.get_color(wheel_color_id)
+	vehicle.set_meta("garage_vehicle_id", str(metadata.get("garage_vehicle_id", "")))
+	if vehicle.has_method("set_kitchen_team"):
+		vehicle.call("set_kitchen_team", team)
+	GlobalVar.gameworld.add_child(vehicle)
+	if not is_instance_valid(vehicle) or not vehicle.vehicle_deployed \
+			or not vehicle.is_inside_tree() or vehicle.get_world_3d() == null:
+		if is_instance_valid(vehicle):
+			vehicle.queue_free()
+		return {
+			"ok": false,
+			"reason": "vehicle_spawn_failed",
+			"vehicle_id": vehicle_id,
+			"garage_vehicle_id": str(metadata.get("garage_vehicle_id", "")),
+		}
+	if vehicle.has_method("set_body_color_id"):
+		vehicle.call("set_body_color_id", body_color_id)
+	else:
+		vehicle.set_body_color(vehicle.body_color)
+	if vehicle.has_method("set_wheel_color_id"):
+		vehicle.call("set_wheel_color_id", wheel_color_id)
+	else:
+		vehicle.set_wheel_color(vehicle.wheel_color)
+	# A garage repair must restore the customization that was installed before
+	# the vehicle was destroyed.  Apply these flags after the node is in the
+	# tree so every runtime module can create its scene/interaction nodes safely.
+	var installed_modules_value: Variant = record.get("installed_modules", {})
+	if installed_modules_value is Dictionary and vehicle.has_method("set_high_performance_motor_installed"):
+		var installed_modules_for_motor := installed_modules_value as Dictionary
+		vehicle.call(
+			"set_high_performance_motor_installed",
+			int(installed_modules_for_motor.get("high_performance_motor", 0)) > 0
+		)
+	if installed_modules_value is Dictionary and vehicle.has_method("set_composite_armor_panel_installed"):
+		var installed_modules_for_armor := installed_modules_value as Dictionary
+		vehicle.call(
+			"set_composite_armor_panel_installed",
+			int(installed_modules_for_armor.get("composite_armor_panel", 0)) > 0
+		)
+	if installed_modules_value is Dictionary and vehicle is FarmBaseVehicle:
+		var installed_modules := installed_modules_value as Dictionary
+		var farm_vehicle := vehicle as FarmBaseVehicle
+		farm_vehicle.set_harvest_reel_installed(
+			int(installed_modules.get("vehicle_harvest_reel", 0)) > 0
+		)
+		farm_vehicle.set_platform_passenger_seat_count(
+			int(installed_modules.get("vehicle_extended_seat", 0))
+		)
+		farm_vehicle.set_roof_headlights_installed(
+			int(installed_modules.get("vehicle_roof_headlights", 0)) > 0
+		)
+		farm_vehicle.set_platform_machine_gun_installed(
+			int(installed_modules.get("vehicle_machine_gun", 0)) > 0
+		)
+		farm_vehicle.set_platform_signal_station_installed(
+			int(installed_modules.get("vehicle_signal_augment", 0)) > 0
+		)
+		farm_vehicle.set_nitro_boost_installed(
+			int(installed_modules.get("vehicle_nitro_boost", 0)) > 0
+		)
+		farm_vehicle.set_reinforced_variant(
+			int(installed_modules.get("vehicle_metal_defense_net", 0)) > 0
+		)
+	var landing_position := _vector3_from_value(placement.get("position", Vector3.ZERO))
+	var spawn_mode := str(placement.get("spawn_mode", "ground"))
+	var drop_start_position := _vector3_from_value(
+		placement.get("drop_start_position", landing_position)
+	)
+	vehicle.global_position = drop_start_position if spawn_mode == "airdrop" else landing_position
+	vehicle.set_upright_yaw(float(placement.get("yaw", 0.0)))
+	if spawn_mode == "airdrop":
+		vehicle.begin_spawn_drop(landing_position, float(placement.get("drop_timeout", 3.0)))
+	var vehicle_state := vehicle.get_network_state()
+	vehicle_state["vehicle_id"] = vehicle_id
+	vehicle_state["scene_path"] = scene_path
+	vehicle_state["owner_team"] = team
+	vehicle_state["body_color"] = vehicle.body_color
+	vehicle_state["wheel_color"] = vehicle.wheel_color
+	vehicle_state["body_color_id"] = body_color_id
+	vehicle_state["wheel_color_id"] = wheel_color_id
+	vehicle_state["garage_vehicle_id"] = str(metadata.get("garage_vehicle_id", ""))
+	vehicle_state["catalog_vehicle_id"] = catalog_vehicle_id
+	vehicle_state["garage_repair_request_id"] = str(metadata.get("request_id", ""))
+	vehicle_state["garage_repair_peer_id"] = int(metadata.get("peer_id", 0))
+	vehicle_state["garage_repair_team"] = team
+	vehicle_state["garage_repair_fee"] = int(metadata.get("repair_fee", 0))
+	vehicle_state["garage_delivery_fee"] = int(metadata.get("delivery_fee", 0))
+	vehicle_state["garage_repair_total_fee"] = int(metadata.get("total_fee", 0))
+	vehicle_state["garage_repair_pending"] = spawn_mode == "airdrop"
+	vehicle_states[vehicle_id] = vehicle_state
+	metadata["spawned_vehicle_id"] = vehicle_id
+	metadata["spawn_mode"] = spawn_mode
+	if spawn_mode == "airdrop":
+		pending_garage_repairs_by_vehicle[vehicle_id] = metadata
+		vehicle.spawn_drop_finished.connect(_on_vehicle_spawn_drop_finished.bind(vehicle_id))
+	reliable_world_event_ready.emit({
+		"type": "vehicle_placed",
+		"vehicle_id": vehicle_id,
+		"scene_path": scene_path,
+		"owner_team": team,
+		"position": vehicle.global_position,
+		"yaw": vehicle.upright_yaw,
+		"spawn_mode": spawn_mode,
+		"drop_start_position": drop_start_position,
+		"drop_landing_position": landing_position,
+		"vehicle_state": _public_vehicle_state(vehicle_state),
+		"tick": server_tick,
+	})
+	return {
+		"ok": true,
+		"vehicle_id": vehicle_id,
+		"position": landing_position,
+		"spawn_position": vehicle.global_position,
+		"spawn_mode": spawn_mode,
+		"yaw": vehicle.upright_yaw,
+		"garage_vehicle_id": str(metadata.get("garage_vehicle_id", "")),
+		"vehicle_state": vehicle_state.duplicate(true),
+	}
+
+
 func server_shop_transaction(peer_id: int, transaction: Dictionary) -> Dictionary:
+	var shop_category := str(transaction.get("shop_category", "general"))
+	var action_name := str(transaction.get("action", "trade"))
+	var request_id := str(transaction.get("request_id", ""))
+	if shop_category in ["vehicle_sales", "vehicle_garage", "vehicle_service"] and not request_id.is_empty():
+		var cached_result := _get_cached_shop_transaction(peer_id, request_id)
+		if not cached_result.is_empty():
+			# A retry with the same player/request id is the same transaction.  Return
+			# the cached pending/final result without touching money or vehicles.
+			return _emit_shop_transaction_result(cached_result)
 	if not player_states.has(peer_id):
 		return _emit_shop_transaction_result({
-			"ok": false, "reason": "unknown_player", "peer_id": peer_id,
-			"shop_category": str(transaction.get("shop_category", "general")),
+			"ok": false, "phase": "failed", "reason": "unknown_player", "peer_id": peer_id,
+			"shop_category": shop_category, "action": action_name, "request_id": request_id,
 		})
 	var team := str(player_states[peer_id].get("team", ""))
 	if team.is_empty():
 		return _emit_shop_transaction_result({
-			"ok": false, "reason": "missing_team", "peer_id": peer_id,
-			"shop_category": str(transaction.get("shop_category", "general")),
+			"ok": false, "phase": "failed", "reason": "missing_team", "peer_id": peer_id,
+			"shop_category": shop_category, "action": action_name, "request_id": request_id,
 		})
-	var shop_category := str(transaction.get("shop_category", "general"))
-	var action_name := str(transaction.get("action", "trade"))
+	if shop_category == "vehicle_sales":
+		if action_name != "vehicle_purchase":
+			return _emit_shop_transaction_result({
+				"ok": false, "phase": "failed", "reason": "unsupported_action", "peer_id": peer_id,
+				"team": team, "shop_category": shop_category, "action": action_name,
+				"request_id": request_id,
+			})
+		return _server_vehicle_purchase_transaction(peer_id, team, transaction)
+	if shop_category == "vehicle_garage":
+		if action_name != "repair_delivery":
+			return _emit_shop_transaction_result({
+				"ok": false, "phase": "failed", "reason": "unsupported_action", "peer_id": peer_id,
+				"team": team, "shop_category": shop_category, "action": action_name,
+				"request_id": request_id,
+			})
+		return _server_vehicle_garage_repair_transaction(peer_id, team, transaction)
+	if shop_category == "vehicle_service":
+		return server_vehicle_service_transaction(peer_id, transaction)
 	if shop_category == "livestock_market":
 		var market := _livestock_market_from_transaction(transaction)
 		var session_result := {
@@ -9284,6 +11314,14 @@ func _augment_ratio_for_remote_device(remote_state: Dictionary) -> float:
 				ratio,
 				clampf(float(augment_node.call("get_augment_ratio_for_device", device_id)), 1.0, 100.0)
 			)
+	for station in get_tree().get_nodes_in_group("mounted_vehicle_signal_stations"):
+		if not station is VehicleBaseSignalStation or not is_instance_valid(station):
+			continue
+		if station.has_method("get_augment_ratio_for_device"):
+			ratio = maxf(
+				ratio,
+				clampf(float(station.call("get_augment_ratio_for_device", device_id)), 1.0, 100.0)
+			)
 	return ratio
 
 
@@ -10900,9 +12938,8 @@ func _server_place_vehicle_scene(peer_id: int, tool_request: Dictionary, tool_id
 	var vehicle := packed.instantiate() as VehicleBase if packed != null else null
 	if vehicle == null or GlobalVar.gameworld == null:
 		return {"ok": false, "reason": "missing_vehicle_scene", "placed": tool_id}
-	var vehicle_id := "%s_%d" % [tool_id, next_dynamic_vehicle_id]
-	next_dynamic_vehicle_id += 1
-	vehicle.name = "%s_%d" % [tool_id.capitalize(), next_dynamic_vehicle_id]
+	var vehicle_id := _allocate_dynamic_vehicle_id(tool_id)
+	vehicle.name = "%s_%s" % [tool_id.capitalize(), vehicle_id]
 	vehicle.network_id = vehicle_id
 	vehicle.owner_team = str(state.get("team", ""))
 	if vehicle.has_method("set_kitchen_team"):
@@ -10914,7 +12951,7 @@ func _server_place_vehicle_scene(peer_id: int, tool_request: Dictionary, tool_id
 		placement.get("drop_start_position", landing_position)
 	)
 	vehicle.global_position = drop_start_position if spawn_mode == "airdrop" else landing_position
-	vehicle.rotation.y = placement_yaw
+	vehicle.set_upright_yaw(placement_yaw)
 	if spawn_mode == "airdrop":
 		vehicle.begin_spawn_drop(
 			landing_position,
@@ -10933,11 +12970,11 @@ func _server_place_vehicle_scene(peer_id: int, tool_request: Dictionary, tool_id
 		"scene_path": scene_path,
 		"owner_team": str(state.get("team", "")),
 		"position": vehicle.global_position,
-		"yaw": vehicle.rotation.y,
+		"yaw": vehicle.upright_yaw,
 		"spawn_mode": spawn_mode,
 		"drop_start_position": drop_start_position,
 		"drop_landing_position": landing_position,
-		"vehicle_state": vehicle_state.duplicate(true),
+		"vehicle_state": _public_vehicle_state(vehicle_state),
 		"tick": server_tick,
 	})
 	return {
@@ -10951,7 +12988,299 @@ func _server_place_vehicle_scene(peer_id: int, tool_request: Dictionary, tool_id
 	}
 
 
+func _pending_garage_repair_metadata(vehicle_id: String, garage_vehicle_id := "") -> Dictionary:
+	var pending_value: Variant = pending_garage_repairs_by_vehicle.get(vehicle_id, {})
+	if pending_value is Dictionary and not (pending_value as Dictionary).is_empty():
+		return pending_value as Dictionary
+	if not garage_vehicle_id.is_empty():
+		pending_value = pending_garage_repairs_by_record.get(garage_vehicle_id, {})
+		if pending_value is Dictionary and not (pending_value as Dictionary).is_empty():
+			return pending_value as Dictionary
+	for pending_entry: Variant in pending_garage_repairs_by_record.values():
+		if not pending_entry is Dictionary:
+			continue
+		var pending_metadata := pending_entry as Dictionary
+		if str(pending_metadata.get("spawned_vehicle_id", "")) == vehicle_id:
+			return pending_metadata
+	var state_value: Variant = vehicle_states.get(vehicle_id, {})
+	if state_value is Dictionary:
+		var state := state_value as Dictionary
+		if bool(state.get("garage_repair_pending", false)):
+			var request_id := str(state.get("garage_repair_request_id", ""))
+			if not request_id.is_empty():
+				return {
+					"request_id": request_id,
+					"peer_id": int(state.get("garage_repair_peer_id", 0)),
+					"team": str(state.get("garage_repair_team", state.get("owner_team", ""))),
+					"garage_vehicle_id": str(state.get("garage_vehicle_id", garage_vehicle_id)),
+					"vehicle_id": str(state.get("catalog_vehicle_id", "")),
+					"scene_path": str(state.get("scene_path", "")),
+					"body_color_id": str(state.get("body_color_id", "black")),
+					"wheel_color_id": str(state.get("wheel_color_id", "black")),
+					"repair_fee": int(state.get("garage_repair_fee", 0)),
+					"delivery_fee": int(state.get("garage_delivery_fee", 0)),
+					"total_fee": int(state.get("garage_repair_total_fee", 0)),
+					"price": int(state.get("garage_repair_total_fee", 0)),
+					"charged": true,
+					"refunded": false,
+				}
+	return {}
+
+
+func _is_pending_garage_repair_vehicle(vehicle_id: String) -> bool:
+	if pending_garage_repairs_by_vehicle.has(vehicle_id):
+		return true
+	var state_value: Variant = vehicle_states.get(vehicle_id, {})
+	return state_value is Dictionary and bool((state_value as Dictionary).get("garage_repair_pending", false))
+
+
+func _settle_pending_garage_repair_failure(
+	vehicle_id: String,
+	reason: String,
+	vehicle: VehicleBase = null,
+	garage_vehicle_id := ""
+) -> Dictionary:
+	var metadata := _pending_garage_repair_metadata(vehicle_id, garage_vehicle_id)
+	if metadata.is_empty() or bool(metadata.get("settled", false)):
+		return {}
+	var resolved_garage_vehicle_id := str(metadata.get("garage_vehicle_id", garage_vehicle_id))
+	var refund_result := _refund_vehicle_purchase(metadata)
+	metadata["refunded"] = bool(refund_result.get("refunded", false))
+	metadata["refund_amount"] = int(refund_result.get("refund_amount", 0))
+	metadata["settled"] = true
+	if not resolved_garage_vehicle_id.is_empty():
+		pending_garage_repairs_by_record.erase(resolved_garage_vehicle_id)
+		_set_team_garage_delivery_pending(resolved_garage_vehicle_id, false)
+	if not vehicle_id.is_empty():
+		pending_garage_repairs_by_vehicle.erase(vehicle_id)
+		vehicle_states.erase(vehicle_id)
+	reliable_world_event_ready.emit({
+		"type": "vehicle_spawn_drop_failed",
+		"vehicle_id": vehicle_id,
+		"garage_vehicle_id": resolved_garage_vehicle_id,
+		"tick": server_tick,
+	})
+	if vehicle != null and is_instance_valid(vehicle) and not vehicle.is_queued_for_deletion():
+		vehicle.queue_free()
+	var result := {
+		"ok": false,
+		"phase": "failed",
+		"peer_id": int(metadata.get("peer_id", 0)),
+		"team": str(metadata.get("team", "")),
+		"shop_category": "vehicle_garage",
+		"action": "repair_delivery",
+		"request_id": str(metadata.get("request_id", "")),
+		"vehicle_id": str(metadata.get("vehicle_id", "")),
+		"spawned_vehicle_id": vehicle_id,
+		"garage_vehicle_id": resolved_garage_vehicle_id,
+		"body_color_id": str(metadata.get("body_color_id", "black")),
+		"wheel_color_id": str(metadata.get("wheel_color_id", "black")),
+		"repair_fee": int(metadata.get("repair_fee", 0)),
+		"delivery_fee": int(metadata.get("delivery_fee", 0)),
+		"total_fee": int(metadata.get("total_fee", metadata.get("price", 0))),
+		"charged": true,
+		"refunded": bool(refund_result.get("refunded", false)),
+		"refund_amount": int(refund_result.get("refund_amount", 0)),
+		"reason": reason,
+	}
+	return _emit_shop_transaction_result(result)
+
+
+func _settle_pending_garage_repair_success(vehicle_id: String, vehicle: VehicleBase) -> Dictionary:
+	var metadata := _pending_garage_repair_metadata(vehicle_id)
+	if metadata.is_empty() or bool(metadata.get("settled", false)):
+		return {}
+	if vehicle == null or not is_instance_valid(vehicle) or vehicle.is_queued_for_deletion():
+		return _settle_pending_garage_repair_failure(vehicle_id, "vehicle_spawn_failed")
+	var vehicle_state: Dictionary = (vehicle_states.get(vehicle_id, {}) as Dictionary).duplicate(true)
+	vehicle_state.merge(vehicle.get_network_state(), true)
+	vehicle_state["vehicle_id"] = vehicle_id
+	vehicle_state["garage_repair_pending"] = false
+	vehicle_state["garage_vehicle_id"] = str(metadata.get("garage_vehicle_id", ""))
+	vehicle_state["body_color_id"] = str(metadata.get("body_color_id", "black"))
+	vehicle_state["wheel_color_id"] = str(metadata.get("wheel_color_id", "black"))
+	vehicle_states[vehicle_id] = vehicle_state
+	metadata["settled"] = true
+	pending_garage_repairs_by_vehicle.erase(vehicle_id)
+	pending_garage_repairs_by_record.erase(str(metadata.get("garage_vehicle_id", "")))
+	var garage_vehicle_id := _commit_team_garage_vehicle(metadata, vehicle_id)
+	reliable_world_event_ready.emit({
+		"type": "vehicle_spawn_drop_finished",
+		"vehicle_id": vehicle_id,
+		"garage_vehicle_id": garage_vehicle_id,
+		"position": vehicle.global_position,
+		"yaw": vehicle.upright_yaw,
+		"vehicle_state": _public_vehicle_state(vehicle_state),
+		"tick": server_tick,
+	})
+	var result := {
+		"ok": true,
+		"phase": "completed",
+		"peer_id": int(metadata.get("peer_id", 0)),
+		"team": str(metadata.get("team", "")),
+		"shop_category": "vehicle_garage",
+		"action": "repair_delivery",
+		"request_id": str(metadata.get("request_id", "")),
+		"vehicle_id": str(metadata.get("vehicle_id", "")),
+		"spawned_vehicle_id": vehicle_id,
+		"garage_vehicle_id": garage_vehicle_id,
+		"body_color_id": str(metadata.get("body_color_id", "black")),
+		"wheel_color_id": str(metadata.get("wheel_color_id", "black")),
+		"repair_fee": int(metadata.get("repair_fee", 0)),
+		"delivery_fee": int(metadata.get("delivery_fee", 0)),
+		"total_fee": int(metadata.get("total_fee", metadata.get("price", 0))),
+		"charged": true,
+		"refunded": false,
+		"refund_amount": 0,
+	}
+	return _emit_shop_transaction_result(result)
+
+
+func _pending_purchase_metadata(vehicle_id: String) -> Dictionary:
+	var pending_value: Variant = pending_vehicle_purchase_states.get(vehicle_id, {})
+	if pending_value is Dictionary and not (pending_value as Dictionary).is_empty():
+		return pending_value as Dictionary
+	var state_value: Variant = vehicle_states.get(vehicle_id, {})
+	if not state_value is Dictionary:
+		return {}
+	var state := state_value as Dictionary
+	var request_id := str(state.get("purchase_request_id", ""))
+	if request_id.is_empty():
+		return {}
+	return {
+		"request_id": request_id,
+		"peer_id": int(state.get("purchase_peer_id", 0)),
+		"team": str(state.get("purchase_team", state.get("owner_team", ""))),
+		"price": int(state.get("purchase_price", 0)),
+		"vehicle_id": str(state.get("catalog_vehicle_id", "")),
+		"body_color_id": str(state.get("body_color_id", "black")),
+		"wheel_color_id": str(state.get("wheel_color_id", "black")),
+		"garage_vehicle_id": str(state.get("garage_vehicle_id", "")),
+		"refunded": false,
+	}
+
+
+func _is_pending_vehicle_purchase(vehicle_id: String) -> bool:
+	if pending_vehicle_purchase_states.has(vehicle_id):
+		return true
+	var state_value: Variant = vehicle_states.get(vehicle_id, {})
+	return state_value is Dictionary and bool((state_value as Dictionary).get("purchase_pending", false))
+
+
+func _settle_pending_vehicle_purchase_failure(
+	vehicle_id: String,
+	reason: String,
+	vehicle: VehicleBase = null
+) -> bool:
+	var metadata := _pending_purchase_metadata(vehicle_id)
+	if metadata.is_empty():
+		return false
+	var refund_result := _refund_vehicle_purchase(metadata)
+	pending_vehicle_purchase_states.erase(vehicle_id)
+	vehicle_states.erase(vehicle_id)
+	reliable_world_event_ready.emit({
+		"type": "vehicle_spawn_drop_failed",
+		"vehicle_id": vehicle_id,
+		"tick": server_tick,
+	})
+	if vehicle != null and is_instance_valid(vehicle) and not vehicle.is_queued_for_deletion():
+		vehicle.queue_free()
+	var result := {
+		"ok": false,
+		"phase": "failed",
+		"peer_id": int(metadata.get("peer_id", 0)),
+		"team": str(metadata.get("team", "")),
+		"shop_category": "vehicle_sales",
+		"action": "vehicle_purchase",
+		"request_id": str(metadata.get("request_id", "")),
+		"vehicle_id": str(metadata.get("vehicle_id", "")),
+		"spawned_vehicle_id": vehicle_id,
+		"garage_vehicle_id": str(metadata.get("garage_vehicle_id", "")),
+		"body_color_id": str(metadata.get("body_color_id", "black")),
+		"wheel_color_id": str(metadata.get("wheel_color_id", "black")),
+		"total_price": int(metadata.get("price", 0)),
+		"charged": true,
+		"refunded": bool(refund_result.get("refunded", false)),
+		"refund_amount": int(refund_result.get("refund_amount", 0)),
+		"reason": reason,
+	}
+	_emit_shop_transaction_result(result)
+	return true
+
+
+func _settle_pending_vehicle_purchase_success(vehicle_id: String, vehicle: VehicleBase) -> bool:
+	var metadata := _pending_purchase_metadata(vehicle_id)
+	if metadata.is_empty() or vehicle == null or not is_instance_valid(vehicle):
+		return false
+	var vehicle_state: Dictionary = (vehicle_states.get(vehicle_id, {}) as Dictionary).duplicate(true)
+	vehicle_state.merge(vehicle.get_network_state(), true)
+	vehicle_state["vehicle_id"] = vehicle_id
+	vehicle_state["purchase_pending"] = false
+	vehicle_state["garage_vehicle_id"] = str(metadata.get("garage_vehicle_id", ""))
+	vehicle_state["body_color_id"] = str(metadata.get("body_color_id", "black"))
+	vehicle_state["wheel_color_id"] = str(metadata.get("wheel_color_id", "black"))
+	vehicle_states[vehicle_id] = vehicle_state
+	pending_vehicle_purchase_states.erase(vehicle_id)
+	var garage_vehicle_id := _commit_team_garage_vehicle(metadata, vehicle_id)
+	reliable_world_event_ready.emit({
+		"type": "vehicle_spawn_drop_finished",
+		"vehicle_id": vehicle_id,
+		"position": vehicle.global_position,
+		"yaw": vehicle.upright_yaw,
+		"vehicle_state": _public_vehicle_state(vehicle_state),
+		"tick": server_tick,
+	})
+	var result := {
+		"ok": true,
+		"phase": "completed",
+		"peer_id": int(metadata.get("peer_id", 0)),
+		"team": str(metadata.get("team", "")),
+		"shop_category": "vehicle_sales",
+		"action": "vehicle_purchase",
+		"request_id": str(metadata.get("request_id", "")),
+		"vehicle_id": str(metadata.get("vehicle_id", "")),
+		"spawned_vehicle_id": vehicle_id,
+		"garage_vehicle_id": garage_vehicle_id,
+		"body_color_id": str(metadata.get("body_color_id", "black")),
+		"wheel_color_id": str(metadata.get("wheel_color_id", "black")),
+		"total_price": int(metadata.get("price", 0)),
+		"charged": true,
+		"refunded": false,
+		"refund_amount": 0,
+	}
+	_emit_shop_transaction_result(result)
+	return true
+
+
 func _on_vehicle_spawn_drop_finished(success: bool, vehicle_id: String) -> void:
+	if _is_pending_garage_repair_vehicle(vehicle_id):
+		var garage_vehicle := _find_vehicle(vehicle_id)
+		if not success or garage_vehicle == null or not is_instance_valid(garage_vehicle):
+			_settle_pending_garage_repair_failure(vehicle_id, "vehicle_spawn_failed", garage_vehicle)
+		else:
+			_settle_pending_garage_repair_success(vehicle_id, garage_vehicle)
+		return
+	var settled_garage_state: Variant = vehicle_states.get(vehicle_id, {})
+	if settled_garage_state is Dictionary \
+			and not str((settled_garage_state as Dictionary).get("garage_repair_request_id", "")).is_empty() \
+			and not bool((settled_garage_state as Dictionary).get("garage_repair_pending", false)):
+		return
+	if _is_pending_vehicle_purchase(vehicle_id):
+		var vehicle := _find_vehicle(vehicle_id)
+		if not success or vehicle == null or not is_instance_valid(vehicle):
+			_settle_pending_vehicle_purchase_failure(vehicle_id, "vehicle_spawn_failed", vehicle)
+		else:
+			_settle_pending_vehicle_purchase_success(vehicle_id, vehicle)
+		return
+	# A purchased drop can emit a late duplicate signal after it has already
+	# settled. Do not re-enter the ordinary free-placement path or emit another
+	# completion event for that request.
+	var settled_purchase_state: Variant = vehicle_states.get(vehicle_id, {})
+	if settled_purchase_state is Dictionary \
+			and not str((settled_purchase_state as Dictionary).get("purchase_request_id", "")).is_empty():
+		return
+	if not vehicle_states.has(vehicle_id):
+		return
 	var vehicle := _find_vehicle(vehicle_id)
 	if vehicle == null or not is_instance_valid(vehicle):
 		vehicle_states.erase(vehicle_id)
@@ -10973,7 +13302,7 @@ func _on_vehicle_spawn_drop_finished(success: bool, vehicle_id: String) -> void:
 		"type": "vehicle_spawn_drop_finished",
 		"vehicle_id": vehicle_id,
 		"position": vehicle.global_position,
-		"yaw": vehicle.rotation.y,
+		"yaw": vehicle.upright_yaw,
 		"vehicle_state": vehicle_state.duplicate(true),
 		"tick": server_tick,
 	})
@@ -11840,7 +14169,29 @@ func _spawn_local_projectile_visual(projectile_id: int, scene: PackedScene, proj
 	_disable_local_projectile_visual_runtime(visual)
 	visual.set_meta("network_visual_only", true)
 	visual.global_position = _vector3_from_value(projectile.get("position", Vector3.ZERO))
+	if str(projectile.get("type", "")) == "grenade":
+		_start_grenade_tracers(visual)
 	local_projectile_visual_nodes[projectile_id] = visual
+
+
+func _start_grenade_tracers(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root is BulletTracerSegment:
+		(root as BulletTracerSegment).start_tracing()
+	for child in root.get_children():
+		if child is Node:
+			_start_grenade_tracers(child)
+
+
+func _stop_grenade_tracers(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root is BulletTracerSegment:
+		(root as BulletTracerSegment).stop_tracing()
+	for child in root.get_children():
+		if child is Node:
+			_stop_grenade_tracers(child)
 
 
 func _disable_local_projectile_visual_runtime(root: Node) -> void:
@@ -11998,6 +14349,8 @@ func _simulate_projectiles(delta: float) -> void:
 			var visual_velocity := _vector3_from_value(projectile.get("velocity", velocity))
 			if visual_velocity.length_squared() > 0.01:
 				(local_visual as Node3D).look_at((local_visual as Node3D).global_position + visual_velocity, Vector3.UP)
+			if str(projectile.get("type", "")) == "grenade" and bool(projectile.get("resting", false)):
+				_stop_grenade_tracers(local_visual as Node)
 	for projectile_id in to_remove:
 		projectile_states.erase(projectile_id)
 		_remove_local_projectile_visual(projectile_id)
@@ -12498,6 +14851,7 @@ func apply_local_boom_explosion(
 			tile.impact(effect, damage * occlusion, team)
 	_damage_future_warriors_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_farmer_ais_in_radius(position, radius, damage, team, effect, false, false)
+	_damage_ai_players_in_radius(position, radius, damage, team, effect, false, false, attacker_peer_id)
 	_damage_assistant_ai_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_ai_normal_drones_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_vehicles_in_radius(position, radius, damage, team, effect)
@@ -12573,25 +14927,37 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 				var applied_damage := damage * ratio * occlusion
 				if _damage_player(
 					int(peer_id), applied_damage, knockback_strength * ratio * occlusion,
-					dir, damage_team, effect, int(projectile.get("owner_peer_id", 0))
+					dir, team, effect, int(projectile.get("owner_peer_id", 0)), friendly_fire
 				):
 					if is_enemy_target:
 						confirmed_target_count += 1
 						confirmed_total_damage += applied_damage
 		var future_warrior_damage := _damage_future_warriors_in_radius(
-			hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire
+			hit_position, radius, damage, team, effect, linear_falloff, friendly_fire
 		)
 		confirmed_target_count += int(future_warrior_damage.get("count", 0))
 		confirmed_total_damage += float(future_warrior_damage.get("total_damage", 0.0))
 		var farmer_ai_damage := _damage_farmer_ais_in_radius(
-			hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire
+			hit_position, radius, damage, team, effect, linear_falloff, friendly_fire
 		)
 		confirmed_target_count += int(farmer_ai_damage.get("count", 0))
 		confirmed_total_damage += float(farmer_ai_damage.get("total_damage", 0.0))
-		var assistant_damage := _damage_assistant_ai_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire)
+		var legacy_ai_damage := _damage_ai_players_in_radius(
+			hit_position,
+			radius,
+			damage,
+			team,
+			effect,
+			linear_falloff,
+			friendly_fire,
+			int(projectile.get("owner_peer_id", 0))
+		)
+		confirmed_target_count += int(legacy_ai_damage.get("count", 0))
+		confirmed_total_damage += float(legacy_ai_damage.get("total_damage", 0.0))
+		var assistant_damage := _damage_assistant_ai_in_radius(hit_position, radius, damage, team, effect, linear_falloff, friendly_fire)
 		confirmed_target_count += int(assistant_damage.get("count", 0))
 		confirmed_total_damage += float(assistant_damage.get("total_damage", 0.0))
-		var ai_drone_damage := _damage_ai_normal_drones_in_radius(hit_position, radius, damage, damage_team, effect, linear_falloff, friendly_fire)
+		var ai_drone_damage := _damage_ai_normal_drones_in_radius(hit_position, radius, damage, team, effect, linear_falloff, friendly_fire)
 		confirmed_target_count += int(ai_drone_damage.get("count", 0))
 		confirmed_total_damage += float(ai_drone_damage.get("total_damage", 0.0))
 		var manager := get_node_or_null("/root/Farmlandmanager")
@@ -12678,8 +15044,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			confirmed_total_damage += damage * float(damaged_nature)
 		var damaged_animals := _damage_wild_animals_in_radius(
 			hit_position, radius, damage, knockback_strength,
-			damage_team, effect, linear_falloff,
-			int(projectile.get("owner_peer_id", 0))
+			team, effect, linear_falloff,
+			int(projectile.get("owner_peer_id", 0)), friendly_fire
 		)
 		confirmed_target_count += damaged_animals
 		if damaged_animals > 0:
@@ -13050,14 +15416,16 @@ func _damage_player(
 	direction: Vector3,
 	attacker_team: String,
 	effect: String,
-	attacker_peer_id := 0
+	attacker_peer_id := 0,
+	allow_friendly_fire := false
 ) -> bool:
 	if not player_states.has(peer_id):
 		return false
 	var state: Dictionary = player_states[peer_id]
 	if float(state.get("respawn_left", 0.0)) > 0.0:
 		return false
-	if not attacker_team.is_empty() and str(state.get("team", "")) == attacker_team:
+	if not allow_friendly_fire and not attacker_team.is_empty() \
+			and str(state.get("team", "")) == attacker_team:
 		return false
 	var incoming_damage := maxf(0.0, damage)
 	var armor_result := _absorb_player_damage_with_equipment(state, incoming_damage)
@@ -13784,6 +16152,125 @@ func _apply_hit_to_collider(
 	return false
 
 
+func _explosion_target_team(target: Node3D) -> String:
+	if target == null or not is_instance_valid(target):
+		return ""
+	return _chain_link_target_team(target)
+
+
+func _explosion_impact_team(
+	attacker_team: String,
+	target_team: String,
+	friendly_fire: bool
+) -> String:
+	# The empty team is the explicit friendly-fire signal understood by the
+	# existing AI/animal impact methods. Keep the real team for enemy targets so
+	# death rewards and attacker attribution still resolve to the throwing peer.
+	if friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
+		return ""
+	return attacker_team
+
+
+func _is_hostile_or_neutral_explosion_target(attacker_team: String, target_team: String) -> bool:
+	return not attacker_team.is_empty() and (target_team.is_empty() or target_team != attacker_team)
+
+
+func _explosion_target_is_dead(target: Node3D) -> bool:
+	if target == null or not is_instance_valid(target):
+		return true
+	if _node_has_property(target, "is_dead") and bool(target.get("is_dead")):
+		return true
+	if _node_has_property(target, "destroyed") and bool(target.get("destroyed")):
+		return true
+	var health := _explosion_target_health(target)
+	return health >= 0.0 and health <= 0.0
+
+
+func _explosion_target_health(target: Node3D) -> float:
+	if _node_has_property(target, "current_hp"):
+		return float(target.get("current_hp"))
+	if _node_has_property(target, "hp"):
+		return float(target.get("hp"))
+	return -1.0
+
+
+## AIPlayerv2 / EnemyAI / WreckAI share legacy groups but are not instances of
+## FarmerAI. Keep them in the same authoritative explosion aggregation so a
+## grenade can damage them and contribute to the owner's hit confirmation.
+func _damage_ai_players_in_radius(
+	center: Vector3,
+	radius: float,
+	damage: float,
+	attacker_team: String,
+	effect: String,
+	linear_falloff := false,
+	friendly_fire := false,
+	attacker_peer_id := 0
+) -> Dictionary:
+	var result := {"count": 0, "total_damage": 0.0}
+	var seen_instance_ids := {}
+	for group_name: String in ["ai_players", "farmer_ai"]:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if not node is Node3D or not is_instance_valid(node):
+				continue
+			var instance_id := node.get_instance_id()
+			if seen_instance_ids.has(instance_id):
+				continue
+			seen_instance_ids[instance_id] = true
+			# These classes already have dedicated radius handlers below.
+			if node is FutureWarriorAI or node is FarmerAI \
+					or node is AssistantAI or node is AINormalDrone:
+				continue
+			var target := node as Node3D
+			if not target.has_method("impact") and not target.has_method("impact_from_peer"):
+				continue
+			var target_team := _explosion_target_team(target)
+			if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
+				continue
+			if _explosion_target_is_dead(target):
+				continue
+			var distance := target.global_position.distance_to(center)
+			if distance > radius:
+				continue
+			var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff \
+					else 1.0 - (distance / radius) * 0.5
+			var applied_damage := maxf(
+				0.0,
+				damage * ratio * _explosion_damage_multiplier(
+					center, target.global_position + Vector3.UP, target
+				)
+			)
+			if applied_damage <= 0.0:
+				continue
+			wake_ai_interest_entity(target)
+			var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
+			var previous_health := _explosion_target_health(target)
+			var impact_result: Variant = null
+			if attacker_peer_id > 0 and target.has_method("impact_from_peer"):
+				impact_result = target.call(
+					"impact_from_peer", effect, applied_damage, impact_team, attacker_peer_id
+				)
+			elif target.has_method("impact"):
+				impact_result = target.call("impact", effect, applied_damage, impact_team)
+			else:
+				continue
+			var remaining_health := _explosion_target_health(target)
+			var did_apply := false
+			if impact_result is bool:
+				did_apply = bool(impact_result)
+			elif previous_health >= 0.0 and remaining_health >= 0.0:
+				did_apply = remaining_health < previous_health - 0.0001
+			if not did_apply:
+				continue
+			var dealt_damage := applied_damage
+			if previous_health >= 0.0 and remaining_health >= 0.0:
+				dealt_damage = maxf(0.0, previous_health - remaining_health)
+			if _is_hostile_or_neutral_explosion_target(attacker_team, target_team):
+				result["count"] = int(result["count"]) + 1
+				result["total_damage"] = float(result["total_damage"]) + dealt_damage
+	return result
+
+
 func _damage_future_warriors_in_radius(
 	center: Vector3,
 	radius: float,
@@ -13800,7 +16287,8 @@ func _damage_future_warriors_in_radius(
 		var warrior := node as FutureWarriorAI
 		if int(warrior.state) == FutureWarriorAI.AIState.DEAD:
 			continue
-		if not friendly_fire and not attacker_team.is_empty() and warrior.team_id == attacker_team:
+		var target_team := warrior.team_id
+		if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
 			continue
 		var distance := warrior.global_position.distance_to(center)
 		if distance > radius:
@@ -13812,7 +16300,9 @@ func _damage_future_warriors_in_radius(
 			continue
 		var direction := warrior.global_position - center
 		wake_ai_interest_entity(warrior)
-		if warrior.impact(effect, applied_damage, attacker_team, direction):
+		var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
+		if warrior.impact(effect, applied_damage, impact_team, direction) \
+				and _is_hostile_or_neutral_explosion_target(attacker_team, target_team):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied_damage
 	return result
@@ -13834,7 +16324,8 @@ func _damage_farmer_ais_in_radius(
 		var farmer := node as FarmerAI
 		if int(farmer.state) == FarmerAI.AIState.DEAD:
 			continue
-		if not friendly_fire and not attacker_team.is_empty() and farmer.team_id == attacker_team:
+		var target_team := farmer.team_id
+		if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
 			continue
 		var distance := farmer.global_position.distance_to(center)
 		if distance > radius:
@@ -13846,7 +16337,9 @@ func _damage_farmer_ais_in_radius(
 			continue
 		var direction := farmer.global_position - center
 		wake_ai_interest_entity(farmer)
-		if farmer.impact(effect, applied_damage, attacker_team, direction):
+		var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
+		if farmer.impact(effect, applied_damage, impact_team, direction) \
+				and _is_hostile_or_neutral_explosion_target(attacker_team, target_team):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied_damage
 	return result
@@ -13866,7 +16359,7 @@ func _damage_group_nodes_in_radius(group_name: String, center: Vector3, radius: 
 		if not node is Node3D or not is_instance_valid(node):
 			continue
 		var target := node as Node3D
-		var target_team := str(target.call("get_combat_team")) if target.has_method("get_combat_team") else ""
+		var target_team := _explosion_target_team(target)
 		if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
 			continue
 		var distance := target.global_position.distance_to(center)
@@ -13875,7 +16368,10 @@ func _damage_group_nodes_in_radius(group_name: String, center: Vector3, radius: 
 		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
 		var applied := maxf(0.0, damage * ratio * _explosion_damage_multiplier(center, target.global_position + Vector3.UP, target))
 		wake_ai_interest_entity(target)
-		if applied > 0.0 and target.has_method("impact") and bool(target.call("impact", effect, applied, attacker_team)):
+		var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
+		if applied > 0.0 and target.has_method("impact") \
+				and bool(target.call("impact", effect, applied, impact_team)) \
+				and _is_hostile_or_neutral_explosion_target(attacker_team, target_team):
 			result["count"] = int(result["count"]) + 1
 			result["total_damage"] = float(result["total_damage"]) + applied
 	return result
@@ -14462,28 +16958,34 @@ func _damage_wild_animals_in_radius(
 	attacker_team: String,
 	effect: String,
 	linear_falloff := false,
-	attacker_peer_id := 0
+	attacker_peer_id := 0,
+	friendly_fire := false
 ) -> int:
 	var damaged_count := 0
 	for node in get_tree().get_nodes_in_group("wild_animals"):
 		if not node is Node3D or not is_instance_valid(node) or not node.has_method("impact"):
 			continue
 		var animal := node as Node3D
+		var target_team := _explosion_target_team(animal)
+		if not friendly_fire and not attacker_team.is_empty() and target_team == attacker_team:
+			continue
 		var distance := animal.global_position.distance_to(center)
 		if distance > radius:
 			continue
 		var ratio := maxf(0.0, 1.0 - distance / radius) if linear_falloff else 1.0 - (distance / radius) * 0.5
 		var occlusion := _explosion_damage_multiplier(center, animal.global_position + Vector3.UP * 0.8, animal)
 		wake_ai_interest_entity(animal)
+		var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
 		var applied := bool(animal.call(
-			"impact_from_peer", effect, damage * ratio * occlusion, attacker_team, attacker_peer_id
+			"impact_from_peer", effect, damage * ratio * occlusion, impact_team, attacker_peer_id
 		)) if attacker_peer_id > 0 and animal.has_method("impact_from_peer") else bool(
-			animal.call("impact", effect, damage * ratio * occlusion, attacker_team)
+			animal.call("impact", effect, damage * ratio * occlusion, impact_team)
 		)
 		if applied:
 			var direction := animal.global_position - center
 			_apply_wild_animal_knockback(animal, direction, knockback * ratio * occlusion)
-			damaged_count += 1
+			if _is_hostile_or_neutral_explosion_target(attacker_team, target_team):
+				damaged_count += 1
 	return damaged_count
 
 
@@ -14716,10 +17218,13 @@ func notify_vehicle_topple_state(vehicle: VehicleBase) -> void:
 	reliable_world_event_ready.emit({
 		"type": "vehicle_topple_state",
 		"vehicle_id": vehicle_id,
+		"position": vehicle.global_position,
+		"yaw": vehicle.upright_yaw,
 		"toppled": vehicle.toppled,
 		"tip_axis": vehicle.tip_axis,
 		"tip_angle": vehicle.tip_angle,
-		"vehicle_state": vehicle_state.duplicate(true),
+		"topple_current_angle": vehicle.topple_current_angle,
+		"vehicle_state": _public_vehicle_state(vehicle_state),
 		"tick": server_tick,
 	})
 
@@ -14796,6 +17301,21 @@ func _damage_mounted_machine_guns_in_radius(
 			center, machine_gun.global_position + Vector3.UP, machine_gun
 		)
 		if machine_gun.impact(effect, damage * ratio * occlusion, attacker_team):
+			damaged_count += 1
+	for node in get_tree().get_nodes_in_group("mounted_vehicle_signal_stations"):
+		if not node is VehicleBaseSignalStation or not is_instance_valid(node):
+			continue
+		var signal_station := node as VehicleBaseSignalStation
+		if signal_station.destroyed_state:
+			continue
+		var station_distance := signal_station.global_position.distance_to(center)
+		if station_distance > radius:
+			continue
+		var station_ratio := maxf(0.0, 1.0 - station_distance / radius) if linear_falloff else 1.0 - (station_distance / radius) * 0.5
+		var station_occlusion := _explosion_damage_multiplier(
+			center, signal_station.global_position + Vector3.UP, signal_station
+		)
+		if signal_station.impact(effect, damage * station_ratio * station_occlusion, attacker_team):
 			damaged_count += 1
 	return damaged_count
 
@@ -15563,9 +18083,18 @@ func _server_can_add_personal_dish(state: Dictionary, dish_id: String, servings:
 
 func apply_world_snapshot(snapshot: Dictionary) -> void:
 	last_snapshot = snapshot.duplicate(true)
+	var world_time_seconds := float(snapshot.get("world_time_seconds", -1.0))
+	if is_client_proxy() and world_time_seconds >= 0.0:
+		# Keep the replicated clock available before the visual replicator applies
+		# the rest of the snapshot. Day/night and weather both read this value when
+		# their first frame arrives after a network update.
+		apply_replicated_world_time(world_time_seconds, int(snapshot.get("tick", -1)))
 	var event_board_state: Variant = snapshot.get("event_board", {})
 	if event_board_state is Dictionary:
 		EventBoard.apply_state(event_board_state as Dictionary)
+	var team_garages: Variant = snapshot.get("team_garages", null)
+	if is_client_proxy() and snapshot.has("team_garages") and team_garages is Dictionary:
+		apply_remote_team_garage_states(team_garages)
 
 
 func apply_reliable_world_event(event: Dictionary) -> void:
@@ -15598,6 +18127,36 @@ func apply_reliable_world_event(event: Dictionary) -> void:
 				# Merge a single reliable update without discarding the other team's
 				# cached state received in the last low-frequency snapshot.
 				remote_embedded_lab_by_team[embedded_team] = _normalize_embedded_lab_state(embedded_state)
+	elif event_type == "team_garage_state":
+		if is_client_proxy():
+			var garage_team := str(event.get("team", ""))
+			var garage_records: Variant = event.get("records", [])
+			apply_remote_team_garage_state(
+				garage_team, garage_records, int(event.get("revision", -1))
+			)
+	elif event_type == "vehicle_service_state":
+		var terminal_id := str(event.get("terminal_id", ""))
+		var state_value: Variant = event.get("state", event)
+		if state_value is Dictionary:
+			for terminal_value in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+				if terminal_value is VehicleServiceTerminal \
+						and (terminal_id.is_empty() or (terminal_value as VehicleServiceTerminal).get_terminal_id() == terminal_id):
+					(terminal_value as VehicleServiceTerminal).apply_network_state(state_value as Dictionary)
+					break
+	elif event_type == "vehicle_service_vehicle_state":
+		var vehicle_state_value: Variant = event.get("vehicle_state", {})
+		if is_client_proxy() and vehicle_state_value is Dictionary:
+			var vehicle_state := (vehicle_state_value as Dictionary).duplicate(true)
+			var remote_vehicle_id := str(event.get("vehicle_id", vehicle_state.get("vehicle_id", "")))
+			if not remote_vehicle_id.is_empty():
+				var merged_vehicle_state: Dictionary = vehicle_states.get(
+					remote_vehicle_id, {}
+				).duplicate(true)
+				merged_vehicle_state.merge(vehicle_state, true)
+				vehicle_states[remote_vehicle_id] = merged_vehicle_state
+				var remote_vehicle := _find_vehicle(remote_vehicle_id)
+				if remote_vehicle != null:
+					remote_vehicle.apply_network_state(vehicle_state)
 	elif event_type == "computer_action_result":
 		var result_value: Variant = event.get("data", {})
 		if result_value is Dictionary:
@@ -15945,20 +18504,29 @@ func _build_world_snapshot() -> Dictionary:
 			"police_light_blue_on": bool(vehicle.get("police_light_blue_on", false)),
 			"body_color": vehicle.get("body_color", null),
 			"wheel_color": vehicle.get("wheel_color", null),
+			"body_color_id": str(vehicle.get("body_color_id", "")),
+			"wheel_color_id": str(vehicle.get("wheel_color_id", "")),
+			"garage_vehicle_id": str(vehicle.get("garage_vehicle_id", "")),
 			"platform_machine_gun_installed": bool(vehicle.get("platform_machine_gun_installed", false)),
 			"platform_machine_gun": vehicle.get("platform_machine_gun", {}),
+			"platform_signal_station_installed": bool(vehicle.get("platform_signal_station_installed", false)),
+			"platform_signal_station": vehicle.get("platform_signal_station", {}),
 			"platform_passenger_seat_count": int(vehicle.get("platform_passenger_seat_count", 0)),
 			"nitro_boost_installed": bool(vehicle.get("nitro_boost_installed", false)),
 			"nitro_boost_active": bool(vehicle.get("nitro_boost_active", false)),
 			"nitro_boost": vehicle.get("nitro_boost", {}),
 			"harvest_reel_installed": bool(vehicle.get("harvest_reel_installed", false)),
 			"roof_headlights_installed": bool(vehicle.get("roof_headlights_installed", false)),
+			"reinforced_variant": bool(vehicle.get("reinforced_variant", false)),
 			"spawn_drop_active": bool(vehicle.get("spawn_drop_active", false)),
 			"spawn_drop_landing_position": vehicle.get("spawn_drop_landing_position", Vector3.ZERO),
 			"spawn_drop_remaining": float(vehicle.get("spawn_drop_remaining", 0.0)),
 			"toppled": bool(vehicle.get("toppled", false)),
-			"tip_axis": vehicle.get("tip_axis", Vector3.FORWARD),
+			"tip_axis": vehicle.get("tip_axis", Vector3.RIGHT),
 			"tip_angle": float(vehicle.get("tip_angle", 0.0)),
+			"topple_current_angle": float(vehicle.get(
+				"topple_current_angle", vehicle.get("tip_angle", 0.0)
+			)),
 		})
 	var public_projectiles: Array[Dictionary] = []
 	for raw_projectile_id in projectile_states.keys():
@@ -15969,6 +18537,7 @@ func _build_world_snapshot() -> Dictionary:
 			"type": projectile.get("type", ""),
 			"position": projectile.get("position", Vector3.ZERO),
 			"velocity": projectile.get("velocity", Vector3.ZERO),
+			"resting": bool(projectile.get("resting", false)),
 		})
 	var public_remote_devices: Array[Dictionary] = []
 	for raw_device_id in remote_device_states.keys():
@@ -16076,7 +18645,7 @@ func _build_world_snapshot() -> Dictionary:
 		weather_state = weather_system.call("get_authoritative_weather_state") as Dictionary
 	return {
 		"tick": server_tick,
-		"world_time_seconds": float(server_tick) / TARGET_TICK_RATE,
+		"world_time_seconds": get_world_elapsed_seconds(),
 		"server_time_msec": Time.get_ticks_msec(),
 		"weather": weather_state,
 		"remaining_time_seconds": remaining_time_seconds,
@@ -16205,18 +18774,32 @@ func _build_low_frequency_snapshot(include_nature_resources := false) -> Diction
 	for node: Node in get_tree().get_nodes_in_group("computer_terminals"):
 		if node is ComputerTerminal:
 			computers.append((node as ComputerTerminal).get_computer_summary_state())
+	var vehicle_service_terminals: Array[Dictionary] = []
+	for node: Node in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if node is VehicleServiceTerminal:
+			var terminal_state := (node as VehicleServiceTerminal).get_network_state()
+			terminal_state["owner_team"] = str((node as VehicleServiceTerminal).get_active_vehicle().owner_team) \
+				if (node as VehicleServiceTerminal).get_active_vehicle() != null else ""
+			vehicle_service_terminals.append(terminal_state)
 	var weather_forecast: Dictionary = {}
+	var weather_state: Dictionary = {}
 	var weather_system := get_tree().get_first_node_in_group("weather_systems")
-	if weather_system != null and weather_system.has_method("get_weather_forecast_state"):
-		weather_forecast = weather_system.call("get_weather_forecast_state") as Dictionary
+	if weather_system != null:
+		if weather_system.has_method("get_authoritative_weather_state"):
+			weather_state = weather_system.call("get_authoritative_weather_state") as Dictionary
+		if weather_system.has_method("get_weather_forecast_state"):
+			weather_forecast = weather_system.call("get_weather_forecast_state") as Dictionary
 	var farm_summary := get_farm_summary_state()
 	var embedded_lab_teams := get_team_embedded_lab_states()
 	var snapshot := {
 		"tick": server_tick,
+		"world_time_seconds": get_world_elapsed_seconds(),
 		"scores": scores,
 		"inventory": inventory,
+		"team_garages": get_network_team_garage_states(),
 		"farm_summary": farm_summary,
 		"embedded_lab_teams": embedded_lab_teams,
+		"weather": weather_state,
 		"extractors": extractors,
 		"auto_cookers": auto_cookers,
 		"induction_counters": induction_counters,
@@ -16226,6 +18809,7 @@ func _build_low_frequency_snapshot(include_nature_resources := false) -> Diction
 		"industrial_workbenches": industrial_workbenches,
 		"livestock_growth": livestock_growth,
 		"computers": computers,
+		"vehicle_service_terminals": vehicle_service_terminals,
 		"weather_forecast": weather_forecast,
 		"dropped_items": dropped_items,
 		"cargo_car_respawns": cargo_car_respawns,

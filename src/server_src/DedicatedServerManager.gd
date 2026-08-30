@@ -947,6 +947,27 @@ func _on_world_snapshot_ready(snapshot: Dictionary) -> void:
 		var tailored_snapshot := snapshot.duplicate(true)
 		var team := str(players[peer_id].get("team", ""))
 		tailored_snapshot["event_board"] = EventBoard.get_state_for_team(team)
+		# These fields are replicated in the common snapshot for recovery, but
+		# garage records and service-terminal occupancy are visible only to the
+		# owning team (neutral/map vehicles remain visible to everyone).
+		var team_garages_value: Variant = tailored_snapshot.get("team_garages", null)
+		if team_garages_value is Dictionary:
+			var filtered_team_garages := (team_garages_value as Dictionary).duplicate(true)
+			for garage_team in ["red", "blue"]:
+				if garage_team != team:
+					filtered_team_garages.erase(garage_team)
+			tailored_snapshot["team_garages"] = filtered_team_garages
+		var service_terminals_value: Variant = tailored_snapshot.get("vehicle_service_terminals", null)
+		if service_terminals_value is Array:
+			var visible_service_terminals: Array = []
+			for terminal_value: Variant in service_terminals_value as Array:
+				if not terminal_value is Dictionary:
+					continue
+				var terminal_state := terminal_value as Dictionary
+				var terminal_team := str(terminal_state.get("owner_team", ""))
+				if terminal_team.is_empty() or terminal_team == team:
+					visible_service_terminals.append(terminal_state)
+			tailored_snapshot["vehicle_service_terminals"] = visible_service_terminals
 		receive_world_snapshot.rpc_id(peer_id, tailored_snapshot)
 
 
@@ -968,6 +989,36 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 		var shield_owner_peer_id := int(event.get("peer_id", 0))
 		if shield_owner_peer_id > 0 and _is_peer_connected(shield_owner_peer_id):
 			receive_reliable_world_event.rpc_id(shield_owner_peer_id, event)
+		return
+	if event_type == "team_garage_state":
+		var garage_team := str(event.get("team", ""))
+		for peer_id_value: Variant in players.keys():
+			var garage_peer_id := int(peer_id_value)
+			if _is_peer_connected(garage_peer_id) \
+					and str(players[garage_peer_id].get("team", "")) == garage_team:
+				receive_reliable_world_event.rpc_id(garage_peer_id, event)
+		return
+	if event_type == "vehicle_service_state":
+		# Terminal occupancy is shared only with players who can service the
+		# active team vehicle.  An empty owner_team is an unlock transition or
+		# a neutral map vehicle and is safe to deliver to every client.
+		var service_owner_team := str(event.get("owner_team", ""))
+		for peer_id_value: Variant in players.keys():
+			var service_peer_id := int(peer_id_value)
+			if not _is_peer_connected(service_peer_id):
+				continue
+			var service_peer_team := str(players[service_peer_id].get("team", ""))
+			if service_owner_team.is_empty() or service_peer_team == service_owner_team:
+				receive_reliable_world_event.rpc_id(service_peer_id, event)
+		return
+	if event_type == "shop_transaction":
+		# The purchase result may contain private request/charge/refund data.  The
+		# vehicle placement itself is replicated separately as a shared event.
+		var shop_data: Variant = event.get("data", {})
+		var shop_peer_id := int((shop_data as Dictionary).get("peer_id", 0)) \
+			if shop_data is Dictionary else 0
+		if shop_peer_id > 0 and _is_peer_connected(shop_peer_id):
+			receive_reliable_world_event.rpc_id(shop_peer_id, event)
 		return
 	if event_type == "computer_action_result":
 		# Full computer app_data is private to the active user. Other clients get
@@ -1013,7 +1064,38 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 				if peer_id > 0 and _is_peer_connected(peer_id):
 					receive_reliable_world_event.rpc_id(peer_id, event)
 		return
-	if event_type in ["low_frequency_snapshot", "farm_reconcile_chunk"]:
+	if event_type == "low_frequency_snapshot":
+		for peer_id_value in players.keys():
+			var peer_id := int(peer_id_value)
+			if not _is_peer_connected(peer_id):
+				continue
+			var tailored_event := event.duplicate(true)
+			var data_value: Variant = tailored_event.get("data", {})
+			if data_value is Dictionary:
+				var data := data_value as Dictionary
+				var observer_team := str(players[peer_id].get("team", ""))
+				var team_garages_value: Variant = data.get("team_garages", null)
+				if team_garages_value is Dictionary:
+					var filtered_team_garages := (team_garages_value as Dictionary).duplicate(true)
+					for garage_team in ["red", "blue"]:
+						if garage_team != observer_team:
+							filtered_team_garages.erase(garage_team)
+					data["team_garages"] = filtered_team_garages
+				var service_terminals_value: Variant = data.get("vehicle_service_terminals", null)
+				if service_terminals_value is Array:
+					var visible_service_terminals: Array = []
+					for terminal_value: Variant in service_terminals_value as Array:
+						if not terminal_value is Dictionary:
+							continue
+						var terminal := terminal_value as Dictionary
+						var terminal_team := str(terminal.get("owner_team", ""))
+						if terminal_team.is_empty() or terminal_team == observer_team:
+							visible_service_terminals.append(terminal)
+					data["vehicle_service_terminals"] = visible_service_terminals
+				tailored_event["data"] = data
+			receive_bulk_world_event.rpc_id(peer_id, tailored_event)
+		return
+	if event_type == "farm_reconcile_chunk":
 		receive_bulk_world_event.rpc(event)
 		return
 	if event_type == "event_board_state":

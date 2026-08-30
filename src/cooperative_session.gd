@@ -19,7 +19,6 @@ const CHUNK_SIZE_METERS := 256.0
 const INTEREST_RADIUS_METERS := 1024.0
 const WORLD_SAVE_INTERVAL_SECONDS := 10.0
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
-const FARM_RESTORE_WAIT_FRAMES := 120
 const DROPPED_ITEM_RECONCILE_INTERVAL_SECONDS := 3.0
 const CLIENT_CONNECTION_TIMEOUT_SECONDS := 30.0
 const RTT_PROBE_INTERVAL_SECONDS := 2.0
@@ -123,6 +122,15 @@ func save_game() -> bool:
 	return _save_authoritative_world_state()
 
 
+func request_immediate_save() -> void:
+	if not is_host() or active_world.is_empty() or world_loading:
+		return
+	# Garage mutations happen on the authority tick. Defer the disk write until
+	# the current signal chain has finished, while retaining the in-memory state
+	# if the atomic write fails; the normal periodic save will retry it.
+	call_deferred("_save_authoritative_world_state")
+
+
 func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	if not SteamService.initialized or not SteamService.is_current_lobby_host():
 		session_failed.emit("只有已建立 Steam Lobby 的房主可以启动合作世界。")
@@ -211,6 +219,7 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	client_bootstrap_completing = false
 	joined_players[int(local_selection["peer_id"])] = local_selection.duplicate(true)
 	GameAuthority.start_server_mode(self)
+	WorldPersistence.apply_world_clock_state(active_world)
 	GameAuthority.set_physics_process(false)
 	_connect_multiplayer_signals()
 	_connect_authority_signals()
@@ -285,14 +294,15 @@ func join_hosted_world() -> bool:
 	local_selection = _normalize_selection(profile, 0)
 	_connect_multiplayer_signals()
 	GameAuthority.start_client_mode()
+	WorldPersistence.apply_world_clock_state(active_world)
 	GameAuthority.set_physics_process(false)
 	session_started.emit(false)
 	return true
 
 
-func stop_session() -> void:
+func stop_session(save_host := true) -> void:
 	var was_host := is_host()
-	if was_host and not active_world.is_empty():
+	if save_host and was_host and not active_world.is_empty():
 		_save_authoritative_world_state()
 	var old_peer := peer
 	var old_multiplayer_peer := multiplayer.multiplayer_peer
@@ -327,11 +337,26 @@ func stop_session() -> void:
 	client_world_ready_sent = false
 	client_bootstrap_completing = false
 	_reset_client_connection_tracking()
+	GlobalVar.pending_player_selection = {}
 	if is_instance_valid(MapLoading) and MapLoading.has_method("cancel_loading"):
 		MapLoading.cancel_loading()
 	_set_pve_event_system_enabled(true)
 	if GameAuthority.is_server_authority() or GameAuthority.is_client_proxy():
 		GameAuthority.stop_authority()
+
+
+func return_to_main_menu() -> bool:
+	if not is_active():
+		return false
+	if is_host() and not active_world.is_empty() and not save_game():
+		return false
+	var was_lobby_host := SteamService.is_current_lobby_host()
+	stop_session(false)
+	# The session has already released its peer. Suppress the local Lobby-close
+	# callback because this path owns the transition to the main menu; otherwise
+	# the generic callback would reopen the cooperative-world selector.
+	SteamService.leave_cooperative_lobby(was_lobby_host)
+	return true
 
 
 func _discard_peer(peer_to_close: MultiplayerPeer, suspend_steam_callbacks := true) -> void:
@@ -737,6 +762,7 @@ func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
 	_mark_selection_spawn_source(selection)
 	session["selection"] = selection.duplicate(true)
 	pending_join_sessions[peer_id] = session
+	var current_clock := _capture_current_world_clock()
 	var world_state: Dictionary = {}
 	var stored_state: Variant = active_world.get("world_state", {})
 	if stored_state is Dictionary:
@@ -744,8 +770,12 @@ func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
 	# Capture a current authoritative state for a joining client. This keeps a
 	# newly opened world correct even before the periodic save has run once.
 	if world_state_restored and is_instance_valid(GlobalVar.gameworld):
-		world_state = _capture_persistent_world_state()
-		active_world["world_state"] = world_state.duplicate(true)
+		world_state = WorldPersistence.capture_world_state()
+	# The joining peer must receive the same clock that was sampled for this
+	# payload.  Do this even when the host has an older cached world_state: the
+	# cached snapshot may predate the latest simulation tick or manual save.
+	world_state["world_clock"] = current_clock.duplicate(true)
+	active_world["world_state"] = world_state.duplicate(true)
 	var current_team_money := float(GlobalVar.check_team_item_amount("red", "money"))
 	active_world["team_money"] = current_team_money
 	var payload := {
@@ -755,8 +785,11 @@ func _send_world_state_to_peer(peer_id: int, join_token: String) -> void:
 		"map_hash": str(active_world.get("map_hash", "")),
 		"death_drop_mode": get_death_drop_mode(),
 		"team_money": current_team_money,
-		"game_day": int(active_world.get("game_day", 1)),
-		"world_elapsed_seconds": float(active_world.get("world_elapsed_seconds", 0.0)),
+		"game_day": int(current_clock.get("game_day", active_world.get("game_day", 1))),
+		"world_elapsed_seconds": float(current_clock.get(
+			"elapsed_seconds", active_world.get("world_elapsed_seconds", 0.0)
+		)),
+		"world_clock": current_clock,
 		"world_state": world_state,
 		"player_selection": selection,
 		"state_revision": int(Time.get_ticks_msec()),
@@ -791,12 +824,12 @@ func _finalize_join_request(sender_id: int, session: Dictionary) -> void:
 	_save_host_runtime_state()
 
 
-func submit_action(action_type: String, payload: Dictionary = {}) -> void:
+func submit_action(action_type: String, payload: Dictionary = {}) -> bool:
 	# create_client() returns before Steam P2P has reached CONNECTED. Input can
 	# already be produced by the local player during that window, so never call
 	# rpc_id() against a peer that is still connecting or has been released.
 	if not _is_client_transport_connected():
-		return
+		return false
 	if action_type == "ingredient_action" and str(payload.get("station_kind", "")) == "cargo_car":
 		CARGO_CAR_DEBUG.log(
 			"co-op submit action=%s vehicle_id=%s local_peer=%d"
@@ -806,6 +839,7 @@ func submit_action(action_type: String, payload: Dictionary = {}) -> void:
 		request_unreliable_game_action.rpc_id(1, action_type, payload)
 	else:
 		request_reliable_game_action.rpc_id(1, action_type, payload)
+	return true
 
 
 @rpc("any_peer", "call_remote", "unreliable", 6)
@@ -994,7 +1028,11 @@ func receive_world_state(payload: Dictionary) -> void:
 	active_world["world_elapsed_seconds"] = float(
 		payload.get("world_elapsed_seconds", active_world.get("world_elapsed_seconds", 0.0))
 	)
+	var incoming_clock: Variant = payload.get("world_clock", {})
+	if incoming_clock is Dictionary:
+		active_world["world_clock"] = (incoming_clock as Dictionary).duplicate(true)
 	active_world["state_revision"] = int(payload.get("state_revision", 0))
+	WorldPersistence.apply_world_clock_state(active_world)
 	client_world_state_received = true
 	call_deferred("_complete_client_world_bootstrap", get_tree().current_scene, world_bootstrap_generation)
 
@@ -1104,6 +1142,37 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 		# broadcast as a shared world event; station/projectile visuals have their
 		# own broadcast paths.
 		_send_reliable_event_to_peer(int(event.get("peer_id", 0)), event)
+		return
+	if event_type == "team_garage_state":
+		var garage_team := str(event.get("team", ""))
+		for peer_id_value: Variant in joined_players.keys():
+			var garage_peer_id := int(peer_id_value)
+			if not _is_connected_remote_peer(garage_peer_id):
+				continue
+			if str((joined_players[garage_peer_id] as Dictionary).get("team", "")) == garage_team:
+				_send_reliable_event_to_peer(garage_peer_id, event)
+		return
+	if event_type == "vehicle_service_state":
+		# Terminal occupancy is shared with the players who could actually use the
+		# terminal. An empty owner team is the clear/unlock transition (or a neutral
+		# map vehicle), so deliver it to every connected client.
+		var service_owner_team := str(event.get("owner_team", ""))
+		for peer_id_value: Variant in joined_players.keys():
+			var service_peer_id := int(peer_id_value)
+			if not _is_connected_remote_peer(service_peer_id):
+				continue
+			var peer_team := str((joined_players[service_peer_id] as Dictionary).get("team", ""))
+			if service_owner_team.is_empty() or peer_team == service_owner_team:
+				_send_reliable_event_to_peer(service_peer_id, event)
+		return
+	if event_type == "shop_transaction":
+		# Purchase results contain the requester id, transaction id and refund
+		# details. They are private even though the purchased vehicle itself is a
+		# shared world object.
+		var shop_data: Variant = event.get("data", {})
+		var shop_peer_id := int((shop_data as Dictionary).get("peer_id", 0)) \
+			if shop_data is Dictionary else 0
+		_send_reliable_event_to_peer(shop_peer_id, event)
 		return
 	if event_type == "computer_action_result":
 		# Computer action results can contain complete per-app storage. Deliver the
@@ -1435,6 +1504,7 @@ func _bootstrap_loaded_world(scene: Node3D, generation: int) -> void:
 	if not is_active() or generation != world_bootstrap_generation \
 			or scene != get_tree().current_scene:
 		return
+	WorldPersistence.apply_saved_weather_state(active_world)
 	if scene is FarmWorldInitializer and (scene as FarmWorldInitializer).has_method("activate_runtime_entities"):
 		(scene as FarmWorldInitializer).activate_runtime_entities()
 	_activate_local_player(scene)
@@ -1511,6 +1581,7 @@ func _complete_client_world_bootstrap(scene_value: Variant, generation: int) -> 
 			or scene != get_tree().current_scene:
 		client_bootstrap_completing = false
 		return
+	WorldPersistence.apply_saved_weather_state(active_world)
 	if scene is FarmWorldInitializer and (scene as FarmWorldInitializer).has_method("activate_runtime_entities"):
 		(scene as FarmWorldInitializer).activate_runtime_entities()
 	_activate_local_player(scene)
@@ -1691,12 +1762,35 @@ func _make_interest_snapshot(peer_id: int, snapshot: Dictionary) -> Dictionary:
 	var result := snapshot.duplicate()
 	var player_state: Dictionary = GameAuthority.player_states.get(peer_id, {})
 	var observer_position := _as_vector3(player_state.get("position", DEFAULT_SPAWN))
+	var observer_team := str(player_state.get("team", ""))
 	var subscription := _update_chunk_subscription(peer_id, observer_position)
 	result["interest_chunk"] = _world_to_chunk(observer_position)
 	result["interest_radius_m"] = INTEREST_RADIUS_METERS
 	result["subscribed_chunks"] = subscription["active"]
 	result["entered_chunks"] = subscription["entered"]
 	result["left_chunks"] = subscription["left"]
+	# Garage records and terminal occupancy are team-scoped.  They are included in
+	# the common world snapshot for low-latency recovery, so filter them here too;
+	# filtering only the 1 Hz reliable snapshot would still leak the other team's
+	# purchased vehicles during the regular world snapshot path.
+	var team_garages_value: Variant = result.get("team_garages", null)
+	if team_garages_value is Dictionary:
+		var filtered_team_garages := (team_garages_value as Dictionary).duplicate(true)
+		for garage_team in ["red", "blue"]:
+			if garage_team != observer_team:
+				filtered_team_garages.erase(garage_team)
+		result["team_garages"] = filtered_team_garages
+	var service_terminals_value: Variant = result.get("vehicle_service_terminals", null)
+	if service_terminals_value is Array:
+		var visible_service_terminals: Array = []
+		for terminal_value: Variant in service_terminals_value as Array:
+			if not terminal_value is Dictionary:
+				continue
+			var terminal_state := terminal_value as Dictionary
+			var terminal_team := str(terminal_state.get("owner_team", ""))
+			if terminal_team.is_empty() or terminal_team == observer_team:
+				visible_service_terminals.append(terminal_state)
+		result["vehicle_service_terminals"] = visible_service_terminals
 	for key in ["players", "ai_players", "vehicles", "projectiles", "remote_devices", "placed_tools", "wild_animals"]:
 		var value: Variant = snapshot.get(key, [])
 		if value is Array:
@@ -1762,6 +1856,29 @@ func _filter_interest_reliable_event(peer_id: int, event: Dictionary) -> Diction
 			return event.duplicate(true)
 		var data := (data_value as Dictionary).duplicate(true)
 		data.erase("dropped_items")
+		var observer_team := str((joined_players.get(peer_id, {}) as Dictionary).get("team", "")) \
+			if joined_players.get(peer_id, {}) is Dictionary else ""
+		# Team garages are private to teammates. Low-frequency snapshots are
+		# tailored per peer, just like the reliable garage-state event, so a
+		# snapshot cannot leak the other team's purchased vehicles.
+		var team_garages_value: Variant = data.get("team_garages", null)
+		if team_garages_value is Dictionary:
+			var filtered_team_garages := (team_garages_value as Dictionary).duplicate(true)
+			for garage_team in ["red", "blue"]:
+				if garage_team != observer_team:
+					filtered_team_garages.erase(garage_team)
+			data["team_garages"] = filtered_team_garages
+		var service_terminals_value: Variant = data.get("vehicle_service_terminals", null)
+		if service_terminals_value is Array:
+			var visible_service_terminals: Array = []
+			for terminal_value: Variant in service_terminals_value as Array:
+				if not terminal_value is Dictionary:
+					continue
+				var terminal_state := terminal_value as Dictionary
+				var terminal_team := str(terminal_state.get("owner_team", ""))
+				if terminal_team.is_empty() or terminal_team == observer_team:
+					visible_service_terminals.append(terminal_state)
+			data["vehicle_service_terminals"] = visible_service_terminals
 		var filtered_low_frequency := event.duplicate(true)
 		filtered_low_frequency["data"] = data
 		return filtered_low_frequency
@@ -1949,20 +2066,31 @@ func _store_player_runtime_state(peer_id: int, selection: Dictionary) -> void:
 		active_world["host_summary"] = host_summary
 
 
+func _capture_current_world_clock() -> Dictionary:
+	var clock := WorldPersistence.capture_world_clock_state()
+	active_world["world_clock"] = clock.duplicate(true)
+	active_world["world_elapsed_seconds"] = float(
+		clock.get("elapsed_seconds", GameAuthority.get_world_elapsed_seconds())
+	)
+	active_world["game_day"] = int(clock.get("game_day", active_world.get("game_day", 1)))
+	return clock
+
+
 func _save_host_runtime_state() -> void:
 	if not is_host() or active_world.is_empty():
 		return
+	_capture_current_world_clock()
 	if world_state_restored or not active_world.has("world_state"):
 		active_world["team_money"] = GlobalVar.check_team_item_amount("red", "money")
 	for peer_id_value: Variant in joined_players.keys():
 		var peer_id := int(peer_id_value)
 		_store_player_runtime_state(peer_id, joined_players[peer_id] as Dictionary)
 	if world_state_restored and is_instance_valid(GlobalVar.gameworld):
-		active_world["world_state"] = _capture_persistent_world_state()
+		active_world["world_state"] = WorldPersistence.capture_world_state()
 	CooperativeWorldStorage.save_world(active_world)
 
 
-func _save_authoritative_world_state(advance_elapsed := false) -> bool:
+func _save_authoritative_world_state() -> bool:
 	if not is_host() or active_world.is_empty():
 		return false
 	for peer_id_value: Variant in joined_players.keys():
@@ -1970,464 +2098,20 @@ func _save_authoritative_world_state(advance_elapsed := false) -> bool:
 		var selection: Dictionary = joined_players[peer_id]
 		_store_player_runtime_state(peer_id, selection)
 	active_world["team_money"] = GlobalVar.check_team_item_amount("red", "money")
-	if advance_elapsed:
-		active_world["world_elapsed_seconds"] = float(active_world.get("world_elapsed_seconds", 0.0)) + WORLD_SAVE_INTERVAL_SECONDS
+	_capture_current_world_clock()
 	if world_state_restored and is_instance_valid(GlobalVar.gameworld):
-		active_world["world_state"] = _capture_persistent_world_state()
+		active_world["world_state"] = WorldPersistence.capture_world_state()
 	return CooperativeWorldStorage.save_world(active_world)
 
 
 func _capture_persistent_world_state() -> Dictionary:
-	var weather_state: Dictionary = {}
-	var weather_system := get_tree().get_first_node_in_group("weather_systems")
-	if weather_system != null and weather_system.has_method("get_persistent_state"):
-		weather_state = weather_system.call("get_persistent_state") as Dictionary
-	var farm_tiles: Array[Dictionary] = []
-	for node in get_tree().get_nodes_in_group("farm_tiles"):
-		if not node is FarmTile:
-			continue
-		var tile := node as FarmTile
-		var state := tile.get_authoritative_state()
-		if not str(state.get("land_owner", "")).is_empty() \
-				or not str(state.get("seed_record", "")).is_empty() \
-				or bool(state.get("has_tool", false)):
-			farm_tiles.append(state)
-
-	var vehicles: Array[Dictionary] = []
-	for node in get_tree().get_nodes_in_group("vehicle_bases"):
-		if not node is VehicleBase:
-			continue
-		var vehicle := node as VehicleBase
-		if not vehicle.vehicle_deployed or vehicle.is_queued_for_deletion():
-			continue
-		var vehicle_id := vehicle.get_vehicle_id()
-		var state := vehicle.get_network_state()
-		state["vehicle_id"] = vehicle_id
-		state["scene_path"] = str(GameAuthority.vehicle_states.get(vehicle_id, {}).get(
-			"scene_path", vehicle.scene_file_path
-		))
-		if str(state["scene_path"]).is_empty() and vehicle_id.contains("cargo_car"):
-			state["scene_path"] = "res://vehicles/red_cargo_car.tscn"
-		state["driver_peer_id"] = 0
-		state["seat_occupants"] = []
-		var machine_gun_value: Variant = state.get("platform_machine_gun", {})
-		if machine_gun_value is Dictionary:
-			var machine_gun_state := (machine_gun_value as Dictionary).duplicate(true)
-			machine_gun_state["operator_peer_id"] = 0
-			state["platform_machine_gun"] = machine_gun_state
-		vehicles.append(state)
-
-	var placed_tools: Array[Dictionary] = []
-	for state_value: Variant in GameAuthority.placed_tool_states.values():
-		if not state_value is Dictionary:
-			continue
-		var state := (state_value as Dictionary).duplicate(true)
-		if bool(state.get("free_placement", false)) \
-				or str(state.get("tool_name", "")) == "cargo_crate":
-			var tool_node: Variant = GameAuthority.call("_node_for_tool_ref", {"kind": "placed", "id": str(state.get("tool_id", ""))})
-			if tool_node is WireMeshGate:
-				state["is_open"] = (tool_node as WireMeshGate).is_open
-				state["open_angle_degrees"] = (tool_node as WireMeshGate).open_angle_degrees
-			placed_tools.append(state)
-	for node in get_tree().get_nodes_in_group("cargo_crates"):
-		if not node is CargoCrateGround:
-			continue
-		var crate := node as CargoCrateGround
-		var crate_id := str(crate.get_meta("network_device_id", crate.get_path()))
-		for index in range(placed_tools.size()):
-			if str(placed_tools[index].get("tool_id", "")) == crate_id:
-				placed_tools[index]["crate_data"] = crate.get_crate_data()
-				placed_tools[index]["position"] = crate.global_position
-				placed_tools[index]["yaw"] = crate.rotation.y
-				break
-
-	var livestock: Array[Dictionary] = []
-	for node in get_tree().get_nodes_in_group("farm_livestock"):
-		if not node is FarmLivestock:
-			continue
-		var animal := node as FarmLivestock
-		if not animal.naturally_spawned and not animal.housed_in_chop and not animal.destroyed:
-			livestock.append(animal.get_persistent_state())
-
-	return {
-		# 保存完整队伍仓库。team_inventory 保留给旧版本读取，以兼容
-		# 既有存档和仍只关心 red 队库存的旧客户端。
-		"team_storage": GlobalVar.team_storage.duplicate(true),
-		"team_inventory": (GlobalVar.team_storage.get("red", {}) as Dictionary).duplicate(true),
-		"farm_tiles": farm_tiles,
-		"vehicles": vehicles,
-		"placed_tools": placed_tools,
-		"livestock": livestock,
-		"stations": _capture_persistent_station_states(),
-		"embedded_lab_teams": GameAuthority.get_persistent_team_embedded_lab_states() \
-			if is_instance_valid(GameAuthority) else {},
-		"weather": weather_state,
-	}
-
-
-func _capture_persistent_station_states() -> Array[Dictionary]:
-	var entries: Array[Dictionary] = []
-	var groups := [
-		"ingredient_pickups", "chopping_stations", "ingredient_extractors", "auto_cookers", "stand_mixers",
-		"oven_stations", "smoker_stations", "freezer_stations", "griddle_stations",
-		"induction_counters", "plating_stations", "livestock_chops", "computer_terminals",
-		"industrial_furnaces", "comprehensive_material_processing_stations",
-		"electronic_assembly_stations", "wood_processing_tables",
-	]
-	for group_name: String in groups:
-		for node in get_tree().get_nodes_in_group(group_name):
-			var state: Dictionary = {}
-			if node.has_method("get_staged_state"):
-				state = node.call("get_staged_state") as Dictionary
-			elif node.has_method("get_station_state"):
-				state = node.call("get_station_state") as Dictionary
-			elif node.has_method("get_extractor_state"):
-				state = node.call("get_extractor_state") as Dictionary
-			elif node.has_method("get_cook_state"):
-				state = node.call("get_cook_state") as Dictionary
-			elif node.has_method("get_mixer_state"):
-				state = node.call("get_mixer_state") as Dictionary
-			elif node.has_method("get_chop_state"):
-				state = node.call("get_chop_state") as Dictionary
-			elif node.has_method("get_computer_state"):
-				state = node.call("get_computer_state") as Dictionary
-			elif node.has_method("get_workbench_state"):
-				state = node.call("get_workbench_state") as Dictionary
-			if not state.is_empty():
-				state["facility_id"] = str(node.get_meta("network_map_facility_id", ""))
-				entries.append({"group": group_name, "state": state})
-	return entries
+	return WorldPersistence.capture_world_state()
 
 
 func _restore_persistent_world_state(scene: Node3D) -> void:
 	if world_state_restored or not is_instance_valid(scene) or scene != get_tree().current_scene:
 		return
-	var state_value: Variant = active_world.get("world_state", {})
-	var world_state: Dictionary = state_value as Dictionary if state_value is Dictionary else {}
-	# 仓库不依赖场景节点，先恢复它。这样 HUD、房主权威端和随后加入的
-	# 客户端在世界初始化期间就能读到同一份资金与物资。
-	_restore_saved_team_storage(world_state)
-	var embedded_lab_teams: Variant = world_state.get("embedded_lab_teams", null)
-	if is_instance_valid(GameAuthority) and GameAuthority.has_method("apply_persistent_team_embedded_lab_states"):
-		if embedded_lab_teams is Dictionary:
-			GameAuthority.apply_persistent_team_embedded_lab_states(embedded_lab_teams)
-	var weather_state: Variant = world_state.get("weather", {})
-	if weather_state is Dictionary and not (weather_state as Dictionary).is_empty():
-		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
-			if weather_system != null and weather_system.has_method("apply_persistent_state"):
-				weather_system.call("apply_persistent_state", weather_state as Dictionary)
-	if world_state.is_empty():
-		if is_instance_valid(GameAuthority) and GameAuthority.has_method("rebuild_farm_statistics"):
-			GameAuthority.rebuild_farm_statistics()
-		world_state_restored = true
-		return
-	for _frame in range(FARM_RESTORE_WAIT_FRAMES):
-		await get_tree().process_frame
-		if _farm_generation_finished(scene):
-			break
-	if not is_active() or scene != get_tree().current_scene:
-		return
-	_restore_farm_tiles(world_state.get("farm_tiles", []))
-	if is_host():
-		_restore_persistent_vehicles(world_state.get("vehicles", []))
-		_restore_persistent_tools(world_state.get("placed_tools", []))
-		_restore_persistent_livestock(world_state.get("livestock", []))
-	_restore_persistent_stations(world_state.get("stations", []))
-	for generator_value: Variant in scene.get_tree().get_nodes_in_group("neutral_crop_generators"):
-		if is_instance_valid(generator_value) and generator_value.has_method("refresh_after_world_restore"):
-			generator_value.call("refresh_after_world_restore")
-	if is_instance_valid(GameAuthority) and GameAuthority.has_method("rebuild_farm_statistics"):
-		GameAuthority.rebuild_farm_statistics()
-	world_state_restored = true
-
-
-func _restore_saved_team_storage(world_state: Dictionary) -> void:
-	# 当前格式：world_state.team_storage（red/blue 的完整仓库）。
-	# 兼容格式依次为 world_state.team_inventory（仅 red）、顶层
-	# team_storage，以及带有非空 world_state 的顶层 team_money。
-	var restored_any := _restore_team_storage(world_state.get("team_storage", {}))
-	if not restored_any:
-		restored_any = _restore_team_inventory("red", world_state.get("team_inventory", {}))
-	if not restored_any:
-		restored_any = _restore_team_storage(active_world.get("team_storage", {}))
-	# 旧档只有在已保存过世界状态时才将顶层 team_money 视为有效数据。
-	# 全新旧格式世界的初始占位值为 0，此时必须继续使用 1000 初始资金。
-	# 顶层金额是存档浏览器显示的摘要，也会在每次权威保存时更新；当旧档的
-	# world_state 库存快照较早时，以它覆盖 red.money，保证浏览器与进场一致。
-	if active_world.has("team_money") and (restored_any or not world_state.is_empty()):
-		_restore_team_inventory("red", {"money": active_world.get("team_money", 0.0)})
-
-
-func _restore_team_storage(value: Variant) -> bool:
-	if not value is Dictionary:
-		return false
-	var saved_storage := value as Dictionary
-	var restored_any := false
-	for team_id_value: Variant in saved_storage.keys():
-		var team := str(team_id_value)
-		var inventory_value: Variant = saved_storage[team_id_value]
-		if not GlobalVar.team_storage.has(team) or not inventory_value is Dictionary:
-			continue
-		restored_any = _restore_team_inventory(team, inventory_value) or restored_any
-	return restored_any
-
-
-func _restore_team_inventory(team: String, value: Variant) -> bool:
-	if not GlobalVar.team_storage.has(team) or not value is Dictionary:
-		return false
-	var saved := value as Dictionary
-	if saved.is_empty():
-		return false
-	var inventory: Dictionary = (GlobalVar.team_storage.get(team, {}) as Dictionary).duplicate(true)
-	var restored_any := false
-	for item_id_value: Variant in saved.keys():
-		var item_id := str(item_id_value)
-		var amount_value: Variant = saved[item_id_value]
-		if not amount_value is float and not amount_value is int:
-			continue
-		var previous_amount := float(inventory.get(item_id, 0.0))
-		var restored_amount := float(amount_value)
-		inventory[item_id] = restored_amount
-		GlobalVar.storage_changed.emit(team, item_id, restored_amount)
-		if item_id == "money" and not is_zero_approx(restored_amount - previous_amount):
-			GlobalVar.team_money_changed.emit(team, restored_amount - previous_amount, restored_amount)
-		restored_any = true
-	GlobalVar.team_storage[team] = inventory
-	if restored_any:
-		GlobalVar.mark_team_storage_changed(team)
-	return restored_any
-
-
-func _farm_generation_finished(scene: Node3D) -> bool:
-	var generators := scene.find_children("*", "FarmFieldGenerator", true, false)
-	if generators.is_empty():
-		return true
-	for generator in generators:
-		if generator is FarmFieldGenerator and (generator as FarmFieldGenerator).is_generating:
-			return false
-	return not get_tree().get_nodes_in_group("farm_tiles").is_empty()
-
-
-func _restore_farm_tiles(value: Variant) -> void:
-	if not value is Array:
-		return
-	for state_value: Variant in value:
-		if not state_value is Dictionary:
-			continue
-		var state := _decode_state_vectors(state_value as Dictionary)
-		var tile := _find_farm_tile_for_restore(state)
-		if tile != null:
-			tile.apply_authoritative_state(state)
-
-
-func _restore_persistent_vehicles(value: Variant) -> void:
-	if not value is Array:
-		return
-	for state_value: Variant in value:
-		if not state_value is Dictionary:
-			continue
-		var state := _decode_state_vectors(state_value as Dictionary)
-		var vehicle_id := str(state.get("vehicle_id", ""))
-		var vehicle := _find_vehicle_for_restore(vehicle_id)
-		if vehicle == null:
-			var scene_path := str(state.get("scene_path", ""))
-			var packed := load(scene_path) as PackedScene if not scene_path.is_empty() else null
-			vehicle = packed.instantiate() as VehicleBase if packed != null else null
-			if vehicle == null:
-				continue
-			vehicle.name = "Persistent_" + vehicle_id.replace(":", "_")
-			vehicle.network_id = vehicle_id
-			vehicle.owner_team = str(state.get("owner_team", "red"))
-			GlobalVar.gameworld.add_child(vehicle)
-			if vehicle.has_method("set_kitchen_team"):
-				vehicle.call("set_kitchen_team", vehicle.owner_team)
-		state["driver_peer_id"] = 0
-		state["seat_occupants"] = []
-		var machine_gun_value: Variant = state.get("platform_machine_gun", {})
-		if machine_gun_value is Dictionary:
-			var machine_gun_state := (machine_gun_value as Dictionary).duplicate(true)
-			machine_gun_state["operator_peer_id"] = 0
-			state["platform_machine_gun"] = machine_gun_state
-		vehicle.apply_network_state(state)
-		var manifest: Variant = state.get("cargo_manifest", [])
-		if manifest is Array:
-			vehicle.set_cargo_manifest(manifest as Array)
-		GameAuthority.vehicle_states[vehicle_id] = state.duplicate(true)
-
-
-func _restore_persistent_tools(value: Variant) -> void:
-	if not value is Array:
-		return
-	for state_value: Variant in value:
-		if not state_value is Dictionary:
-			continue
-		var state := _decode_state_vectors(state_value as Dictionary)
-		var tool_id := str(state.get("tool_id", state.get("device_id", "")))
-		if tool_id.is_empty() or _find_persistent_tool(tool_id) != null:
-			continue
-		var scene_path := str(state.get("scene_path", ""))
-		if str(state.get("tool_name", "")) == "cargo_crate":
-			var crate_value: Variant = state.get("crate_data", {})
-			if crate_value is Dictionary:
-				scene_path = str((crate_value as Dictionary).get("model_path", scene_path))
-		var packed := load(scene_path) as PackedScene if not scene_path.is_empty() else null
-		var node := packed.instantiate() as Node3D if packed != null else null
-		if node == null:
-			continue
-		node.name = "Persistent_" + tool_id.get_file().replace(":", "_")
-		GlobalVar.gameworld.add_child(node)
-		node.global_position = _as_vector3(state.get("position", Vector3.ZERO))
-		node.rotation.y = float(state.get("yaw", 0.0))
-		node.set_meta("network_device_id", tool_id)
-		if node is CargoCrateGround:
-			var crate_data: Variant = state.get("crate_data", {})
-			if crate_data is Dictionary:
-				(node as CargoCrateGround).setup_crate(crate_data as Dictionary)
-			GameAuthority.register_map_cargo_crate(node as CargoCrateGround)
-		else:
-			if GameAuthority.has_method("_node_has_property") \
-					and bool(GameAuthority.call("_node_has_property", node, "tool_owner")):
-				node.set("tool_owner", str(state.get("team", "red")))
-			if node is KitchenAppliance:
-				(node as KitchenAppliance).owner_team = str(state.get("team", "red"))
-			if node.has_method("activate_tool"):
-				node.call("activate_tool")
-			if node is WireMeshGate:
-				(node as WireMeshGate).apply_network_state(state)
-			GameAuthority.register_map_placed_tool(
-				node, str(state.get("tool_name", "")), tool_id, str(state.get("team", "red"))
-			)
-		if node.has_method("apply_network_health"):
-			node.call("apply_network_health", float(state.get("hp", 0.0)))
-		state["path"] = str(node.get_path())
-		GameAuthority.placed_tool_states[tool_id] = state
-
-
-func _restore_persistent_livestock(value: Variant) -> void:
-	if not value is Array:
-		return
-	for state_value: Variant in value:
-		if not state_value is Dictionary:
-			continue
-		var state := _decode_state_vectors(state_value as Dictionary)
-		var animal_id := str(state.get("animal_id", ""))
-		if animal_id.is_empty() or _find_livestock_for_restore(animal_id) != null:
-			continue
-		var scene_path := str(state.get("scene_path", ""))
-		var packed := load(scene_path) as PackedScene if not scene_path.is_empty() else null
-		var animal := packed.instantiate() as FarmLivestock if packed != null else null
-		if animal == null:
-			continue
-		animal.name = "Persistent_" + animal_id.replace(":", "_")
-		animal.animal_id = animal_id
-		animal.owner_team = str(state.get("owner_team", "red"))
-		animal.initial_hp = float(state.get("current_hp", -1.0))
-		animal.initial_growth_progress = float(state.get("growth_progress", 0.0))
-		animal.naturally_spawned = false
-		GlobalVar.gameworld.add_child(animal)
-		animal.global_position = _as_vector3(state.get("position", Vector3.ZERO))
-		animal.rotation.y = float(state.get("yaw", 0.0))
-		animal.home_position = _as_vector3(state.get("home_position", animal.global_position))
-
-
-func _restore_persistent_stations(value: Variant) -> void:
-	if not value is Array:
-		return
-	for entry_value: Variant in value:
-		if not entry_value is Dictionary:
-			continue
-		var entry := entry_value as Dictionary
-		var state_value: Variant = entry.get("state", {})
-		if not state_value is Dictionary:
-			continue
-		var state := _decode_state_vectors(state_value as Dictionary)
-		state["active_user_peer_id"] = 0
-		var station := _find_station_for_restore(str(entry.get("group", "")), state)
-		if station == null:
-			continue
-		if station.has_method("apply_authoritative_staged_state"):
-			station.call("apply_authoritative_staged_state", state)
-		elif station.has_method("apply_authoritative_station_state"):
-			station.call("apply_authoritative_station_state", state)
-		elif station.has_method("apply_authoritative_extractor_state"):
-			station.call("apply_authoritative_extractor_state", state)
-		elif station.has_method("apply_authoritative_cook_state"):
-			station.call("apply_authoritative_cook_state", state)
-		elif station.has_method("apply_authoritative_mixer_state"):
-			station.call("apply_authoritative_mixer_state", state)
-		elif station.has_method("apply_authoritative_workbench_state"):
-			station.call("apply_authoritative_workbench_state", state)
-		elif station.has_method("apply_authoritative_chop_state"):
-			station.call("apply_authoritative_chop_state", state)
-		elif station.has_method("apply_computer_state"):
-			if is_instance_valid(GameAuthority) and GameAuthority.has_method(
-					"import_legacy_embedded_lab_state_from_computer_state"):
-				GameAuthority.import_legacy_embedded_lab_state_from_computer_state(state)
-			station.call("apply_computer_state", state)
-
-
-func _find_farm_tile_for_restore(state: Dictionary) -> FarmTile:
-	var path_text := str(state.get("tile_path", ""))
-	var direct := get_node_or_null(NodePath(path_text))
-	if direct is FarmTile:
-		return direct as FarmTile
-	var position := _as_vector3(state.get("tile_position", Vector3.ZERO))
-	for node in get_tree().get_nodes_in_group("farm_tiles"):
-		if node is FarmTile and (node as FarmTile).global_position.distance_to(position) < 0.05:
-			return node as FarmTile
-	return null
-
-
-func _find_vehicle_for_restore(vehicle_id: String) -> VehicleBase:
-	for node in get_tree().get_nodes_in_group("vehicle_bases"):
-		if node is VehicleBase and (node as VehicleBase).get_vehicle_id() == vehicle_id:
-			return node as VehicleBase
-	return null
-
-
-func _find_persistent_tool(tool_id: String) -> Node3D:
-	for node in get_tree().get_nodes_in_group("network_map_devices"):
-		if node is Node3D and str(node.get_meta("network_device_id", "")) == tool_id:
-			return node as Node3D
-	return null
-
-
-func _find_livestock_for_restore(animal_id: String) -> FarmLivestock:
-	for node in get_tree().get_nodes_in_group("farm_livestock"):
-		if node is FarmLivestock and (node as FarmLivestock).animal_id == animal_id:
-			return node as FarmLivestock
-	return null
-
-
-func _find_station_for_restore(group_name: String, state: Dictionary) -> Node:
-	var facility_id := str(state.get("facility_id", ""))
-	if not facility_id.is_empty():
-		for facility_value: Variant in get_tree().get_nodes_in_group("network_map_facilities"):
-			if facility_value is Node and str((facility_value as Node).get_meta("network_map_facility_id", "")) == facility_id:
-				return facility_value as Node
-	var path_text := str(state.get("station_path", ""))
-	var direct := get_node_or_null(NodePath(path_text))
-	if direct != null:
-		return direct
-	var position := _as_vector3(state.get("station_position", Vector3.ZERO))
-	for node in get_tree().get_nodes_in_group(group_name):
-		if node is Node3D and (node as Node3D).global_position.distance_to(position) < 0.5:
-			return node
-	return null
-
-
-func _decode_state_vectors(source: Dictionary) -> Dictionary:
-	var state := source.duplicate(true)
-	for key in ["position", "tile_position", "station_position", "home_position"]:
-		if state.has(key):
-			state[key] = _as_vector3(state[key])
-	var crop_positions: Variant = state.get("crop_positions", [])
-	if crop_positions is Array:
-		var restored_positions: Array = []
-		for position_value in crop_positions:
-			restored_positions.append(_as_vector3(position_value))
-		state["crop_positions"] = restored_positions
-	return state
+	world_state_restored = await WorldPersistence.restore_world_state(scene, active_world, is_host())
 
 
 func _vector_to_array(value: Vector3) -> Array[float]:

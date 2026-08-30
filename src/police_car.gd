@@ -49,7 +49,7 @@ func set_drive_input(throttle: float, steering: float, brake: float = 0.0) -> vo
 
 
 func get_max_hp() -> float:
-	return vehicle_config.max_hp if vehicle_config != null else 0.0
+	return super()
 
 
 func get_network_state() -> Dictionary:

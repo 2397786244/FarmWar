@@ -1,8 +1,10 @@
 extends Node3D
 
 const FARM_VEHICLE_SCENE := preload("res://vehicles/farm_base_vehicle.tscn")
+const BASE_FORWARD_SPEED := 5.0
+const BASE_REVERSE_SPEED := 4.0
 const EXPECTED_FORWARD_SPEED := 8.0
-const EXPECTED_REVERSE_SPEED := 6.0
+const EXPECTED_REVERSE_SPEED := 8.0
 
 var failures := 0
 
@@ -21,7 +23,7 @@ func _run() -> void:
 	_check(vehicle.find_child("NitroBoostPos", true, false) is Marker3D, "NitroBoostPos is found recursively")
 	_check(vehicle.find_child("NitroBoostFlash1", true, false) is Marker3D, "NitroBoostFlash1 is found recursively")
 	_check(vehicle.find_child("NitroBoostFlash2", true, false) is Marker3D, "NitroBoostFlash2 is found recursively")
-	_check(is_equal_approx(vehicle.get_max_forward_speed(), 4.0), "uninstalled FarmBaseVehicle keeps 4 m/s forward speed")
+	_check(is_equal_approx(vehicle.get_max_forward_speed(), BASE_FORWARD_SPEED), "uninstalled FarmBaseVehicle keeps 5 m/s forward speed")
 	var editor_preview := FARM_VEHICLE_SCENE.instantiate() as FarmBaseVehicle
 	editor_preview.set_nitro_boost_installed(true)
 	var preview_visual := editor_preview.find_child("VehicleNitroBoost", true, false) as Node3D
@@ -39,7 +41,7 @@ func _run() -> void:
 	var nitro := vehicle.get_nitro_boost()
 	_check(nitro != null, "installed NitroBoost controller is created")
 	_check(vehicle.get_max_forward_speed() == EXPECTED_FORWARD_SPEED, "NitroBoost raises forward maximum to 8 m/s")
-	_check(vehicle.get_max_reverse_speed() == EXPECTED_REVERSE_SPEED, "NitroBoost doubles reverse maximum to 6 m/s")
+	_check(vehicle.get_max_reverse_speed() == EXPECTED_REVERSE_SPEED, "NitroBoost doubles reverse maximum to 8 m/s")
 	_check(visual != null and visual.visible, "installed NitroBoost visual is shown")
 	if nitro == null:
 		_finish()
@@ -73,7 +75,7 @@ func _run() -> void:
 	vehicle.set_nitro_boost_installed(false)
 	await get_tree().process_frame
 	_check(vehicle.get_nitro_boost() == null, "removing NitroBoost frees its controller")
-	_check(vehicle.get_max_forward_speed() == 4.0, "removing NitroBoost restores 4 m/s forward speed")
+	_check(vehicle.get_max_forward_speed() == BASE_FORWARD_SPEED, "removing NitroBoost restores 5 m/s forward speed")
 	_finish()
 
 

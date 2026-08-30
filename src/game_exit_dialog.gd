@@ -4,10 +4,12 @@ class_name GameExitDialog
 signal resume_requested
 signal exit_requested
 signal save_game_requested
+signal main_menu_requested
 
 @onready var resume_button: Button = $Dimmer/Window/Margin/VBox/ResumeButton
 @onready var settings_button: Button = $Dimmer/Window/Margin/VBox/SettingsButton
 @onready var save_button: Button = $Dimmer/Window/Margin/VBox/SaveButton
+@onready var main_menu_button: Button = $Dimmer/Window/Margin/VBox/MainMenuButton
 @onready var exit_button: Button = $Dimmer/Window/Margin/VBox/ExitButton
 @onready var settings_panel: Node = $SettingsPanel
 
@@ -17,6 +19,7 @@ func _ready() -> void:
 	resume_button.pressed.connect(func() -> void: resume_requested.emit())
 	settings_button.pressed.connect(_open_settings)
 	save_button.pressed.connect(func() -> void: save_game_requested.emit())
+	main_menu_button.pressed.connect(func() -> void: main_menu_requested.emit())
 	exit_button.pressed.connect(func() -> void: exit_requested.emit())
 	save_button.visible = false
 

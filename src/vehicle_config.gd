@@ -71,6 +71,15 @@ class_name VehicleConfig
 ## CharacterBody3D nodes.
 @export_range(0.1, 5.0, 0.05) var ramming_mass_factor := 1.0
 
+@export_group("Garage Service")
+## Enables the common RepairTerminal upgrades shared by regular vehicles.
+## Special-purpose editor vehicles leave this disabled.
+@export var supports_common_service_upgrades := false
+## Fee charged when a destroyed team-garage vehicle is repaired.
+@export_range(0, 1000000, 1) var repair_fee := 0
+## Fee charged to deliver a repaired vehicle near the requesting player.
+@export_range(0, 1000000, 1) var delivery_fee := 0
+
 @export_group("Cargo")
 ## Maximum cargo weight carried by this vehicle. Zero disables cargo support.
 @export_range(0.0, 500.0, 1.0, "suffix:kg") var cargo_capacity_kg := 0.0

@@ -184,9 +184,10 @@ func _refresh_worlds() -> void:
 		saved_worlds_box.add_child(row)
 		var button := _make_button("%s\n%s · %d 人 · %s" % [
 			str(world.get("display_name", "未命名世界")),
-			"%s · 第 %d 天 · 团队金钱 %s · 房主 %s HP %.0f/%.0f · %s" % [
+			"%s · %s · %s · 团队金钱 %s · 房主 %s HP %.0f/%.0f · %s" % [
 				str(world.get("map_name", "未知地图")),
-				int(world.get("game_day", 1)),
+				_format_world_clock(world),
+				_format_saved_weather(world),
 				_format_money(float(world.get("team_money", 0.0))),
 				str(host_summary.get("display_name", "房主")),
 				float(host_summary.get("current_hp", 200.0)),
@@ -342,6 +343,35 @@ func _death_mode_text(mode: String) -> String:
 
 func _format_money(amount: float) -> String:
 	return "%.0f" % maxf(0.0, amount)
+
+
+func _format_world_clock(world: Dictionary) -> String:
+	var clock := WorldPersistence.get_saved_world_clock_state(world) \
+		if is_instance_valid(WorldPersistence) and WorldPersistence.has_method("get_saved_world_clock_state") else {}
+	var elapsed_seconds := float(clock.get("elapsed_seconds", world.get("world_elapsed_seconds", 0.0)))
+	var total_hours := float(clock.get("total_hours", 8.0 + elapsed_seconds / 1440.0 * 24.0))
+	var day_index := int(clock.get("day_index", floori(total_hours / 24.0)))
+	var hour := fposmod(float(clock.get("hour", total_hours)), 24.0)
+	var total_minutes := clampi(roundi(hour * 60.0), 0, 1439)
+	return "第%d天 %02d:%02d" % [day_index + 1, int(total_minutes / 60), total_minutes % 60]
+
+
+func _format_saved_weather(world: Dictionary) -> String:
+	var world_state_value: Variant = world.get("world_state", {})
+	var world_state: Dictionary = world_state_value as Dictionary if world_state_value is Dictionary else {}
+	var weather_value: Variant = world_state.get("weather", {})
+	var weather: Dictionary = weather_value as Dictionary if weather_value is Dictionary else {}
+	var weather_type := str(weather.get("current_weather_type", weather.get("weather_type", "")))
+	if weather_type.is_empty():
+		var clock := WorldPersistence.get_saved_world_clock_state(world) \
+			if is_instance_valid(WorldPersistence) and WorldPersistence.has_method("get_saved_world_clock_state") else {}
+		var day_index := int(clock.get("day_index", maxi(0, int(world.get("game_day", 1)) - 1)))
+		var days_value: Variant = weather.get("forecast_days", [])
+		if days_value is Array:
+			for day_value: Variant in days_value:
+				if day_value is Dictionary and int((day_value as Dictionary).get("day_index", -1)) == day_index:
+					weather_type = str((day_value as Dictionary).get("weather_type", ""))
+	return "晴天" if weather_type == "clear" else "雨天" if weather_type == "rain" else "日食" if weather_type == "eclipse" else "天气未知"
 
 
 func _refresh_maps() -> void:

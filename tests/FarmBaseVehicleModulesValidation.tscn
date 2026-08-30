@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/farm_base_vehicle_modules_validation.gd" id="1_modules_validation"]
+
+[node name="FarmBaseVehicleModulesValidation" type="Node3D"]
+script = ExtResource("1_modules_validation")

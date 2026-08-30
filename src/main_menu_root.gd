@@ -103,45 +103,17 @@ func _show_multiplayer_battle_room(selection: Dictionary, auto_load_map := false
 
 
 func _on_singleplayer_requested() -> void:
-	print("[MenuFlow] Opening single-player map selector")
+	print("[MenuFlow] Opening single-player world selector")
 	var page := _set_page(SINGLE_PLAYER_WORLD_SCENE)
 	page.back_requested.connect(_show_home)
-	page.map_activated.connect(_start_singleplayer_map)
+	page.world_requested.connect(_start_singleplayer_world)
 
 
-func _start_singleplayer_map(map_definition: Dictionary) -> void:
-	var scene_path := str(map_definition.get("scene_path", ""))
-	if scene_path.is_empty():
-		push_error("[MenuFlow] Single-player map is unavailable: %s" % scene_path)
+func _start_singleplayer_world(world_id: String) -> void:
+	if SinglePlayerSession.start_world(world_id):
 		return
-	MapLoading.begin_loading(
-		str(map_definition.get("display_name", "Harvest Operation Map")),
-		str(map_definition.get("loading_images_directory", "")),
-		"res://data/loading_tips.json"
-	)
-	MapLoading.update_progress(0.02, "正在验证地图")
-	await get_tree().process_frame
-	var map_validation := GameMapRegistry.validate_map_definition(map_definition)
-	if not bool(map_validation.get("is_compatible", false)):
-		MapLoading.cancel_loading()
-		push_error("[MenuFlow] Single-player map is incompatible: %s" % str(
-			map_validation.get("validation_errors", [])
-		))
-		return
-	var validated_map: Dictionary = map_validation
-	scene_path = str(validated_map.get("scene_path", scene_path))
-	var selection := {
-		"peer_id": GameAuthority.LOCAL_PLAYER_ID,
-		"display_name": "LocalPlayer",
-		"team": "red",
-		"hero_id": "cook",
-		"primary_weapon_ids": ["sprout_blaster", "brick", "freeze_gun"],
-		"special_tool_ids": ["small_mouse", "wand"],
-		"ready": true,
-	}
-	GameAuthority.start_local_mode(selection)
-	GlobalVar.pending_player_selection = selection
-	get_tree().change_scene_to_file(scene_path)
+	if is_instance_valid(current_page) and current_page.has_method("show_status"):
+		current_page.call("show_status", "无法进入该单人存档。")
 
 
 func _on_map_editor_requested() -> void:

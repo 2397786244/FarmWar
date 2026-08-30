@@ -4,7 +4,6 @@ extends Node3D
 signal weather_changed(weather_type: String, intensity: float)
 signal eclipse_changed(active: bool)
 
-const AUTHORITY_TICK_RATE := 60.0
 const ECLIPSE_TRIGGER_START_HOUR := 9.0
 const ECLIPSE_TRIGGER_END_HOUR := 12.0
 const ECLIPSE_LATEST_END_HOUR := 18.0
@@ -224,6 +223,10 @@ func get_persistent_state() -> Dictionary:
 		"rain_weather_probability": rain_weather_probability,
 		"eclipse_weather_probability": eclipse_weather_probability,
 		"rain_intensity": rain_intensity,
+		"current_weather_type": current_weather,
+		"current_intensity": current_intensity if current_weather == "rain" else 0.0,
+		"current_eclipse_active": eclipse_active,
+		"current_eclipse_intensity": eclipse_intensity if eclipse_active else 0.0,
 		"forecast_revision": int(forecast_state.get("forecast_revision", 0)),
 		"forecast_start_day": int(forecast_state.get("forecast_start_day", -1)),
 		"forecast_days": forecast_state.get("forecast_days", []),
@@ -245,15 +248,50 @@ func apply_persistent_state(state: Dictionary) -> void:
 		eclipse_weather_probability = clampf(float(state.get("eclipse_weather_probability", eclipse_weather_probability)), 0.0, 1.0)
 	if state.has("rain_intensity"):
 		rain_intensity = clampf(float(state.get("rain_intensity", rain_intensity)), 0.1, 1.0)
+	if state.has("current_weather_type") or state.has("weather_type"):
+		var requested_weather := str(state.get(
+			"current_weather_type", state.get("weather_type", "clear")
+		))
+		current_weather = requested_weather if requested_weather in ["clear", "rain", "eclipse"] else "clear"
+		eclipse_active = current_weather == "eclipse" and bool(
+			state.get("current_eclipse_active", state.get("eclipse_active", true))
+		)
+		current_intensity = clampf(
+			float(state.get("current_intensity", state.get("intensity", 0.0))),
+			0.0,
+			1.0
+		) if current_weather == "rain" else 0.0
+		eclipse_intensity = clampf(
+			float(state.get(
+				"current_eclipse_intensity",
+				state.get("eclipse_intensity", 1.0 if eclipse_active else 0.0)
+			)),
+			0.0,
+			1.0
+		) if eclipse_active else 0.0
+		_apply_weather_visuals()
 	var saved_days := _copy_forecast_days(state.get("forecast_days", []))
-	if saved_days.is_empty():
-		return
-	forecast_start_day = int(state.get("forecast_start_day", saved_days[0].get("day_index", -1)))
-	forecast_revision = maxi(1, int(state.get("forecast_revision", 1)))
-	forecast_days = saved_days
-	_forecast_initialized = true
-	if _is_forecast_authority():
-		_ensure_forecast_for_current_day()
+	var saved_start_day := int(state.get(
+		"forecast_start_day", saved_days[0].get("day_index", -1) if not saved_days.is_empty() else -1
+	))
+	var forecast_is_valid := saved_days.size() == FORECAST_LENGTH and saved_start_day >= 0
+	if forecast_is_valid:
+		for index in range(saved_days.size()):
+			if int(saved_days[index].get("day_index", -1)) != saved_start_day + index:
+				forecast_is_valid = false
+				break
+	if forecast_is_valid:
+		forecast_start_day = saved_start_day
+		forecast_revision = maxi(1, int(state.get("forecast_revision", 1)))
+		forecast_days = saved_days
+		_forecast_initialized = true
+	else:
+		forecast_start_day = -1
+		forecast_revision = 0
+		forecast_days.clear()
+		_forecast_initialized = false
+		if _is_forecast_authority():
+			_ensure_forecast_for_current_day()
 
 
 func apply_authoritative_forecast_state(state: Dictionary) -> void:
@@ -280,10 +318,15 @@ func apply_authoritative_weather_state(state: Dictionary) -> void:
 		_authoritative_weather_type = "eclipse"
 	else:
 		_authoritative_weather_type = "rain" if requested_weather_type == "rain" else "clear"
-	_authoritative_weather_intensity = clampf(float(state.get("intensity", 0.0)), 0.0, 1.0)
+	_authoritative_weather_intensity = clampf(
+		float(state.get("intensity", 0.0)) if _authoritative_weather_type == "rain" else 0.0,
+		0.0,
+		1.0
+	)
 	_authoritative_eclipse_active = _authoritative_weather_type == "eclipse"
 	_authoritative_eclipse_intensity = clampf(
-		float(state.get("eclipse_intensity", 1.0 if _authoritative_eclipse_active else 0.0)),
+		float(state.get("eclipse_intensity", 1.0 if _authoritative_eclipse_active else 0.0)) \
+			if _authoritative_eclipse_active else 0.0,
 		0.0,
 		1.0
 	)
@@ -292,6 +335,7 @@ func apply_authoritative_weather_state(state: Dictionary) -> void:
 func clear_authoritative_weather_state() -> void:
 	_authoritative_weather_active = false
 	_authoritative_weather_type = "clear"
+	_authoritative_weather_intensity = 0.0
 	_authoritative_eclipse_active = false
 	_authoritative_eclipse_intensity = 0.0
 
@@ -495,13 +539,17 @@ func _hash01(cycle_index: int, salt: int) -> float:
 
 
 func _synchronized_elapsed_seconds() -> float:
+	if _day_night_system != null and _day_night_system.has_method("get_world_clock_state"):
+		var clock_value: Variant = _day_night_system.call("get_world_clock_state")
+		if clock_value is Dictionary:
+			return float((clock_value as Dictionary).get("elapsed_seconds", _fallback_elapsed))
 	if GameAuthority.is_server_authority() or GameAuthority.is_local_authority():
-		return float(GameAuthority.server_tick) / AUTHORITY_TICK_RATE
+		if GameAuthority.has_method("get_world_elapsed_seconds"):
+			return float(GameAuthority.call("get_world_elapsed_seconds"))
+		return _fallback_elapsed
 	if GameAuthority.is_client_proxy():
-		var snapshot: Dictionary = GameAuthority.last_snapshot
-		var snapshot_tick := int(snapshot.get("tick", -1))
-		if snapshot_tick >= 0:
-			return float(snapshot_tick) / AUTHORITY_TICK_RATE
+		if GameAuthority.has_method("get_world_elapsed_seconds"):
+			return float(GameAuthority.call("get_world_elapsed_seconds"))
 	return _fallback_elapsed
 
 

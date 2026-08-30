@@ -51,10 +51,12 @@ func submit_reload_weapon(tool_id: String) -> void:
 	request_reload_weapon.rpc_id(1, tool_id)
 
 
-func submit_shop_transaction(transaction: Dictionary) -> void:
-	if multiplayer.multiplayer_peer == null:
-		return
+func submit_shop_transaction(transaction: Dictionary) -> bool:
+	if multiplayer.multiplayer_peer == null \
+			or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return false
 	request_shop_transaction.rpc_id(1, transaction)
+	return true
 
 
 func submit_farm_action(action: Dictionary) -> void:

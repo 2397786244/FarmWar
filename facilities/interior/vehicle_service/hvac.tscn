@@ -1,0 +1,14 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/facilities/interior/vehicle_service/HVAC.glb" id="1_model"]
+
+[node name="HVAC" type="StaticBody3D" groups=["vehicle_service_facilities", "vehicle_service_noninteractive"]]
+collision_layer = 0
+collision_mask = 0
+metadata/map_can_overlap_water = false
+metadata/facility_kind = "vehicle_service"
+metadata/facility_id = "hvac"
+metadata/display_name = "HVAC空调外机"
+metadata/interaction_enabled = false
+
+[node name="Mesh" parent="." instance=ExtResource("1_model")]

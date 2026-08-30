@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/vehicle_topple_validation.gd" id="1_vehicle_topple_validation"]
+
+[node name="VehicleToppleValidation" type="Node3D"]
+script = ExtResource("1_vehicle_topple_validation")

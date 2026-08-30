@@ -687,7 +687,7 @@
 	  "npc_id": "npc_marcus_bell",
 	  "theme_id": "vehicle_service",
 	  "images": [],
-	  "text": "车载机枪、氮气加速装置和高性能电机都不是路边拿扳手就能装的东西。机枪涉及固定座与供弹，氮气要检查控制和冷却，高性能电机还要确认车辆控制模块。安装费会随车型和改装复杂度从几百到数千，先做兼容检查再交钱。",
+	  "text": "车载机枪、氮气加速装置和高性能电机都不是路边拿扳手就能装的东西。机枪涉及固定座与供弹，氮气要检查控制和冷却，高性能电机要确认车型兼容性。安装费会随车型和改装复杂度从几百到数千，先做兼容检查再交钱。",
 	  "links": ["www.bellwrench.com/upgrades"],
 	  "published_at": null,
 	  "engagement": {"likes": 227, "comments": 29, "reposts": 33}

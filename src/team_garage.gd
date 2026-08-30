@@ -43,6 +43,21 @@ func get_cargo_config() -> VehicleConfig:
 	return RED_CARGO_CONFIG if owner_team == "red" else BLUE_CARGO_CONFIG
 
 
+## Purchased AutoSales vehicles live in the authority-owned garage registry,
+## separate from the fixed cargo-car respawn state below.
+func get_purchased_vehicle_records() -> Array[Dictionary]:
+	if not is_instance_valid(GameAuthority) or not GameAuthority.has_method("get_team_garage_records"):
+		return []
+	return GameAuthority.get_team_garage_records(owner_team)
+
+
+func get_purchased_vehicle_record(garage_vehicle_id: String) -> Dictionary:
+	if not is_instance_valid(GameAuthority) or not GameAuthority.has_method("get_team_garage_record"):
+		return {}
+	var record := GameAuthority.get_team_garage_record(garage_vehicle_id)
+	return record if str(record.get("owner_team", "")) == owner_team else {}
+
+
 func set_respawn_state(active: bool, remaining_seconds: float) -> void:
 	respawn_active = active
 	respawn_remaining = maxf(0.0, remaining_seconds)

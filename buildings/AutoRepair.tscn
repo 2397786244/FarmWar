@@ -11,11 +11,14 @@ data = PackedVector3Array(-0.035, -1.3, 0.59999996, -0.06, -1.275, 0.59999996, -
 [sub_resource type="BoxShape3D" id="BoxShape3D_lr7iy"]
 size = Vector3(4, 3.8, 0.5)
 
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_autorepair_ramp"]
+points = PackedVector3Array(-2.2, 0, -1.25, 2.2, 0, -1.25, -2.2, 0, 1.25, 2.2, 0, 1.25, -2.2, 0.3, -1.25, 2.2, 0.3, -1.25)
+
 [node name="AutoRepair" type="StaticBody3D" unique_id=871121174]
-metadata/map_can_overlap_water = false
-metadata/map_enterable = true
 collision_layer = 4096
 collision_mask = 12971
+metadata/map_can_overlap_water = false
+metadata/map_enterable = true
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1035214249]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
@@ -30,3 +33,8 @@ shape = SubResource("ConcavePolygonShape3D_f14v1")
 [node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=1862688946]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5887747, 1.8807611, 4.509735)
 shape = SubResource("BoxShape3D_lr7iy")
+
+[node name="CollisionShape3D4" type="CollisionShape3D" parent="." unique_id=1456678381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 0, 5.65)
+shape = SubResource("ConvexPolygonShape3D_autorepair_ramp")
+debug_color = Color(0.2, 0.8, 1, 0.55)

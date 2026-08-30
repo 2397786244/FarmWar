@@ -110,11 +110,15 @@ const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
 const PLACEMENT_QUERY_SCRIPT = preload("res://src/placement_query.gd")
 const VEHICLE_SPAWN_CATALOG = preload("res://src/vehicle_spawn_catalog.gd")
+const VEHICLE_COLOR_CATALOG = preload("res://src/vehicle_color_catalog.gd")
 # Kept as a public compatibility view for validation scripts and editor
 # extensions that used the old constant.  Runtime/editor code reads the same
 # entries through VehicleSpawnCatalog below, so there is still one source of
 # truth for paths and labels.
 static var VEHICLE_ASSETS: Array[Dictionary] = VEHICLE_SPAWN_CATALOG.get_editor_assets()
+# Keep the old public editor palette view for extensions while sourcing every
+# option from the runtime shop catalog, including the new gray choices.
+static var VEHICLE_COLOR_OPTIONS: Array[Dictionary] = VEHICLE_COLOR_CATALOG.get_options()
 # The shared scenery implementation was moved out of src/environment.  Keep
 # the editor on the same script as the shipped maps; the old path silently
 # produced a plain Node3D and therefore no distant ring at all.
@@ -315,17 +319,6 @@ const ATV_PATH := "res://vehicles/atv.tscn"
 const SPORT_CAR_PATH := "res://vehicles/sport_car.tscn"
 const VAN_PATH := "res://vehicles/van.tscn"
 const SEDAN_PATH := "res://vehicles/sedan.tscn"
-const VEHICLE_COLOR_OPTIONS = [
-	{"id": "black", "label": "黑色", "color": Color("000000")},
-	{"id": "white", "label": "白色", "color": Color("ffffff")},
-	{"id": "red", "label": "红色", "color": Color("d62828")},
-	{"id": "orange", "label": "橙色", "color": Color("f28c28")},
-	{"id": "gold", "label": "金黄色", "color": Color("d4a017")},
-	{"id": "dark_green", "label": "深绿色", "color": Color("1f6b3a")},
-	{"id": "sky_blue", "label": "天蓝色", "color": Color("4db8ff")},
-	{"id": "dark_purple", "label": "深紫色", "color": Color("4b1f6f")},
-	{"id": "pink", "label": "粉色", "color": Color("ec6fa9")},
-]
 
 const AI_TYPES := [
 	{"id": "farmer", "label": "FarmerAI", "scene": "res://character/FarmerAI.tscn"},
@@ -548,6 +541,7 @@ var _selected_vehicle_team := ""
 var _selected_vehicle_body_color := Color("000000")
 var _selected_vehicle_wheel_color := Color("000000")
 var _selected_vehicle_machine_gun_installed := false
+var _selected_vehicle_signal_station_installed := false
 var _selected_vehicle_platform_seat_count := 0
 var _selected_vehicle_reinforced_variant := false
 var _selected_vehicle_nitro_boost_installed := false
@@ -2626,9 +2620,21 @@ func _add_vehicle_placement_controls() -> void:
 		machine_gun_toggle.button_pressed = _selected_vehicle_machine_gun_installed
 		machine_gun_toggle.toggled.connect(func(enabled: bool) -> void:
 			_selected_vehicle_machine_gun_installed = enabled
+			if enabled:
+				_selected_vehicle_signal_station_installed = false
 			_rebuild_building_preview()
 		)
 		_bottom_content.add_child(machine_gun_toggle)
+		var signal_station_toggle := CheckBox.new()
+		signal_station_toggle.text = "安装车载信号增强塔（半径 50 米）"
+		signal_station_toggle.button_pressed = _selected_vehicle_signal_station_installed
+		signal_station_toggle.toggled.connect(func(enabled: bool) -> void:
+			_selected_vehicle_signal_station_installed = enabled
+			if enabled:
+				_selected_vehicle_machine_gun_installed = false
+			_rebuild_building_preview()
+		)
+		_bottom_content.add_child(signal_station_toggle)
 		var nitro_boost_toggle := CheckBox.new()
 		nitro_boost_toggle.text = "安装车尾氮气加速（最高 8 m/s）"
 		nitro_boost_toggle.button_pressed = _selected_vehicle_nitro_boost_installed
@@ -2653,20 +2659,6 @@ func _add_vehicle_placement_controls() -> void:
 			_rebuild_building_preview()
 		)
 		_bottom_content.add_child(roof_headlights_toggle)
-		_add_vehicle_color_option_row(
-			"车身颜色",
-			_selected_vehicle_body_color,
-			func(value: Color) -> void:
-				_selected_vehicle_body_color = value
-				_rebuild_building_preview()
-		)
-		_add_vehicle_color_option_row(
-			"轮毂颜色",
-			_selected_vehicle_wheel_color,
-			func(value: Color) -> void:
-				_selected_vehicle_wheel_color = value
-				_rebuild_building_preview()
-		)
 		var passenger_seat_row := HBoxContainer.new()
 		passenger_seat_row.add_child(_make_label("平台乘客座椅"))
 		var passenger_seat_option := OptionButton.new()
@@ -2683,9 +2675,25 @@ func _add_vehicle_placement_controls() -> void:
 		)
 		passenger_seat_row.add_child(passenger_seat_option)
 		_bottom_content.add_child(passenger_seat_row)
+
+	if _selected_vehicle_supports_custom_colors():
+		_add_vehicle_color_option_row(
+			"车身颜色",
+			_selected_vehicle_body_color,
+			func(value: Color) -> void:
+				_selected_vehicle_body_color = value
+				_rebuild_building_preview()
+		)
+		_add_vehicle_color_option_row(
+			"轮毂颜色",
+			_selected_vehicle_wheel_color,
+			func(value: Color) -> void:
+				_selected_vehicle_wheel_color = value
+				_rebuild_building_preview()
+		)
 	else:
 		var color_hint := Label.new()
-		color_hint.text = "车身和轮毂颜色配置仅适用于 FarmBaseVehicle。"
+		color_hint.text = "该载具场景不提供可换色的车身和轮毂部件。"
 		color_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bottom_content.add_child(color_hint)
 
@@ -2695,7 +2703,7 @@ func _add_vehicle_placement_controls() -> void:
 	_bottom_content.add_child(rotate_button)
 
 	var rules := Label.new()
-	rules.text = "Choose a team to assign owner_team, or No owner for a neutral vehicle. FarmBaseVehicle supports independent standard/reinforced variants, body color, wheel color, 0–2 rear platform passenger seats, an optional rear machine gun, an optional rear NitroBoost (8 m/s maximum forward speed), and an optional HarvestReel that harvests mature crops only while moving."
+	rules.text = "Choose a team to assign owner_team, or No owner for a neutral vehicle. Vehicles with paintable body and wheel parts expose the shared color palette, including dark gray and silver gray. FarmBaseVehicle additionally supports independent standard/reinforced variants, 0–2 rear platform passenger seats, an optional rear machine gun or 50 m signal station, an optional rear NitroBoost (8 m/s maximum forward speed), and an optional HarvestReel that harvests mature crops only while moving. The machine gun and signal station are mutually exclusive."
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(rules)
 	var promotional_driver_hint := Label.new()
@@ -2708,7 +2716,7 @@ func _add_vehicle_color_option_row(label_text: String, current_color: Color, cha
 	var row := HBoxContainer.new()
 	row.add_child(_make_label(label_text))
 	var option := OptionButton.new()
-	for color_value: Variant in VEHICLE_COLOR_OPTIONS:
+	for color_value: Variant in VEHICLE_COLOR_CATALOG.get_options():
 		var color_entry := color_value as Dictionary
 		option.add_item(str(color_entry.get("label", "颜色")))
 		option.set_item_metadata(option.item_count - 1, color_entry.get("color", Color.WHITE))
@@ -2725,8 +2733,9 @@ func _add_vehicle_color_option_row(label_text: String, current_color: Color, cha
 func _vehicle_color_option_index(color: Color) -> int:
 	var closest_index := 0
 	var closest_distance := INF
-	for index in range(VEHICLE_COLOR_OPTIONS.size()):
-		var entry := VEHICLE_COLOR_OPTIONS[index] as Dictionary
+	var options := VEHICLE_COLOR_CATALOG.get_options()
+	for index in range(options.size()):
+		var entry := options[index] as Dictionary
 		var option_color := entry.get("color", Color.WHITE) as Color
 		if color.is_equal_approx(option_color):
 			return index
@@ -3093,8 +3102,8 @@ func _add_object_edit_controls() -> void:
 		_add_farmland_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "facility":
 		_add_facility_object_inspector_controls()
-	if is_instance_valid(_selected_map_object) and _selected_map_object is FarmBaseVehicle:
-		_add_farm_base_vehicle_object_inspector_controls()
+	if is_instance_valid(_selected_map_object) and _selected_map_object is VehicleBase:
+		_add_vehicle_object_inspector_controls()
 
 	var action_row = HBoxContainer.new()
 	_bottom_content.add_child(action_row)
@@ -3213,10 +3222,12 @@ func _set_facility_object_property(property_name: String, value: Variant) -> voi
 	_apply_object_property_by_uuid(uuid, property_name, value)
 
 
-func _add_farm_base_vehicle_object_inspector_controls() -> void:
-	var vehicle := _selected_map_object as FarmBaseVehicle
+func _add_vehicle_object_inspector_controls() -> void:
+	var vehicle := _selected_map_object as VehicleBase
+	if vehicle == null:
+		return
 	var heading := Label.new()
-	heading.text = "FarmBaseVehicle Inspector"
+	heading.text = "FarmBaseVehicle Inspector" if vehicle is FarmBaseVehicle else "Vehicle Inspector"
 	_bottom_content.add_child(heading)
 
 	var team_row := HBoxContainer.new()
@@ -3233,18 +3244,27 @@ func _add_farm_base_vehicle_object_inspector_controls() -> void:
 	team_row.add_child(team_option)
 	_bottom_content.add_child(team_row)
 
-	_add_vehicle_color_option_row(
-		"车身颜色",
-		_get_property_or(vehicle, "body_color", Color("000000")) as Color,
-		func(value: Color) -> void:
-			_set_vehicle_object_property("body_color", value)
-	)
-	_add_vehicle_color_option_row(
-		"轮毂颜色",
-		_get_property_or(vehicle, "wheel_color", Color("000000")) as Color,
-		func(value: Color) -> void:
-			_set_vehicle_object_property("wheel_color", value)
-	)
+	if vehicle.supports_custom_colors():
+		_add_vehicle_color_option_row(
+			"车身颜色",
+			_get_property_or(vehicle, "body_color", Color("000000")) as Color,
+			func(value: Color) -> void:
+				_set_vehicle_object_property("body_color", value)
+		)
+		_add_vehicle_color_option_row(
+			"轮毂颜色",
+			_get_property_or(vehicle, "wheel_color", Color("000000")) as Color,
+			func(value: Color) -> void:
+				_set_vehicle_object_property("wheel_color", value)
+		)
+	else:
+		var color_hint := Label.new()
+		color_hint.text = "该载具场景不提供可换色的车身和轮毂部件。"
+		color_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_bottom_content.add_child(color_hint)
+
+	if not vehicle is FarmBaseVehicle:
+		return
 	var reinforced_toggle := CheckBox.new()
 	reinforced_toggle.text = "使用加固版（4500 HP）"
 	reinforced_toggle.button_pressed = bool(_get_property_or(vehicle, "reinforced_variant", false))
@@ -3259,6 +3279,13 @@ func _add_farm_base_vehicle_object_inspector_controls() -> void:
 		_set_vehicle_object_property("platform_machine_gun_installed", enabled)
 	)
 	_bottom_content.add_child(machine_gun_toggle)
+	var signal_station_toggle := CheckBox.new()
+	signal_station_toggle.text = "安装车载信号增强塔（半径 50 米）"
+	signal_station_toggle.button_pressed = bool(_get_property_or(vehicle, "platform_signal_station_installed", false))
+	signal_station_toggle.toggled.connect(func(enabled: bool) -> void:
+		_set_vehicle_object_property("platform_signal_station_installed", enabled)
+	)
+	_bottom_content.add_child(signal_station_toggle)
 	var nitro_boost_toggle := CheckBox.new()
 	nitro_boost_toggle.text = "安装车尾氮气加速（最高 8 m/s）"
 	nitro_boost_toggle.button_pressed = bool(_get_property_or(vehicle, "nitro_boost_installed", false))
@@ -3300,13 +3327,13 @@ func _add_farm_base_vehicle_object_inspector_controls() -> void:
 	_bottom_content.add_child(passenger_seat_row)
 
 	var hint := Label.new()
-	hint.text = "修改会立即更新当前车辆；每辆 FarmBaseVehicle 都可以独立设置普通/加固版本、队伍、颜色、0–2 个平台乘客座椅、后置车载机枪、氮气加速、收割滚筒和车顶大灯。收割滚筒只有载具移动时才旋转并收割；默认未安装车顶大灯。"
+	hint.text = "修改会立即更新当前车辆；可换色载具支持共享的车身/轮毂颜色目录（含深灰色、银灰色）。FarmBaseVehicle 还可以独立设置普通/加固版本、0–2 个平台乘客座椅、后置车载机枪或车载信号增强塔、氮气加速、收割滚筒和车顶大灯。机枪与信号塔互斥；信号塔范围为 50 米。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
 
 func _set_vehicle_object_property(property_name: String, value: Variant) -> void:
-	if not is_instance_valid(_selected_map_object) or not _selected_map_object is FarmBaseVehicle:
+	if not is_instance_valid(_selected_map_object) or not _selected_map_object is VehicleBase:
 		return
 	if not _has_property(_selected_map_object, property_name):
 		return
@@ -3316,7 +3343,7 @@ func _set_vehicle_object_property(property_name: String, value: Variant) -> void
 	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
 	if uuid.is_empty():
 		return
-	_undo_redo.create_action("Edit FarmBaseVehicle")
+	_undo_redo.create_action("Edit Vehicle")
 	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
 	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
 	_undo_redo.commit_action(false)
@@ -3922,12 +3949,20 @@ func _apply_object_property_by_uuid(uuid: String, property_name: String, value: 
 		node.call("set_reinforced_variant", bool(value))
 	elif property_name == "nitro_boost_installed" and node.has_method("set_nitro_boost_installed"):
 		node.call("set_nitro_boost_installed", bool(value))
+	elif property_name == "platform_machine_gun_installed" and node.has_method("set_platform_machine_gun_installed"):
+		node.call("set_platform_machine_gun_installed", bool(value))
+	elif property_name == "platform_signal_station_installed" and node.has_method("set_platform_signal_station_installed"):
+		node.call("set_platform_signal_station_installed", bool(value))
 	elif property_name == "platform_passenger_seat_count" and node.has_method("set_platform_passenger_seat_count"):
 		node.call("set_platform_passenger_seat_count", int(value))
 	elif property_name == "harvest_reel_installed" and node.has_method("set_harvest_reel_installed"):
 		node.call("set_harvest_reel_installed", bool(value))
 	elif property_name == "roof_headlights_installed" and node.has_method("set_roof_headlights_installed"):
 		node.call("set_roof_headlights_installed", bool(value))
+	elif property_name == "body_color" and value is Color and node.has_method("set_body_color"):
+		node.call("set_body_color", value as Color)
+	elif property_name == "wheel_color" and value is Color and node.has_method("set_wheel_color"):
+		node.call("set_wheel_color", value as Color)
 	else:
 		node.set(property_name, value)
 	if node.has_method("refresh_visuals"):
@@ -4151,6 +4186,8 @@ func _select_building_asset(asset: Dictionary) -> void:
 func _select_vehicle_asset(asset: Dictionary) -> void:
 	_selected_building_asset = asset.duplicate(true)
 	if str(asset.get("path", "")) != FARM_BASE_VEHICLE_PATH:
+		_selected_vehicle_machine_gun_installed = false
+		_selected_vehicle_signal_station_installed = false
 		_selected_vehicle_platform_seat_count = 0
 		_selected_vehicle_harvest_reel_installed = false
 		_selected_vehicle_roof_headlights_installed = false
@@ -4753,6 +4790,7 @@ func _select_tool(mode: ToolMode) -> void:
 		_selected_vehicle_body_color = Color("000000")
 		_selected_vehicle_wheel_color = Color("000000")
 		_selected_vehicle_machine_gun_installed = false
+		_selected_vehicle_signal_station_installed = false
 		_selected_vehicle_platform_seat_count = 0
 		_selected_vehicle_reinforced_variant = false
 		_selected_vehicle_nitro_boost_installed = false
@@ -4788,6 +4826,21 @@ func _selected_vehicle_scene_path() -> String:
 		if not team_path.is_empty():
 			return team_path
 	return base_path
+
+
+func _selected_vehicle_supports_custom_colors() -> bool:
+	if not _selected_scene_is_vehicle():
+		return false
+	var packed := _load_resource_or_null(_selected_vehicle_scene_path()) as PackedScene
+	if packed == null:
+		return false
+	var probe := packed.instantiate() as Node
+	if probe == null:
+		return false
+	var supports := probe.has_method("supports_custom_colors") \
+		and bool(probe.call("supports_custom_colors"))
+	probe.free()
+	return supports
 
 func _select_height_mode(mode: int) -> void:
 	_height_mode = mode
@@ -9464,6 +9517,7 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"body_color",
 		"wheel_color",
 		"platform_machine_gun_installed",
+		"platform_signal_station_installed",
 		"platform_passenger_seat_count",
 		"reinforced_variant",
 		"nitro_boost_installed",
@@ -9862,6 +9916,7 @@ func _apply_building_placement(center: Vector3) -> void:
 		_set_property_if_present(instance, "body_color", _selected_vehicle_body_color)
 		_set_property_if_present(instance, "wheel_color", _selected_vehicle_wheel_color)
 		_set_property_if_present(instance, "platform_machine_gun_installed", _selected_vehicle_machine_gun_installed)
+		_set_property_if_present(instance, "platform_signal_station_installed", _selected_vehicle_signal_station_installed)
 		_set_property_if_present(instance, "platform_passenger_seat_count", _selected_vehicle_platform_seat_count)
 		_set_property_if_present(instance, "reinforced_variant", _selected_vehicle_reinforced_variant)
 		_set_property_if_present(instance, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
@@ -9911,6 +9966,7 @@ func _rebuild_building_preview() -> void:
 		_set_property_if_present(preview, "body_color", _selected_vehicle_body_color)
 		_set_property_if_present(preview, "wheel_color", _selected_vehicle_wheel_color)
 		_set_property_if_present(preview, "platform_machine_gun_installed", _selected_vehicle_machine_gun_installed)
+		_set_property_if_present(preview, "platform_signal_station_installed", _selected_vehicle_signal_station_installed)
 		_set_property_if_present(preview, "platform_passenger_seat_count", _selected_vehicle_platform_seat_count)
 		_set_property_if_present(preview, "reinforced_variant", _selected_vehicle_reinforced_variant)
 		_set_property_if_present(preview, "nitro_boost_installed", _selected_vehicle_nitro_boost_installed)
@@ -13995,6 +14051,12 @@ func _set_property_if_present(object: Object, property_name: String, value: Vari
 		if property_name == "nitro_boost_installed" and object.has_method("set_nitro_boost_installed"):
 			object.call("set_nitro_boost_installed", bool(value))
 			return
+		if property_name == "platform_machine_gun_installed" and object.has_method("set_platform_machine_gun_installed"):
+			object.call("set_platform_machine_gun_installed", bool(value))
+			return
+		if property_name == "platform_signal_station_installed" and object.has_method("set_platform_signal_station_installed"):
+			object.call("set_platform_signal_station_installed", bool(value))
+			return
 		if property_name == "harvest_reel_installed" and object.has_method("set_harvest_reel_installed"):
 			object.call("set_harvest_reel_installed", bool(value))
 			return
@@ -14003,6 +14065,12 @@ func _set_property_if_present(object: Object, property_name: String, value: Vari
 			return
 		if property_name == "platform_passenger_seat_count" and object.has_method("set_platform_passenger_seat_count"):
 			object.call("set_platform_passenger_seat_count", int(value))
+			return
+		if property_name == "body_color" and value is Color and object.has_method("set_body_color"):
+			object.call("set_body_color", value as Color)
+			return
+		if property_name == "wheel_color" and value is Color and object.has_method("set_wheel_color"):
+			object.call("set_wheel_color", value as Color)
 			return
 		object.set(property_name, value)
 

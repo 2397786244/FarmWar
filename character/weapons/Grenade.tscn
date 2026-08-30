@@ -1,7 +1,17 @@
 [gd_scene format=3 uid="uid://k7xopbp2cl5y"]
 
 [ext_resource type="PackedScene" uid="uid://6m324jrgfmke" path="res://assets/tools/Grenade.glb" id="1_1bc7j"]
+[ext_resource type="Script" uid="uid://dm5rwa38q8jen" path="res://src/bullet_trace_effect.gd" id="2_wvkn6"]
 
 [node name="Grenade" type="Node3D" unique_id=635848691]
 
 [node name="Mesh" parent="." unique_id=1549912055 instance=ExtResource("1_1bc7j")]
+
+[node name="Trace" type="MeshInstance3D" parent="." unique_id=233395313]
+script = ExtResource("2_wvkn6")
+tracer_color = Color(0.8420681, 0.8952291, 0.99999803, 1)
+radius = 0.2
+minimum_length = 5.0
+maximum_length = 10.0
+emission_energy = 6.0
+tracing_enabled = false

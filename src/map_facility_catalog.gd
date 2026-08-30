@@ -5,6 +5,13 @@ const INTERIOR_FACILITY_ROOT := "res://facilities/interior"
 const INTERIOR_LABEL_OVERRIDES := {
 	"laptop": "笔记本电脑",
 	"desktop": "台式机",
+	"compact_two_post_lift": "双柱汽车举升机",
+	"repair_terminal": "升级维修终端",
+	"ev_charging_station": "EV充电站",
+	"hvac": "HVAC空调外机",
+	"red_workbench": "红色工作台",
+	"tire_rack": "轮胎架",
+	"welding_workbench": "焊接台",
 }
 
 const KITCHEN_ASSETS: Array[Dictionary] = [

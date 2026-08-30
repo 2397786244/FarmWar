@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://d2jppl8lanqnd"]
+
+[ext_resource type="PackedScene" uid="uid://bs4y5t16suyfl" path="res://assets/vehicles/FTF_Tool_VehicleSignalAugment_Black_1_9m.glb" id="1_abl32"]
+[ext_resource type="Script" uid="uid://caq3vj7dktooy" path="res://src/vehicle_base_signal_station.gd" id="2_script"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kodq0"]
+size = Vector3(1.4, 2, 1.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hit"]
+size = Vector3(1.6, 2.2, 1.6)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_range"]
+radius = 50.0
+
+[node name="VehicleBaseSignalStation" type="StaticBody3D" unique_id=1658448733]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("2_script")
+
+[node name="Mesh" parent="." unique_id=547258216 instance=ExtResource("1_abl32")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1682193744]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.50341225, 0)
+shape = SubResource("BoxShape3D_kodq0")
+
+[node name="Hit3D" type="Area3D" parent="." unique_id=421089808]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1040663005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("BoxShape3D_hit")
+
+[node name="Aug3D" type="Area3D" parent="." unique_id=1464746189]
+collision_layer = 0
+collision_mask = 128
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Aug3D" unique_id=378250658]
+shape = SubResource("SphereShape3D_range")
+
+[connection signal="body_entered" from="Hit3D" to="." method="_on_hit_3d_body_entered"]
+[connection signal="body_entered" from="Aug3D" to="." method="_on_augment_3d_body_entered"]
+[connection signal="body_exited" from="Aug3D" to="." method="_on_augment_3d_body_exited"]

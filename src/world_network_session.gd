@@ -62,11 +62,12 @@ func get_last_rtt_ms() -> float:
 
 
 func get_death_drop_mode() -> String:
+	if SinglePlayerSession.is_active():
+		return SinglePlayerSession.get_death_drop_mode()
 	return CooperativeSession.get_death_drop_mode() if CooperativeSession.is_active() else ""
 
 
-func submit_action(action_type: String, payload: Dictionary = {}) -> void:
+func submit_action(action_type: String, payload: Dictionary = {}) -> bool:
 	if CooperativeSession.is_client():
-		CooperativeSession.submit_action(action_type, payload)
-		return
-	MultiplayerNetwork.submit_enet_action(action_type, payload)
+		return CooperativeSession.submit_action(action_type, payload)
+	return MultiplayerNetwork.submit_enet_action(action_type, payload)

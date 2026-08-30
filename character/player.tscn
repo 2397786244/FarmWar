@@ -20,6 +20,7 @@
 [ext_resource type="PackedScene" path="res://ui/vehicle_upgrade_page.tscn" id="16_vehicle_upgrade"]
 [ext_resource type="PackedScene" path="res://ui/team_chat_panel.tscn" id="17_team_chat"]
 [ext_resource type="PackedScene" path="res://ui/game_exit_dialog.tscn" id="18_exit_dialog"]
+[ext_resource type="Script" path="res://src/auto_sales_page.gd" id="20_auto_sales_page"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_dkowc"]
 radius = 2.0
@@ -338,6 +339,22 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = SubResource("Theme_2orxn")
 script = ExtResource("2_monf5")
+
+[node name="AutoSalesPage" type="PanelContainer" parent="SubViewport"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -512.0
+offset_top = -324.0
+offset_right = 512.0
+offset_bottom = 324.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("20_auto_sales_page")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="SubViewport/ShopPage" unique_id=1076013086]
 layout_mode = 2

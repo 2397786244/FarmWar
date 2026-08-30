@@ -549,6 +549,9 @@ func _sync_vehicles(vehicles_value: Variant) -> void:
 			str(data.get("owner_team", ""))
 		)
 		if vehicle != null:
+			var garage_vehicle_id := str(data.get("garage_vehicle_id", ""))
+			if not garage_vehicle_id.is_empty():
+				vehicle.set_meta("garage_vehicle_id", garage_vehicle_id)
 			vehicle.apply_network_state(data)
 
 
@@ -560,14 +563,18 @@ func _apply_vehicle_topple_state_event(event: Dictionary) -> void:
 	if state_value is Dictionary:
 		vehicle.apply_network_state(state_value as Dictionary)
 		return
-	var axis_value: Variant = event.get("tip_axis", Vector3.FORWARD)
-	var axis := axis_value as Vector3 if axis_value is Vector3 else Vector3.FORWARD
-	vehicle.set_toppled(
-		bool(event.get("toppled", false)),
-		axis,
-		float(event.get("tip_angle", 0.0)),
-		false
-	)
+	var axis_value: Variant = event.get("tip_axis", Vector3.RIGHT)
+	var axis := axis_value as Vector3 if axis_value is Vector3 else Vector3.RIGHT
+	vehicle.apply_network_state({
+		"position": event.get("position", vehicle.global_position),
+		"yaw": float(event.get("yaw", vehicle.upright_yaw)),
+		"toppled": bool(event.get("toppled", false)),
+		"tip_axis": axis,
+		"tip_angle": float(event.get("tip_angle", 0.0)),
+		"topple_current_angle": float(event.get(
+			"topple_current_angle", event.get("tip_angle", 0.0)
+		)),
+	})
 
 
 func _find_vehicle_visual(vehicle_id: String) -> VehicleBase:
@@ -643,6 +650,8 @@ func _sync_projectiles(projectiles_value: Variant, snapshot_tick := -1) -> void:
 			state["target_velocity"] = velocity
 			state["last_snapshot_tick"] = snapshot_tick
 		projectile_visual_states[projectile_id] = state
+		if str(data.get("type", "")) == "grenade" and bool(data.get("resting", false)):
+			_stop_grenade_tracers(visual)
 	for projectile_id in projectile_visuals.keys():
 		if not seen.has(int(projectile_id)):
 			if absorbed_projectile_ids.has(int(projectile_id)):
@@ -685,6 +694,8 @@ func _get_or_create_projectile_visual(projectile_id: int, data: Dictionary) -> N
 	var pos: Variant = data.get("position", Vector3.ZERO)
 	if pos is Vector3:
 		visual.global_position = pos
+	if str(data.get("type", data.get("visual_type", ""))) == "grenade":
+		_start_grenade_tracers(visual)
 	projectile_visuals[projectile_id] = visual
 	return visual
 
@@ -747,6 +758,8 @@ func _spawn_transient_projectile_visual(event: Dictionary) -> void:
 	world_root.add_child(visual)
 	_disable_visual_runtime(visual)
 	visual.global_position = origin
+	if str(event.get("visual_type", "")) == "grenade":
+		_start_grenade_tracers(visual)
 	# The tracer is normally primed by its own physics callback. This root is
 	# intentionally process-disabled, so prime it after placing the visual and
 	# let the next authority update draw the first moving segment immediately.
@@ -779,6 +792,26 @@ func _update_transient_projectile_visuals(delta: float) -> void:
 			_refresh_projectile_tracers(visual)
 		state["remaining"] = remaining
 		transient_projectile_visuals[visual_id] = state
+
+
+func _start_grenade_tracers(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root is BulletTracerSegment:
+		(root as BulletTracerSegment).start_tracing()
+	for child in root.get_children():
+		if child is Node:
+			_start_grenade_tracers(child)
+
+
+func _stop_grenade_tracers(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	if root is BulletTracerSegment:
+		(root as BulletTracerSegment).stop_tracing()
+	for child in root.get_children():
+		if child is Node:
+			_stop_grenade_tracers(child)
 
 
 func _refresh_projectile_tracers(root: Node) -> void:
@@ -1224,12 +1257,22 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_cargo_delivery_result(event.get("data", {}))
 		"vehicle_destroyed":
 			_apply_vehicle_destroyed_event(event)
+		"vehicle_service_state":
+			_apply_vehicle_service_state_event(event)
+		"vehicle_service_vehicle_state":
+			_apply_vehicle_service_vehicle_state_event(event)
 		"vehicle_placed":
 			_apply_vehicle_placed_event(event)
 		"vehicle_spawn_drop_finished":
 			_apply_vehicle_spawn_drop_finished_event(event)
 		"vehicle_spawn_drop_failed":
 			_apply_vehicle_spawn_drop_failed_event(event)
+		"team_garage_state":
+			if is_instance_valid(GameAuthority) and GameAuthority.has_method("apply_remote_team_garage_state"):
+				GameAuthority.apply_remote_team_garage_state(
+					str(event.get("team", "")), event.get("records", []),
+					int(event.get("revision", -1))
+				)
 		"vehicle_shield_applied":
 			_apply_vehicle_shield_event(event)
 		"vehicle_topple_state":
@@ -2296,9 +2339,37 @@ func _apply_vehicle_destroyed_event(event: Dictionary) -> void:
 	var vehicle := _find_vehicle_visual(str(event.get("vehicle_id", "")))
 	if vehicle != null:
 		vehicle.queue_free()
+	if bool(event.get("suppress_effects", false)):
+		return
 	var position: Variant = event.get("position", Vector3.ZERO)
 	if position is Vector3:
 		_spawn_vehicle_explosion(position, str(event.get("explosion_variant", "four_wheel")))
+
+
+func _apply_vehicle_service_state_event(event: Dictionary) -> void:
+	var terminal_id := str(event.get("terminal_id", ""))
+	var state_value: Variant = event.get("state", event)
+	if not state_value is Dictionary:
+		return
+	for node in get_tree().get_nodes_in_group("vehicle_service_terminals"):
+		if not node is VehicleServiceTerminal:
+			continue
+		var terminal := node as VehicleServiceTerminal
+		if terminal_id.is_empty() or terminal.get_terminal_id() == terminal_id:
+			terminal.apply_network_state(state_value as Dictionary)
+			break
+
+
+func _apply_vehicle_service_vehicle_state_event(event: Dictionary) -> void:
+	var state_value: Variant = event.get("vehicle_state", {})
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var vehicle_id := str(event.get("vehicle_id", state.get("vehicle_id", "")))
+	var vehicle := _find_vehicle_visual(vehicle_id)
+	if vehicle == null:
+		return
+	vehicle.apply_network_state(state)
 
 
 func _apply_vehicle_shield_event(event: Dictionary) -> void:
@@ -2328,12 +2399,15 @@ func _apply_vehicle_placed_event(event: Dictionary) -> void:
 		position = event.get("drop_start_position", position)
 	if position is Vector3:
 		vehicle.global_position = position
-		vehicle.rotation.y = float(event.get("yaw", 0.0))
+		vehicle.set_upright_yaw(float(event.get("yaw", vehicle.upright_yaw)))
 	var vehicle_state_value: Variant = event.get("vehicle_state", null)
 	if vehicle_state_value is Dictionary:
 		var vehicle_state := (vehicle_state_value as Dictionary).duplicate(true)
+		var garage_vehicle_id := str(vehicle_state.get("garage_vehicle_id", event.get("garage_vehicle_id", "")))
+		if not garage_vehicle_id.is_empty():
+			vehicle.set_meta("garage_vehicle_id", garage_vehicle_id)
 		vehicle_state["position"] = position
-		vehicle_state["yaw"] = float(event.get("yaw", vehicle.rotation.y))
+		vehicle_state["yaw"] = float(event.get("yaw", vehicle.upright_yaw))
 		vehicle.apply_network_state(vehicle_state)
 
 
@@ -2343,12 +2417,16 @@ func _apply_vehicle_spawn_drop_finished_event(event: Dictionary) -> void:
 		return
 	var state_value: Variant = event.get("vehicle_state", null)
 	if state_value is Dictionary:
-		vehicle.apply_network_state(state_value as Dictionary)
+		var state := state_value as Dictionary
+		var garage_vehicle_id := str(state.get("garage_vehicle_id", ""))
+		if not garage_vehicle_id.is_empty():
+			vehicle.set_meta("garage_vehicle_id", garage_vehicle_id)
+		vehicle.apply_network_state(state)
 	else:
 		var position: Variant = event.get("position", vehicle.global_position)
 		if position is Vector3:
 			vehicle.global_position = position
-		vehicle.rotation.y = float(event.get("yaw", vehicle.rotation.y))
+		vehicle.set_upright_yaw(float(event.get("yaw", vehicle.upright_yaw)))
 
 
 func _apply_vehicle_spawn_drop_failed_event(event: Dictionary) -> void:
@@ -2970,6 +3048,16 @@ func _apply_tool_respawned_event(event: Dictionary) -> void:
 
 
 func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
+	var world_time_seconds := float(snapshot.get("world_time_seconds", -1.0))
+	if GameAuthority.is_client_proxy() and world_time_seconds >= 0.0 \
+			and GameAuthority.has_method("apply_replicated_world_time"):
+		# Low-frequency packets are also authoritative clock samples. The
+		# authority service rejects an older tick so an out-of-order packet cannot
+		# move the client environment backwards.
+		GameAuthority.apply_replicated_world_time(
+			world_time_seconds, int(snapshot.get("tick", -1))
+		)
+	_apply_authoritative_environment(snapshot)
 	var farm_summary: Variant = snapshot.get("farm_summary", {})
 	if farm_summary is Dictionary and is_instance_valid(GameAuthority) \
 			and GameAuthority.has_method("apply_authoritative_farm_summary_state"):
@@ -2978,6 +3066,10 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 	if embedded_lab_teams is Dictionary and is_instance_valid(GameAuthority) \
 			and GameAuthority.has_method("apply_authoritative_team_embedded_lab_states"):
 		GameAuthority.apply_authoritative_team_embedded_lab_states(embedded_lab_teams as Dictionary)
+	var team_garages: Variant = snapshot.get("team_garages", {})
+	if team_garages is Dictionary and is_instance_valid(GameAuthority) \
+			and GameAuthority.has_method("apply_remote_team_garage_states"):
+		GameAuthority.apply_remote_team_garage_states(team_garages)
 	var weather_forecast: Variant = snapshot.get("weather_forecast", {})
 	if weather_forecast is Dictionary and not (weather_forecast as Dictionary).is_empty():
 		for weather_system in get_tree().get_nodes_in_group("weather_systems"):
@@ -3007,6 +3099,14 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 	if computers is Array:
 		for computer_state_value: Variant in computers:
 			_apply_computer_state(computer_state_value)
+	var vehicle_service_terminals: Variant = snapshot.get("vehicle_service_terminals", [])
+	if vehicle_service_terminals is Array:
+		for terminal_state_value: Variant in vehicle_service_terminals:
+			if terminal_state_value is Dictionary:
+				_apply_vehicle_service_state_event({
+					"terminal_id": str((terminal_state_value as Dictionary).get("terminal_id", "")),
+					"state": terminal_state_value,
+				})
 	var inventory: Variant = snapshot.get("inventory", {})
 	if inventory is Dictionary:
 		_on_inventory_state_received(inventory)
@@ -3178,6 +3278,10 @@ func _disable_visual_runtime(root: Node, preserve_animation_players := false) ->
 	# their collision and ComputerTerminal script so the local player can see the
 	# [E] prompt and request the next desktop-UI interaction pass.
 	if root is ComputerTerminal:
+		return
+	# The remote terminal still owns visible interaction areas for the local
+	# player. Its authority-only lock decisions are guarded inside the script.
+	if root is VehicleServiceTerminal:
 		return
 	root.set_process(false)
 	root.set_physics_process(false)

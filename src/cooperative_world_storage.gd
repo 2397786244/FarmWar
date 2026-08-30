@@ -3,7 +3,7 @@ class_name CooperativeWorldStorageService
 
 const WORLD_ROOT := "user://pve_worlds"
 const PROFILE_ROOT := "user://pve_player_profiles"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 3
 const DEFAULT_MAP_ICON := "res://worlds/creston_town/map_icon.svg"
 const DEFAULT_MAP_SCENE := "res://worlds/creston_town/creston_town.tscn"
 const REMOVED_BUILTIN_MAP_IDS := ["multiplayer_test", "redpine_county"]
@@ -54,6 +54,14 @@ func create_world(config: Dictionary) -> Dictionary:
 		"team_money": float(GlobalVar.INITIAL_MONEY),
 		"game_day": 1,
 		"world_elapsed_seconds": 0.0,
+		"world_clock": {
+			"schema_version": 1,
+			"elapsed_seconds": 0.0,
+			"total_hours": 8.0,
+			"day_index": 0,
+			"hour": 8.0,
+			"game_day": 1,
+		},
 		"host_steam_id": int(config.get("host_steam_id", 0)),
 		"host_summary": {
 			"display_name": str(config.get("host_display_name", "房主")),
@@ -400,6 +408,9 @@ func _json_safe(value: Variant) -> Variant:
 	if value is Vector2:
 		var vector := value as Vector2
 		return [vector.x, vector.y]
+	if value is Color:
+		var color := value as Color
+		return [color.r, color.g, color.b, color.a]
 	if value is Dictionary:
 		var result: Dictionary = {}
 		for key: Variant in (value as Dictionary).keys():

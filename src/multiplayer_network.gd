@@ -29,6 +29,7 @@ var server_port := 0
 var peer: ENetMultiplayerPeer
 var rpc_endpoint: ClientServerRpcEndpoint
 var last_rtt_ms := 0.0
+var _redirect_to_server_browser_on_disconnect := true
 
 
 func _ready() -> void:
@@ -71,7 +72,11 @@ func connect_to_game_server(address: String, port: int) -> bool:
 	return true
 
 
-func disconnect_from_game_server(emit_signal := true) -> void:
+func disconnect_from_game_server(
+	emit_signal := true,
+	return_to_server_browser := true
+) -> void:
+	_redirect_to_server_browser_on_disconnect = return_to_server_browser
 	_destroy_rpc_endpoint()
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
@@ -129,8 +134,8 @@ func submit_reload_weapon(tool_id: String) -> void:
 	NetworkSession.submit_action("reload_weapon", {"tool_id": tool_id})
 
 
-func submit_shop_transaction(transaction: Dictionary) -> void:
-	NetworkSession.submit_action("shop_transaction", transaction)
+func submit_shop_transaction(transaction: Dictionary) -> bool:
+	return NetworkSession.submit_action("shop_transaction", transaction)
 
 
 func submit_farm_action(action: Dictionary) -> void:
@@ -182,16 +187,16 @@ func submit_ladder_action(action: Dictionary) -> void:
 	NetworkSession.submit_action("ladder_action", action)
 
 
-func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
-	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint):
-		return
+func submit_enet_action(action_type: String, payload: Dictionary = {}) -> bool:
+	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint) or not is_connected_to_game_server():
+		return false
 	match action_type:
 		"player_input": rpc_endpoint.submit_player_input(payload)
 		"player_jump": rpc_endpoint.submit_player_jump(payload)
 		"select_tool": rpc_endpoint.submit_select_tool(int(payload.get("tool_index", 0)), str(payload.get("tool_id", "")))
 		"use_tool": rpc_endpoint.submit_use_tool(payload)
 		"reload_weapon": rpc_endpoint.submit_reload_weapon(str(payload.get("tool_id", "")))
-		"shop_transaction": rpc_endpoint.submit_shop_transaction(payload)
+		"shop_transaction": return rpc_endpoint.submit_shop_transaction(payload)
 		"farm_action": rpc_endpoint.submit_farm_action(payload)
 		"ingredient_action": rpc_endpoint.submit_ingredient_pickup_action(payload)
 		"remote_input": rpc_endpoint.submit_remote_control_input(payload)
@@ -203,6 +208,8 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> void:
 		"gate_action": rpc_endpoint.submit_gate_action(payload)
 		"ladder_action": rpc_endpoint.submit_ladder_action(payload)
 		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))
+		_: return false
+	return true
 
 
 func get_unique_peer_id() -> int:
@@ -230,9 +237,11 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
-	disconnect_from_game_server(false)
+	var return_to_browser := _redirect_to_server_browser_on_disconnect
+	disconnect_from_game_server(false, false)
 	disconnected.emit("服务器已断开连接。")
-	call_deferred("_return_to_server_browser_after_disconnect")
+	if return_to_browser:
+		call_deferred("_return_to_server_browser_after_disconnect")
 
 
 func _return_to_server_browser_after_disconnect() -> void:

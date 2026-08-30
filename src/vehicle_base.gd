@@ -13,6 +13,7 @@ const COMBAT_BALANCE := preload("res://src/combat_balance.gd")
 const VEHICLE_EXPLOSION_SCENE := preload("res://character/weapons/VehicleExplosion.tscn")
 const VEHICLE_SHIELD_SCENE := preload("res://character/weapons/VehicleShieldBubble.tscn")
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
+const VEHICLE_COLOR_CATALOG := preload("res://src/vehicle_color_catalog.gd")
 const NETWORK_INTERPOLATION_RATE := 18.0
 const NETWORK_SNAP_DISTANCE := 6.0
 const CARGO_SLOT_COUNT := 12
@@ -21,24 +22,52 @@ const TOOL_COLLISION_LAYER := 128
 const NATURE_RESOURCE_COLLISION_LAYER := 16384
 const DEFAULT_SPAWN_DROP_TIMEOUT := 3.0
 const NAVIGATION_ONLY_OBSTACLE_GROUP := "ai_navigation_obstacle"
+const HIGH_PERFORMANCE_MOTOR_SPEED_MULTIPLIER := 1.2
+const HIGH_PERFORMANCE_MOTOR_ACCELERATION_MULTIPLIER := 1.2
 ## DynamicNavigationChunkGrid intentionally discovers this canonical node
 ## name on every registered owner. Keep vehicles on the same convention as
 ## buildings and defense facilities so their AABBs enter the bake queue.
 const VEHICLE_NAVIGATION_OBSTACLE_NAME := "NavigationObstacle3D"
 const NAVIGATION_IDLE_SPEED_EPSILON := 0.08
 const NAVIGATION_OBSTACLE_MARGIN := 0.10
+const TOPPLE_GROUND_CLEARANCE := 0.06
+const TOPPLE_GROUND_RAY_START_HEIGHT := 8.0
+const TOPPLE_GROUND_RAY_END_DEPTH := 12.0
+const TOPPLE_POSE_EPSILON := 0.0005
+const COMPOSITE_ARMOR_PANEL_HP_BONUS := 1500.0
 ## A faster vehicle earns a wider top-speed view. The configured camera_max_fov
 ## remains an optional per-vehicle ceiling, while the actual maximum forward
 ## speed determines how much of that ceiling can be reached.
 const CAMERA_FOV_DEGREES_PER_MAX_SPEED := 1.5
+const BODY_PAINT_NODE_NAME := "BodyPaint_Mesh"
+const WHEEL_HUB_NODE_NAMES := [
+	"Wheel_FR_Hub",
+	"Wheel_FL_Hub",
+	"Wheel_RR_Hub",
+	"Wheel_RL_Hub",
+]
 
 @export var vehicle_config: VehicleConfig
 @export var network_id := ""
 @export var owner_team := ""
+## Regular purchasable vehicles use these common imported-model node names.
+## FarmBaseVehicle overrides the two setters because its GLB uses a different
+## chassis/wheel layout, while still sharing the same replicated properties.
+@export var body_color := Color("000000")
+@export var wheel_color := Color("000000")
+## Stable ids are persisted/networked alongside the resolved Color values.  A
+## Color alone is not a safe save format because imported scenes and JSON
+## serializers can lose the catalog choice.
+var body_color_id := "black"
+var wheel_color_id := "black"
 ## Hand-held placement previews disable vehicle physics and world registration.
 @export var vehicle_deployed := true
 ## Map instances can start loaded without making the mutable cargo weight a resource setting.
 @export_range(0.0, 500.0, 1.0, "suffix:kg") var initial_cargo_weight_kg := 0.0
+## Common RepairTerminal upgrade state. This is per vehicle and never mutates
+## the shared VehicleConfig resource used by other vehicles of the same type.
+@export var high_performance_motor_installed := false
+@export var composite_armor_panel_installed := false
 
 ## Older vehicle scenes use one configurable box named VehicleShape. Custom
 ## vehicles may instead provide several direct CollisionShape3D children, so
@@ -80,8 +109,12 @@ var cargo_weight_kg := 0.0
 var cargo_manifest: Array[Dictionary] = []
 var cargo_user_peer_id := 0
 var toppled := false
-var tip_axis := Vector3.FORWARD
+var tip_axis := Vector3.RIGHT
 var tip_angle := 0.0
+## Horizontal heading is kept separately from the root's tilt so a toppled
+## vehicle can be reconstructed without relying on unstable Euler angles.
+var upright_yaw := 0.0
+var topple_current_angle := 0.0
 
 var _wheel_rest_bases: Dictionary = {}
 var _steering_wheel_rest_basis := Basis.IDENTITY
@@ -94,6 +127,10 @@ var _network_target_position := Vector3.ZERO
 var _network_target_yaw := 0.0
 var _network_target_speed := 0.0
 var _network_target_steering := 0.0
+var _network_target_tip_axis := Vector3.RIGHT
+var _network_target_toppled := false
+var _network_target_tip_angle := 0.0
+var _network_target_topple_current_angle := 0.0
 var _shield_visual: VehicleShieldBubble
 var _last_available_cargo_slots := CARGO_SLOT_COUNT
 var _network_cargo_occupied_slots: Array[int] = []
@@ -109,13 +146,15 @@ var _external_push_velocity := Vector3.ZERO
 var _active_impact_contacts: Dictionary = {}
 var _topple_sources: Dictionary = {}
 var _topple_force_accumulator := 0.0
-var _visual_tip_angle := 0.0
-var _topple_visual_applied := false
-var _body_visual_unrotated_basis := Basis.IDENTITY
-var _cargo_visual_unrotated_basis := Basis.IDENTITY
+var _topple_transition_active := false
+var _root_scale := Vector3.ONE
+var _last_navigation_topple_angle := -INF
+var _last_navigation_obstacle_origin := Vector3(INF, INF, INF)
 
 
 func _ready() -> void:
+	_root_scale = scale
+	upright_yaw = rotation.y
 	if not vehicle_deployed:
 		collision_layer = 0
 		collision_mask = 0
@@ -162,14 +201,165 @@ func set_drive_input(throttle: float, steering: float, brake: float = 0.0) -> vo
 	drive_brake = clampf(brake, 0.0, 1.0)
 
 
+func set_upright_yaw(yaw: float) -> void:
+	upright_yaw = wrapf(yaw, -PI, PI)
+	if not _is_topple_pose_active():
+		_apply_root_topple_transform()
+
+
 ## Subclasses can override these accessors for temporary vehicle modules such
 ## as FarmBaseVehicle's NitroBoost without mutating the shared VehicleConfig.
-func get_max_forward_speed() -> float:
+func get_base_max_forward_speed() -> float:
 	return vehicle_config.max_forward_speed if vehicle_config != null else 0.0
 
 
-func get_max_reverse_speed() -> float:
+func get_base_max_reverse_speed() -> float:
 	return vehicle_config.max_reverse_speed if vehicle_config != null else 0.0
+
+
+func get_base_acceleration() -> float:
+	return vehicle_config.acceleration if vehicle_config != null else 0.0
+
+
+func get_base_max_hp() -> float:
+	return vehicle_config.max_hp if vehicle_config != null else 0.0
+
+
+func get_max_hp() -> float:
+	var base_max_hp := get_base_max_hp()
+	if base_max_hp <= 0.0:
+		return 0.0
+	return base_max_hp + COMPOSITE_ARMOR_PANEL_HP_BONUS \
+		if composite_armor_panel_installed else base_max_hp
+
+
+func apply_high_performance_motor_speed_bonus(speed: float) -> float:
+	return speed * HIGH_PERFORMANCE_MOTOR_SPEED_MULTIPLIER \
+		if high_performance_motor_installed else speed
+
+
+func get_max_forward_speed() -> float:
+	return apply_high_performance_motor_speed_bonus(get_base_max_forward_speed())
+
+
+func get_max_reverse_speed() -> float:
+	return apply_high_performance_motor_speed_bonus(get_base_max_reverse_speed())
+
+
+func get_acceleration() -> float:
+	var acceleration := get_base_acceleration()
+	return acceleration * HIGH_PERFORMANCE_MOTOR_ACCELERATION_MULTIPLIER \
+		if high_performance_motor_installed else acceleration
+
+
+func set_high_performance_motor_installed(installed: bool) -> void:
+	# Keep special-purpose vehicles unsupported even if they receive a stale or
+	# malformed state from an older client/save. A missing config is allowed for
+	# editor/tool previews and will not affect speed until a config is assigned.
+	if installed and vehicle_config != null and not vehicle_config.supports_common_service_upgrades:
+		high_performance_motor_installed = false
+		return
+	high_performance_motor_installed = installed
+
+
+func set_composite_armor_panel_installed(installed: bool, adjust_current_hp := true) -> void:
+	var requested_state := bool(installed)
+	if requested_state and not supports_vehicle_service_module("composite_armor_panel"):
+		requested_state = false
+	if requested_state == composite_armor_panel_installed:
+		return
+	var previous_hp := current_hp
+	composite_armor_panel_installed = requested_state
+	if vehicle_config == null or not adjust_current_hp:
+		return
+	var next_max_hp := get_max_hp()
+	if requested_state:
+		# A direct call on a destroyed/fresh vehicle must not revive it. Service
+		# transactions already reject destroyed vehicles before reaching this setter.
+		current_hp = clampf(previous_hp + COMPOSITE_ARMOR_PANEL_HP_BONUS, 0.0, next_max_hp) \
+			if previous_hp > 0.0 else 0.0
+	else:
+		current_hp = clampf(previous_hp, 0.0, next_max_hp)
+	if is_inside_tree():
+		_last_available_cargo_slots = get_available_cargo_slot_count()
+		_refresh_cargo_visuals()
+
+
+func supports_common_service_upgrades() -> bool:
+	return vehicle_config != null and vehicle_config.supports_common_service_upgrades
+
+
+func supports_vehicle_service_module(module_id: String) -> bool:
+	return module_id in ["high_performance_motor", "composite_armor_panel"] \
+		and supports_common_service_upgrades()
+
+
+func set_body_color(color: Color) -> void:
+	body_color = Color(color.r, color.g, color.b, 1.0)
+	var catalog_id := VEHICLE_COLOR_CATALOG.get_id_for_color(body_color)
+	if not catalog_id.is_empty():
+		body_color_id = catalog_id
+	_apply_vehicle_color_to_named_node(BODY_PAINT_NODE_NAME, _make_vehicle_color_material(body_color))
+
+
+func set_body_color_id(color_id: String) -> void:
+	body_color_id = VEHICLE_COLOR_CATALOG.normalize_id(color_id)
+	set_body_color(VEHICLE_COLOR_CATALOG.get_color(body_color_id))
+
+
+func get_body_color_id() -> String:
+	return VEHICLE_COLOR_CATALOG.normalize_id(body_color_id)
+
+
+func supports_custom_colors() -> bool:
+	var body_target := find_child(BODY_PAINT_NODE_NAME, true, false)
+	if body_target == null:
+		return false
+	for node_name: String in WHEEL_HUB_NODE_NAMES:
+		if find_child(node_name, true, false) == null:
+			return false
+	return true
+
+
+func set_wheel_color(color: Color) -> void:
+	wheel_color = Color(color.r, color.g, color.b, 1.0)
+	var catalog_id := VEHICLE_COLOR_CATALOG.get_id_for_color(wheel_color)
+	if not catalog_id.is_empty():
+		wheel_color_id = catalog_id
+	var material := _make_vehicle_color_material(wheel_color)
+	for node_name: String in WHEEL_HUB_NODE_NAMES:
+		_apply_vehicle_color_to_named_node(node_name, material)
+
+
+func set_wheel_color_id(color_id: String) -> void:
+	wheel_color_id = VEHICLE_COLOR_CATALOG.normalize_id(color_id)
+	set_wheel_color(VEHICLE_COLOR_CATALOG.get_color(wheel_color_id))
+
+
+func get_wheel_color_id() -> String:
+	return VEHICLE_COLOR_CATALOG.normalize_id(wheel_color_id)
+
+
+func _apply_vehicle_color_to_named_node(node_name: String, material: Material) -> void:
+	var target := find_child(node_name, true, false)
+	if target == null:
+		return
+	_apply_vehicle_color_recursive(target, material)
+
+
+func _apply_vehicle_color_recursive(node: Node, material: Material) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).material_override = material
+	for child: Node in node.get_children():
+		_apply_vehicle_color_recursive(child, material)
+
+
+func _make_vehicle_color_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(color.r, color.g, color.b, 1.0)
+	material.metallic = 0.25
+	material.roughness = 0.42
+	return material
 
 
 ## Visual destruction variants are selected here so every VehicleBase subclass
@@ -216,10 +406,9 @@ func simulate_authority(delta: float) -> void:
 		return
 	_tick_vehicle_shield(delta)
 	_tick_external_push(delta)
-	if toppled:
-		drive_throttle = 0.0
-		drive_steering = 0.0
-		drive_brake = 1.0
+	if _is_topple_pose_active():
+		_simulate_topple_pose(delta)
+		return
 	var target_speed := get_max_forward_speed() * maxf(drive_throttle, 0.0)
 	if drive_throttle < 0.0:
 		target_speed = get_max_reverse_speed() * drive_throttle
@@ -230,7 +419,7 @@ func simulate_authority(delta: float) -> void:
 			vehicle_config.brake_deceleration * drive_brake * delta
 		)
 	else:
-		var speed_change := vehicle_config.acceleration if absf(target_speed) > absf(current_speed) else vehicle_config.rolling_deceleration
+		var speed_change := get_acceleration() if absf(target_speed) > absf(current_speed) else vehicle_config.rolling_deceleration
 		current_speed = move_toward(current_speed, target_speed, speed_change * delta)
 
 	var speed_ratio := clampf(absf(current_speed) / maxf(get_max_forward_speed(), 0.01), 0.0, 1.0)
@@ -248,7 +437,8 @@ func simulate_authority(delta: float) -> void:
 	# Preserve the signed longitudinal speed: reverse steering must mirror the
 	# vehicle yaw so S/A reverses left and S/D reverses right.
 	var yaw_rate := current_speed / maxf(vehicle_config.wheel_base, 0.01) * tan(turn_angle)
-	rotation.y += yaw_rate * delta
+	upright_yaw = wrapf(upright_yaw + yaw_rate * delta, -PI, PI)
+	_apply_root_topple_transform()
 
 	var forward := global_transform.basis * vehicle_config.forward_axis
 	forward.y = 0.0
@@ -266,9 +456,42 @@ func simulate_authority(delta: float) -> void:
 		velocity += gravity_direction.normalized() * gravity_strength * delta
 	move_and_slide()
 	_process_vehicle_slide_impacts(drive_velocity)
-	rotation.x = 0.0
-	rotation.z = 0.0
-	_update_vehicle_presentation(delta)
+	_update_vehicle_visuals(delta)
+	_update_topple_pose(delta)
+	_refresh_vehicle_navigation_obstacle()
+
+
+func _is_topple_pose_active() -> bool:
+	return toppled or _topple_transition_active \
+		or absf(topple_current_angle) > TOPPLE_POSE_EPSILON
+
+
+func _simulate_topple_pose(delta: float) -> void:
+	# A toppled vehicle is still a CharacterBody3D, but it no longer accepts
+	# drive input.  Keep gravity/slide resolution active so it can settle onto
+	# the floor after the root node has rotated, while all descendants use that
+	# same rotated root transform.
+	drive_throttle = 0.0
+	drive_steering = 0.0
+	drive_brake = 1.0
+	current_speed = move_toward(current_speed, 0.0, vehicle_config.brake_deceleration * maxf(delta, 0.0))
+	current_steering = move_toward(current_steering, 0.0, vehicle_config.steering_response * maxf(delta, 0.0))
+	velocity.x = 0.0
+	velocity.z = 0.0
+	_update_topple_pose(delta)
+	_correct_topple_ground_penetration()
+	var gravity_strength := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity_direction_value: Variant = ProjectSettings.get_setting(
+		"physics/3d/default_gravity_vector",
+		Vector3.DOWN
+	)
+	var gravity_direction := gravity_direction_value as Vector3 \
+		if gravity_direction_value is Vector3 else Vector3.DOWN
+	velocity += gravity_direction.normalized() * gravity_strength * maxf(delta, 0.0)
+	move_and_slide()
+	_correct_topple_ground_penetration()
+	_update_vehicle_visuals(delta)
+	_update_topple_pose(0.0)
 	_refresh_vehicle_navigation_obstacle()
 
 
@@ -404,10 +627,9 @@ func receive_melee_push(attacker_position: Vector3, force: float, source_instanc
 	)
 	if _topple_sources.size() < required_sources or _topple_force_accumulator < required_force:
 		return
-	var local_push := global_transform.basis.inverse() * push_direction
-	var axis := Vector3(local_push.z, 0.0, -local_push.x)
-	if axis.length_squared() <= 0.001:
-		axis = Vector3.FORWARD
+	var local_push := _upright_basis().inverse() * push_direction
+	local_push.y = 0.0
+	var axis := _topple_axis_from_local_push(local_push)
 	set_toppled(true, axis.normalized())
 
 
@@ -434,7 +656,7 @@ func _prune_topple_sources(now_msec: int) -> void:
 
 func set_toppled(
 	value: bool,
-	axis := Vector3.FORWARD,
+	axis := Vector3.RIGHT,
 	angle := -1.0,
 	notify_authority := true
 ) -> bool:
@@ -456,9 +678,11 @@ func set_toppled(
 		drive_steering = 0.0
 		drive_brake = 1.0
 		_external_push_velocity = Vector3.ZERO
+		_topple_transition_active = true
 	else:
 		_topple_sources.clear()
 		_topple_force_accumulator = 0.0
+		_topple_transition_active = true
 	if changed:
 		topple_state_changed.emit(toppled)
 		_refresh_vehicle_navigation_obstacle(true)
@@ -479,40 +703,101 @@ func upright_vehicle() -> bool:
 	return set_toppled(false, tip_axis)
 
 
-func _update_vehicle_presentation(delta: float) -> void:
-	_remove_topple_visual_transform()
-	_update_vehicle_visuals(delta)
+func _topple_axis_from_local_push(local_push: Vector3) -> Vector3:
+	var horizontal := Vector2(local_push.x, local_push.z)
+	if horizontal.length_squared() <= 0.0001:
+		# A missing impact direction is rare, but it must still produce a
+		# longitudinal pitch instead of silently falling back to a roll axis.
+		return Vector3.RIGHT
+	if absf(horizontal.x) >= absf(horizontal.y):
+		# A side impulse rolls around local Z. The sign makes the vehicle lean
+		# away from the incoming side instead of always using one roll direction.
+		return Vector3(0.0, 0.0, -signf(horizontal.x))
+	# A front/rear impulse pitches around local X. The sign distinguishes
+	# front-flip from rear-flip.
+	return Vector3(signf(horizontal.y), 0.0, 0.0)
+
+
+func _upright_basis(yaw := upright_yaw) -> Basis:
+	return Basis(Vector3.UP, yaw)
+
+
+func _compose_root_basis(yaw: float, axis: Vector3, angle: float) -> Basis:
+	var normalized_axis := axis.normalized() if axis.length_squared() > 0.0001 else Vector3.RIGHT
+	var tilt_basis := Basis.IDENTITY
+	if absf(angle) > TOPPLE_POSE_EPSILON:
+		tilt_basis = Basis(Quaternion(normalized_axis, angle))
+	return (_upright_basis(yaw) * tilt_basis).scaled(_root_scale)
+
+
+func _apply_root_topple_transform() -> void:
+	basis = _compose_root_basis(upright_yaw, tip_axis, topple_current_angle)
+
+
+func _update_topple_pose(delta: float) -> void:
 	var target_angle := tip_angle if toppled else 0.0
 	var response_key := "topple_response" if toppled else "upright_response"
 	var response := COMBAT_BALANCE.get_float("vehicle_impact", response_key, 7.0)
-	_visual_tip_angle = move_toward(
-		_visual_tip_angle,
-		target_angle,
-		response * maxf(delta, 0.0)
-	)
-	_apply_topple_visual_transform()
+	if delta > 0.0:
+		topple_current_angle = move_toward(
+			topple_current_angle,
+			target_angle,
+			response * delta
+		)
+	if absf(topple_current_angle - target_angle) <= TOPPLE_POSE_EPSILON:
+		topple_current_angle = target_angle
+	if not toppled and absf(topple_current_angle) <= TOPPLE_POSE_EPSILON:
+		topple_current_angle = 0.0
+		_topple_transition_active = false
+	_apply_root_topple_transform()
+	_update_vehicle_navigation_obstacle_geometry()
+	var navigation_angle_changed := absf(
+		topple_current_angle - _last_navigation_topple_angle
+	) >= deg_to_rad(5.0)
+	var navigation_origin_changed := global_position.distance_to(
+		_last_navigation_obstacle_origin
+	) >= 0.05
+	var navigation_pose_finished := absf(topple_current_angle - target_angle) <= TOPPLE_POSE_EPSILON \
+		and absf(topple_current_angle - _last_navigation_topple_angle) > TOPPLE_POSE_EPSILON
+	if is_instance_valid(_vehicle_navigation_obstacle) \
+			and ((navigation_angle_changed or navigation_origin_changed or navigation_pose_finished) \
+			or (not toppled and not _topple_transition_active)):
+		_last_navigation_topple_angle = topple_current_angle
+		_last_navigation_obstacle_origin = global_position
+		_refresh_vehicle_navigation_obstacle(true)
 
 
-func _remove_topple_visual_transform() -> void:
-	if not _topple_visual_applied:
+func _correct_topple_ground_penetration() -> void:
+	if not is_inside_tree() or get_world_3d() == null:
 		return
-	if is_instance_valid(body_visual):
-		body_visual.basis = _body_visual_unrotated_basis
-	if is_instance_valid(_cargo_container):
-		_cargo_container.basis = _cargo_visual_unrotated_basis
-	_topple_visual_applied = false
-
-
-func _apply_topple_visual_transform() -> void:
-	if absf(_visual_tip_angle) <= 0.0001:
+	var support_points := _vehicle_topple_support_points()
+	if support_points.is_empty():
 		return
-	if is_instance_valid(body_visual):
-		_body_visual_unrotated_basis = body_visual.basis
-		body_visual.rotate_object_local(tip_axis, _visual_tip_angle)
-	if is_instance_valid(_cargo_container):
-		_cargo_visual_unrotated_basis = _cargo_container.basis
-		_cargo_container.rotate_object_local(tip_axis, _visual_tip_angle)
-	_topple_visual_applied = true
+	var ray_origin_y := global_position.y + TOPPLE_GROUND_RAY_START_HEIGHT
+	var ray_end_y := global_position.y - TOPPLE_GROUND_RAY_END_DEPTH
+	var required_lift := 0.0
+	for local_point: Vector3 in support_points:
+		var world_point := global_transform * local_point
+		var query := PhysicsRayQueryParameters3D.create(
+			Vector3(world_point.x, ray_origin_y, world_point.z),
+			Vector3(world_point.x, ray_end_y, world_point.z)
+		)
+		query.collision_mask = GROUND_COLLISION_LAYER
+		query.collide_with_bodies = true
+		query.collide_with_areas = false
+		query.exclude = [get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.has("position"):
+			continue
+		var ground_y := float((hit["position"] as Vector3).y)
+		required_lift = maxf(
+			required_lift,
+			ground_y + TOPPLE_GROUND_CLEARANCE - world_point.y
+		)
+	if required_lift > 0.0:
+		global_position.y += required_lift
+		if velocity.y < 0.0:
+			velocity.y = 0.0
 
 
 ## Start an authority-owned delivery drop. The placement resolver has already
@@ -572,9 +857,8 @@ func _simulate_spawn_drop(delta: float) -> void:
 		if gravity_direction_value is Vector3 else Vector3.DOWN
 	velocity += gravity_direction.normalized() * gravity_strength * delta
 	move_and_slide()
-	rotation.x = 0.0
-	rotation.z = 0.0
-	_update_vehicle_presentation(delta)
+	_update_vehicle_visuals(delta)
+	_update_topple_pose(0.0)
 
 	# Do not consider landing on the top of an AI to be a completed drop. The
 	# resolver's ground height is the only valid resting height; if the dynamic
@@ -623,6 +907,7 @@ func _initialize_vehicle_navigation_obstacle() -> void:
 			return
 		var obstacle := NavigationObstacle3D.new()
 		obstacle.name = VEHICLE_NAVIGATION_OBSTACLE_NAME
+		obstacle.top_level = true
 		obstacle.carve_navigation_mesh = true
 		obstacle.position = Vector3(0.0, bounds.position.y, 0.0)
 		obstacle.height = maxf(0.1, bounds.size.y)
@@ -643,6 +928,7 @@ func _initialize_vehicle_navigation_obstacle() -> void:
 		add_child(obstacle)
 		_vehicle_navigation_obstacle = obstacle
 	add_to_group(NAVIGATION_ONLY_OBSTACLE_GROUP)
+	_update_vehicle_navigation_obstacle_geometry()
 	_refresh_vehicle_navigation_obstacle(true)
 
 
@@ -667,9 +953,13 @@ func _collect_vehicle_navigation_collision_bounds(
 ) -> void:
 	if node == null or not is_instance_valid(node):
 		return
-	# Hit3D and attached accessories have their own CollisionObject3D roots;
-	# they are combat/interaction volumes, not vehicle chassis geometry.
-	if node != self and (node is Area3D or node is CollisionObject3D):
+	# Areas are combat/interaction volumes, not vehicle chassis geometry. Keep
+	# physical StaticBody3D modules (for example FarmBaseVehicle's harvest reel
+	# and mounted machine gun) in the footprint so a toppled vehicle blocks the
+	# same space that its colliders occupy.
+	if node != self and node is Area3D:
+		return
+	if node != self and node is NavigationObstacle3D:
 		return
 	var node_transform := parent_transform
 	if node is Node3D and node != self:
@@ -741,6 +1031,129 @@ func _vehicle_navigation_shape_bounds(shape: Shape3D, transform: Transform3D) ->
 	return bounds
 
 
+func _vehicle_topple_support_points() -> Array[Vector3]:
+	var points: Array[Vector3] = []
+	if vehicle_config != null and vehicle_config.collision_size.length_squared() > 0.0001:
+		_append_aabb_corners(
+			AABB(
+				vehicle_config.collision_offset - vehicle_config.collision_size * 0.5,
+				vehicle_config.collision_size
+			),
+			points
+		)
+	_collect_vehicle_topple_support_points(self, Transform3D.IDENTITY, points)
+	if not points.is_empty():
+		var minimum := points[0]
+		var maximum := points[0]
+		for point: Vector3 in points:
+			minimum = minimum.min(point)
+			maximum = maximum.max(point)
+		var center := (minimum + maximum) * 0.5
+		# Corners cover the physical support range; the center samples catch
+		# uneven ground beneath the chassis or a gap between separate modules.
+		points.append(Vector3.ZERO)
+		points.append(Vector3(center.x, minimum.y, center.z))
+	return points
+
+
+func _collect_vehicle_topple_support_points(
+	node: Node,
+	parent_transform: Transform3D,
+	points: Array[Vector3]
+) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	# Hit areas and interaction areas do not support the vehicle. StaticBody3D
+	# modules such as HarvestReel and VehicleBaseMachineGun do, so they remain
+	# in this collection and follow the root posture for ground correction.
+	if node != self and node is Area3D:
+		return
+	if node != self and node is NavigationObstacle3D:
+		return
+	var node_transform := parent_transform
+	if node is Node3D and node != self:
+		node_transform = parent_transform * (node as Node3D).transform
+	if node is CollisionShape3D:
+		var collision_shape := node as CollisionShape3D
+		if not collision_shape.disabled and collision_shape.shape != null:
+			_append_aabb_corners(
+				_vehicle_navigation_shape_bounds(collision_shape.shape, node_transform),
+				points
+			)
+	elif node is CollisionPolygon3D:
+		var collision_polygon := node as CollisionPolygon3D
+		if not collision_polygon.disabled and not collision_polygon.polygon.is_empty() \
+				and collision_polygon.depth > 0.0:
+			var minimum := Vector3(INF, INF, INF)
+			var maximum := Vector3(-INF, -INF, -INF)
+			var half_depth := collision_polygon.depth * 0.5
+			for point_2d: Vector2 in collision_polygon.polygon:
+				for local_z: float in [-half_depth, half_depth]:
+					var point := node_transform * Vector3(point_2d.x, point_2d.y, local_z)
+					minimum = minimum.min(point)
+					maximum = maximum.max(point)
+			_append_aabb_corners(AABB(minimum, maximum - minimum), points)
+	for child: Node in node.get_children():
+		_collect_vehicle_topple_support_points(child, node_transform, points)
+
+
+func _append_aabb_corners(bounds: AABB, points: Array[Vector3]) -> void:
+	if bounds.size.length_squared() <= 0.0001:
+		return
+	for x: float in [bounds.position.x, bounds.end.x]:
+		for y: float in [bounds.position.y, bounds.end.y]:
+			for z: float in [bounds.position.z, bounds.end.z]:
+				points.append(Vector3(x, y, z))
+
+
+func _update_vehicle_navigation_obstacle_geometry() -> bool:
+	if not is_instance_valid(_vehicle_navigation_obstacle):
+		return false
+	# NavigationObstacle3D projects its vertices onto XZ and ignores vertex Y.
+	# Keep the helper as a top-level child and write its world-space footprint
+	# explicitly; otherwise a tilted parent would rotate a flat polygon twice
+	# and Godot would discard the height encoded in the vertices.
+	_vehicle_navigation_obstacle.top_level = true
+	var support_points := _vehicle_topple_support_points()
+	if support_points.is_empty():
+		return false
+	var world_first := global_transform * support_points[0]
+	var minimum := world_first
+	var maximum := world_first
+	for local_point: Vector3 in support_points:
+		var world_point := global_transform * local_point
+		minimum = minimum.min(world_point)
+		maximum = maximum.max(world_point)
+	if maximum.x - minimum.x <= 0.01 or maximum.z - minimum.z <= 0.01:
+		return false
+	# NavigationObstacle3D's projected polygon is horizontal. Encode the
+	# current world-space XZ footprint as a conservative rectangle at the
+	# lowest physical point, then choose the local anchor so the obstacle's
+	# source geometry starts at that same world Y even while the root is tilted.
+	var margin := NAVIGATION_OBSTACLE_MARGIN
+	var anchor_world := Vector3(global_position.x, minimum.y, global_position.z)
+	var next_vertices := PackedVector3Array()
+	for world_vertex: Vector3 in [
+		Vector3(minimum.x - margin, minimum.y, minimum.z - margin),
+		Vector3(maximum.x + margin, minimum.y, minimum.z - margin),
+		Vector3(maximum.x + margin, minimum.y, maximum.z + margin),
+		Vector3(minimum.x - margin, minimum.y, maximum.z + margin),
+	]:
+		next_vertices.append(Vector3(
+			world_vertex.x - anchor_world.x,
+			0.0,
+			world_vertex.z - anchor_world.z
+		))
+	var next_height := maxf(0.1, maximum.y - minimum.y + margin)
+	var changed := _vehicle_navigation_obstacle.global_position != anchor_world \
+		or _vehicle_navigation_obstacle.height != maxf(0.1, maximum.y - minimum.y + margin) \
+		or _vehicle_navigation_obstacle.vertices != next_vertices
+	_vehicle_navigation_obstacle.global_transform = Transform3D(Basis.IDENTITY, anchor_world)
+	_vehicle_navigation_obstacle.height = next_height
+	_vehicle_navigation_obstacle.vertices = next_vertices
+	return changed
+
+
 func _merge_vehicle_navigation_bounds(result: Dictionary, candidate: AABB) -> void:
 	if candidate.size.length_squared() <= 0.0001:
 		return
@@ -771,6 +1184,8 @@ func _refresh_vehicle_navigation_obstacle(force := false) -> void:
 	if not force and active == _vehicle_navigation_obstacle_active:
 		return
 	_vehicle_navigation_obstacle_active = active
+	_last_navigation_topple_angle = topple_current_angle
+	_last_navigation_obstacle_origin = global_position
 	var scene_tree := get_tree()
 	if scene_tree == null:
 		return
@@ -797,10 +1212,11 @@ func _unregister_vehicle_navigation_obstacle() -> void:
 func get_network_state() -> Dictionary:
 	return {
 		"position": global_position,
-		"yaw": rotation.y,
+		"yaw": upright_yaw,
 		"speed": current_speed,
 		"steering": current_steering,
 		"hp": current_hp,
+		"max_hp": get_max_hp(),
 		"shield_hp": shield_hp,
 		"shield_max_hp": shield_max_hp,
 		"shield_remaining": shield_remaining,
@@ -811,19 +1227,27 @@ func get_network_state() -> Dictionary:
 		"cargo_occupied_slots": get_cargo_occupied_slots(),
 		"cargo_available_slots": get_available_cargo_slot_count(),
 		"owner_team": owner_team,
-		"spawn_drop_active": _spawn_drop_active,
+		"body_color": body_color,
+		"wheel_color": wheel_color,
+			"body_color_id": get_body_color_id(),
+			"wheel_color_id": get_wheel_color_id(),
+			"high_performance_motor_installed": high_performance_motor_installed,
+			"composite_armor_panel_installed": composite_armor_panel_installed,
+			"spawn_drop_active": _spawn_drop_active,
 		"spawn_drop_landing_position": _spawn_drop_landing_position,
 		"spawn_drop_remaining": get_spawn_drop_remaining(),
 		"toppled": toppled,
 		"tip_axis": tip_axis,
 		"tip_angle": tip_angle,
+		"topple_current_angle": topple_current_angle,
 	}
 
 
 func apply_network_state(state: Dictionary) -> void:
 	var previous_hp := current_hp
+	var previous_composite_armor_state := composite_armor_panel_installed
 	var position: Variant = state.get("position", global_position)
-	var next_yaw := float(state.get("yaw", rotation.y))
+	var next_yaw := float(state.get("yaw", upright_yaw))
 	var next_speed := float(state.get("speed", current_speed))
 	var next_steering := float(state.get("steering", current_steering))
 	var next_toppled := bool(state.get("toppled", toppled))
@@ -831,6 +1255,17 @@ func apply_network_state(state: Dictionary) -> void:
 	var next_tip_axis := next_tip_axis_value as Vector3 \
 		if next_tip_axis_value is Vector3 else tip_axis
 	var next_tip_angle := float(state.get("tip_angle", tip_angle))
+	var next_topple_current_angle := clampf(
+		float(state.get("topple_current_angle", next_tip_angle)),
+		0.0,
+		TAU
+	)
+	set_high_performance_motor_installed(bool(
+		state.get("high_performance_motor_installed", high_performance_motor_installed)
+	))
+	set_composite_armor_panel_installed(bool(
+		state.get("composite_armor_panel_installed", composite_armor_panel_installed)
+	), false)
 	var network_drop_active := bool(state.get("spawn_drop_active", false))
 	var network_drop_remaining := maxf(0.0, float(state.get("spawn_drop_remaining", 0.0)))
 	var network_drop_landing: Variant = state.get(
@@ -862,25 +1297,38 @@ func apply_network_state(state: Dictionary) -> void:
 		_network_target_yaw = next_yaw
 		_network_target_speed = next_speed
 		_network_target_steering = next_steering
+		_network_target_tip_axis = next_tip_axis
+		_network_target_toppled = next_toppled
+		_network_target_tip_angle = next_tip_angle
+		_network_target_topple_current_angle = next_topple_current_angle
 		if not _network_has_target or global_position.distance_to(_network_target_position) > NETWORK_SNAP_DISTANCE:
 			global_position = _network_target_position
-			rotation.y = _network_target_yaw
+			upright_yaw = _network_target_yaw
+			topple_current_angle = _network_target_topple_current_angle
 			current_speed = _network_target_speed
 			current_steering = _network_target_steering
+			_apply_root_topple_transform()
 		_network_has_target = true
 	else:
 		if position is Vector3:
 			global_position = position
-		rotation.y = next_yaw
+		upright_yaw = next_yaw
+		topple_current_angle = next_topple_current_angle
 		current_speed = next_speed
 		current_steering = next_steering
-	current_hp = float(state.get("hp", current_hp))
+	var maximum_hp := get_max_hp()
+	current_hp = clampf(
+		float(state.get("hp", current_hp)),
+		0.0,
+		maximum_hp
+	) if maximum_hp > 0.0 else 0.0
 	shield_hp = maxf(0.0, float(state.get("shield_hp", shield_hp)))
 	shield_max_hp = maxf(0.0, float(state.get("shield_max_hp", shield_max_hp)))
 	shield_remaining = maxf(0.0, float(state.get("shield_remaining", shield_remaining)))
 	_update_vehicle_shield_visual()
-	if current_hp < previous_hp and vehicle_config != null:
-		vehicle_damaged.emit(current_hp, vehicle_config.max_hp)
+	if current_hp < previous_hp and vehicle_config != null \
+			and previous_composite_armor_state == composite_armor_panel_installed:
+		vehicle_damaged.emit(current_hp, get_max_hp())
 	owner_team = str(state.get("owner_team", owner_team))
 	var manifest_value: Variant = state.get("cargo_manifest", null)
 	if manifest_value is Array:
@@ -896,6 +1344,20 @@ func apply_network_state(state: Dictionary) -> void:
 				if index >= 0 and index < CARGO_SLOT_COUNT:
 					_network_cargo_occupied_slots.append(index)
 			_refresh_cargo_visuals()
+	var next_body_color_id := str(state.get("body_color_id", ""))
+	if VEHICLE_COLOR_CATALOG.has_color(next_body_color_id):
+		set_body_color_id(next_body_color_id)
+	else:
+		var next_body_color: Variant = state.get("body_color", null)
+		if next_body_color is Color:
+			set_body_color(next_body_color as Color)
+	var next_wheel_color_id := str(state.get("wheel_color_id", ""))
+	if VEHICLE_COLOR_CATALOG.has_color(next_wheel_color_id):
+		set_wheel_color_id(next_wheel_color_id)
+	else:
+		var next_wheel_color: Variant = state.get("wheel_color", null)
+		if next_wheel_color is Color:
+			set_wheel_color(next_wheel_color as Color)
 	var occupants_value: Variant = state.get("seat_occupants", [])
 	if occupants_value is Array:
 		seat_occupants.clear()
@@ -904,9 +1366,14 @@ func apply_network_state(state: Dictionary) -> void:
 			if peer_id > 0:
 				seat_occupants[seat_index] = peer_id
 	set_toppled(next_toppled, next_tip_axis, next_tip_angle, false)
+	if not GameAuthority.is_client_proxy():
+		topple_current_angle = next_topple_current_angle
+		_apply_root_topple_transform()
+		if next_toppled:
+			_correct_topple_ground_penetration()
 	_refresh_driver_peer_id()
 	_refresh_vehicle_navigation_obstacle()
-	_update_vehicle_presentation(0.0)
+	_update_topple_pose(0.0)
 
 
 func _interpolate_network_state(delta: float) -> void:
@@ -914,14 +1381,24 @@ func _interpolate_network_state(delta: float) -> void:
 		return
 	if global_position.distance_to(_network_target_position) > NETWORK_SNAP_DISTANCE:
 		global_position = _network_target_position
-		rotation.y = _network_target_yaw
+		upright_yaw = _network_target_yaw
+		topple_current_angle = _network_target_topple_current_angle
 	else:
 		var weight := 1.0 - exp(-NETWORK_INTERPOLATION_RATE * delta)
 		global_position = global_position.lerp(_network_target_position, weight)
-		rotation.y = lerp_angle(rotation.y, _network_target_yaw, weight)
+		upright_yaw = lerp_angle(upright_yaw, _network_target_yaw, weight)
+		topple_current_angle = lerpf(
+			topple_current_angle,
+			_network_target_topple_current_angle,
+			weight
+		)
 		current_speed = lerpf(current_speed, _network_target_speed, weight)
 		current_steering = lerpf(current_steering, _network_target_steering, weight)
-	_update_vehicle_presentation(delta)
+	tip_axis = _network_target_tip_axis
+	tip_angle = _network_target_tip_angle
+	toppled = _network_target_toppled
+	_apply_root_topple_transform()
+	_update_vehicle_visuals(delta)
 
 
 func can_team_enter(player_team: String) -> bool:
@@ -1190,7 +1667,7 @@ func get_cargo_occupied_slots() -> Array[int]:
 func get_available_cargo_slot_count() -> int:
 	if not supports_cargo() or vehicle_config == null or current_hp <= 0.0:
 		return 0
-	return clampi(ceili(current_hp / maxf(vehicle_config.max_hp, 0.01) * CARGO_SLOT_COUNT), 1, CARGO_SLOT_COUNT)
+	return clampi(ceili(current_hp / maxf(get_max_hp(), 0.01) * CARGO_SLOT_COUNT), 1, CARGO_SLOT_COUNT)
 
 
 func is_valid_cargo_crate(crate: Dictionary) -> bool:
@@ -1413,7 +1890,7 @@ func impact(_effect: String, strength: float, _attacker_team: String = "") -> bo
 	current_hp = maxf(0.0, current_hp - strength)
 	var lost_slots := maxi(0, previous_available_slots - get_available_cargo_slot_count())
 	_destroy_cargo_for_lost_slots(lost_slots)
-	vehicle_damaged.emit(current_hp, vehicle_config.max_hp)
+	vehicle_damaged.emit(current_hp, get_max_hp())
 	GameAuthority.notify_vehicle_damaged(self, strength)
 	if current_hp <= 0.0:
 		_refresh_vehicle_navigation_obstacle(true)
@@ -1474,7 +1951,7 @@ func repair(amount: float) -> float:
 			or amount <= 0.0 or current_hp <= 0.0:
 		return 0.0
 	var previous_hp := current_hp
-	current_hp = minf(vehicle_config.max_hp, current_hp + amount)
+	current_hp = minf(get_max_hp(), current_hp + amount)
 	if is_equal_approx(previous_hp, current_hp):
 		return 0.0
 	_last_available_cargo_slots = get_available_cargo_slot_count()
@@ -1522,7 +1999,9 @@ func _apply_vehicle_config() -> void:
 	if vehicle_config == null:
 		push_warning("VehicleBase requires a VehicleConfig resource.")
 		return
-	current_hp = vehicle_config.max_hp
+	set_high_performance_motor_installed(high_performance_motor_installed)
+	set_composite_armor_panel_installed(composite_armor_panel_installed, false)
+	current_hp = get_max_hp()
 	_last_available_cargo_slots = get_available_cargo_slot_count()
 	if is_instance_valid(vehicle_shape):
 		var body_shape := vehicle_shape.shape as BoxShape3D
@@ -1541,6 +2020,8 @@ func _apply_vehicle_config() -> void:
 	_update_cargo_hit_shape()
 	reset_driving_camera_orbit()
 	_load_body_visual()
+	set_body_color(body_color)
+	set_wheel_color(wheel_color)
 	_refresh_cargo_visuals()
 
 

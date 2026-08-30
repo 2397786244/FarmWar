@@ -7,6 +7,7 @@ const VEHICLE_INTERACTION_OUTLINE_SCRIPT := preload("res://src/vehicle_interacti
 const VEHICLE_SEAT_HUD_SCRIPT := preload("res://src/vehicle_seat_hud.gd")
 const CHOCOLATE_OS_DESKTOP_SCENE := preload("res://ui/chocolate_os_desktop.tscn")
 const INDUSTRIAL_WORKBENCH_PAGE_SCENE := preload("res://ui/industrial_workbench_page.tscn")
+const VEHICLE_SERVICE_PAGE_SCENE := preload("res://ui/vehicle_service_page.tscn")
 const SPROUT_SEED_SELECTOR_SCENE := preload("res://ui/sprout_seed_selector.tscn")
 @onready var camera = $Head/Camera3D
 @onready var Head = $Head
@@ -301,6 +302,9 @@ var active_remote_device_id := ""
 var pending_remote_device_id := ""
 var owned_remote_devices: Dictionary = {}
 var remote_device_buttons: Dictionary = {}
+var vehicle_service_camera: Camera3D
+var vehicle_service_camera_terminal: VehicleServiceTerminal
+var vehicle_service_camera_vehicle_id := ""
 
 var active_vehicle: VehicleBase
 var active_vehicle_id := ""
@@ -330,11 +334,13 @@ var _mounted_machine_gun_collision_vehicle: VehicleBase
 @onready var ingredient_extractor_page: Node = $SubViewport/IngredientExtractorPage
 @onready var auto_cooker_page: Node = $SubViewport/AutoCookerPage
 @onready var vehicle_upgrade_page: Node = $SubViewport/VehicleUpgradePage
+@onready var auto_sales_page: Node = $SubViewport/AutoSalesPage
 @onready var team_chat_panel: Node = $SubViewport/TeamChatPanel
 @onready var game_exit_dialog: Node = $SubViewport/GameExitDialog
 
 var _suppress_esc_mouse_release := false
 var industrial_workbench_page: Node
+var vehicle_service_page: Node
 
 func _load_tool_definitions() -> bool:
 	tool_definitions.clear()
@@ -1709,18 +1715,27 @@ func _ready() -> void:
 		industrial_workbench_page = INDUSTRIAL_WORKBENCH_PAGE_SCENE.instantiate()
 		industrial_workbench_page.name = "IndustrialWorkbenchPage"
 		$SubViewport.add_child(industrial_workbench_page)
+		vehicle_service_page = VEHICLE_SERVICE_PAGE_SCENE.instantiate()
+		vehicle_service_page.name = "VehicleServicePage"
+		$SubViewport.add_child(vehicle_service_page)
+		if vehicle_service_page.has_method("bind_player"):
+			vehicle_service_page.call("bind_player", self)
 		_ensure_tranquilizer_overlay()
 		team_chat_panel.bind_player(self)
 		game_exit_dialog.resume_requested.connect(_close_game_exit_dialog)
 		if game_exit_dialog.has_signal("save_game_requested"):
-			game_exit_dialog.save_game_requested.connect(_save_cooperative_game)
+			game_exit_dialog.save_game_requested.connect(_save_current_game)
+		if game_exit_dialog.has_signal("main_menu_requested"):
+			game_exit_dialog.main_menu_requested.connect(_return_to_main_menu)
 		game_exit_dialog.exit_requested.connect(_exit_game)
 		if game_exit_dialog.has_method("set_save_game_visible"):
-			game_exit_dialog.set_save_game_visible(CooperativeSession.is_active() and CooperativeSession.is_host())
+			game_exit_dialog.set_save_game_visible(_can_manually_save_game())
 		if game_exit_dialog.has_method("bind_player"):
 			game_exit_dialog.call("bind_player", self)
 		remote_device_panel.visible = false
 		$SubViewport/ShopPage.closed.connect(_on_shop_page_closed)
+		if is_instance_valid(auto_sales_page) and auto_sales_page.has_signal("closed"):
+			auto_sales_page.closed.connect(_on_auto_sales_page_closed)
 		if _has_any_equipped_tool():
 			_select_tool(0, true)
 
@@ -2074,6 +2089,15 @@ func _close_active_ui_for_escape() -> bool:
 		cargo_crate_storage_page.close()
 		_update_crosshair_visibility()
 		return true
+	if _auto_sales_is_open():
+		auto_sales_page.call("close")
+		_update_crosshair_visibility()
+		return true
+	if is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open")):
+		vehicle_service_page.call("close")
+		_update_crosshair_visibility()
+		return true
 	if $SubViewport/ShopPage.visible:
 		$SubViewport/ShopPage.close_shop()
 		return true
@@ -2109,6 +2133,9 @@ func _close_active_ui_for_escape() -> bool:
 
 func _inventory_ui_blocks_gameplay_actions() -> bool:
 	return (is_instance_valid(computer_desktop) and computer_desktop.is_open()) \
+		or _auto_sales_is_open() \
+		or (is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open"))) \
 		or _chat_input_captures_gameplay() \
 		or (is_instance_valid(player_backpack) and player_backpack.is_open()) \
 		or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()) \
@@ -2118,6 +2145,12 @@ func _inventory_ui_blocks_gameplay_actions() -> bool:
 		or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open()) \
 		or (is_instance_valid(industrial_workbench_page) and industrial_workbench_page.has_method("is_open") \
 			and bool(industrial_workbench_page.call("is_open")))
+
+
+func _auto_sales_is_open() -> bool:
+	return is_instance_valid(auto_sales_page) \
+		and auto_sales_page.has_method("is_open") \
+		and bool(auto_sales_page.call("is_open"))
 
 
 func _chat_input_captures_gameplay() -> bool:
@@ -2151,6 +2184,21 @@ func is_chat_input_active() -> bool:
 
 func _input(event: InputEvent) -> void:
 	if is_remote_proxy:
+		return
+	if _auto_sales_is_open():
+		_set_weapon_aiming(false)
+		if event.is_action_pressed("esc", false):
+			auto_sales_page.call("close")
+			_suppress_esc_mouse_release = true
+			get_viewport().set_input_as_handled()
+		return
+	if is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open")):
+		_set_weapon_aiming(false)
+		if event.is_action_pressed("esc", false):
+			vehicle_service_page.call("close")
+			_suppress_esc_mouse_release = true
+			get_viewport().set_input_as_handled()
 		return
 	var modified_talk := bool(team_chat_panel.call("is_modified_talk_event", event))
 	if modified_talk:
@@ -4365,27 +4413,46 @@ func _open_game_exit_dialog() -> void:
 		team_chat_panel.close_chat()
 	_set_weapon_aiming(false)
 	if game_exit_dialog.has_method("set_save_game_visible"):
-		game_exit_dialog.set_save_game_visible(CooperativeSession.is_active() and CooperativeSession.is_host())
+		game_exit_dialog.set_save_game_visible(_can_manually_save_game())
 	game_exit_dialog.open_dialog()
 	_update_crosshair_visibility()
 
 
 func _close_game_exit_dialog() -> void:
 	game_exit_dialog.close_dialog()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if $SubViewport/ShopPage.visible \
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if $SubViewport/ShopPage.visible or _auto_sales_is_open() \
+			or (is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open"))) \
 			else Input.MOUSE_MODE_CAPTURED
 	_update_crosshair_visibility()
 
 
-func _save_cooperative_game() -> void:
-	if not CooperativeSession.is_active() or not CooperativeSession.is_host():
+func _can_manually_save_game() -> bool:
+	return SinglePlayerSession.is_active() \
+		or (CooperativeSession.is_active() and CooperativeSession.is_host())
+
+
+func _save_current_game() -> void:
+	var saved := false
+	if SinglePlayerSession.is_active():
+		saved = SinglePlayerSession.save_game()
+	elif CooperativeSession.is_active() and CooperativeSession.is_host():
+		saved = CooperativeSession.save_game()
+	else:
 		return
-	var saved := CooperativeSession.save_game()
 	if is_instance_valid(game_exit_dialog) and game_exit_dialog.has_method("show_save_feedback"):
 		game_exit_dialog.call("show_save_feedback", saved)
 
 
 func _exit_game() -> void:
+	if SinglePlayerSession.is_active():
+		if not SinglePlayerSession.save_game():
+			if is_instance_valid(game_exit_dialog) and game_exit_dialog.has_method("show_save_feedback"):
+				game_exit_dialog.call("show_save_feedback", false)
+			return
+		SinglePlayerSession.stop_session()
+		get_tree().quit()
+		return
 	if CooperativeSession.is_active():
 		if CooperativeSession.is_host():
 			CooperativeSession.save_game()
@@ -4397,6 +4464,43 @@ func _exit_game() -> void:
 			or MultiplayerNetwork.is_connecting_to_game_server():
 		MultiplayerNetwork.disconnect_from_game_server(false)
 	get_tree().quit()
+
+
+func _return_to_main_menu() -> void:
+	if SinglePlayerSession.is_active():
+		if not SinglePlayerSession.save_game():
+			if is_instance_valid(game_exit_dialog) and game_exit_dialog.has_method("show_save_feedback"):
+				game_exit_dialog.call("show_save_feedback", false)
+			return
+		SinglePlayerSession.stop_session()
+		_queue_main_menu_transition()
+		return
+	if CooperativeSession.is_active():
+		if not CooperativeSession.return_to_main_menu():
+			if is_instance_valid(game_exit_dialog) and game_exit_dialog.has_method("show_save_feedback"):
+				game_exit_dialog.call("show_save_feedback", false)
+			return
+		_queue_main_menu_transition()
+		return
+	if MultiplayerNetwork.is_connected_to_game_server() \
+			or MultiplayerNetwork.is_connecting_to_game_server():
+		MultiplayerNetwork.disconnect_from_game_server(false, false)
+	if GameAuthority.is_server_authority() or GameAuthority.is_client_proxy() \
+			or GameAuthority.is_local_authority():
+		GameAuthority.stop_authority()
+	_queue_main_menu_transition()
+
+
+func _queue_main_menu_transition() -> void:
+	GlobalVar.open_server_browser_on_main_menu = false
+	GlobalVar.open_cooperative_worlds_on_main_menu = false
+	GlobalVar.cooperative_return_notice = ""
+	GlobalVar.pending_player_selection = {}
+	GlobalVar.gameworld = null
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	if is_instance_valid(game_exit_dialog):
+		game_exit_dialog.close_dialog()
+	get_tree().call_deferred("change_scene_to_file", "res://ui/MainMenuRoot.tscn")
 
 
 func _set_prone_state(value: bool) -> void:
@@ -4469,6 +4573,7 @@ func _process(delta: float) -> void:
 	# seated, or respawning player.
 	if CooperativeSession.is_host() and _interaction_runtime_needs_restore():
 		activate_local_runtime()
+	_ensure_vehicle_service_camera()
 	_ensure_local_camera_ownership()
 	_update_prone_presentation(delta)
 	_update_debug_camera()
@@ -4519,7 +4624,9 @@ func _process(delta: float) -> void:
 			or (is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open()) \
 			or (is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open()) \
 			or (is_instance_valid(government_notice_page) and government_notice_page.is_open()) \
-			or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()):
+			or (is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open()) \
+			or (is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+				and bool(vehicle_service_page.call("is_open"))):
 		_clear_vehicle_interaction_outline()
 		_set_weapon_aiming(false)
 		_update_cooldown_ring()
@@ -4640,10 +4747,92 @@ func _update_continuous_tool_use() -> void:
 
 
 func _ensure_local_camera_ownership() -> void:
-	if is_respawning or remote_is_active or vehicle_is_active or not is_instance_valid(camera):
+	if is_respawning or remote_is_active or vehicle_is_active \
+			or is_vehicle_service_view_active() or not is_instance_valid(camera):
 		return
 	if not camera.current:
 		print("[CameraOwnership] Restoring local player camera for peer=%d" % authority_peer_id)
+		camera.make_current()
+
+
+func begin_vehicle_service_view(
+	service_terminal: VehicleServiceTerminal,
+	service_vehicle: VehicleBase
+) -> bool:
+	if is_remote_proxy or is_respawning or respawn_left > 0.0 or remote_is_active or vehicle_is_active \
+			or not is_instance_valid(service_terminal) or not is_instance_valid(service_vehicle):
+		return false
+	if is_instance_valid(vehicle_service_camera_terminal) \
+			and vehicle_service_camera_terminal != service_terminal:
+		end_vehicle_service_view()
+	var viewport_size := get_viewport().get_visible_rect().size
+	if not service_terminal.prepare_service_camera(service_vehicle, viewport_size):
+		return false
+	var next_camera := service_terminal.get_service_camera()
+	if not is_instance_valid(next_camera):
+		return false
+	vehicle_service_camera_terminal = service_terminal
+	vehicle_service_camera = next_camera
+	vehicle_service_camera_vehicle_id = service_vehicle.get_vehicle_id()
+	if is_instance_valid(camera):
+		camera.current = false
+	vehicle_service_camera.make_current()
+	call_deferred("_ensure_vehicle_service_camera")
+	return true
+
+
+func end_vehicle_service_view(expected_terminal: VehicleServiceTerminal = null) -> void:
+	if expected_terminal != null and is_instance_valid(vehicle_service_camera_terminal) \
+			and vehicle_service_camera_terminal != expected_terminal:
+		return
+	if is_instance_valid(vehicle_service_camera_terminal):
+		vehicle_service_camera_terminal.deactivate_service_camera()
+	elif is_instance_valid(vehicle_service_camera):
+		vehicle_service_camera.current = false
+	vehicle_service_camera = null
+	vehicle_service_camera_terminal = null
+	vehicle_service_camera_vehicle_id = ""
+	_restore_camera_after_vehicle_service()
+
+
+func is_vehicle_service_view_active() -> bool:
+	return is_instance_valid(vehicle_service_camera_terminal) \
+			and is_instance_valid(vehicle_service_camera) \
+			and not vehicle_service_camera_vehicle_id.is_empty()
+
+
+func _ensure_vehicle_service_camera() -> void:
+	if not is_vehicle_service_view_active():
+		return
+	var page_open := is_instance_valid(vehicle_service_page) \
+			and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open"))
+	var service_vehicle := vehicle_service_camera_terminal.get_active_vehicle()
+	if not page_open or is_respawning or respawn_left > 0.0 or remote_is_active or vehicle_is_active \
+			or service_vehicle == null or service_vehicle.is_queued_for_deletion() \
+			or service_vehicle.get_vehicle_id() != vehicle_service_camera_vehicle_id:
+		end_vehicle_service_view(vehicle_service_camera_terminal)
+		return
+	if not vehicle_service_camera.current:
+		if is_instance_valid(camera):
+			camera.current = false
+		vehicle_service_camera.make_current()
+
+
+func _restore_camera_after_vehicle_service() -> void:
+	# The death presentation is created immediately after gameplay pages close.
+	# Do not flash the first-person camera during that hand-off.
+	if is_respawning or respawn_left > 0.0 or is_instance_valid(death_camera):
+		return
+	if remote_is_active and is_instance_valid(remote_control_camera):
+		remote_control_camera.make_current()
+		return
+	if vehicle_is_active and is_instance_valid(active_vehicle):
+		var driving_camera := active_vehicle.get_driving_camera()
+		if is_instance_valid(driving_camera):
+			driving_camera.make_current()
+			return
+	if is_instance_valid(camera):
 		camera.make_current()
 
 
@@ -4717,10 +4906,16 @@ func _get_local_aim_origin() -> Vector3:
 
 
 func _get_active_post_process_camera() -> Camera3D:
+	if is_instance_valid(death_camera) and death_camera.current:
+		return death_camera
+	if remote_is_active and is_instance_valid(remote_control_camera):
+		return remote_control_camera
 	if vehicle_is_active and is_instance_valid(active_vehicle):
 		var vehicle_camera := active_vehicle.get_driving_camera()
 		if is_instance_valid(vehicle_camera):
 			return vehicle_camera
+	if is_vehicle_service_view_active():
+		return vehicle_service_camera
 	if is_instance_valid(camera):
 		return camera as Camera3D
 	return get_viewport().get_camera_3d()
@@ -4885,7 +5080,12 @@ func _physics_process(delta: float) -> void:
 	var government_notice_open := is_instance_valid(government_notice_page) \
 		and government_notice_page.is_open()
 	var computer_open := is_instance_valid(computer_desktop) and computer_desktop.is_open()
-	if player_backpack.is_open() or vehicle_upgrade_open or cargo_ui_open or government_notice_open or computer_open:
+	var auto_sales_open := _auto_sales_is_open()
+	var vehicle_service_open := is_instance_valid(vehicle_service_page) \
+		and vehicle_service_page.has_method("is_open") \
+		and bool(vehicle_service_page.call("is_open"))
+	if player_backpack.is_open() or vehicle_upgrade_open or vehicle_service_open or cargo_ui_open \
+			or government_notice_open or computer_open or auto_sales_open:
 		# UI blocks player input, but gravity, knockback, and collision must continue.
 		_simulate_predicted_movement(NETWORK_SIMULATION_DELTA, Vector2.ZERO, false)
 		_submit_authority_input(Vector2.ZERO, false, NETWORK_SIMULATION_DELTA)
@@ -5458,6 +5658,20 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		if computer_state_value is Dictionary:
 			_apply_computer_state_to_world(computer_state_value as Dictionary)
 		return
+	if event_type == "vehicle_service_state":
+		var service_state_value: Variant = event.get("state", event)
+		if service_state_value is Dictionary \
+				and is_instance_valid(vehicle_service_page) \
+				and vehicle_service_page.has_method("apply_terminal_state"):
+			vehicle_service_page.call("apply_terminal_state", service_state_value as Dictionary)
+		return
+	if event_type == "vehicle_service_vehicle_state":
+		var service_vehicle_state_value: Variant = event.get("vehicle_state", {})
+		if service_vehicle_state_value is Dictionary \
+				and is_instance_valid(vehicle_service_page) \
+				and vehicle_service_page.has_method("apply_vehicle_state"):
+			vehicle_service_page.call("apply_vehicle_state", service_vehicle_state_value as Dictionary)
+		return
 	if event_type == "industrial_workbench_action_result":
 		var industrial_result_value: Variant = event.get("data", {})
 		if industrial_result_value is Dictionary \
@@ -5558,6 +5772,24 @@ func _on_authority_world_event(event: Dictionary) -> void:
 		var shop_result: Variant = event.get("data", {})
 		if shop_result is Dictionary:
 			var result := shop_result as Dictionary
+			if str(result.get("shop_category", "")) == "vehicle_sales":
+				if int(result.get("peer_id", 0)) == authority_peer_id \
+						and is_instance_valid(auto_sales_page) \
+						and auto_sales_page.has_method("apply_transaction_result"):
+					auto_sales_page.call("apply_transaction_result", result)
+				return
+			if str(result.get("shop_category", "")) == "vehicle_garage":
+				if int(result.get("peer_id", 0)) == authority_peer_id \
+						and is_instance_valid(player_backpack) \
+						and player_backpack.has_method("apply_vehicle_garage_transaction_result"):
+					player_backpack.call("apply_vehicle_garage_transaction_result", result)
+				return
+			if str(result.get("shop_category", "")) == "vehicle_service":
+				if int(result.get("peer_id", 0)) == authority_peer_id \
+						and is_instance_valid(vehicle_service_page) \
+						and vehicle_service_page.has_method("apply_transaction_result"):
+					vehicle_service_page.call("apply_transaction_result", result)
+				return
 			apply_authoritative_shop_dish_transaction(result)
 			if int(result.get("peer_id", 0)) == authority_peer_id:
 				var shop_page := get_node_or_null("SubViewport/ShopPage")
@@ -5815,7 +6047,8 @@ func _hide_cooldown_ring() -> void:
 func _update_cooldown_ring() -> void:
 	if not is_instance_valid(cooldown_ring):
 		return
-	if is_respawning or is_prone or mounted_machine_gun_is_active or $SubViewport/ShopPage.visible:
+	if is_respawning or is_prone or mounted_machine_gun_is_active \
+			or $SubViewport/ShopPage.visible or _auto_sales_is_open():
 		_hide_cooldown_ring()
 		return
 	var remaining := 0.0
@@ -5883,6 +6116,9 @@ func _update_sprout_seed_selector() -> void:
 	if is_instance_valid(vehicle_upgrade_page) and vehicle_upgrade_page.has_method("is_open") \
 			and bool(vehicle_upgrade_page.call("is_open")):
 		blocked = true
+	if is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open")):
+		blocked = true
 	if is_instance_valid(ingredient_pickup_page) and ingredient_pickup_page.has_method("is_open") \
 			and bool(ingredient_pickup_page.call("is_open")):
 		blocked = true
@@ -5924,6 +6160,8 @@ func _update_sprout_seed_selector() -> void:
 	if is_instance_valid(livestock_chop_page) and livestock_chop_page.is_open():
 		blocked = true
 	if $SubViewport/ShopPage.visible:
+		blocked = true
+	if _auto_sales_is_open():
 		blocked = true
 
 	if blocked or not _is_sprout_blaster_selected():
@@ -6291,6 +6529,8 @@ func _close_gameplay_ui_for_respawn() -> void:
 		player_backpack.close()
 	if is_instance_valid($SubViewport/ShopPage) and $SubViewport/ShopPage.visible:
 		$SubViewport/ShopPage.close_shop()
+	if _auto_sales_is_open():
+		auto_sales_page.call("close")
 	var pages: Array[Node] = [
 			vehicle_upgrade_page, ingredient_pickup_page, plating_station_page,
 			oven_page, griddle_station_page, induction_counter_page,
@@ -6298,7 +6538,7 @@ func _close_gameplay_ui_for_respawn() -> void:
 			ingredient_extractor_page, auto_cooker_page, livestock_chop_page,
 			government_notice_page, cargo_delivery_page, cargo_car_storage_page,
 			cargo_crate_storage_page,
-			industrial_workbench_page,
+			industrial_workbench_page, vehicle_service_page,
 	]
 	if is_instance_valid(computer_desktop) and computer_desktop.is_open():
 		computer_desktop.close()
@@ -6732,7 +6972,7 @@ func _update_control_status_ui() -> void:
 
 
 func _update_vehicle_control_status_ui() -> void:
-	var max_hp := active_vehicle.vehicle_config.max_hp if active_vehicle.vehicle_config != null else 0.0
+	var max_hp := active_vehicle.get_max_hp()
 	var hp := clampf(active_vehicle.current_hp, 0.0, max_hp)
 	control_status_title.text = "VEHICLE"
 	control_status_primary_label.text = "Vehicle HP  %d / %d" % [roundi(hp), roundi(max_hp)]
@@ -6837,7 +7077,6 @@ func _update_crosshair_visibility() -> void:
 		return
 	if not _has_equipped_tool(current_tool_index):
 		crosshair.visible = false
-		_hide_hit_marker()
 		return
 	var definition: Dictionary = tool_definitions[current_tool_index]
 	var ingredient_page_open := is_instance_valid(ingredient_pickup_page) \
@@ -6876,6 +7115,9 @@ func _update_crosshair_visibility() -> void:
 	var vehicle_upgrade_page_open := is_instance_valid(vehicle_upgrade_page) \
 		and vehicle_upgrade_page.has_method("is_open") \
 		and bool(vehicle_upgrade_page.call("is_open"))
+	var vehicle_service_page_open := is_instance_valid(vehicle_service_page) \
+		and vehicle_service_page.has_method("is_open") \
+		and bool(vehicle_service_page.call("is_open"))
 	var cargo_page_open := (is_instance_valid(cargo_car_storage_page) and cargo_car_storage_page.is_open()) \
 		or (is_instance_valid(cargo_delivery_page) and cargo_delivery_page.is_open()) \
 		or (is_instance_valid(cargo_crate_storage_page) and cargo_crate_storage_page.is_open())
@@ -6884,17 +7126,14 @@ func _update_crosshair_visibility() -> void:
 	var livestock_chop_open := is_instance_valid(livestock_chop_page) \
 		and livestock_chop_page.is_open()
 	var computer_open := is_instance_valid(computer_desktop) and computer_desktop.is_open()
+	var auto_sales_open := _auto_sales_is_open()
 	crosshair.visible = not is_prone and not is_respawning and not vehicle_is_active and not remote_is_active and (mounted_machine_gun_is_active or bool(definition.get("show_crosshair", false)) or _current_tool_is_shooting() and \
 		bool(definition.get("show_crosshair", false))) and \
-		not $SubViewport/ShopPage.visible and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not industrial_workbench_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open and not computer_open
+		not $SubViewport/ShopPage.visible and not auto_sales_open and not vehicle_service_page_open and not player_backpack.is_open() and not _chat_input_captures_gameplay() and not game_exit_dialog.is_open() and not ingredient_page_open and not plating_page_open and not oven_page_open and not griddle_page_open and not induction_page_open and not smoker_page_open and not freezer_page_open and not mixer_page_open and not extractor_page_open and not auto_cooker_page_open and not industrial_workbench_page_open and not vehicle_upgrade_page_open and not cargo_page_open and not government_notice_open and not livestock_chop_open and not computer_open
 	# A hit marker is an attack confirmation, not a part of the aiming reticle.
-	# LongSpear (and other valid non-aimable tools) deliberately has no
-	# crosshair, so hiding the marker whenever the crosshair is hidden would
-	# erase a freshly confirmed melee hit on the next frame. Keep the old
-	# cleanup behavior for tools that do have a crosshair but have temporarily
-	# hidden it because an inventory/UI page is open.
-	if not crosshair.visible and bool(definition.get("show_crosshair", false)):
-		_hide_hit_marker()
+	# It must remain independent from crosshair visibility: consumed throwables
+	# can be unequipped before their fuse expires, and UI pages can hide the
+	# reticle while the grenade's authoritative confirmation is still pending.
 
 
 func _refresh_hotbar() -> void:
@@ -6947,6 +7186,9 @@ func _disable_legacy_tool_ui() -> void:
 func _update_interaction() -> void:
 	if _chat_input_captures_gameplay() or remote_is_active or vehicle_is_active or mounted_machine_gun_is_active:
 		return
+	if _auto_sales_is_open() or (is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open"))):
+		return
 	if _update_ladder_interaction():
 		return
 	if _update_wire_mesh_gate_interaction():
@@ -6980,6 +7222,11 @@ func _update_interaction() -> void:
 	if is_instance_valid(vehicle_upgrade_page) and vehicle_upgrade_page.has_method("is_open") \
 			and bool(vehicle_upgrade_page.call("is_open")):
 		vehicle_upgrade_page.call("close")
+		_update_crosshair_visibility()
+		return
+	if is_instance_valid(vehicle_service_page) and vehicle_service_page.has_method("is_open") \
+			and bool(vehicle_service_page.call("is_open")):
+		vehicle_service_page.call("close")
 		_update_crosshair_visibility()
 		return
 	if is_instance_valid(ingredient_pickup_page) and ingredient_pickup_page.has_method("is_open") \
@@ -7168,6 +7415,16 @@ func _update_interaction() -> void:
 			elif not workbench.processing and not workbench.is_in_use_by_other(authority_peer_id):
 				industrial_workbench_page.call("open_for", workbench, self)
 				_update_crosshair_visibility()
+		"vehicle_service_terminal":
+			var service_terminal := target.get("body") as VehicleServiceTerminal
+			if is_instance_valid(service_terminal) and is_instance_valid(vehicle_service_page):
+				vehicle_service_page.call("open_for", service_terminal, self)
+				_set_weapon_aiming(false)
+				_update_crosshair_visibility()
+		"vehicle_service_vehicle_area":
+			# This is a guidance-only target.  The terminal can be opened only
+			# after the vehicle has activated the PlayerInteract area.
+			return
 		"computer":
 			var computer := target.get("body") as ComputerTerminal
 			if is_instance_valid(computer) and computer.interact(self):
@@ -7182,8 +7439,14 @@ func _update_interaction() -> void:
 			if is_instance_valid(team_chat_panel):
 				team_chat_panel.call("close_chat")
 				team_chat_panel.visible = false
+			var shop := target.get("body") as Shop
+			if shop != null and shop.shop_category == "vehicle_sales":
+				auto_sales_page.call("show_shop", shop, team, self)
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				_update_crosshair_visibility()
+				return
 			player_backpack.show_companion()
-			$SubViewport/ShopPage.show_shop(target.get("body") as Shop, team, self)
+			$SubViewport/ShopPage.show_shop(shop, team, self)
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		"government_board":
 			_set_weapon_aiming(false)
@@ -7333,6 +7596,14 @@ func _on_shop_page_closed() -> void:
 		team_chat_panel.visible = true
 	_suppress_esc_mouse_release = Input.is_action_pressed("esc")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_auto_sales_page_closed() -> void:
+	if is_instance_valid(team_chat_panel):
+		team_chat_panel.visible = true
+	_suppress_esc_mouse_release = Input.is_action_pressed("esc")
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_update_crosshair_visibility()
 
 
 func _on_government_notice_closed() -> void:
@@ -7647,6 +7918,16 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 			var board_area := area_value as Area3D
 			if is_instance_valid(board_area) and board_area.overlaps_body(self):
 				candidate_bodies[board_area.get_instance_id()] = board_area
+	for area_value: Variant in get_tree().get_nodes_in_group("vehicle_service_player_interaction_areas"):
+		if area_value is Area3D:
+			var service_area := area_value as Area3D
+			if is_instance_valid(service_area) and service_area.overlaps_body(self):
+				candidate_bodies[service_area.get_instance_id()] = service_area
+	for area_value: Variant in get_tree().get_nodes_in_group("vehicle_service_vehicle_interaction_areas"):
+		if area_value is Area3D:
+			var service_vehicle_area := area_value as Area3D
+			if is_instance_valid(service_vehicle_area) and service_vehicle_area.overlaps_body(self):
+				candidate_bodies[service_vehicle_area.get_instance_id()] = service_vehicle_area
 	for area_value: Variant in get_tree().get_nodes_in_group("cargo_car_interaction_areas"):
 		if area_value is Area3D:
 			var cargo_area := area_value as Area3D
@@ -7696,6 +7977,7 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 		var body := target.get("body") as Node3D
 		if body == null:
 			continue
+		var target_interaction_area := target.get("interaction_area") as Area3D
 		var inside_shop_area := body is Area3D \
 				and body.is_in_group("shop_interaction_areas") \
 				and (body as Area3D).overlaps_body(self)
@@ -7708,11 +7990,28 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 		var inside_board_area := body is Area3D \
 				and body.is_in_group("government_board_interaction_areas") \
 				and (body as Area3D).overlaps_body(self)
+		var inside_service_player_area := body is Area3D \
+				and body.is_in_group("vehicle_service_player_interaction_areas") \
+				and (body as Area3D).overlaps_body(self)
+		inside_service_player_area = inside_service_player_area or (
+			target_interaction_area != null
+			and target_interaction_area.is_in_group("vehicle_service_player_interaction_areas")
+			and target_interaction_area.overlaps_body(self)
+		)
+		var inside_service_vehicle_area := body is Area3D \
+				and body.is_in_group("vehicle_service_vehicle_interaction_areas") \
+				and (body as Area3D).overlaps_body(self)
+		inside_service_vehicle_area = inside_service_vehicle_area or (
+			target_interaction_area != null
+			and target_interaction_area.is_in_group("vehicle_service_vehicle_interaction_areas")
+			and target_interaction_area.overlaps_body(self)
+		)
 		var inside_gate_area := str(target.get("kind", "")) == "wire_mesh_gate" \
 				and body is WireMeshGate \
 				and (body as WireMeshGate).is_actor_inside_interaction_area(self)
 		var inside_interaction_area := inside_shop_area or inside_cargo_area or inside_platform_area \
-				or inside_board_area or inside_gate_area
+				or inside_board_area or inside_service_player_area \
+				or inside_service_vehicle_area or inside_gate_area
 		var interaction_position: Vector3 = global_position if inside_interaction_area \
 				else target.get("interaction_position", body.global_position)
 		var to_target := interaction_position - global_position
@@ -7784,6 +8083,33 @@ func _build_interaction_target(body: Node3D) -> Dictionary:
 			"vehicle": platform_vehicle,
 			"interaction_position": platform_area.global_position,
 			"hint": "机枪正在使用" if machine_gun.operator_peer_id > 0 else "[E] 操控车载机枪",
+		}
+	var service_terminal := _vehicle_service_terminal_from_node(body)
+	var is_service_player_area := body is Area3D \
+			and body.is_in_group("vehicle_service_player_interaction_areas")
+	var is_service_vehicle_area := body is Area3D \
+			and body.is_in_group("vehicle_service_vehicle_interaction_areas")
+	if service_terminal != null and is_service_vehicle_area:
+		if service_terminal.has_vehicle_in_interaction_area():
+			# VehicleInteract is only a delivery hint while the bay is empty. Once
+			# a vehicle occupies it, let PlayerInteract be the sole terminal target
+			# so the E prompt is not replaced by the delivery instruction.
+			return {}
+		return {
+			"kind": "vehicle_service_vehicle_area",
+			"body": service_terminal,
+			"interaction_area": body,
+			"interaction_position": (body as Area3D).global_position,
+			"hint": "把载具开到这个区域中",
+		}
+	if service_terminal != null and (body == service_terminal or is_service_player_area) \
+			and service_terminal.can_player_interact(self):
+		return {
+			"kind": "vehicle_service_terminal",
+			"body": service_terminal,
+			"interaction_area": body if is_service_player_area else null,
+			"interaction_position": service_terminal.get_interaction_position(),
+			"hint": service_terminal.get_interaction_hint(self),
 		}
 	var chop := body as LivestockChop
 	var chop_parent := body.get_parent()
@@ -8057,9 +8383,13 @@ func _refresh_interact_hint() -> void:
 	var vehicle_upgrade_open := is_instance_valid(vehicle_upgrade_page) \
 		and vehicle_upgrade_page.has_method("is_open") \
 		and bool(vehicle_upgrade_page.call("is_open"))
+	var vehicle_service_open := is_instance_valid(vehicle_service_page) \
+		and vehicle_service_page.has_method("is_open") \
+		and bool(vehicle_service_page.call("is_open"))
 	var government_notice_open := is_instance_valid(government_notice_page) \
 		and government_notice_page.is_open()
-	if $SubViewport/ShopPage.visible or vehicle_upgrade_open or government_notice_open:
+	if $SubViewport/ShopPage.visible or _auto_sales_is_open() \
+			or vehicle_upgrade_open or vehicle_service_open or government_notice_open:
 		_clear_vehicle_interaction_outline()
 		interact_hint.visible = false
 		return
@@ -8138,6 +8468,15 @@ func _computer_terminal_from_node(body: Node) -> ComputerTerminal:
 	while current != null:
 		if current is ComputerTerminal:
 			return current as ComputerTerminal
+		current = current.get_parent()
+	return null
+
+
+func _vehicle_service_terminal_from_node(body: Node) -> VehicleServiceTerminal:
+	var current: Node = body
+	while current != null:
+		if current is VehicleServiceTerminal:
+			return current as VehicleServiceTerminal
 		current = current.get_parent()
 	return null
 
