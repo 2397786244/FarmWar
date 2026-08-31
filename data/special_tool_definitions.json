@@ -87,7 +87,7 @@
 	  "name": "药物手枪",
 	  "tool_scene": "res://character/weapons/MedicinePistol.tscn",
 	  "icon": "",
-	  "cooldown": 30,
+	  "cooldown": 45,
 	  "max_uses": 0,
 	  "description": "向友军发射药物针剂，进行精准治疗并缓解异常状态。"
 	},
@@ -126,15 +126,6 @@
 	  "cooldown": 10,
 	  "max_uses": 0,
 	  "description": "部署低成本警戒炮台，用于报警、拖延并守卫农田与道路。"
-	},
-	{
-	"id": "cargo_shield",
-	  "name": "移动货运护盾",
-	  "tool_scene": "",
-	  "icon": "",
-	  "cooldown": 0,
-	  "max_uses": 0,
-	  "description": "举起移动货运护盾，阻挡正面子弹与部分爆炸冲击。"
 	},
 	{
 	"id": "signal_jam",
@@ -200,13 +191,13 @@
 	  "description": "部署信号增强塔，提升附近己方追踪、无人机和设备协同。"
 	},
 	{
-	"id": "prospect_scanner",
-	  "name": "资源扫描器",
-	  "tool_scene": "",
-	  "icon": "",
-	  "cooldown": 0,
+	  "id": "environment_scanner",
+	  "name": "环境探测器",
+	  "tool_scene": "res://character/weapons/EnvironmentScanner.tscn",
+	  "icon": "res://assets/icons/items/tools/environment_scanner.png",
+	  "cooldown": 30,
 	  "max_uses": 0,
-	  "description": "探测矿石、燃油、稀有食材与地图资源，显示方向和距离。"
+	  "description": "扫描100米内的矿石、蘑菇、掉落物、巨大作物和可驾驶载具，并以红色轮廓标记8秒。"
 	},
 	{
 	  "id": "area_protector",

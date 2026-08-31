@@ -31,10 +31,14 @@ var output_icon: ItemIcon
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	_install_slot_icons()
 	window.visible = false
 	$Window/Margin/HBox/DetailPanel/Margin/VBox/CloseButton.pressed.connect(close)
 	start_button.pressed.connect(_on_primary_action_pressed)
+	UITheme.apply_button(start_button)
+	UITheme.apply_progress(progress, UITheme.TONE_INFO)
+	UITheme.set_status(status_label, UITheme.TONE_INFO)
 
 
 func is_open() -> bool:
@@ -179,7 +183,8 @@ func _rebuild_recipe_list() -> void:
 		button.text = "%s  %s\n     产出 %d 份" % ["[x]" if selected else "[ ]", str(recipe.get("display_name", recipe_id)), int((recipe.get("result", {}) as Dictionary).get("quantity", 0))]
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.add_theme_font_size_override("font_size", 17)
-		button.add_theme_color_override("font_color", Color("#FFE08A") if selected else Color("#FFF0A3") if available else Color("#B6BDC4"))
+		UITheme.apply_button(button)
+		UITheme.set_tone(button, UITheme.TONE_NEUTRAL if available else UITheme.TONE_MUTED)
 		button.disabled = not cooker.recipe_id.is_empty() and recipe_id != cooker.recipe_id
 		button.toggle_mode = true
 		button.button_pressed = selected

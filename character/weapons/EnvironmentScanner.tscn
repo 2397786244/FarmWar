@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3 uid="uid://xlixccmn3l8y"]
+
+[ext_resource type="PackedScene" uid="uid://mgay35qflklf" path="res://tools/generated_farmtown_tools/FTF_Tool_HandheldScanner_Tablet_v1.glb" id="1_u38qt"]
+[ext_resource type="Script" path="res://src/environment_scanner.gd" id="2_scanner"]
+
+[node name="EnvironmentScanner" type="Node3D" unique_id=270752277]
+script = ExtResource("2_scanner")
+
+[node name="Mesh" parent="." unique_id=306817832 instance=ExtResource("1_u38qt")]

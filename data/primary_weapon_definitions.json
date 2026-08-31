@@ -53,6 +53,83 @@
 	  "description": "单手持握的快速射击武器，射程100米，单发伤害30。"
 	},
 	{
+	  "id": "suppressed_pistol_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "消音手枪 淬火钢",
+	  "tool_scene": "res://character/weapons/SuppressedPistolHardenedSteel.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "单手持握的快速射击武器，射程100米，单发伤害30。"
+	},
+	{
+	  "id": "suppressed_pistol_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "消音手枪 乡村迷彩",
+	  "tool_scene": "res://character/weapons/SuppressedPistolRuralCamo.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "单手持握的快速射击武器，射程100米，单发伤害30。"
+	},
+	{
+	  "id": "suppressed_pistol_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "消音手枪 雪地迷彩",
+	  "tool_scene": "res://character/weapons/SuppressedPistolSnowCamo.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "单手持握的快速射击武器，射程100米，单发伤害30。"
+	},
+	{
+	  "id": "m17",
+	  "loadout_selectable": false,
+	  "name": "M17 手枪",
+	  "tool_scene": "res://character/weapons/M17.tscn",
+	  "icon": "",
+	  "power": 31,
+	  "fire_rate": 4.55,
+	  "cooldown": 0.22,
+	  "description": "单手持握的 M17 战术手枪，射程80米，单发伤害31，弹匣容量17发，配备可切换手电筒。"
+	},
+	{
+	  "id": "m17_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "M17 雪地迷彩",
+	  "tool_scene": "res://character/weapons/M17SnowCamo.tscn",
+	  "icon": "",
+	  "power": 31,
+	  "fire_rate": 4.55,
+	  "cooldown": 0.22,
+	  "description": "M17 雪地迷彩外观版本，战斗属性与基础版一致，配备可切换手电筒。"
+	},
+	{
+	  "id": "m17_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "M17 乡村迷彩",
+	  "tool_scene": "res://character/weapons/M17RuralCamo.tscn",
+	  "icon": "",
+	  "power": 31,
+	  "fire_rate": 4.55,
+	  "cooldown": 0.22,
+	  "description": "M17 乡村迷彩外观版本，战斗属性与基础版一致，配备可切换手电筒。"
+	},
+	{
+	  "id": "m17_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "M17 淬火钢",
+	  "tool_scene": "res://character/weapons/M17HardenedSteel.tscn",
+	  "icon": "",
+	  "power": 31,
+	  "fire_rate": 4.55,
+	  "cooldown": 0.22,
+	  "description": "M17 淬火钢外观版本，战斗属性与基础版一致，配备可切换手电筒。"
+	},
+	{
 	  "id": "shotgun",
 	  "name": "双管猎枪",
 	  "tool_scene": "res://character/weapons/Shotgun.tscn",
@@ -61,6 +138,72 @@
 	  "fire_rate": 1.25,
 	  "cooldown": 0.8,
 	  "description": "双手持握，每次以更小夹角同时发射6颗弹丸，每颗伤害60，全部命中时总伤害360。"
+	},
+	{
+	  "id": "shotgun_rusted",
+	  "name": "双管猎枪 锈铁",
+	  "tool_scene": "res://character/weapons/ShotgunRusted.tscn",
+	  "icon": "",
+	  "power": 360,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "双手持握，每次以更小夹角同时发射6颗弹丸，每颗伤害60，全部命中时总伤害360。",
+	  "loadout_selectable": false
+	},
+	{
+	  "id": "remington870",
+	  "loadout_selectable": false,
+	  "name": "Remington870",
+	  "tool_scene": "res://character/weapons/Remington870.tscn",
+	  "icon": "",
+	  "power": 260,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "双手持握的 Remington870 霰弹枪，每次发射4颗弹丸，每颗伤害65，全部命中时总伤害260，适用距离50米。"
+	},
+	{
+	  "id": "remington870_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "Remington870 乡村迷彩",
+	  "tool_scene": "res://character/weapons/Remington870RuralCamo.tscn",
+	  "icon": "",
+	  "power": 260,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "双手持握的 Remington870 霰弹枪，每次发射4颗弹丸，每颗伤害65，全部命中时总伤害260，适用距离50米。"
+	},
+	{
+	  "id": "remington870_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "Remington870 雪地迷彩",
+	  "tool_scene": "res://character/weapons/Remington870SnowCamo.tscn",
+	  "icon": "",
+	  "power": 260,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "双手持握的 Remington870 霰弹枪，每次发射4颗弹丸，每颗伤害65，全部命中时总伤害260，适用距离50米。"
+	},
+	{
+	  "id": "remington870_rusted",
+	  "loadout_selectable": false,
+	  "name": "Remington870 锈铁",
+	  "tool_scene": "res://character/weapons/Remington870Rusted.tscn",
+	  "icon": "",
+	  "power": 260,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "Remington870 锈铁外观版本；每次发射4颗弹丸，每颗伤害65，全部命中时总伤害260。"
+	},
+	{
+	  "id": "remington870_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "Remington870 淬火钢",
+	  "tool_scene": "res://character/weapons/Remington870HardenedSteel.tscn",
+	  "icon": "",
+	  "power": 260,
+	  "fire_rate": 1.25,
+	  "cooldown": 0.8,
+	  "description": "Remington870 淬火钢外观版本；每次发射4颗弹丸，每颗伤害65，全部命中时总伤害260。"
 	},
 	{
 	  "id": "hunting_rifle",
@@ -81,6 +224,17 @@
 	  "fire_rate": 0.333,
 	  "cooldown": 0.0,
 	  "description": "双手持握的弩，射程120米，箭速90米/秒，单发伤害80；每次射击后装填3秒。"
+	},
+	{
+	  "id": "crossbow_hardenedsteel",
+	  "name": "弩 淬火钢",
+	  "tool_scene": "res://character/weapons/CrossbowHardenedSteel.tscn",
+	  "icon": "",
+	  "power": 80,
+	  "fire_rate": 0.333,
+	  "cooldown": 0,
+	  "description": "双手持握的弩，射程120米，箭速90米/秒，单发伤害80；每次射击后装填3秒。",
+	  "loadout_selectable": false
 	},
 	{
 	  "id": "long_spear",
@@ -114,6 +268,105 @@
 	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
 	},
 	{
+	  "id": "m4_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "M4 淬火钢",
+	  "tool_scene": "res://character/weapons/M4HardenedSteel.tscn",
+	  "icon": "",
+	  "power": 45,
+	  "fire_rate": 8.33,
+	  "cooldown": 0.12,
+	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
+	},
+	{
+	  "id": "m4_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "M4 乡村迷彩",
+	  "tool_scene": "res://character/weapons/M4RuralCamo.tscn",
+	  "icon": "",
+	  "power": 45,
+	  "fire_rate": 8.33,
+	  "cooldown": 0.12,
+	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
+	},
+	{
+	  "id": "m4_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "M4 雪地迷彩",
+	  "tool_scene": "res://character/weapons/M4SnowCamo.tscn",
+	  "icon": "",
+	  "power": 45,
+	  "fire_rate": 8.33,
+	  "cooldown": 0.12,
+	  "description": "双手持握的现代卡宾枪，高射速、中远距离连续压制。"
+	},
+	{
+	  "id": "ak47",
+	  "loadout_selectable": false,
+	  "name": "AK47突击步枪",
+	  "tool_scene": "res://character/weapons/Ak47.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "双手持握的现代突击步枪，射程120米，单发伤害50，射速7.14发/秒，弹匣容量30发。"
+	},
+	{
+	  "id": "ak47_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "AK47 乡村迷彩",
+	  "tool_scene": "res://character/weapons/Ak47RuralCamo.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "双手持握的现代突击步枪，射程120米，单发伤害50，射速7.14发/秒，弹匣容量30发。"
+	},
+	{
+	  "id": "ak47_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "AK47 雪地迷彩",
+	  "tool_scene": "res://character/weapons/Ak47SnowCamo.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "双手持握的现代突击步枪，射程120米，单发伤害50，射速7.14发/秒，弹匣容量30发。"
+	},
+	{
+	  "id": "ak47_golden",
+	  "loadout_selectable": false,
+	  "name": "AK47 黄金版",
+	  "tool_scene": "res://character/weapons/Ak47Golden.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "AK47 黄金版外观版本；双手持握，射程120米，单发伤害50，弹匣容量30发。"
+	},
+	{
+	  "id": "ak47_rusted",
+	  "loadout_selectable": false,
+	  "name": "AK47 锈铁",
+	  "tool_scene": "res://character/weapons/Ak47Rusted.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "AK47 锈铁外观版本；双手持握，射程120米，单发伤害50，弹匣容量30发。"
+	},
+	{
+	  "id": "ak47_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "AK47 淬火钢",
+	  "tool_scene": "res://character/weapons/Ak47HardenedSteel.tscn",
+	  "icon": "",
+	  "power": 50,
+	  "fire_rate": 7.14,
+	  "cooldown": 0.14,
+	  "description": "AK47 淬火钢外观版本；双手持握，射程120米，单发伤害50，弹匣容量30发。"
+	},
+	{
 	  "id": "mpx",
 	  "loadout_selectable": false,
 	  "name": "MPX冲锋枪",
@@ -123,6 +376,72 @@
 	  "fire_rate": 10.0,
 	  "cooldown": 0.1,
 	  "description": "双手持握的紧凑型冲锋枪，射程100米，单发伤害30，弹匣容量20发。"
+	},
+	{
+	  "id": "mpx_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "MPX 淬火钢",
+	  "tool_scene": "res://character/weapons/MPXHardenedSteel.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "双手持握的紧凑型冲锋枪，射程100米，单发伤害30，弹匣容量20发。"
+	},
+	{
+	  "id": "mpx_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "MPX 乡村迷彩",
+	  "tool_scene": "res://character/weapons/MPXRuralCamo.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "双手持握的紧凑型冲锋枪，射程100米，单发伤害30，弹匣容量20发。"
+	},
+	{
+	  "id": "mpx_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "MPX 雪地迷彩",
+	  "tool_scene": "res://character/weapons/MPXSnowCamo.tscn",
+	  "icon": "",
+	  "power": 30,
+	  "fire_rate": 10,
+	  "cooldown": 0.1,
+	  "description": "双手持握的紧凑型冲锋枪，射程100米，单发伤害30，弹匣容量20发。"
+	},
+	{
+	  "id": "p90",
+	  "loadout_selectable": false,
+	  "name": "P90冲锋枪",
+	  "tool_scene": "res://character/weapons/P90.tscn",
+	  "icon": "",
+	  "power": 32,
+	  "fire_rate": 12.5,
+	  "cooldown": 0.08,
+	  "description": "双手持握的 P90 高射速冲锋枪，射程90米，单发伤害32，弹匣容量50发。"
+	},
+	{
+	  "id": "p90_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "P90 乡村迷彩",
+	  "tool_scene": "res://character/weapons/P90RuralCamo.tscn",
+	  "icon": "",
+	  "power": 32,
+	  "fire_rate": 12.5,
+	  "cooldown": 0.08,
+	  "description": "P90 乡村迷彩外观版本；单发伤害32，射程90米，弹匣容量50发。"
+	},
+	{
+	  "id": "p90_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "P90 雪地迷彩",
+	  "tool_scene": "res://character/weapons/P90SnowCamo.tscn",
+	  "icon": "",
+	  "power": 32,
+	  "fire_rate": 12.5,
+	  "cooldown": 0.08,
+	  "description": "P90 雪地迷彩外观版本；单发伤害32，射程90米，弹匣容量50发。"
 	},
 	{
 	  "id": "future_m4",
@@ -154,6 +473,39 @@
 	  "icon": "",
 	  "power": 55,
 	  "fire_rate": 5.0,
+	  "cooldown": 0.2,
+	  "description": "双手持握的现代步枪，单发伤害和有效射程高于M4。"
+	},
+	{
+	  "id": "ar15_hardenedsteel",
+	  "loadout_selectable": false,
+	  "name": "AR15 淬火钢",
+	  "tool_scene": "res://character/weapons/AR15HardenedSteel.tscn",
+	  "icon": "",
+	  "power": 55,
+	  "fire_rate": 5,
+	  "cooldown": 0.2,
+	  "description": "双手持握的现代步枪，单发伤害和有效射程高于M4。"
+	},
+	{
+	  "id": "ar15_ruralcamo",
+	  "loadout_selectable": false,
+	  "name": "AR15 乡村迷彩",
+	  "tool_scene": "res://character/weapons/AR15RuralCamo.tscn",
+	  "icon": "",
+	  "power": 55,
+	  "fire_rate": 5,
+	  "cooldown": 0.2,
+	  "description": "双手持握的现代步枪，单发伤害和有效射程高于M4。"
+	},
+	{
+	  "id": "ar15_snowcamo",
+	  "loadout_selectable": false,
+	  "name": "AR15 雪地迷彩",
+	  "tool_scene": "res://character/weapons/AR15SnowCamo.tscn",
+	  "icon": "",
+	  "power": 55,
+	  "fire_rate": 5,
 	  "cooldown": 0.2,
 	  "description": "双手持握的现代步枪，单发伤害和有效射程高于M4。"
 	},

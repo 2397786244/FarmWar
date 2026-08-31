@@ -1,26 +1,27 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://src/auto_cooker_page.gd" id="1_script"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_theme"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_window"]
-bg_color = Color(0.09, 0.075, 0.04, 0.98)
+bg_color = Color(0.0823529, 0.0901961, 0.101961, 0.98)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.88, 0.66, 0.26, 1)
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
-bg_color = Color(0.055, 0.065, 0.055, 0.92)
+bg_color = Color(0.113725, 0.12549, 0.141176, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.48, 0.4, 0.19, 1)
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -35,6 +36,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
+theme = ExtResource("2_theme")
 
 [node name="Window" type="PanelContainer" parent="."]
 layout_mode = 0
@@ -81,7 +83,7 @@ theme_override_constants/separation = 10
 [node name="Title" type="Label" parent="Window/Margin/HBox/RecipePanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(1, 0.86, 0.54, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "可制作料理"
 horizontal_alignment = 1
 
@@ -114,14 +116,14 @@ theme_override_constants/separation = 14
 [node name="Title" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
-theme_override_colors/font_color = Color(1, 0.88, 0.59, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "自动做菜机"
 horizontal_alignment = 1
 
 [node name="DetailTitle" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-theme_override_colors/font_color = Color(1, 0.76, 0.38, 1)
+theme_override_colors/font_color = Color(0.560784, 0.666667, 0.760784, 1)
 horizontal_alignment = 1
 autowrap_mode = 2
 
@@ -129,7 +131,7 @@ autowrap_mode = 2
 layout_mode = 2
 custom_minimum_size = Vector2(0, 26)
 theme_override_font_sizes/font_size = 17
-theme_override_colors/font_color = Color(1, 0.76, 0.47, 1)
+theme_override_colors/font_color = Color(0.560784, 0.666667, 0.760784, 1)
 horizontal_alignment = 1
 
 [node name="Process" type="HBoxContainer" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
@@ -192,7 +194,7 @@ vertical_alignment = 1
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 50
-theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "->"
 horizontal_alignment = 1
 vertical_alignment = 1

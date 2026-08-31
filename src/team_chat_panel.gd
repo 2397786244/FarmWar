@@ -17,6 +17,7 @@ var input_blocker: Control
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	visible = true
 	input.visible = false
 	z_index = 0

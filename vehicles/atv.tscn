@@ -42,7 +42,7 @@ spot_angle = 60.0
 [node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw" unique_id=1801861522]
 
 [node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch" unique_id=1801861523]
-fov = 72.0
+fov = 85.0
 
 [node name="ExitPoint" type="Marker3D" parent="." unique_id=1801861524]
 position = Vector3(1.35, 0.1, 0)

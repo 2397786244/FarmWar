@@ -7,14 +7,20 @@ class_name PlayerBackpackSlot
 @export_enum("inventory", "equipment") var slot_kind := "inventory"
 @export var equipment_type := ""
 @export var empty_label := ""
-@onready var item_name: Label = $Margin/VBox/ItemName
 @onready var item_icon: ItemIcon = $Margin/VBox/ItemIcon
+
+const COLOR_SLOT := UITheme.COLOR_CONTROL
+const COLOR_SLOT_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_SLOT_COOLDOWN := UITheme.COLOR_PANEL
+const COLOR_BORDER := UITheme.COLOR_BORDER
+const COLOR_SELECTED_BORDER := UITheme.COLOR_TEXT
 
 var backpack: PlayerBackpack
 var current_item: Dictionary = {}
 
 
 func _ready() -> void:
+	UITheme.apply_slot(self)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 	gui_input.connect(_on_gui_input)
@@ -25,29 +31,23 @@ func configure(next_backpack: PlayerBackpack) -> void:
 func set_item(item: Dictionary, selected := false, cooldown := 0.0) -> void:
 	current_item = item.duplicate(true)
 	item_icon.set_item(item)
-	var is_empty := item.is_empty()
-	item_name.text = empty_label if is_empty else str(item.get("display_name", ""))
-	var color := Color("#8A96A3") if is_empty else Color("#F4F7FA")
-	if selected:
-		color = Color("#FFE08A")
-	elif cooldown > 0.0:
-		color = Color("#8A96A3")
-	item_name.add_theme_color_override("font_color", color)
 	var base_style := get_theme_stylebox("panel") as StyleBoxFlat
 	if base_style != null:
 		var slot_style := base_style.duplicate() as StyleBoxFlat
-		slot_style.border_color = Color("#FFD34E") if highlight_selection and selected else Color("#4D6E80")
-		slot_style.border_width_left = 3 if highlight_selection and selected else 2
-		slot_style.border_width_top = 3 if highlight_selection and selected else 2
-		slot_style.border_width_right = 3 if highlight_selection and selected else 2
-		slot_style.border_width_bottom = 3 if highlight_selection and selected else 2
+		var is_selected := highlight_selection and selected
+		slot_style.bg_color = COLOR_SLOT_SELECTED if is_selected else COLOR_SLOT_COOLDOWN if cooldown > 0.0 else COLOR_SLOT
+		slot_style.border_color = COLOR_SELECTED_BORDER if is_selected else COLOR_BORDER
+		slot_style.border_width_left = 3 if is_selected else 2
+		slot_style.border_width_top = 3 if is_selected else 2
+		slot_style.border_width_right = 3 if is_selected else 2
+		slot_style.border_width_bottom = 3 if is_selected else 2
 		add_theme_stylebox_override("panel", slot_style)
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
 	if not interactive or backpack == null or not backpack.can_drag_slot(slot_index, slot_kind, equipment_type):
 		return null
 	var preview := preload("res://ui/player_backpack_drag_preview.tscn").instantiate() as Control
-	preview.get_node("Label").text = item_name.text
+	preview.get_node("Label").text = str(current_item.get("display_name", empty_label))
 	set_drag_preview(preview)
 	backpack.hide_item_tooltip()
 	return {"backpack": backpack, "slot_index": slot_index, "slot_kind": slot_kind, "equipment_type": equipment_type}

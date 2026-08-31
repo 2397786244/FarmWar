@@ -11,27 +11,36 @@ const INITIAL_MONEY := 1000
 # 弹药盒也允许卖回武器商店；它的回收权仍然只由本白名单决定。
 const GUN_STORE_SELL_WHITELIST := {
 	"m4": true,
+	"ak47": true,
 	"ar15": true,
 	"suppressed_pistol": true,
+	"m17": true,
 	"grenade": true,
 	"shotgun": true,
+	"remington870": true,
 	"hunting_rifle": true,
 	"crossbow": true,
 	"mpx": true,
+	"p90": true,
 	"ammo_supply_box": true,
 }
 
 # 武器商店的采购目录同样由商店侧白名单控制。FutureM4/FutureMPX
 # 仍保留在商品数据中供敌人、调查页面和估值使用，但不属于可采购目录。
+# 武器涂装只保留在武器配置和物品系统中，不写入商品列表或买卖白名单。
 const GUN_STORE_BUY_WHITELIST := {
 	"m4": true,
+	"ak47": true,
 	"ar15": true,
 	"suppressed_pistol": true,
+	"m17": true,
 	"grenade": true,
 	"shotgun": true,
+	"remington870": true,
 	"hunting_rifle": true,
 	"crossbow": true,
 	"mpx": true,
+	"p90": true,
 	"ammo_supply_box": true,
 }
 
@@ -146,14 +155,18 @@ var shop_products: Array[Dictionary] = [
 	{"id": "fried_chicken_nuggets", "name": "炸鸡块", "kind": "dish", "shop_category": "food_car", "unit": "item", "buy_price": 16, "sell_price": 7, "can_buy": true, "can_sell": true},
 	# 枪械和弹药保留回收估值；武器商店是否允许回收由上方白名单决定。
 	{"id": "m4", "name": "M4卡宾枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3000, "sell_price": 2100, "can_buy": true},
+	{"id": "ak47", "name": "AK47突击步枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3500, "sell_price": 2450, "can_buy": true},
 	{"id": "ar15", "name": "AR15步枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 4000, "sell_price": 2800, "can_buy": true},
 	{"id": "suppressed_pistol", "name": "消音手枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 800, "sell_price": 560, "can_buy": true},
+	{"id": "m17", "name": "M17 手枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 1200, "sell_price": 840, "can_buy": true},
 	{"id": "ammo_supply_box", "name": "弹药盒", "kind": "ammo_supply_box", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 140, "can_buy": true},
 	{"id": "grenade", "name": "手雷", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 200, "sell_price": 140, "can_buy": true},
 	{"id": "shotgun", "name": "双管猎枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2200, "sell_price": 1540, "can_buy": true},
+	{"id": "remington870", "name": "Remington870", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2200, "sell_price": 1540, "can_buy": true},
 	{"id": "hunting_rifle", "name": "栓动猎枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2500, "sell_price": 1750, "can_buy": true},
 	{"id": "crossbow", "name": "弩", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 1600, "sell_price": 1120, "can_buy": true},
 	{"id": "mpx", "name": "MPX冲锋枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2400, "sell_price": 1680, "can_buy": true},
+	{"id": "p90", "name": "P90冲锋枪", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 2800, "sell_price": 1960, "can_buy": true},
 	{"id": "future_m4", "name": "FutureM4", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3800, "sell_price": 2660, "can_buy": true},
 	{"id": "future_mpx", "name": "FutureMPX", "kind": "weapon", "shop_category": "gun_store", "unit": "item", "buy_price": 3200, "sell_price": 2240, "can_buy": true},
 ]

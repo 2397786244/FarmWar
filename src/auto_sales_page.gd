@@ -6,15 +6,15 @@ signal closed
 const VehicleSalesCatalogScript = preload("res://src/vehicle_sales_catalog.gd")
 const VehicleColorCatalogScript = preload("res://src/vehicle_color_catalog.gd")
 
-const COLOR_BACKGROUND := Color("0b0d0f")
-const COLOR_SURFACE := Color("15191d")
-const COLOR_SURFACE_HIGHLIGHT := Color("22282e")
-const COLOR_TEXT := Color("f2f4f5")
-const COLOR_MUTED := Color("a6afb7")
-const COLOR_ACCENT := Color("e45b4e")
-const COLOR_ACCENT_DARK := Color("71302d")
-const COLOR_SUCCESS := Color("6fd18a")
-const COLOR_ERROR := Color("ff8075")
+const COLOR_BACKGROUND := UITheme.COLOR_BG
+const COLOR_SURFACE := UITheme.COLOR_PANEL
+const COLOR_SURFACE_HIGHLIGHT := UITheme.COLOR_CONTROL
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_ACCENT := UITheme.COLOR_INFO
+const COLOR_ACCENT_DARK := UITheme.COLOR_CONTROL
+const COLOR_SUCCESS := UITheme.COLOR_SUCCESS
+const COLOR_ERROR := UITheme.COLOR_ERROR
 const PURCHASE_REQUEST_TIMEOUT_SECONDS := 8.0
 
 var current_shop: Node
@@ -54,6 +54,7 @@ var _preview_camera: Camera3D
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	z_index = 80
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_interface()
@@ -169,13 +170,14 @@ func _build_interface() -> void:
 	header.add_child(_title_label)
 	_money_label = Label.new()
 	_money_label.add_theme_font_size_override("font_size", 20)
-	_money_label.add_theme_color_override("font_color", Color("e8b45a"))
+	_money_label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	header.add_child(_money_label)
 	var close_button := Button.new()
 	close_button.text = "×"
 	close_button.tooltip_text = "关闭（Esc）"
 	close_button.custom_minimum_size = Vector2(44, 40)
 	close_button.add_theme_font_size_override("font_size", 26)
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close_shop)
 	header.add_child(close_button)
 
@@ -269,7 +271,7 @@ func _build_interface() -> void:
 
 	_price_label = Label.new()
 	_price_label.add_theme_font_size_override("font_size", 20)
-	_price_label.add_theme_color_override("font_color", Color("e8b45a"))
+	_price_label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	right.add_child(_price_label)
 	_description_label = Label.new()
 	_description_label.custom_minimum_size.y = 38.0
@@ -286,8 +288,7 @@ func _build_interface() -> void:
 	_purchase_button.text = "购买载具"
 	_purchase_button.custom_minimum_size.y = 48.0
 	_purchase_button.add_theme_font_size_override("font_size", 20)
-	_purchase_button.add_theme_stylebox_override("normal", _style_box(COLOR_ACCENT_DARK, 7))
-	_purchase_button.add_theme_stylebox_override("hover", _style_box(Color("91403b"), 7))
+	UITheme.apply_button(_purchase_button)
 	_purchase_button.pressed.connect(_on_purchase_pressed)
 	right.add_child(_purchase_button)
 
@@ -343,6 +344,7 @@ func _build_vehicle_list() -> void:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.custom_minimum_size = Vector2(0.0, 44.0)
 		button.add_theme_font_size_override("font_size", 17)
+		UITheme.apply_button(button)
 		button.pressed.connect(_on_vehicle_selected.bind(vehicle_id))
 		_vehicle_list.add_child(button)
 		_vehicle_buttons[vehicle_id] = button
@@ -423,7 +425,12 @@ func _refresh_selection() -> void:
 			button.disabled = locked
 			button.add_theme_stylebox_override(
 				"normal",
-				_style_box(COLOR_ACCENT_DARK if vehicle_id == selected_vehicle_id else COLOR_SURFACE_HIGHLIGHT, 6)
+				UITheme.make_style(
+					COLOR_SURFACE_HIGHLIGHT if vehicle_id != selected_vehicle_id else UITheme.COLOR_SELECTED,
+					UITheme.COLOR_TEXT if vehicle_id == selected_vehicle_id else UITheme.COLOR_BORDER,
+					1,
+					4
+				)
 			)
 	_price_label.text = "参考售价：$%s" % _format_money(int(product.get("price", 0)))
 	_description_label.text = str(product.get("description", ""))

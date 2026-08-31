@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://ip758h5pksw2"]
+
+[ext_resource type="PackedScene" uid="uid://dk0oueobwtxyb" path="res://assets/facilities/interior/Sofa.glb" id="1_rh7a0"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rh7a0"]
+size = Vector3(2, 1.2, 1)
+
+[node name="Sofa" type="StaticBody3D" unique_id=1602278481]
+collision_layer = 128
+collision_mask = 0
+metadata/map_can_overlap_water = false
+
+[node name="Sofa" parent="." unique_id=351269751 instance=ExtResource("1_rh7a0")]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2113753712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65325713, 0)
+shape = SubResource("BoxShape3D_rh7a0")

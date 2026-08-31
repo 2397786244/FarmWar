@@ -821,6 +821,7 @@ func _build_editor_ui() -> void:
 	_ui_root.name = "Root"
 	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	UITheme.apply(_ui_root)
 	_ui_layer.add_child(_ui_root)
 
 	_build_top_bar()
@@ -839,7 +840,7 @@ func _build_boundary_warning_ui() -> void:
 	_boundary_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_boundary_warning_label.add_theme_color_override(
 		"font_color",
-		Color(1.0, 0.08, 0.03, 1.0)
+		UITheme.COLOR_ERROR
 	)
 	_boundary_warning_label.add_theme_color_override(
 		"font_shadow_color",
@@ -937,22 +938,7 @@ func _build_top_bar() -> void:
 	return_button.tooltip_text = "返回 Harvest Operation 主界面。"
 	return_button.custom_minimum_size = Vector2(148.0, 42.0)
 	return_button.add_theme_font_size_override("font_size", 18)
-	return_button.add_theme_color_override("font_color", Color.WHITE)
-	return_button.add_theme_color_override("font_hover_color", Color.WHITE)
-	return_button.add_theme_color_override("font_pressed_color", Color.WHITE)
-	var return_normal := StyleBoxFlat.new()
-	return_normal.bg_color = Color("8f3d3d")
-	return_normal.corner_radius_top_left = 6
-	return_normal.corner_radius_top_right = 6
-	return_normal.corner_radius_bottom_left = 6
-	return_normal.corner_radius_bottom_right = 6
-	var return_hover := return_normal.duplicate() as StyleBoxFlat
-	return_hover.bg_color = Color("bd5050")
-	var return_pressed := return_normal.duplicate() as StyleBoxFlat
-	return_pressed.bg_color = Color("d66a52")
-	return_button.add_theme_stylebox_override("normal", return_normal)
-	return_button.add_theme_stylebox_override("hover", return_hover)
-	return_button.add_theme_stylebox_override("pressed", return_pressed)
+	UITheme.apply_button(return_button)
 	return_button.pressed.connect(_request_return_to_main_menu)
 	primary_row.add_child(return_button)
 
@@ -1632,7 +1618,7 @@ func _add_weather_controls() -> void:
 	_weather_probability_labels.clear()
 	_weather_probability_total_label = Label.new()
 	_weather_probability_total_label.text = "概率合计：100%"
-	_weather_probability_total_label.add_theme_color_override("font_color", Color("63FF82"))
+	_weather_probability_total_label.add_theme_color_override("font_color", UITheme.COLOR_SUCCESS)
 	_bottom_content.add_child(_weather_probability_total_label)
 
 	_add_weather_probability_control("clear", "晴天概率", _weather_clear_probability, "自动天气中整天晴朗的概率")
@@ -2029,7 +2015,7 @@ func _add_ai_configuration_controls() -> void:
 
 	var delete_button := Button.new()
 	delete_button.text = "删除当前 AI 配置"
-	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	delete_button.pressed.connect(_remove_selected_ai_configuration)
 	_bottom_content.add_child(delete_button)
 
@@ -2200,7 +2186,7 @@ func _add_squad_generator_controls() -> void:
 
 	var delete_button := Button.new()
 	delete_button.text = "删除当前小队生成器"
-	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	delete_button.pressed.connect(_delete_selected_squad_spawner)
 	_bottom_content.add_child(delete_button)
 
@@ -2315,7 +2301,7 @@ func _add_zombie_generator_controls() -> void:
 
 	var delete_button := Button.new()
 	delete_button.text = "删除当前僵尸生成器"
-	delete_button.add_theme_color_override("font_color", Color("ff8b82"))
+	delete_button.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	delete_button.pressed.connect(_delete_selected_zombie_generator)
 	_bottom_content.add_child(delete_button)
 
@@ -3918,7 +3904,7 @@ func _add_farmland_inspector_controls() -> void:
 	var delete_button := Button.new()
 	delete_button.text = "Delete Farmland"
 	delete_button.tooltip_text = "删除当前选中的农田区域（支持撤回）"
-	delete_button.modulate = Color(1.0, 0.42, 0.42, 1.0)
+	delete_button.modulate = UITheme.COLOR_ERROR
 	delete_button.pressed.connect(_delete_selected_object)
 	_bottom_content.add_child(delete_button)
 
@@ -4168,7 +4154,7 @@ func _add_building_asset_card(asset: Dictionary, is_facility := false, is_vehicl
 	var category_label = Label.new()
 	category_label.text = str(asset.get("category", "Root"))
 	category_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	category_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
+	category_label.modulate = UITheme.COLOR_MUTED
 	column.add_child(category_label)
 	_queue_building_thumbnail(path)
 

@@ -18,16 +18,18 @@ const TARGET_HEIGHT_OFFSET := 1.6  # 看向胸部高度
 const SMOOTH_ROTATE_SPEED := 8.0
 
 # --- UI 配色 ---
-const COLOR_BLUE := Color(0.23, 0.51, 0.96, 1)
-const COLOR_RED := Color(0.94, 0.27, 0.27, 1)
-const COLOR_PANEL_BG := Color(0.08, 0.09, 0.12, 0.82)
-const COLOR_PANEL_BORDER := Color(0.25, 0.27, 0.33, 0.9)
-const COLOR_TEXT := Color(0.92, 0.93, 0.96, 1)
-const COLOR_TEXT_DIM := Color(0.62, 0.64, 0.70, 1)
-const COLOR_HP_BG := Color(0.15, 0.16, 0.20, 0.9)
-const COLOR_HP_FULL := Color(0.30, 0.85, 0.39, 1)
-const COLOR_HP_LOW := Color(0.94, 0.35, 0.27, 1)
-const COLOR_SELECTED := Color(1.0, 0.84, 0.0, 1)
+# Team identity remains in labels and the low-saturation semantic tones; the
+# camera overlay itself stays within the shared neutral flat theme.
+const COLOR_BLUE := UITheme.COLOR_INFO
+const COLOR_RED := UITheme.COLOR_WARNING
+const COLOR_PANEL_BG := Color(UITheme.COLOR_PANEL, 0.92)
+const COLOR_PANEL_BORDER := UITheme.COLOR_BORDER
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_TEXT_DIM := UITheme.COLOR_MUTED
+const COLOR_HP_BG := Color(UITheme.COLOR_CONTROL, 0.92)
+const COLOR_HP_FULL := UITheme.COLOR_SUCCESS
+const COLOR_HP_LOW := UITheme.COLOR_ERROR
+const COLOR_SELECTED := UITheme.COLOR_TEXT
 
 # --- 中文映射 ---
 const PROFESSION_CN := {
@@ -252,6 +254,7 @@ func _build_ui() -> void:
 	var top_anchor := Control.new()
 	top_anchor.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply(top_anchor)
 	ui_layer.add_child(top_anchor)
 
 	var top_margin := MarginContainer.new()
@@ -273,6 +276,7 @@ func _build_ui() -> void:
 	var bottom_left := Control.new()
 	bottom_left.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	bottom_left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply(bottom_left)
 	ui_layer.add_child(bottom_left)
 
 	var bl_margin := MarginContainer.new()
@@ -288,6 +292,8 @@ func _build_ui() -> void:
 	info_label = RichTextLabel.new()
 	info_label.fit_content = true
 	info_label.bbcode_enabled = true
+	UITheme.apply(info_label)
+	UITheme.set_tone(info_label, UITheme.TONE_NEUTRAL)
 	info_label.add_theme_font_size_override("normal_font_size", 14)
 	info_label.add_theme_constant_override("line_separation", 2)
 	info_panel.add_child(info_label)
@@ -296,6 +302,7 @@ func _build_ui() -> void:
 	var hint_anchor := Control.new()
 	hint_anchor.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hint_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply(hint_anchor)
 	ui_layer.add_child(hint_anchor)
 
 	var hint_margin := MarginContainer.new()
@@ -309,7 +316,7 @@ func _build_ui() -> void:
 	hint_label = Label.new()
 	hint_label.text = "数字键 1-6 切换 NPC  |  0 = 自由模式  |  鼠标右键拖拽旋转  |  滚轮调距离  |  WASD 自由移动"
 	hint_label.add_theme_font_size_override("font_size", 13)
-	hint_label.add_theme_color_override("font_color", COLOR_TEXT_DIM)
+	UITheme.set_tone(hint_label, UITheme.TONE_MUTED)
 	hint_center.add_child(hint_label)
 
 
@@ -355,59 +362,17 @@ func _rebuild_buttons() -> void:
 
 
 func _apply_button_style(btn: Button, team: String) -> void:
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 4
-	style.content_margin_bottom = 4
-	style.border_width_left = 2
-	style.border_width_right = 2
-	style.border_width_top = 2
-	style.border_width_bottom = 2
+	UITheme.apply_button(btn)
+	var tone := UITheme.TONE_NEUTRAL
 	if team == "blue":
-		style.bg_color = Color(0.10, 0.18, 0.35, 0.85)
-		style.border_color = COLOR_BLUE
-	elif team == "red":
-		style.bg_color = Color(0.35, 0.12, 0.12, 0.85)
-		style.border_color = COLOR_RED
-	elif team == "enemy":
-		style.bg_color = Color(0.30, 0.15, 0.05, 0.85)
-		style.border_color = Color(0.85, 0.45, 0.10, 1)
-	else:
-		style.bg_color = Color(0.15, 0.15, 0.18, 0.85)
-		style.border_color = COLOR_PANEL_BORDER
-	btn.add_theme_stylebox_override("normal", style)
-
-	var hover_style := style.duplicate()
-	hover_style.bg_color = hover_style.bg_color.lightened(0.15)
-	btn.add_theme_stylebox_override("hover", hover_style)
-
-	var pressed_style := style.duplicate()
-	pressed_style.bg_color = pressed_style.bg_color.lightened(0.25)
-	btn.add_theme_stylebox_override("pressed", pressed_style)
+		tone = UITheme.TONE_INFO
+	elif team == "red" or team == "enemy":
+		tone = UITheme.TONE_WARNING
+	UITheme.set_tone(btn, tone)
 
 
 func _apply_panel_style(panel: PanelContainer) -> void:
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 8
-	style.corner_radius_top_right = 8
-	style.corner_radius_bottom_left = 8
-	style.corner_radius_bottom_right = 8
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	style.bg_color = COLOR_PANEL_BG
-	style.border_width_left = 1
-	style.border_width_right = 1
-	style.border_width_top = 1
-	style.border_width_bottom = 1
-	style.border_color = COLOR_PANEL_BORDER
-	panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(panel, COLOR_PANEL_BG, 1, 4)
 
 
 func _update_button_styles() -> void:
@@ -416,22 +381,16 @@ func _update_button_styles() -> void:
 		if btn == null:
 			continue
 		if i == current_index:
-			btn.add_theme_color_override("font_color", COLOR_SELECTED)
-			btn.add_theme_color_override("font_hover_color", COLOR_SELECTED)
-			btn.add_theme_color_override("font_pressed_color", COLOR_SELECTED)
+			UITheme.set_tone(btn, UITheme.TONE_NEUTRAL)
 		else:
-			btn.add_theme_color_override("font_color", COLOR_TEXT)
-			btn.add_theme_color_override("font_hover_color", COLOR_TEXT)
-			btn.add_theme_color_override("font_pressed_color", COLOR_TEXT)
+			UITheme.set_tone(btn, UITheme.TONE_MUTED)
 	# 自由模式按钮
 	var free_btn := target_buttons[-1] as Button
 	if free_btn != null:
 		if current_index == -1:
-			free_btn.add_theme_color_override("font_color", COLOR_SELECTED)
-			free_btn.add_theme_color_override("font_hover_color", COLOR_SELECTED)
+			UITheme.set_tone(free_btn, UITheme.TONE_NEUTRAL)
 		else:
-			free_btn.add_theme_color_override("font_color", COLOR_TEXT)
-			free_btn.add_theme_color_override("font_hover_color", COLOR_TEXT)
+			UITheme.set_tone(free_btn, UITheme.TONE_MUTED)
 
 
 func _on_button_pressed(index: int) -> void:
@@ -455,25 +414,24 @@ func _update_ui() -> void:
 	if current_index >= 0 and current_index < targets.size():
 		var ai := targets[current_index] as CharacterBody3D
 		if ai == null or not is_instance_valid(ai):
-			info_label.text = "[color=gray]目标已失效[/color]"
+			info_label.text = "[color=%s]目标已失效[/color]" % UITheme.COLOR_ERROR.to_html(false)
 			return
 		var display_name := _get_display_name(ai)
 		var team_cn: String
-		var team_color: String
+		var team_color := UITheme.COLOR_MUTED.to_html(false)
 		var team: String = ai.team_id if "team_id" in ai else "?"
 		match team:
 			"blue":
 				team_cn = "蓝队"
-				team_color = "#3B82F6"
+				team_color = UITheme.COLOR_INFO.to_html(false)
 			"red":
 				team_cn = "红队"
-				team_color = "#EF4444"
+				team_color = UITheme.COLOR_WARNING.to_html(false)
 			"enemy":
 				team_cn = "进攻方"
-				team_color = "#F59E0B"
+				team_color = UITheme.COLOR_ERROR.to_html(false)
 			_:
 				team_cn = team
-				team_color = "#CCCCCC"
 
 		var diff_cn: String = "简单" if ai.difficulty == 0 else "困难"
 		var state_val: int = ai.state if "state" in ai else 0
@@ -488,32 +446,41 @@ func _update_ui() -> void:
 			hp_pct = hp_val / max_hp_val * 100.0
 		var hp_color := COLOR_HP_FULL if hp_pct > 30 else COLOR_HP_LOW
 		var status_str := "存活"
+		var status_color := UITheme.COLOR_SUCCESS.to_html(false)
 		if is_dead_val:
 			var respawn_t: float = ai.respawn_timer if "respawn_timer" in ai else 0.0
-			status_str = "[color=red]已阵亡(%.1fs后复活)[/color]" % respawn_t
+			status_color = UITheme.COLOR_ERROR.to_html(false)
+			status_str = "[color=%s]已阵亡(%.1fs后复活)[/color]" % [status_color, respawn_t]
 		elif "under_attack_timer" in ai and ai.under_attack_timer > 0:
-			status_str = "[color=orange]受击中[/color]"
+			status_color = UITheme.COLOR_WARNING.to_html(false)
+			status_str = "[color=%s]受击中[/color]" % status_color
 		elif "stun_remaining" in ai and ai.stun_remaining > 0:
-			status_str = "[color=purple]眩晕中[/color]"
+			status_color = UITheme.COLOR_WARNING.to_html(false)
+			status_str = "[color=%s]眩晕中[/color]" % status_color
 		elif "burn_remaining" in ai and ai.burn_remaining > 0:
-			status_str = "[color=red]燃烧中[/color]"
+			status_color = UITheme.COLOR_ERROR.to_html(false)
+			status_str = "[color=%s]燃烧中[/color]" % status_color
 		elif "slow_remaining" in ai and ai.slow_remaining > 0:
-			status_str = "[color=cyan]减速中[/color]"
+			status_color = UITheme.COLOR_INFO.to_html(false)
+			status_str = "[color=%s]减速中[/color]" % status_color
 
 		# 状态效果详情
 		var effects_str := ""
 		if "stun_remaining" in ai and ai.stun_remaining > 0:
-			effects_str += "[color=purple]眩晕%.1fs[/color] " % float(ai.stun_remaining)
+			effects_str += "[color=%s]眩晕%.1fs[/color] " % [
+				UITheme.COLOR_WARNING.to_html(false), float(ai.stun_remaining)]
 		if "burn_remaining" in ai and ai.burn_remaining > 0:
 			var burn_dps_val: float = float(ai.burn_dps) if "burn_dps" in ai else 0.0
-			effects_str += "[color=red]燃烧%.1fs(%.0fDPS)[/color] " % [
-				float(ai.burn_remaining), burn_dps_val]
+			effects_str += "[color=%s]燃烧%.1fs(%.0fDPS)[/color] " % [
+				UITheme.COLOR_ERROR.to_html(false), float(ai.burn_remaining), burn_dps_val]
 		if "slow_remaining" in ai and ai.slow_remaining > 0:
-			effects_str += "[color=cyan]冰冻%.1fs[/color] " % float(ai.slow_remaining)
+			effects_str += "[color=%s]冰冻%.1fs[/color] " % [
+				UITheme.COLOR_INFO.to_html(false), float(ai.slow_remaining)]
 		if "under_attack_timer" in ai and ai.under_attack_timer > 0:
-			effects_str += "[color=orange]受击%.1fs[/color] " % float(ai.under_attack_timer)
+			effects_str += "[color=%s]受击%.1fs[/color] " % [
+				UITheme.COLOR_WARNING.to_html(false), float(ai.under_attack_timer)]
 		if effects_str.is_empty():
-			effects_str = "[color=green]正常[/color]"
+			effects_str = "[color=%s]正常[/color]" % UITheme.COLOR_SUCCESS.to_html(false)
 
 		# HP 血条（文本形式）
 		var hp_bar_len := 20
@@ -559,7 +526,8 @@ func _update_ui() -> void:
 		# 威胁相关
 		var threat_str := "无"
 		if "recent_enemy_bullet_timer" in ai and ai.recent_enemy_bullet_timer > 0:
-			threat_str = "[color=orange]%.1fs[/color]" % float(ai.recent_enemy_bullet_timer)
+			threat_str = "[color=%s]%.1fs[/color]" % [
+				UITheme.COLOR_WARNING.to_html(false), float(ai.recent_enemy_bullet_timer)]
 
 		# 目标玩家
 		var target_player_str := "无"
@@ -577,17 +545,19 @@ func _update_ui() -> void:
 
 		# 组装信息面板
 		info_label.text = "[b][color=%s]%s %s[/color][/b] (%s)\n" % [team_color, team_cn, display_name, diff_cn]
-		info_label.text += "状态: [color=cyan]%s[/color] | %s\n" % [state_cn, status_str]
+		info_label.text += "状态: [color=%s]%s[/color] | %s\n" % [
+			UITheme.COLOR_INFO.to_html(false), state_cn, status_str]
 		info_label.text += "HP: [color=%s]%.0f/%.0f[/color] [color=%s]%s[/color] %.0f%%\n" % [
 			hp_color.to_html(false), hp_val, max_hp_val, hp_color.to_html(false), hp_bar, hp_pct]
 		info_label.text += "状态效果: %s\n" % effects_str
-		info_label.text += "决策: [color=yellow]%s[/color]\n" % decision_str
+		info_label.text += "决策: [color=%s]%s[/color]\n" % [
+			UITheme.COLOR_WARNING.to_html(false), decision_str]
 		info_label.text += "工具: %s | 冷却: %s\n" % [tool_str, cooldown_str]
 		info_label.text += "威胁: %s | 目标玩家: %s\n" % [threat_str, target_player_str]
 		info_label.text += "目标地块: %s | 移动目标: %s\n" % [target_plot_str, move_target_str]
 		info_label.text += "位置: (%.1f, %.1f, %.1f) | 速度: %.1f" % [pos.x, pos.y, pos.z, vel.length()]
 	else:
-		info_label.text = "[b][color=yellow]自由观察模式[/color][/b]\nWASD 移动 | Shift 加速\nQ/E 升降 | 鼠标右键旋转视角"
+		info_label.text = "[b][color=%s]自由观察模式[/color][/b]\nWASD 移动 | Shift 加速\nQ/E 升降 | 鼠标右键旋转视角" % UITheme.COLOR_INFO.to_html(false)
 
 
 # ===========================================================================

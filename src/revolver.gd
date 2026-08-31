@@ -27,7 +27,15 @@ func emit_visual_only() -> void:
 	_emit_bullet(true)
 
 
-func _emit_bullet(visual_only: bool) -> void:
+func emit_visual_only_tracer(direction: Vector3, travel_distance := -1.0) -> void:
+	_emit_bullet(true, direction, travel_distance)
+
+
+func _emit_bullet(
+	visual_only: bool,
+	direction_override := Vector3.ZERO,
+	travel_distance := -1.0
+) -> void:
 	# The muzzle flash is presentation-only.  Trigger it before gameplay
 	# validation so the local first-person weapon still shows the shot when a
 	# visual-only request arrives before the authority/world state is ready.
@@ -41,9 +49,15 @@ func _emit_bullet(visual_only: bool) -> void:
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
 	var direction := _get_center_screen_direction(shooter)
+	if direction_override.length_squared() > 0.001:
+		direction = direction_override.normalized()
 	bullet.speed = CombatBalance.get_float("rubber_revolver", "visual_speed", bullet_speed)
 	bullet.max_distance = CombatBalance.get_float("rubber_revolver", "range", bullet.max_distance)
 	bullet.max_lifetime = CombatBalance.get_float("rubber_revolver", "visual_lifetime", bullet.max_lifetime)
+	if travel_distance >= 0.0:
+		bullet.max_distance = minf(bullet.max_distance, maxf(0.01, travel_distance))
+		if bullet.speed > 0.01:
+			bullet.max_lifetime = minf(bullet.max_lifetime, bullet.max_distance / bullet.speed)
 	bullet.run(muzzle.global_position, direction, tool_owner, shooter)
 
 func play_muzzle_visual(firepower: float = -1.0) -> void:
@@ -73,6 +87,15 @@ func _get_shooter() -> CollisionObject3D:
 func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not is_instance_valid(shooter):
 		return -muzzle.global_transform.basis.z.normalized()
+	var max_distance := CombatBalance.get_float("rubber_revolver", "range", 60.0)
+	if shooter.has_method("get_shooting_aim_direction"):
+		var shared_direction: Variant = shooter.call(
+			"get_shooting_aim_direction",
+			muzzle.global_position,
+			max_distance
+		)
+		if shared_direction is Vector3 and (shared_direction as Vector3).length_squared() > 0.001:
+			return (shared_direction as Vector3).normalized()
 
 	var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 	if camera == null:
@@ -81,7 +104,7 @@ func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	var screen_center := camera.get_viewport().get_visible_rect().size * 0.5
 	var ray_origin := camera.project_ray_origin(screen_center)
 	var ray_direction := camera.project_ray_normal(screen_center).normalized()
-	var aim_point := ray_origin + ray_direction * 60.0
+	var aim_point := ray_origin + ray_direction * max_distance
 
 	# 先从摄像机中心做射线检测，准心指到近处障碍物时也能准确命中。
 	var query := PhysicsRayQueryParameters3D.create(

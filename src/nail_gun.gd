@@ -94,6 +94,15 @@ func _get_shooter() -> CollisionObject3D:
 func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not is_instance_valid(shooter):
 		return -muzzle.global_transform.basis.z.normalized()
+	var max_distance := CombatBalance.get_float("nail_gun", "range", 80.0)
+	if shooter.has_method("get_shooting_aim_direction"):
+		var shared_direction: Variant = shooter.call(
+			"get_shooting_aim_direction",
+			muzzle.global_position,
+			max_distance
+		)
+		if shared_direction is Vector3 and (shared_direction as Vector3).length_squared() > 0.001:
+			return (shared_direction as Vector3).normalized()
 
 	var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 	if camera == null:
@@ -102,7 +111,7 @@ func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	var screen_center := camera.get_viewport().get_visible_rect().size * 0.5
 	var ray_origin := camera.project_ray_origin(screen_center)
 	var ray_direction := camera.project_ray_normal(screen_center).normalized()
-	var aim_point := ray_origin + ray_direction * 60.0
+	var aim_point := ray_origin + ray_direction * max_distance
 
 	# 先从摄像机中心做射线检测，准心指到近处障碍物时也能准确命中。
 	var query := PhysicsRayQueryParameters3D.create(

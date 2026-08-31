@@ -3,14 +3,14 @@ class_name MultiplayerBattleRoomPage
 
 signal leave_requested
 
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_PANEL_2 := Color("#22324A")
-const COLOR_BLUE := Color("#5DA9FF")
-const COLOR_RED := Color("#FF6B6B")
-const COLOR_READY := Color("#54D6A2")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_2 := UITheme.COLOR_CONTROL
+const COLOR_BLUE := UITheme.COLOR_INFO
+const COLOR_RED := UITheme.COLOR_WARNING
+const COLOR_READY := UITheme.COLOR_SUCCESS
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
 
 @export var map_name := "Creston Town"
 
@@ -31,6 +31,7 @@ var is_loading_world:bool = false
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	UITheme.apply(self)
 	_build_interface()
 	_seed_placeholder_players()
 	_refresh()
@@ -303,14 +304,4 @@ func _make_player_row(player: Dictionary, index: int) -> Control:
 
 
 func _style_box(color: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	return style
+	return UITheme.make_style(color, UITheme.COLOR_BORDER, 1, radius)

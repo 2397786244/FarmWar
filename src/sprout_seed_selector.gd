@@ -25,6 +25,7 @@ var _last_selected_index := -1
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true
 	set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -44,7 +45,7 @@ func _build_ui() -> void:
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	background.add_theme_stylebox_override(
 		"panel",
-		_make_style(Color(0.07, 0.08, 0.10, 0.91), Color(0.78, 0.82, 0.86, 0.72), 1, 9)
+		_make_style(Color(UITheme.COLOR_BG, 0.91), Color(UITheme.COLOR_BORDER, 0.72), 1, 4)
 	)
 	add_child(background)
 
@@ -77,7 +78,7 @@ func _build_ui() -> void:
 	_focus_panel.z_index = 2
 	_focus_panel.add_theme_stylebox_override(
 		"panel",
-		_make_style(Color(0.98, 0.84, 0.33, 0.10), Color(1.0, 0.84, 0.32, 0.92), 2, 8)
+		_make_style(Color(UITheme.COLOR_SELECTED, 0.10), Color(UITheme.COLOR_TEXT, 0.92), 1, 4)
 	)
 	add_child(_focus_panel)
 
@@ -90,7 +91,7 @@ func _build_ui() -> void:
 	_seed_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_seed_name_label.z_index = 4
 	_seed_name_label.add_theme_font_size_override("font_size", 20)
-	_seed_name_label.add_theme_color_override("font_color", Color("#FFF1B8"))
+	_seed_name_label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	add_child(_seed_name_label)
 
 
@@ -102,7 +103,7 @@ func _make_arrow_hint(node_name: String, text_value: String) -> Label:
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint.add_theme_font_size_override("font_size", 20)
-	hint.add_theme_color_override("font_color", Color(0.90, 0.93, 0.96, 0.88))
+	hint.add_theme_color_override("font_color", Color(UITheme.COLOR_MUTED, 0.88))
 	return hint
 
 
@@ -159,7 +160,7 @@ func _add_seed_visual(seed_id: String, offset: int) -> void:
 		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		fallback.add_theme_font_size_override("font_size", int(icon_size * 0.55))
-		fallback.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, ICON_ALPHAS[distance]))
+		fallback.add_theme_color_override("font_color", Color(UITheme.COLOR_TEXT, ICON_ALPHAS[distance]))
 		icon.add_child(fallback)
 	_carousel.add_child(icon)
 
@@ -170,15 +171,4 @@ func _make_style(
 	border_width: int,
 	radius: int
 ) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = background
-	style.border_color = border_color
-	style.border_width_left = border_width
-	style.border_width_top = border_width
-	style.border_width_right = border_width
-	style.border_width_bottom = border_width
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	return style
+	return UITheme.make_style(background, border_color, border_width, radius)

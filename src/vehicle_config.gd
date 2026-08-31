@@ -18,10 +18,10 @@ class_name VehicleConfig
 
 @export_group("Camera")
 @export var camera_offset := Vector3(0.0, 3.2, 7.0)
-@export var camera_base_fov := 72.0
+@export var camera_base_fov := 85.0
 ## Optional upper ceiling. VehicleBase also limits the reachable FOV by the
 ## vehicle's actual maximum forward speed.
-@export var camera_max_fov := 86.0
+@export var camera_max_fov := 99.0
 ## Kept for compatibility with existing vehicle resources. FOV progression is
 ## now normalized against get_max_forward_speed() for every vehicle.
 @export var camera_speed_for_max_fov := 16.0

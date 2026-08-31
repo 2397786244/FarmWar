@@ -35,11 +35,10 @@ exit_offset = Vector3(1.35, 0.1, 0)
 
 [resource]
 script = ExtResource("1_vehicle_config")
-supports_common_service_upgrades = true
 forward_axis = Vector3(0, 0, 1)
 seats = Array[ExtResource("2_vehicle_seat")]([SubResource("VehicleSeatConfig_driver"), SubResource("VehicleSeatConfig_passenger_front"), SubResource("VehicleSeatConfig_passenger_rear_left"), SubResource("VehicleSeatConfig_passenger_rear_right")])
 camera_offset = Vector3(0, 2.6, 6.4)
-camera_max_fov = 84.0
+camera_max_fov = 97.0
 camera_speed_for_max_fov = 8.0
 camera_orbit_target_height = 1.0
 collision_size = Vector3(1.7, 1.4, 4.4)

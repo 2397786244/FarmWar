@@ -11,6 +11,7 @@ var _progress: ProgressBar
 func setup(owner_page: LivestockChopPage, index: int) -> void:
 	page = owner_page
 	slot_index = index
+	UITheme.apply(self)
 	custom_minimum_size = Vector2(150.0, 120.0)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -20,6 +21,7 @@ func setup(owner_page: LivestockChopPage, index: int) -> void:
 	_name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_name_label)
 	_progress = ProgressBar.new()
+	UITheme.apply_progress(_progress, UITheme.TONE_SUCCESS)
 	_progress.custom_minimum_size = Vector2(130.0, 24.0)
 	_progress.show_percentage = true
 	box.add_child(_progress)
@@ -41,6 +43,7 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	if item.is_empty() or page == null:
 		return null
 	var preview := Label.new()
+	UITheme.apply(preview)
 	preview.text = str(item.get("display_name", "动物"))
 	preview.z_index = 4096
 	set_drag_preview(preview)

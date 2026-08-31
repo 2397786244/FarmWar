@@ -270,13 +270,6 @@
     {
       "id": "chicken",
       "category": "ingredients",
-      "icon": "res://assets/icons/items/ingredients/chicken.png",
-      "status": "rendered",
-      "error": ""
-    },
-    {
-      "id": "chicken",
-      "category": "ingredients",
       "icon": "res://assets/icons/items/ingredients/chicken_chopped.png",
       "status": "rendered",
       "error": ""
@@ -642,7 +635,7 @@
       "id": "tranquilizer_pistol",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/tranquilizer_pistol.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
@@ -660,17 +653,10 @@
       "error": ""
     },
     {
-      "id": "cargo_shield",
-      "category": "tools",
-      "icon": "res://assets/icons/items/tools/cargo_shield.png",
-      "status": "missing_model",
-      "error": ""
-    },
-    {
       "id": "signal_jam",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/signal_jam.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
@@ -705,21 +691,14 @@
       "id": "rift_book",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/rift_book.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
       "id": "signal_augment",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/signal_augment.png",
-      "status": "missing_model",
-      "error": ""
-    },
-    {
-      "id": "prospect_scanner",
-      "category": "tools",
-      "icon": "res://assets/icons/items/tools/prospect_scanner.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
@@ -747,21 +726,21 @@
       "id": "big_mouth",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/big_mouth.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
       "id": "trap",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/trap.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
       "id": "fake_player",
       "category": "tools",
       "icon": "res://assets/icons/items/tools/fake_player.png",
-      "status": "missing_model",
+      "status": "rendered",
       "error": ""
     },
     {
@@ -777,41 +756,909 @@
       "icon": "res://assets/icons/items/tools/brick.png",
       "status": "rendered",
       "error": ""
-	},
-	{
-	  "id": "animal_chicken",
-	  "category": "tools",
-	  "icon": "res://assets/icons/items/ingredients/chicken.png",
-	  "status": "fallback",
-	  "error": ""
-	},
-	{
-	  "id": "animal_pig",
-	  "category": "tools",
-	  "icon": "res://assets/icons/items/ingredients/pork.png",
-	  "status": "fallback",
-	  "error": ""
-	},
-	{
-	  "id": "animal_angus_cow",
-	  "category": "tools",
-	  "icon": "res://assets/icons/items/ingredients/beef.png",
-	  "status": "fallback",
-	  "error": ""
-	},
-	{
-	  "id": "egg",
-	  "category": "ingredients",
-	  "icon": "res://assets/icons/items/ingredients/chicken.png",
-	  "status": "fallback",
-	  "error": ""
-	},
-	{
-	  "id": "golden_egg",
-	  "category": "ingredients",
-	  "icon": "res://assets/icons/items/ingredients/chicken.png",
-	  "status": "fallback",
-	  "error": ""
+    },
+    {
+      "id": "animal_chicken",
+      "category": "tools",
+      "icon": "res://assets/icons/items/ingredients/chicken.png",
+      "status": "fallback",
+      "error": ""
+    },
+    {
+      "id": "animal_pig",
+      "category": "tools",
+      "icon": "res://assets/icons/items/ingredients/pork.png",
+      "status": "fallback",
+      "error": ""
+    },
+    {
+      "id": "animal_angus_cow",
+      "category": "tools",
+      "icon": "res://assets/icons/items/ingredients/beef.png",
+      "status": "fallback",
+      "error": ""
+    },
+    {
+      "id": "backpack_brown",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/backpack_brown.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "backpack_cotton",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/backpack_cotton.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "backpack_military",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/backpack_military.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_plant_fiber",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_plant_fiber.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_cotton",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_cotton.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_pumpkin",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_pumpkin.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_wood",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_wood.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_engineering_plastic",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_engineering_plastic.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_police_vest",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_police_vest.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chest_armor_military_vest",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/chest_armor_military_vest.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "legwear_plant_fiber",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/legwear_plant_fiber.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "legwear_cotton",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/legwear_cotton.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "legwear_pumpkin",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/legwear_pumpkin.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "legwear_wood",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/legwear_wood.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "legwear_engineering_plastic",
+      "category": "equipment",
+      "icon": "res://assets/icons/items/equipment/legwear_engineering_plastic.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "suppressed_pistol",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/suppressed_pistol.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "shotgun",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/shotgun.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "hunting_rifle",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/hunting_rifle.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "crossbow",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/crossbow.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "long_spear",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/long_spear.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "medieval_shield",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/medieval_shield.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m4",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m4.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47_golden",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47_golden.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47_rusted",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47_rusted.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "mpx",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/mpx.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "future_m4",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/future_m4.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ar15",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ar15.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "area_protector",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/area_protector.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "repair_welder",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/repair_welder.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_shield_shooter",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/vehicle_shield_shooter.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "torch",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/torch.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "empty_bucket",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/empty_bucket.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "water_bucket",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/water_bucket.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "milk_bucket",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/milk_bucket.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ammo_supply_box",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/ammo_supply_box.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "grenade",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/grenade.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tall_brick",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tall_brick.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tall_log_wall",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tall_log_wall.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "tall_mesh_wall",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/tall_mesh_wall.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "wire_mesh_gate",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/wire_mesh_gate.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "chain_link_fence",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/chain_link_fence.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "animal_chicken",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/animal_chicken.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "animal_pig",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/animal_pig.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "animal_angus_cow",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/animal_angus_cow.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "egg",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/egg.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "golden_egg",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/golden_egg.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "log",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/log.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "animal_hide",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/animal_hide.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "rubber_barrel",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/rubber_barrel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "rubber_parts",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/rubber_parts.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "plant_fiber",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/plant_fiber.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "plant_fiber_cloth",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/plant_fiber_cloth.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "iron_ingot",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/iron_ingot.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "copper_ingot",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/copper_ingot.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "steel_plate",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/steel_plate.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "metal_connector",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/metal_connector.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cotton_thread",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/cotton_thread.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cotton_cloth",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/cotton_cloth.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "engineering_plastic_pellets",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/engineering_plastic_pellets.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "hard_drive",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/hard_drive.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "metal_defense_net",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/metal_defense_net.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "electronic_detonator_module",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/electronic_detonator_module.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_roof_cooling_system",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_roof_cooling_system.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_signal_augment",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_signal_augment.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_harvest_reel",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_harvest_reel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_machine_gun",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_machine_gun.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_nitro_boost",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_nitro_boost.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_extended_seat",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_extended_seat.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_roof_headlights",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_roof_headlights.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "steel_ingot",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/steel_ingot.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "lumber",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/lumber.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "copper_wire",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/copper_wire.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "glass_panes",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/glass_panes.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "battery_pack",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/battery_pack.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "bearing",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/bearing.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "gear_set",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/gear_set.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "hydraulic_component",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/hydraulic_component.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "high_performance_motor",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/high_performance_motor.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "vehicle_control_module",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/vehicle_control_module.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "composite_armor_panel",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/composite_armor_panel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "circuit_board",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/circuit_board.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "coal",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/coal.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "iron",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/iron.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "copper",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/copper.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "limestone",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/limestone.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "saltpeter",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/saltpeter.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "stone",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/stone.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "normal_mushroom",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/normal_mushroom.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "bolete_mushroom",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/bolete_mushroom.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "redwhite_mushroom",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/redwhite_mushroom.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "truffle",
+      "category": "ingredients",
+      "icon": "res://assets/icons/items/ingredients/truffle.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "environment_scanner",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/environment_scanner.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "remington870",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/remington870.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "remington870_rusted",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/remington870_rusted.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "remington870_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/remington870_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "p90",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/p90.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "p90_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/p90_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "p90_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/p90_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m17",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m17.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m17_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m17_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m17_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m17_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m17_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m17_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "weapons_display_rack",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/weapons_display_rack.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "suppressed_pistol_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/suppressed_pistol_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "suppressed_pistol_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/suppressed_pistol_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "suppressed_pistol_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/suppressed_pistol_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "shotgun_rusted",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/shotgun_rusted.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "remington870_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/remington870_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "remington870_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/remington870_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "crossbow_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/crossbow_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m4_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m4_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m4_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m4_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "m4_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/m4_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ak47_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ak47_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "mpx_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/mpx_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "mpx_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/mpx_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "mpx_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/mpx_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ar15_hardenedsteel",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ar15_hardenedsteel.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ar15_ruralcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ar15_ruralcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "ar15_snowcamo",
+      "category": "weapons",
+      "icon": "res://assets/icons/items/weapons/ar15_snowcamo.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "coffee_table",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/coffee_table.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "dining_table",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/dining_table.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sofa",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/sofa.png",
+      "status": "rendered",
+      "error": ""
     }
   ]
 }

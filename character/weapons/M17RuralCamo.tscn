@@ -1,0 +1,75 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/tools/other_styles/RuralCamo/M17_RuralCamo.glb" id="1_m17_ruralcamo"]
+[ext_resource type="Script" path="res://src/m17.gd" id="2_m17"]
+[ext_resource type="Script" path="res://src/muzzle_flash_visual.gd" id="3_muzzle_visual"]
+
+[sub_resource type="Curve" id="Curve_m17_ruralcamo"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.25, 0.36906666), -0.78933305, -0.78933305, 0, 0, Vector2(1, 0.09520006), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_m17_ruralcamo"]
+curve = SubResource("Curve_m17_ruralcamo")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_m17_ruralcamo"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 20.0
+damping_min = 10.0
+damping_max = 30.000002
+scale_min = 2.0
+scale_max = 3.0
+scale_curve = SubResource("CurveTexture_m17_ruralcamo")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_m17_ruralcamo"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.7764706, 0.43529412, 0.14117648, 1)
+grow_amount = 1.326
+
+[sub_resource type="QuadMesh" id="QuadMesh_m17_ruralcamo"]
+material = SubResource("StandardMaterial3D_m17_ruralcamo")
+size = Vector2(0.18, 0.18)
+
+[node name="M17RuralCamo" type="Node3D"]
+script = ExtResource("2_m17")
+profile_id = "m17"
+
+[node name="Mesh" parent="." instance=ExtResource("1_m17_ruralcamo")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="Muzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.11705738, -0.6872436)
+gizmo_extents = 0.5
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.061671972)
+visible = false
+emitting = false
+amount = 10
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_m17_ruralcamo")
+draw_pass_1 = SubResource("QuadMesh_m17_ruralcamo")
+
+[node name="MuzzleFlashVisual" type="Node3D" parent="Muzzle"]
+script = ExtResource("3_muzzle_visual")
+flash_scale = 1.05
+
+[node name="Light" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11542438, 0.14060456, -0.62630856)
+
+[node name="FlashlightLight" type="SpotLight3D" parent="Light"]
+visible = false
+light_color = Color(1, 0.97, 0.88, 1)
+light_energy = 5.0
+shadow_enabled = false
+spot_range = 15.0
+spot_angle = 35.0
+spot_attenuation = 1.5

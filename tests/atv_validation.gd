@@ -35,7 +35,7 @@ func _run() -> void:
 	_check(is_equal_approx(vehicle.vehicle_config.max_hp, 500.0), "ATV has 500 HP")
 	_check(is_equal_approx(vehicle.current_hp, 500.0), "ATV starts at 500 HP")
 	_check(is_equal_approx(vehicle.get_max_forward_speed(), 8.0), "ATV maximum speed is 8 m/s")
-	_check(is_equal_approx(vehicle.get_camera_fov_for_speed(8.0), 84.0), "ATV reaches its configured top-speed FOV")
+	_check(is_equal_approx(vehicle.get_camera_fov_for_speed(8.0), 97.0), "ATV reaches its configured top-speed FOV")
 	_check(not vehicle.supports_cargo(), "ATV does not support cargo")
 	_check(vehicle.is_in_group("vehicle_bases"), "ATV registers as a vehicle")
 	_check(vehicle.get_node_or_null("GroundProbe") is RayCast3D, "ground probe exists")

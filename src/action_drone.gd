@@ -180,7 +180,8 @@ func _create_capture_ui() -> void:
 	_recording_label.position = Vector2(-260.0, 24.0)
 	_recording_label.size = Vector2(236.0, 42.0)
 	_recording_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_recording_label.add_theme_color_override("font_color", Color(1.0, 0.12, 0.08))
+	UITheme.apply(_recording_label)
+	UITheme.set_tone(_recording_label, UITheme.TONE_ERROR)
 	_recording_label.add_theme_color_override("font_outline_color", Color(0.05, 0.05, 0.05))
 	_recording_label.add_theme_constant_override("outline_size", 6)
 	_recording_label.add_theme_font_size_override("font_size", 24)
@@ -194,7 +195,8 @@ func _create_capture_ui() -> void:
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_toast_label.add_theme_color_override("font_color", Color.WHITE)
+	UITheme.apply(_toast_label)
+	UITheme.set_tone(_toast_label, UITheme.TONE_INFO)
 	_toast_label.add_theme_color_override("font_outline_color", Color(0.03, 0.03, 0.03))
 	_toast_label.add_theme_constant_override("outline_size", 6)
 	_toast_label.add_theme_font_size_override("font_size", 18)

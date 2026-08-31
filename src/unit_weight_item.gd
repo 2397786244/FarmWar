@@ -135,6 +135,7 @@ static func _identity(item: Dictionary) -> String:
 static func create_drag_preview(item: Dictionary, weight_kg: float) -> Control:
 	var root := Control.new()
 	root.name = "UnitWeightDragPreview"
+	UITheme.apply(root)
 	root.custom_minimum_size = Vector2(76.0, 76.0)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.z_as_relative = false
@@ -142,12 +143,7 @@ static func create_drag_preview(item: Dictionary, weight_kg: float) -> Control:
 	var panel := PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.04, 0.06, 0.07, 0.92)
-	style.border_color = Color("#E7B84D")
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(4)
-	panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(panel, Color(UITheme.COLOR_BG, 0.92), 1, 4)
 	root.add_child(panel)
 	var icon := preload("res://ui/item_icon.tscn").instantiate() as ItemIcon
 	icon.name = "ItemIcon"
@@ -166,7 +162,7 @@ static func create_drag_preview(item: Dictionary, weight_kg: float) -> Control:
 	weight_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	weight_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	weight_label.add_theme_font_size_override("font_size", 14)
-	weight_label.add_theme_color_override("font_color", Color.WHITE)
+	weight_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	weight_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	weight_label.add_theme_constant_override("shadow_offset_x", 2)
 	weight_label.add_theme_constant_override("shadow_offset_y", 2)

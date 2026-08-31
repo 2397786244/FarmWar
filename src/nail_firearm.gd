@@ -66,7 +66,7 @@ func _emit_bullets(
 		center_direction = direction_override.normalized()
 	var bullet_count := maxi(1, CombatBalance.get_int(profile_id, "bullet_count", 1))
 	var spread_degrees := CombatBalance.get_float(profile_id, "spread_degrees")
-	var spread_axis := _get_spread_axis(shooter)
+	var spread_axis := _get_spread_axis(shooter, center_direction)
 	for index in range(bullet_count):
 		var angle_degrees := 0.0
 		if bullet_count > 1:
@@ -138,12 +138,20 @@ func _get_shooter() -> CollisionObject3D:
 func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not is_instance_valid(shooter):
 		return -muzzle.global_transform.basis.z.normalized()
+	var max_distance := CombatBalance.get_float(profile_id, "range")
+	if shooter.has_method("get_shooting_aim_direction"):
+		var shared_direction: Variant = shooter.call(
+			"get_shooting_aim_direction",
+			muzzle.global_position,
+			max_distance
+		)
+		if shared_direction is Vector3 and (shared_direction as Vector3).length_squared() > 0.001:
+			return (shared_direction as Vector3).normalized()
 
 	var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 	if camera == null:
 		return -muzzle.global_transform.basis.z.normalized()
 
-	var max_distance := CombatBalance.get_float(profile_id, "range")
 	var screen_center := camera.get_viewport().get_visible_rect().size * 0.5
 	var ray_origin := camera.project_ray_origin(screen_center)
 	var ray_direction := camera.project_ray_normal(screen_center).normalized()
@@ -158,7 +166,12 @@ func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	return (aim_point - muzzle.global_position).normalized()
 
 
-func _get_spread_axis(shooter: CollisionObject3D) -> Vector3:
+func _get_spread_axis(shooter: CollisionObject3D, center_direction := Vector3.ZERO) -> Vector3:
+	if center_direction.length_squared() > 0.001:
+		var screen_right := center_direction.cross(Vector3.UP).normalized()
+		var spread_axis := screen_right.cross(center_direction).normalized()
+		if spread_axis.length_squared() > 0.001:
+			return spread_axis
 	if is_instance_valid(shooter):
 		var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 		if camera != null:

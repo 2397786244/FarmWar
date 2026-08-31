@@ -3,6 +3,7 @@ class_name GameAuthorityService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
 const PlacementQueryScript = preload("res://src/placement_query.gd")
+const PlacedStorageState = preload("res://src/placed_storage_state.gd")
 const VehicleSpawnCatalogScript = preload("res://src/vehicle_spawn_catalog.gd")
 const VehicleSalesCatalogScript = preload("res://src/vehicle_sales_catalog.gd")
 const VehicleColorCatalogScript = preload("res://src/vehicle_color_catalog.gd")
@@ -132,6 +133,7 @@ const FINITE_AMMO_WEAPON_IDS := {
 	"rubber_revolver": true,
 	"suppressed_pistol": true,
 	"shotgun": true,
+	"remington870": true,
 	"hunting_rifle": true,
 	"crossbow": true,
 	"m4": true,
@@ -139,6 +141,9 @@ const FINITE_AMMO_WEAPON_IDS := {
 	"future_m4": true,
 	"future_mpx": true,
 	"ar15": true,
+	"ak47": true,
+	"p90": true,
+	"m17": true,
 }
 const ENEMY_ONLY_PLACED_TOOL_TYPES := {
 	"tall_brick": true,
@@ -1942,6 +1947,7 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 		existing["current_tool_index"] = int(selection.get("current_tool_index", 0))
 	if selection.has("current_tool_id"):
 		existing["current_tool_id"] = str(selection.get("current_tool_id", ""))
+	existing["m17_flashlight_on"] = bool(existing.get("m17_flashlight_on", false))
 	existing["position"] = selection.get("position", existing.get("position", Vector3.ZERO))
 	existing["velocity"] = existing.get("velocity", Vector3.ZERO)
 	existing["knockback_velocity"] = existing.get("knockback_velocity", Vector3.ZERO)
@@ -2130,6 +2136,10 @@ func _consume_chat_rate_slot(peer_id: int) -> bool:
 
 func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) -> Dictionary:
 	var result := {"ok": false, "peer_id": peer_id, "command": "get", "tick": server_tick}
+	if not _ensure_server_backpack_layout_capacity(state):
+		result["reason"] = "backpack_layout_invalid"
+		_emit_team_chat_system(peer_id, state, "背包布局无效，无法添加物品，请先整理背包。", true)
+		return result
 	var arguments := command.trim_prefix("[get]").strip_edges().trim_suffix(".").strip_edges()
 	var parts := arguments.split(" ", false)
 	if parts.size() == 2 and str(parts[0]).to_lower() == "vehicle":
@@ -2174,7 +2184,7 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 	if not crate_size.is_empty():
 		var sample_crate := CargoCrateData.create_empty(crate_size)
 		var total_crate_weight := float(sample_crate.get("total_weight_kg", 0.0)) * float(item_count)
-		if _server_backpack_entry_count(state) + item_count > _server_bag_capacity(state):
+		if _server_backpack_empty_slot_count(state) < item_count:
 			result["reason"] = "personal_bag_full"
 			_emit_team_chat_system(peer_id, state, "背包格子不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 			return result
@@ -2261,7 +2271,7 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 			result["reason"] = "already_owned"
 			_emit_team_chat_system(peer_id, state, "该装备只能拥有一个：%s" % requested_id)
 			return result
-		if _server_backpack_entry_count(state) >= _server_bag_capacity(state):
+		if _server_backpack_empty_slot_count(state) < 1:
 			result["reason"] = "personal_bag_full"
 			_emit_team_chat_system(peer_id, state, "背包已满，无法添加 %s" % requested_id, true)
 			return result
@@ -2281,7 +2291,7 @@ func _server_debug_get_tool(peer_id: int, state: Dictionary, command: String) ->
 		result["reason"] = "already_owned"
 		_emit_team_chat_system(peer_id, state, "该道具只能拥有一个：%s" % requested_id)
 		return result
-	if _server_backpack_entry_count(state) + item_count > _server_bag_capacity(state):
+	if _server_backpack_empty_slot_count(state) < item_count:
 		result["reason"] = "personal_bag_full"
 		_emit_team_chat_system(peer_id, state, "背包格子不足，无法添加 %d 个 %s" % [item_count, requested_id], true)
 		return result
@@ -2463,6 +2473,50 @@ func _server_bag_weight_capacity_kg(state: Dictionary) -> float:
 	)
 
 
+func _ensure_server_backpack_layout_capacity(state: Dictionary) -> bool:
+	var capacity := _server_bag_capacity(state)
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return false
+	var slots: Array = (slots_value as Array).duplicate(true)
+	# A failed client layout sync can leave the validity flag stale even when the
+	# authoritative slot contents are still usable.  Repair that flag together
+	# with a dimension-only mismatch; the checks below still refuse to discard
+	# any non-empty item outside the currently equipped backpack's capacity.
+	for item_value: Variant in slots:
+		if not item_value is Dictionary:
+			return false
+	if slots.size() < capacity:
+		var old_size := slots.size()
+		slots.resize(capacity)
+		for index in range(old_size, capacity):
+			slots[index] = {}
+	elif slots.size() > capacity:
+		# Never silently delete items when a backpack is removed or exchanged.
+		for index in range(capacity, slots.size()):
+			if slots[index] is Dictionary and not (slots[index] as Dictionary).is_empty():
+				return false
+		slots.resize(capacity)
+	# A dimension-only mismatch is repaired here. Inventory layout validation
+	# still remains authoritative for client-supplied rearrangements.
+	state["backpack_slot_items"] = slots
+	state["backpack_layout_valid"] = true
+	return true
+
+
+func _server_backpack_empty_slot_count(state: Dictionary) -> int:
+	if not _ensure_server_backpack_layout_capacity(state):
+		return 0
+	var slots_value: Variant = state.get("backpack_slot_items", [])
+	if not slots_value is Array:
+		return 0
+	var empty_slots := 0
+	for item_value: Variant in slots_value:
+		if item_value is Dictionary and (item_value as Dictionary).is_empty():
+			empty_slots += 1
+	return empty_slots
+
+
 func _build_initial_backpack_layout(state: Dictionary) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	slots.resize(_server_bag_capacity(state))
@@ -2601,7 +2655,8 @@ func _normalize_ammo_supply_box_inventory_items(state: Dictionary) -> void:
 
 
 func _server_layout_add_item(state: Dictionary, item: Dictionary) -> void:
-	if not bool(state.get("backpack_layout_valid", false)):
+	if not _ensure_server_backpack_layout_capacity(state) \
+			or not bool(state.get("backpack_layout_valid", false)):
 		return
 	var slots_value: Variant = state.get("backpack_slot_items", [])
 	if not slots_value is Array or (slots_value as Array).size() != _server_bag_capacity(state):
@@ -3840,14 +3895,70 @@ func server_select_tool(peer_id: int, tool_index: int, tool_id := "") -> void:
 		return
 	state["current_tool_index"] = clampi(tool_index, -1, PLAYER_HOTBAR_SLOT_COUNT - 1)
 	state["current_tool_id"] = tool_id
+	# Switching tools always starts the selected M17 with its flashlight off.
+	state["m17_flashlight_on"] = false
 	player_states[peer_id] = state
 	reliable_world_event_ready.emit({
 		"type": "tool_selected",
 		"peer_id": peer_id,
 		"tool_index": int(state["current_tool_index"]),
 		"tool_id": tool_id,
+		"m17_flashlight_on": false,
 		"tick": server_tick,
 	})
+
+
+func local_tool_action(peer_id: int, action: Dictionary) -> Dictionary:
+	_sync_local_player_interaction_state(peer_id)
+	return server_tool_action(peer_id, action)
+
+
+func server_tool_action(peer_id: int, action: Dictionary) -> Dictionary:
+	var result := {
+		"ok": false,
+		"peer_id": peer_id,
+		"action": str(action.get("action", "")),
+		"tick": server_tick,
+	}
+	if not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+		return result
+	var state: Dictionary = player_states[peer_id]
+	if float(state.get("respawn_left", 0.0)) > 0.0:
+		result["reason"] = "player_respawning"
+		return result
+	if bool(state.get("ladder_climbing", false)):
+		result["reason"] = "ladder_climbing"
+		return result
+	if bool(state.get("prone", false)):
+		result["reason"] = "prone"
+		return result
+	if not str(state.get("vehicle_id", "")).is_empty() \
+			or not str(state.get("mounted_machine_gun_vehicle_id", "")).is_empty():
+		result["reason"] = "vehicle_active"
+		return result
+	var tool_id := str(state.get("current_tool_id", ""))
+	if not CombatBalance.is_profile(tool_id, "m17"):
+		result["reason"] = "invalid_tool"
+		return result
+	if str(action.get("action", "")) != "set_flashlight":
+		result["reason"] = "unsupported_action"
+		return result
+	var enabled := bool(action.get("enabled", false))
+	state["m17_flashlight_on"] = enabled
+	player_states[peer_id] = state
+	result["ok"] = true
+	result["tool_id"] = tool_id
+	result["enabled"] = enabled
+	bytes_received_this_second += len(JSON.stringify(action).to_utf8_buffer())
+	reliable_world_event_ready.emit({
+		"type": "m17_flashlight_state",
+		"peer_id": peer_id,
+		"tool_id": tool_id,
+		"enabled": enabled,
+		"tick": server_tick,
+	})
+	return result
 
 
 func local_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
@@ -4451,8 +4562,8 @@ func _locomotion_state_for(state: Dictionary, move: Vector2) -> String:
 
 
 func _animation_action_for_tool(tool_id: String) -> String:
-	match tool_id:
-		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "shotgun", "hunting_rifle", "crossbow", "m4", "mpx", "future_m4", "future_mpx", "ar15", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
+	match CombatBalance.resolve_profile_id(tool_id):
+		"rubber_revolver", "flame_gun", "freeze_gun", "nail_gun", "suppressed_pistol", "m17", "shotgun", "remington870", "hunting_rifle", "crossbow", "m4", "mpx", "p90", "future_m4", "future_mpx", "ar15", "ak47", "medicine_pistol", "tranquilizer_pistol", "spicy_blaster", "repair_welder", "vehicle_shield_shooter":
 			return "shooting"
 		"eater", "long_spear":
 			return "melee"
@@ -4464,7 +4575,8 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 	var visual_type := ""
 	var speed := 0.0
 	var lifetime := 0.0
-	match tool_id:
+	var resolved_profile_id := CombatBalance.resolve_profile_id(tool_id)
+	match resolved_profile_id:
 		"wand":
 			# Lightning is an instantaneous hit effect, not a travelling projectile.
 			# Broadcast its confirmed strike endpoints so observers can reproduce the
@@ -4498,10 +4610,10 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 			visual_type = "crossbow_bolt"
 			speed = CombatBalance.get_float("crossbow", "visual_speed")
 			lifetime = CombatBalance.get_float("crossbow", "visual_lifetime")
-		"suppressed_pistol", "shotgun", "hunting_rifle", "m4", "mpx", "future_m4", "future_mpx", "ar15":
+		"suppressed_pistol", "m17", "shotgun", "remington870", "hunting_rifle", "m4", "mpx", "p90", "future_m4", "future_mpx", "ar15", "ak47":
 			visual_type = "nail_bullet"
-			speed = CombatBalance.get_float(tool_id, "visual_speed")
-			lifetime = CombatBalance.get_float(tool_id, "visual_lifetime")
+			speed = CombatBalance.get_float(resolved_profile_id, "visual_speed")
+			lifetime = CombatBalance.get_float(resolved_profile_id, "visual_lifetime")
 		"medicine_pistol":
 			visual_type = "medicine_bullet"
 			speed = CombatBalance.get_float("medicine_pistol", "visual_speed")
@@ -4519,7 +4631,7 @@ func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dic
 		_:
 			return
 	var origin := _vector3_from_value(result.get("origin", Vector3.ZERO))
-	if tool_id == "shotgun":
+	if resolved_profile_id == "shotgun" or resolved_profile_id == "remington870":
 		for pellet_value: Variant in result.get("pellet_results", []):
 			if not pellet_value is Dictionary:
 				continue
@@ -4681,7 +4793,7 @@ func _make_base_tool_result(peer_id: int, tool_id: String, tool_request: Diction
 
 func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> Dictionary:
 	var result := _make_base_tool_result(peer_id, tool_id, tool_request)
-	match tool_id:
+	match CombatBalance.resolve_profile_id(tool_id):
 		"rubber_revolver":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("rubber_revolver", "range"), CombatBalance.get_float("rubber_revolver", "damage"), CombatBalance.get_float("rubber_revolver", "knockback"), "rubber"), true)
 		"flame_gun":
@@ -4690,12 +4802,14 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("freeze_gun", "range"), CombatBalance.get_float("freeze_gun", "damage"), CombatBalance.get_float("freeze_gun", "knockback"), "freeze"), true)
 		"nail_gun":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float("nail_gun", "range"), CombatBalance.get_float("nail_gun", "damage"), CombatBalance.get_float("nail_gun", "knockback"), "nail"), true)
-		"suppressed_pistol", "hunting_rifle", "crossbow", "m4", "mpx", "future_m4", "future_mpx", "ar15":
+		"suppressed_pistol", "m17", "hunting_rifle", "crossbow", "m4", "mpx", "p90", "future_m4", "future_mpx", "ar15", "ak47":
 			result.merge(_server_hitscan(peer_id, tool_request, CombatBalance.get_float(tool_id, "range"), CombatBalance.get_float(tool_id, "damage"), CombatBalance.get_float(tool_id, "knockback"), "nail"), true)
 		"long_spear":
 			result.merge(_server_long_spear(peer_id, tool_request), true)
 		"shotgun":
 			result.merge(_server_shotgun(peer_id, tool_request), true)
+		"remington870":
+			result.merge(_server_pellet_shotgun(peer_id, tool_request, "remington870"), true)
 		"medicine_pistol":
 			result.merge(_server_healing_hitscan(peer_id, tool_request), true)
 		"repair_welder":
@@ -4764,6 +4878,11 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/SignalJam.tscn", "signal_jam"), true)
 		"signal_augment":
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/SignalAugment.tscn", "signal_augment"), true)
+		"environment_scanner":
+			# Detection is private presentation for the requesting player. The
+			# authority still accepts the request here so its 45-second cooldown is
+			# validated identically in single-player, listen-server, and clients.
+			result["local_presentation_only"] = true
 		"survey_rider":
 			result.merge(_server_place_vehicle_scene(peer_id, tool_request, tool_id, "res://character/weapons/SurveyRider.tscn"), true)
 		"field_kitchen":
@@ -4772,6 +4891,12 @@ func _execute_tool(peer_id: int, tool_id: String, tool_request: Dictionary) -> D
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/laptop.tscn", "laptop"), true)
 		"desktop":
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/desktop.tscn", "desktop"), true)
+		"coffee_table":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/coffee_table.tscn", "coffee_table"), true)
+		"dining_table":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/dining_table.tscn", "dining_table"), true)
+		"sofa":
+			result.merge(_server_place_free_scene(peer_id, tool_request, "res://facilities/interior/sofa.tscn", "sofa"), true)
 		"auto_cooker":
 			result.merge(_server_place_free_scene(peer_id, tool_request, "res://character/weapons/AutomaticCook.tscn", "auto_cooker"), true)
 		"trap":
@@ -5047,7 +5172,7 @@ func server_livestock_pickup_action(peer_id: int, action: Dictionary) -> Diction
 	if definition.is_empty():
 		return _livestock_pickup_failure(peer_id, result, "livestock_item_missing", "动物背包物品未注册")
 	var weight_kg := float(definition.get("weight_kg", 0.0))
-	if _server_backpack_entry_count(state) >= _server_bag_capacity(state):
+	if _server_backpack_empty_slot_count(state) < 1:
 		return _livestock_pickup_failure(peer_id, result, "personal_bag_full", "背包格子已满")
 	if _personal_ingredient_total_weight(state) + weight_kg > _server_bag_weight_capacity_kg(state) + 0.001:
 		return _livestock_pickup_failure(peer_id, result, "personal_bag_overweight", "背包载重不足")
@@ -5440,7 +5565,7 @@ func _personal_ingredient_has_available_slot(
 	var values: Variant = state.get("personal_ingredients", {})
 	var key := _personal_ingredient_key(ingredient_id, is_chopped)
 	return (values is Dictionary and float((values as Dictionary).get(key, 0.0)) > 0.0001) \
-		or _server_backpack_entry_count(state) < _server_bag_capacity(state)
+		or _server_backpack_empty_slot_count(state) > 0
 
 
 func _emit_personal_inventory_grant(peer_id: int, entries: Array[Dictionary]) -> void:
@@ -8106,7 +8231,131 @@ func _reserve_ready_ingredient_pickups() -> void:
 		return
 	for team in EventBoard.VALID_TEAMS:
 		reserve_ingredient_pickups_for_team(str(team))
+func server_weapon_display_rack_action(peer_id: int, action: Dictionary) -> Dictionary:
+	var result := {
+		"ok": false, "peer_id": peer_id, "action": "toggle_slot",
+		"station_kind": "weapon_display_rack",
+		"rack_id": str(action.get("rack_id", "")),
+		"slot_index": int(action.get("slot_index", -1)), "tick": server_tick,
+	}
+	if not player_states.has(peer_id):
+		result["reason"] = "unknown_player"
+		return _emit_weapon_display_rack_result(result)
+	var state: Dictionary = player_states[peer_id]
+	var rack := _weapon_display_rack_from_action(action)
+	var slot_index := int(action.get("slot_index", -1))
+	if rack == null:
+		result["reason"] = "unknown_rack"
+		return _emit_weapon_display_rack_result(result)
+	if slot_index < 0 or slot_index >= 3:
+		result["reason"] = "invalid_slot"
+		return _emit_weapon_display_rack_result(result)
+	if not _can_server_interact_with_position(state, rack.global_position, 4.5):
+		result["reason"] = "rack_out_of_range"
+		return _emit_weapon_display_rack_result(result)
+	var current_item: Dictionary = rack.call("get_rack_slot_item", slot_index)
+	if action.has("expected_occupied") \
+			and bool(action.get("expected_occupied", false)) != not current_item.is_empty():
+		result["reason"] = "rack_slot_changed"
+		return _emit_weapon_display_rack_result(result)
+	if current_item.is_empty():
+		var backpack_slot := int(action.get("backpack_slot", state.get("current_tool_index", -1)))
+		if backpack_slot != int(state.get("current_tool_index", backpack_slot)):
+			result["reason"] = "selected_slot_changed"
+			return _emit_weapon_display_rack_result(result)
+		var slots_value: Variant = state.get("backpack_slot_items", [])
+		var selected_item: Dictionary = {}
+		if slots_value is Array and backpack_slot >= 0 and backpack_slot < (slots_value as Array).size():
+			var selected_value: Variant = (slots_value as Array)[backpack_slot]
+			if selected_value is Dictionary:
+				selected_item = (selected_value as Dictionary).duplicate(true)
+		var tool_id := str(selected_item.get("tool_id", ""))
+		var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {})
+		if tool_id.is_empty() or str(definition.get("category", "")) != "shooting":
+			result["reason"] = "selected_item_not_shooting_weapon"
+			return _emit_weapon_display_rack_result(result)
+		var consumed := _consume_dropped_item_from_player(state, {
+			"kind": str(selected_item.get("kind", "tool")),
+			"tool_id": tool_id, "slot_index": backpack_slot,
+		})
+		if consumed.is_empty():
+			result["reason"] = "weapon_changed"
+			return _emit_weapon_display_rack_result(result)
+		if not bool(rack.call("set_rack_slot_item", slot_index, consumed)):
+			_restore_dropped_item_to_player(state, consumed)
+			result["reason"] = "rack_slot_changed"
+			return _emit_weapon_display_rack_result(result)
+		_clear_invalid_current_selection(state, _typed_dictionary_array(state.get("backpack_slot_items", []) as Array))
+		result["operation"] = "put"
+		result["item"] = consumed.duplicate(true)
+	else:
+		if not _can_add_dropped_item_to_player(state, current_item):
+			result["reason"] = "personal_bag_full"
+			return _emit_weapon_display_rack_result(result)
+		_restore_dropped_item_to_player(state, current_item)
+		if not bool(rack.call("set_rack_slot_item", slot_index, {})):
+			result["reason"] = "rack_slot_changed"
+			return _emit_weapon_display_rack_result(result)
+		result["operation"] = "take"
+		result["item"] = current_item.duplicate(true)
+	player_states[peer_id] = state
+	_emit_personal_inventory_slots(peer_id, state)
+	var rack_id := str(rack.call("get_network_device_id"))
+	var rack_is_map_static := str(rack.get_meta("map_editor_category", "")) == "facility" \
+			or bool(rack.get_meta("map_static", false))
+	if not placed_tool_states.has(rack_id) and rack_is_map_static:
+		register_map_placed_tool(rack, "weapons_display_rack", rack_id, str(state.get("team", "")))
+	var placed_state: Dictionary = placed_tool_states.get(rack_id, {})
+	placed_state["tool_id"] = rack_id
+	placed_state["device_id"] = rack_id
+	placed_state["tool_name"] = "weapons_display_rack"
+	placed_state["path"] = str(rack.get_path())
+	if str(placed_state.get("scene_path", "")).is_empty():
+		placed_state["scene_path"] = rack.scene_file_path
+	placed_state["position"] = rack.global_position
+	placed_state["yaw"] = rack.rotation.y
+	if rack_is_map_static:
+		placed_state["free_placement"] = false
+		placed_state["map_static"] = true
+	else:
+		placed_state["free_placement"] = bool(placed_state.get("free_placement", true))
+	var rack_visual_state: Dictionary = rack.call("get_network_visual_state")
+	placed_state["rack_slots"] = rack_visual_state.get("rack_slots", []).duplicate(true)
+	var rack_storage_state := PlacedStorageState.capture(rack)
+	if not rack_storage_state.is_empty():
+		placed_state["storage_state"] = rack_storage_state
+	placed_state["indestructible"] = true
+	placed_tool_states[rack_id] = placed_state
+	result["rack_id"] = rack_id
+	result["rack_state"] = rack_visual_state
+	result["player_slots"] = (state.get("backpack_slot_items", []) as Array).duplicate(true)
+	result["ok"] = true
+	inventory_state_ready.emit(_build_inventory_state())
+	return _emit_weapon_display_rack_result(result)
+
+
+func _weapon_display_rack_from_action(action: Dictionary) -> Node3D:
+	var rack_id := str(action.get("rack_id", ""))
+	var candidate: Node = null
+	if not rack_id.is_empty():
+		candidate = _node_for_tool_ref({"kind": "placed", "id": rack_id})
+	if candidate == null:
+		var station_path := str(action.get("station_path", ""))
+		if not station_path.is_empty():
+			candidate = get_tree().root.get_node_or_null(NodePath(station_path))
+	if candidate is Node3D and candidate.has_method("get_rack_slot_item") and candidate.has_method("set_rack_slot_item"):
+		return candidate as Node3D
+	return null
+
+
+func _emit_weapon_display_rack_result(result: Dictionary) -> Dictionary:
+	reliable_world_event_ready.emit({"type": "weapon_display_rack_action_result", "data": result, "tick": server_tick})
+	return result
+
+
 func server_ingredient_pickup_action(peer_id: int, action: Dictionary) -> Dictionary:
+	if str(action.get("station_kind", "")) == "weapon_display_rack":
+		return server_weapon_display_rack_action(peer_id, action)
 	if str(action.get("station_kind", "")) == "computer":
 		return server_computer_action(peer_id, action)
 	if str(action.get("station_kind", "")) == "livestock":
@@ -10834,7 +11083,7 @@ func _restore_dropped_item_to_player(state: Dictionary, item: Dictionary) -> voi
 					var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 					ammo_states[tool_id] = {
 						"ammo_in_mag": clampi(int(item.get("ammo_in_mag", _weapon_magazine_size(tool_id))), 0, _weapon_magazine_size(tool_id)),
-						"reserve_ammo": 0,
+						"reserve_ammo": maxi(0, int(item.get("reserve_ammo", 0))),
 						"reload_remaining": 0.0,
 						"reload_duration": 0.0,
 						"reload_ammo_amount": 0,
@@ -10877,19 +11126,19 @@ func _can_add_dropped_item_to_player(state: Dictionary, item: Dictionary) -> boo
 	# delivery.  Callers use false to fall back to a nearby dropped item, which
 	# keeps a completed workbench output recoverable until the backpack state is
 	# repaired by the next authoritative sync.
-	if not bool(state.get("backpack_layout_valid", false)):
+	if not _ensure_server_backpack_layout_capacity(state):
 		return false
 	if str(item.get("kind", "")) == "tool" or str(item.get("kind", "")) == "weapon":
 		var tool_id := str(item.get("tool_id", ""))
 		return (not _player_has_tool(state, tool_id) or _tool_allows_multiple(tool_id)) \
-			and _server_backpack_entry_count(state) < _server_bag_capacity(state) \
+			and _server_backpack_empty_slot_count(state) >= 1 \
 			and _personal_ingredient_total_weight(state) + float(item.get("weight_kg", 0.0)) \
 				<= _server_bag_weight_capacity_kg(state) + 0.001
 	if str(item.get("kind", "")) == "equipment":
 		var equipment_id := str(item.get("equipment_id", ""))
 		return not (state.get("owned_equipment_ids", []) as Array).has(equipment_id) \
 				and not EquipmentCatalog.get_definition(equipment_id).is_empty() \
-				and _server_backpack_entry_count(state) < _server_bag_capacity(state)
+				and _server_backpack_empty_slot_count(state) >= 1
 	if str(item.get("kind", "")) == "ingredient":
 		return _server_can_add_personal_ingredient(
 			state,
@@ -10905,7 +11154,7 @@ func _can_add_dropped_item_to_player(state: Dictionary, item: Dictionary) -> boo
 			float(item.get("weight_kg", 0.0))
 		)
 	if str(item.get("kind", "")) == "cargo_crate":
-		return _server_backpack_entry_count(state) < _server_bag_capacity(state) \
+		return _server_backpack_empty_slot_count(state) >= 1 \
 			and _personal_ingredient_total_weight(state) + float(item.get("total_weight_kg", 0.0)) <= _server_bag_weight_capacity_kg(state) + 0.001
 	return false
 
@@ -11475,7 +11724,8 @@ func _server_tool_cooldown(tool_id: String) -> float:
 
 
 func _uses_finite_ammo(tool_id: String) -> bool:
-	return FINITE_AMMO_WEAPON_IDS.has(tool_id)
+	var resolved_profile_id := CombatBalance.resolve_profile_id(tool_id)
+	return FINITE_AMMO_WEAPON_IDS.has(tool_id) or FINITE_AMMO_WEAPON_IDS.has(resolved_profile_id)
 
 
 func _weapon_magazine_size(tool_id: String) -> int:
@@ -12258,6 +12508,14 @@ func _emit_ai_hitscan_visual(
 
 
 func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
+	return _server_pellet_shotgun(peer_id, tool_request, "shotgun")
+
+
+func _server_pellet_shotgun(
+	peer_id: int,
+	tool_request: Dictionary,
+	profile_id: String
+) -> Dictionary:
 	var center_direction := _vector3_from_value(
 		tool_request.get("direction", Vector3.FORWARD)
 	).normalized()
@@ -12265,10 +12523,10 @@ func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		center_direction = Vector3.FORWARD
 	var bullet_count := maxi(
 		1,
-		CombatBalance.get_int("shotgun", "bullet_count", 6)
+		CombatBalance.get_int(profile_id, "bullet_count", 6)
 	)
 	var spread_degrees := CombatBalance.get_float(
-		"shotgun", "spread_degrees", 2.0
+		profile_id, "spread_degrees", 2.0
 	)
 	var screen_right := center_direction.cross(Vector3.UP).normalized()
 	var spread_axis := screen_right.cross(center_direction).normalized()
@@ -12299,9 +12557,9 @@ func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		var pellet := _server_hitscan(
 			peer_id,
 			pellet_request,
-			CombatBalance.get_float("shotgun", "range"),
-			CombatBalance.get_float("shotgun", "damage"),
-			CombatBalance.get_float("shotgun", "knockback"),
+			CombatBalance.get_float(profile_id, "range"),
+			CombatBalance.get_float(profile_id, "damage"),
+			CombatBalance.get_float(profile_id, "knockback"),
 			"nail",
 			false
 		)
@@ -12325,7 +12583,7 @@ func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		"hit_position": summary_hit_position,
 		"effect": "nail",
 		"damage": total_damage,
-		"knockback": CombatBalance.get_float("shotgun", "knockback"),
+		"knockback": CombatBalance.get_float(profile_id, "knockback"),
 		"pellet_results": pellet_results,
 	}
 
@@ -12772,10 +13030,13 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 	var target_position := _vector3_from_value(tool_request.get("target_position", Vector3.ZERO))
 	var position := target_position if target_position != Vector3.ZERO else _vector3_from_value(hit.get("position", player_position + direction * 4.0))
 	var surface_normal := Vector3.ZERO
+	var tabletop_support: Node3D = null
 	if surface_mode and hit.get("position") is Vector3:
 		position = hit.get("position") as Vector3
 		var hit_normal: Variant = hit.get("normal", Vector3.UP)
 		surface_normal = hit_normal as Vector3 if hit_normal is Vector3 else Vector3.UP
+		if bool(definition.get("tabletop_placeable", false)):
+			tabletop_support = PlacementQueryScript.tabletop_support_for_collider(hit.get("collider", null))
 	if position.distance_to(player_position) > 10.0:
 		position = player_position + direction * 4.0
 	var wall_snap := _resolve_authoritative_wall_snap(device_type, scene_path, position, placement_yaw)
@@ -12795,7 +13056,8 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 			placement_yaw,
 			wall_snap_exceptions,
 			device_type,
-			surface_normal
+			surface_normal,
+			tabletop_support
 		)
 		if not bool(placement.get("ok", false)):
 			return {
@@ -12865,6 +13127,15 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 		placed_state["device_id"] = device_id
 		placed_state["scene_path"] = scene_path
 		placed_state["free_placement"] = true
+		if _node_has_property(node, "indestructible") and bool(node.get("indestructible")):
+			placed_state["indestructible"] = true
+		if node.has_method("get_network_visual_state"):
+			var initial_visual_state: Variant = node.call("get_network_visual_state")
+			if initial_visual_state is Dictionary and (initial_visual_state as Dictionary).has("rack_slots"):
+				placed_state["rack_slots"] = (initial_visual_state as Dictionary).get("rack_slots", []).duplicate(true)
+		var initial_storage_state := PlacedStorageState.capture(node)
+		if not initial_storage_state.is_empty():
+			placed_state["storage_state"] = initial_storage_state
 		if node is WireMeshGate:
 			placed_state["is_open"] = (node as WireMeshGate).is_open
 			placed_state["open_angle_degrees"] = (node as WireMeshGate).open_angle_degrees
@@ -13356,10 +13627,14 @@ func register_map_placed_tool(
 		"respawn_seconds": maxf(1.0, _node_float_property(node, "respawn_seconds", 60.0)),
 		"respawn_left": 0.0,
 		"destroyed": false,
+		"indestructible": bool(_node_has_property(node, "indestructible") and node.get("indestructible")),
 	}
 	if node is WireMeshGate:
 		placed_tool_states[tool_id]["is_open"] = (node as WireMeshGate).is_open
 		placed_tool_states[tool_id]["open_angle_degrees"] = (node as WireMeshGate).open_angle_degrees
+	var initial_storage_state := PlacedStorageState.capture(node)
+	if not initial_storage_state.is_empty():
+		placed_tool_states[tool_id]["storage_state"] = initial_storage_state
 	if not PlacementQueryScript.wall_family_for_tool(tool_name).is_empty():
 		placed_tool_states[tool_id]["wall_half_length"] = \
 			PlacementQueryScript.wall_half_length_for_node(node)
@@ -13385,6 +13660,9 @@ func register_map_cargo_crate(crate: CargoCrateGround) -> bool:
 		"cooldown_left": 0.0, "scene_path": str(crate.get_crate_data().get("model_path", "")),
 		"free_placement": true, "crate_data": crate.get_crate_data(),
 	}, true)
+	var storage_state := PlacedStorageState.capture(crate)
+	if not storage_state.is_empty():
+		existing["storage_state"] = storage_state
 	placed_tool_states[crate_id] = existing
 	return true
 
@@ -13693,7 +13971,8 @@ func _validate_free_placement(
 	placement_yaw: float,
 	additional_exceptions: Array = [],
 	tool_id := "",
-	surface_normal := Vector3.ZERO
+	surface_normal := Vector3.ZERO,
+	tabletop_support: Node3D = null
 ) -> Dictionary:
 	_free_placement_debug("request peer=%d scene=%s requested=%s" % [peer_id, scene_path, requested_position])
 	if VehicleSpawnCatalogScript.is_vehicle_scene_path(scene_path):
@@ -13738,7 +14017,22 @@ func _validate_free_placement(
 	if _tool_allows_support_object_overlap(tool_id):
 		blocking_mask = SUPPORT_OVERLAP_BLOCKING_MASK
 	var placement: Dictionary
-	if surface_normal.length_squared() > 0.001:
+	if tabletop_support != null and bool(authoritative_tool_definitions.get(tool_id, {}).get("tabletop_placeable", false)):
+		placement = PlacementQueryScript.resolve_tabletop_surface_placement(
+			world_3d,
+			tabletop_support,
+			requested_position,
+			player_position,
+			placement_yaw,
+			collision_shape.shape,
+			collision_shape.transform,
+			blocking_mask,
+			exceptions,
+			surface_normal,
+			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
+			FREE_PLACEMENT_CLEARANCE
+		)
+	elif surface_normal.length_squared() > 0.001:
 		placement = PlacementQueryScript.resolve_surface_placement(
 			world_3d,
 			requested_position,
@@ -15736,6 +16030,7 @@ func _begin_player_respawn(peer_id: int) -> void:
 	state["spicy_remaining"] = 0.0
 	state["spicy_dps"] = 0.0
 	state["labeled_remaining"] = 0.0
+	state["m17_flashlight_on"] = false
 	state["respawn_left"] = PLAYER_RESPAWN_SECONDS
 	player_states[peer_id] = state
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
@@ -16011,6 +16306,7 @@ func _respawn_player(peer_id: int) -> void:
 	state["ladder_climbing"] = false
 	state["ladder_tower_id"] = ""
 	state["ladder_climb_direction"] = 1.0
+	state["m17_flashlight_on"] = false
 	player_states[peer_id] = state
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CharacterBody3D:
@@ -16534,6 +16830,8 @@ func _damage_registered_tool_ref(
 		return false
 	var state := _state_dictionary_for_tool_ref(tool_ref)
 	if state.is_empty():
+		return false
+	if bool(state.get("indestructible", false)):
 		return false
 	var team := str(state.get("team", ""))
 	var confirmation_team := attacker_team if hit_confirmation_team.is_empty() else hit_confirmation_team
@@ -17976,7 +18274,7 @@ func _server_can_add_personal_ingredient(state: Dictionary, ingredient_id: Strin
 	var values: Variant = state.get("personal_ingredients", {})
 	var key := _personal_ingredient_key(ingredient_id, is_chopped)
 	return (values is Dictionary and float((values as Dictionary).get(key, 0.0)) > 0.0001) \
-		or _server_backpack_entry_count(state) < _server_bag_capacity(state)
+		or _server_backpack_empty_slot_count(state) > 0
 
 
 func _server_add_personal_ingredient(
@@ -18078,7 +18376,7 @@ func _server_can_add_personal_dish(state: Dictionary, dish_id: String, servings:
 		return false
 	var values: Variant = state.get("personal_dishes", {})
 	return (values is Dictionary and int((values as Dictionary).get(dish_id, 0)) > 0) \
-		or _server_backpack_entry_count(state) < _server_bag_capacity(state)
+		or _server_backpack_empty_slot_count(state) > 0
 
 
 func apply_world_snapshot(snapshot: Dictionary) -> void:
@@ -18471,6 +18769,7 @@ func _build_world_snapshot() -> Dictionary:
 			"labeled_remaining": float(state.get("labeled_remaining", 0.0)),
 			"current_tool_index": int(state.get("current_tool_index", 0)),
 			"current_tool_id": str(state.get("current_tool_id", "")),
+			"m17_flashlight_on": bool(state.get("m17_flashlight_on", false)),
 			"selected_weapon_ammo": selected_weapon_ammo,
 			"selected_shield_hp": selected_shield_hp,
 			"last_input_seq": int(state.get("last_input_seq", 0)),
@@ -18617,8 +18916,15 @@ func _build_world_snapshot() -> Dictionary:
 					"lifetime": 0.0,
 				}
 			public_tool["anchor_flight"] = flight_state
+		var storage_state := PlacedStorageState.capture(node)
+		if not storage_state.is_empty():
+			public_tool["storage_state"] = storage_state
 		if node != null and node.has_method("get_network_visual_state"):
 			public_tool["visual_state"] = node.call("get_network_visual_state")
+		elif not storage_state.is_empty():
+			public_tool["visual_state"] = storage_state
+		elif tool.has("rack_slots"):
+			public_tool["visual_state"] = {"rack_slots": tool.get("rack_slots", []).duplicate(true)}
 		public_placed_tools.append(public_tool)
 	var public_wild_animals: Array[Dictionary] = []
 	for animal in get_tree().get_nodes_in_group("wild_animals"):

@@ -26,6 +26,7 @@ var _built := false
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	default_values = _make_default_values()
 	_build_ui()
 	visible = false
@@ -119,12 +120,7 @@ func _build_ui() -> void:
 	window.mouse_filter = Control.MOUSE_FILTER_STOP
 	window.add_theme_stylebox_override(
 		"panel",
-		_make_style_box(
-			Color(0.96, 0.98, 1.0, 0.97),
-			Color(0.40, 0.58, 0.70, 0.95),
-			2,
-			14
-		)
+		_make_style_box(UITheme.COLOR_PANEL, UITheme.COLOR_BORDER, 2, 4)
 	)
 	dimmer.add_child(window)
 
@@ -149,7 +145,7 @@ func _build_ui() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 28)
-	title.add_theme_color_override("font_color", Color(0.09, 0.16, 0.22, 1.0))
+	title.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	header.add_child(title)
 
 	_close_button = _make_button("关闭", Vector2(112.0, 42.0), false)
@@ -163,23 +159,23 @@ func _build_ui() -> void:
 	tabs.add_theme_font_size_override("font_size", 20)
 	tabs.add_theme_stylebox_override(
 		"tab_selected",
-		_make_style_box(Color(0.86, 0.94, 0.97, 1.0), Color(0.35, 0.58, 0.70, 1.0), 1, 7)
+		_make_style_box(UITheme.COLOR_SELECTED, UITheme.COLOR_TEXT, 1, 4)
 	)
 	tabs.add_theme_stylebox_override(
 		"tab_unselected",
-		_make_style_box(Color(0.93, 0.96, 0.98, 1.0), Color(0.72, 0.80, 0.85, 1.0), 1, 7)
+		_make_style_box(UITheme.COLOR_CONTROL, UITheme.COLOR_BORDER, 1, 4)
 	)
 	tabs.add_theme_stylebox_override(
 		"tab_hovered",
-		_make_style_box(Color(0.90, 0.96, 0.98, 1.0), Color(0.52, 0.70, 0.78, 1.0), 1, 7)
+		_make_style_box(UITheme.COLOR_HOVER, UITheme.COLOR_BORDER, 1, 4)
 	)
 	tabs.add_theme_stylebox_override(
 		"tabbar_background",
-		_make_style_box(Color(0.90, 0.94, 0.96, 0.72), Color(0.76, 0.83, 0.87, 1.0), 1, 7)
+		_make_style_box(UITheme.COLOR_PANEL, UITheme.COLOR_BORDER, 1, 4)
 	)
-	tabs.add_theme_color_override("font_selected_color", Color(0.08, 0.27, 0.37, 1.0))
-	tabs.add_theme_color_override("font_unselected_color", Color(0.25, 0.35, 0.41, 1.0))
-	tabs.add_theme_color_override("font_hovered_color", Color(0.10, 0.30, 0.39, 1.0))
+	tabs.add_theme_color_override("font_selected_color", UITheme.COLOR_TEXT)
+	tabs.add_theme_color_override("font_unselected_color", UITheme.COLOR_MUTED)
+	tabs.add_theme_color_override("font_hovered_color", UITheme.COLOR_TEXT)
 	content.add_child(tabs)
 
 	var screen_page := ScrollContainer.new()
@@ -326,7 +322,7 @@ func _build_ui() -> void:
 	_status_label.text = "修改会立即生效"
 	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_status_label.add_theme_color_override("font_color", Color(0.32, 0.42, 0.50, 1.0))
+	_status_label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	_status_label.add_theme_font_size_override("font_size", 16)
 	footer.add_child(_status_label)
 
@@ -341,13 +337,13 @@ func _build_ui() -> void:
 
 func _add_section_title(parent: VBoxContainer, text: String) -> void:
 	var separator := HSeparator.new()
-	separator.add_theme_color_override("color", Color(0.70, 0.78, 0.83, 1.0))
+	separator.add_theme_color_override("color", UITheme.COLOR_BORDER)
 	parent.add_child(separator)
 
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 19)
-	label.add_theme_color_override("font_color", Color(0.10, 0.28, 0.39, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	parent.add_child(label)
 
 
@@ -370,13 +366,13 @@ func _add_toggle_row(
 
 	var label := Label.new()
 	label.text = label_text
-	label.add_theme_color_override("font_color", Color(0.14, 0.20, 0.25, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	label.add_theme_font_size_override("font_size", 17)
 	text_column.add_child(label)
 
 	var hint := Label.new()
 	hint.text = hint_text
-	hint.add_theme_color_override("font_color", Color(0.38, 0.48, 0.55, 1.0))
+	hint.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	hint.add_theme_font_size_override("font_size", 13)
 	text_column.add_child(hint)
 
@@ -387,8 +383,7 @@ func _add_toggle_row(
 	toggle.focus_mode = Control.FOCUS_ALL
 	toggle.button_pressed = float(default_values.get(parameter, 0.0)) > 0.5
 	toggle.add_theme_font_size_override("font_size", 16)
-	toggle.add_theme_color_override("font_color", Color(0.10, 0.25, 0.33, 1.0))
-	toggle.add_theme_color_override("font_hover_color", Color(0.06, 0.18, 0.25, 1.0))
+	UITheme.apply_button(toggle)
 	toggle.tooltip_text = hint_text
 	row.add_child(toggle)
 	if render_setting:
@@ -431,7 +426,7 @@ func _add_slider_row(
 	label.text = label_text
 	label.custom_minimum_size = Vector2(190.0, 0.0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(0.14, 0.20, 0.25, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	label.add_theme_font_size_override("font_size", 17)
 	row.add_child(label)
 
@@ -449,7 +444,7 @@ func _add_slider_row(
 	value_label.custom_minimum_size = Vector2(72.0, 0.0)
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	value_label.add_theme_color_override("font_color", Color(0.10, 0.33, 0.46, 1.0))
+	value_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	value_label.add_theme_font_size_override("font_size", 16)
 	row.add_child(value_label)
 
@@ -479,7 +474,7 @@ func _add_render_option_row(
 	label.text = label_text
 	label.custom_minimum_size = Vector2(190.0, 0.0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(0.14, 0.20, 0.25, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	label.add_theme_font_size_override("font_size", 17)
 	row.add_child(label)
 
@@ -523,7 +518,7 @@ func _add_render_slider_row(
 	label.text = label_text
 	label.custom_minimum_size = Vector2(190.0, 0.0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(0.14, 0.20, 0.25, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	label.add_theme_font_size_override("font_size", 17)
 	row.add_child(label)
 
@@ -541,7 +536,7 @@ func _add_render_slider_row(
 	value_label.custom_minimum_size = Vector2(72.0, 0.0)
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	value_label.add_theme_color_override("font_color", Color(0.10, 0.33, 0.46, 1.0))
+	value_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	value_label.add_theme_font_size_override("font_size", 16)
 	row.add_child(value_label)
 
@@ -565,7 +560,7 @@ func _add_color_row(parent: VBoxContainer, parameter: String, label_text: String
 	label.text = label_text
 	label.custom_minimum_size = Vector2(190.0, 0.0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(0.14, 0.20, 0.25, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	label.add_theme_font_size_override("font_size", 17)
 	row.add_child(label)
 
@@ -595,7 +590,7 @@ func _add_placeholder_tab(tabs: TabContainer, title: String, description: String
 
 	var label := Label.new()
 	label.text = description
-	label.add_theme_color_override("font_color", Color(0.28, 0.38, 0.45, 1.0))
+	label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	label.add_theme_font_size_override("font_size", 20)
 	page.add_child(label)
 
@@ -606,58 +601,12 @@ func _make_button(text: String, minimum_size: Vector2, accent: bool) -> Button:
 	button.custom_minimum_size = minimum_size
 	button.focus_mode = Control.FOCUS_ALL
 	button.add_theme_font_size_override("font_size", 17)
-	button.add_theme_stylebox_override(
-		"normal",
-		_make_style_box(
-			Color(0.83, 0.89, 0.93, 1.0) if not accent else Color(0.17, 0.45, 0.62, 1.0),
-			Color(0.52, 0.65, 0.73, 1.0),
-			1,
-			7
-		)
-	)
-	button.add_theme_stylebox_override(
-		"hover",
-		_make_style_box(
-			Color(0.72, 0.84, 0.90, 1.0) if not accent else Color(0.24, 0.55, 0.72, 1.0),
-			Color(0.36, 0.56, 0.67, 1.0),
-			1,
-			7
-		)
-	)
-	button.add_theme_stylebox_override(
-		"pressed",
-		_make_style_box(
-			Color(0.64, 0.78, 0.86, 1.0) if not accent else Color(0.12, 0.37, 0.52, 1.0),
-			Color(0.30, 0.50, 0.62, 1.0),
-			1,
-			7
-		)
-	)
-	button.add_theme_color_override(
-		"font_color",
-		Color(0.10, 0.18, 0.24, 1.0) if not accent else Color.WHITE
-	)
-	button.add_theme_color_override("font_hover_color", Color(0.06, 0.15, 0.21, 1.0) if not accent else Color.WHITE)
+	UITheme.apply_button(button)
 	return button
 
 
 func _make_style_box(background: Color, border: Color, border_width: int, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = background
-	style.border_color = border
-	style.border_width_left = border_width
-	style.border_width_top = border_width
-	style.border_width_right = border_width
-	style.border_width_bottom = border_width
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = 12.0
-	style.content_margin_top = 6.0
-	style.content_margin_right = 12.0
-	style.content_margin_bottom = 6.0
-	return style
+	return UITheme.make_style(background, border, border_width, radius)
 
 
 func _resolve_shader_material() -> void:

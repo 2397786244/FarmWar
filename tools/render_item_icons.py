@@ -16,8 +16,16 @@ from mathutils import Vector
 
 
 DEFAULT_SIZE = 128
-GLB_PATTERN = re.compile(r'path="res://([^"]+\.glb)"', re.IGNORECASE)
-SCENE_PATTERN = re.compile(r'path="res://([^"]+\.tscn)"', re.IGNORECASE)
+GLB_PATTERN = re.compile(r'path\s*=\s*"res://([^"]+\.glb)"', re.IGNORECASE)
+SCENE_PATTERN = re.compile(r'path\s*=\s*"res://([^"]+\.tscn)"', re.IGNORECASE)
+# These GLBs were authored with their display axis perpendicular to the
+# project-standard icon camera. Runtime scenes correct the axis themselves;
+# item icons use this import-only rotation and leave the assets untouched.
+ICON_IMPORT_X_ROTATIONS = {
+    "coffee_table": -90.0,
+    "dining_table": -90.0,
+    "sofa": -90.0,
+}
 
 
 def parse_args():
@@ -27,6 +35,7 @@ def parse_args():
     parser.add_argument("--output", default="assets/icons/items")
     parser.add_argument("--size", type=int, default=DEFAULT_SIZE)
     parser.add_argument("--only", default="", help="Comma-separated item ids.")
+    parser.add_argument("--exclude", default="", help="Comma-separated item ids to skip.")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--samples", type=int, default=32)
     return parser.parse_args(argv)
@@ -46,9 +55,12 @@ def res_path(project, value):
 
 
 def first_glb_from_scene(project, scene_path, visited=None):
-    visited = visited or set()
+    if visited is None:
+        visited = set()
     if scene_path is None or scene_path in visited or not scene_path.is_file():
         return None
+    if scene_path.suffix.lower() == ".glb":
+        return scene_path
     visited.add(scene_path)
     text = scene_path.read_text(encoding="utf-8", errors="ignore")
     for match in GLB_PATTERN.finditer(text):
@@ -64,13 +76,26 @@ def first_glb_from_scene(project, scene_path, visited=None):
 
 
 def add_job(jobs, item_id, category, model, output_name=None):
+    output_name = output_name or item_id
+    key = (category, output_name)
+    for index, existing in enumerate(jobs):
+        if (existing["category"], existing["output_name"]) != key:
+            continue
+        # Some IDs occur in both special_tool_definitions.json and the
+        # runtime tool definitions. Let a later usable scene replace an
+        # earlier placeholder entry with no model.
+        if existing["model"] is None and model is not None:
+            jobs[index] = {
+                "id": item_id,
+                "category": category,
+                "model": model,
+                "output_name": output_name,
+            }
+        return
     if model is None:
-        jobs.append({"id": item_id, "category": category, "model": None, "output_name": output_name or item_id})
+        jobs.append({"id": item_id, "category": category, "model": None, "output_name": output_name})
         return
-    key = (category, output_name or item_id)
-    if any((job["category"], job["output_name"]) == key for job in jobs):
-        return
-    jobs.append({"id": item_id, "category": category, "model": model, "output_name": output_name or item_id})
+    jobs.append({"id": item_id, "category": category, "model": model, "output_name": output_name})
 
 
 def collect_jobs(project):
@@ -87,6 +112,15 @@ def collect_jobs(project):
     dishes = read_json(project / "data/dish_definitions.json").get("dishes", {})
     for item_id, definition in dishes.items():
         add_job(jobs, item_id, "dishes", res_path(project, definition.get("model_path", "")))
+
+    equipment = read_json(project / "data/equipment_definitions.json").get("equipment", [])
+    for definition in equipment:
+        item_id = str(definition.get("id", ""))
+        if not item_id:
+            continue
+        scene_path = res_path(project, definition.get("scene_path", ""))
+        model = first_glb_from_scene(project, scene_path)
+        add_job(jobs, item_id, "equipment", model)
 
     definition_files = [
         ("primary_weapon_definitions.json", "weapons", "weapons"),
@@ -144,6 +178,18 @@ def normalize_model(objects):
     return imported_bounds(objects)
 
 
+def apply_icon_import_rotation(objects, item_id):
+    degrees = ICON_IMPORT_X_ROTATIONS.get(item_id)
+    if degrees is None:
+        return
+    for obj in [candidate for candidate in objects if candidate.parent is None]:
+        # glTF roots commonly use quaternion mode. Assign Euler rotation mode
+        # first; rotating the inactive Euler value otherwise has no effect.
+        obj.rotation_mode = "XYZ"
+        obj.rotation_euler.x += math.radians(degrees)
+    bpy.context.view_layer.update()
+
+
 def point_at(obj, target):
     obj.rotation_euler = ((target - obj.location).to_track_quat("-Z", "Y")).to_euler()
 
@@ -181,7 +227,11 @@ def setup_camera_and_lights(bounds):
 
 def configure_render(output_path, size, samples):
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    try:
+        scene.render.engine = "BLENDER_EEVEE_NEXT"
+    except TypeError:
+        # Blender 5.1 exposes the same Eevee renderer under its original enum.
+        scene.render.engine = "BLENDER_EEVEE"
     scene.render.image_settings.file_format = "PNG"
     scene.render.resolution_x = size
     scene.render.resolution_y = size
@@ -194,7 +244,6 @@ def configure_render(output_path, size, samples):
     scene.render.filepath = str(output_path)
     scene.render.image_settings.color_depth = "8"
     scene.world.color = (0.025, 0.025, 0.025)
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
     scene.render.use_file_extension = True
     scene.render.image_settings.compression = 30
     scene.view_settings.look = "AgX - Medium High Contrast"
@@ -213,6 +262,7 @@ def render_job(job, output_root, size, samples, overwrite):
     before = set(bpy.context.scene.objects)
     bpy.ops.import_scene.gltf(filepath=str(model))
     imported = [obj for obj in bpy.context.scene.objects if obj not in before]
+    apply_icon_import_rotation(imported, job["id"])
     bounds = normalize_model(imported)
     setup_camera_and_lights(bounds)
     configure_render(output_path, size, samples)
@@ -226,8 +276,33 @@ def main():
     output_root = (project / args.output).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     only = {value.strip() for value in args.only.split(",") if value.strip()}
-    jobs = [job for job in collect_jobs(project) if not only or job["id"] in only]
-    manifest = {"schema_version": 1, "items": []}
+    excluded = {value.strip() for value in args.exclude.split(",") if value.strip()}
+    jobs = [
+        job for job in collect_jobs(project)
+        if (not only or job["id"] in only) and job["id"] not in excluded
+    ]
+
+    # Keep an --only/--exclude render from deleting manifest entries produced by
+    # earlier batches. Entries are replaced by their final output path.
+    manifest_path = output_root / "icon_manifest.json"
+    existing_items = []
+    if manifest_path.is_file():
+        try:
+            existing = read_json(manifest_path)
+            if isinstance(existing.get("items"), list):
+                existing_items = existing["items"]
+        except (OSError, json.JSONDecodeError):
+            existing_items = []
+    manifest_items = {
+        (str(item.get("category", "")), str(item.get("icon", ""))): item
+        for item in existing_items
+        if isinstance(item, dict)
+    }
+    manifest_order = [
+        (str(item.get("category", "")), str(item.get("icon", "")))
+        for item in existing_items
+        if isinstance(item, dict)
+    ]
     for index, job in enumerate(jobs, 1):
         print(f"[ItemIcons] {index}/{len(jobs)} {job['category']}/{job['output_name']}")
         try:
@@ -236,14 +311,22 @@ def main():
         except Exception as exc:  # Continue so one broken asset does not abort the batch.
             status, output_path, error = "failed", output_root / job["category"] / (job["output_name"] + ".png"), str(exc)
             print(f"[ItemIcons] FAILED {job['id']}: {error}")
-        manifest["items"].append({
+        entry = {
             "id": job["id"],
             "category": job["category"],
             "icon": "res://" + output_path.relative_to(project).as_posix(),
             "status": status,
             "error": error,
-        })
-    manifest_path = output_root / "icon_manifest.json"
+        }
+        key = (entry["category"], entry["icon"])
+        if key not in manifest_items:
+            manifest_order.append(key)
+        manifest_items[key] = entry
+
+    manifest = {
+        "schema_version": 1,
+        "items": [manifest_items[key] for key in manifest_order if key in manifest_items],
+    }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     counts = {status: sum(1 for item in manifest["items"] if item["status"] == status) for status in {item["status"] for item in manifest["items"]}}
     print(f"[ItemIcons] Done: {counts}; manifest={manifest_path}")

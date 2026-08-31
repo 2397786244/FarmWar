@@ -14,21 +14,21 @@ const PAGE_HERO := 0
 const PAGE_PRIMARY := 1
 const PAGE_SPECIAL := 2
 
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_PANEL_2 := Color("#22324A")
-const COLOR_SELECTED := Color("#54D6A2")
-const COLOR_BLUE := Color("#5DA9FF")
-const COLOR_RED := Color("#FF6B6B")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
-const COLOR_DISABLED := Color("#5E6A78")
-const COLOR_SINGLE_BG := Color("#15171A")
-const COLOR_SINGLE_PANEL := Color("#1D2024")
-const COLOR_SINGLE_CONTROL := Color("#272B30")
-const COLOR_SINGLE_HOVER := Color("#32373D")
-const COLOR_SINGLE_SELECTED := Color("#3C4249")
-const COLOR_SINGLE_DISABLED := Color("#202328")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_2 := UITheme.COLOR_CONTROL
+const COLOR_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_BLUE := UITheme.COLOR_INFO
+const COLOR_RED := UITheme.COLOR_WARNING
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_DISABLED := UITheme.COLOR_MUTED
+const COLOR_SINGLE_BG := UITheme.COLOR_BG
+const COLOR_SINGLE_PANEL := UITheme.COLOR_PANEL
+const COLOR_SINGLE_CONTROL := UITheme.COLOR_CONTROL
+const COLOR_SINGLE_HOVER := UITheme.COLOR_HOVER
+const COLOR_SINGLE_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_SINGLE_DISABLED := UITheme.COLOR_PANEL
 
 var presentation_mode := "multiplayer"
 
@@ -63,6 +63,7 @@ var status_label: Label
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	UITheme.apply(self)
 	_load_all_configs()
 	_build_interface()
 	_select_initial_values()
@@ -704,7 +705,7 @@ func _make_list_button(text: String, selected: bool, enabled: bool) -> Button:
 	button.custom_minimum_size = Vector2(0, 62)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.add_theme_font_size_override("font_size", 24)
-	button.add_theme_color_override("font_color", COLOR_TEXT if enabled else COLOR_DISABLED)
+	UITheme.apply_button(button, UITheme.TONE_NEUTRAL if enabled else UITheme.TONE_MUTED)
 	button.add_theme_stylebox_override(
 		"normal",
 		_style_box(_selected_color() if selected else _control_color(), 16)
@@ -720,7 +721,7 @@ func _make_action_button(text: String) -> Button:
 	button.text = text
 	button.custom_minimum_size = Vector2(190, 58)
 	button.add_theme_font_size_override("font_size", 24)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
+	UITheme.apply_button(button)
 	button.add_theme_stylebox_override("normal", _style_box(_control_color(), 18))
 	button.add_theme_stylebox_override("hover", _style_box(_hover_color(), 18))
 	button.add_theme_stylebox_override("pressed", _style_box(_selected_color(), 18))
@@ -745,7 +746,7 @@ func _control_color() -> Color:
 
 
 func _hover_color() -> Color:
-	return COLOR_SINGLE_HOVER if _is_singleplayer_mode() else Color("#314766")
+	return COLOR_SINGLE_HOVER
 
 
 func _selected_color() -> Color:
@@ -753,21 +754,11 @@ func _selected_color() -> Color:
 
 
 func _disabled_color() -> Color:
-	return COLOR_SINGLE_DISABLED if _is_singleplayer_mode() else Color("#172030")
+	return COLOR_SINGLE_DISABLED
 
 
 func _style_box(color: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	return style
+	return UITheme.make_style(color, UITheme.COLOR_BORDER, 1, radius)
 
 
 func _clear_container(container: Node) -> void:

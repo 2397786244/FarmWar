@@ -37,6 +37,7 @@ func _process(_delta: float) -> void:
 
 
 func _build_ui() -> void:
+	UITheme.apply(self)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	z_index = 50
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -53,12 +54,7 @@ func _build_ui() -> void:
 	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#101416")
-	style.border_color = Color("#D8842E")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(panel, UITheme.COLOR_BG, 2, 4)
 	add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 24)
@@ -73,13 +69,13 @@ func _build_ui() -> void:
 	title.text = "CARGO CAR STORAGE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color("#F2A443"))
+	UITheme.set_tone(title, UITheme.TONE_NEUTRAL)
 	root.add_child(title)
 	var hint := Label.new()
 	hint.text = "仅可装载货运箱；拖动货箱在背包与载具之间转移"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 18)
-	hint.add_theme_color_override("font_color", Color("#AFC2CC"))
+	UITheme.set_tone(hint, UITheme.TONE_MUTED)
 	root.add_child(hint)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -99,16 +95,17 @@ func _build_ui() -> void:
 	footer.add_child(_count_label)
 	_weight_label = Label.new()
 	_weight_label.add_theme_font_size_override("font_size", 24)
-	_weight_label.add_theme_color_override("font_color", Color("#75D49B"))
+	UITheme.set_tone(_weight_label, UITheme.TONE_INFO)
 	footer.add_child(_weight_label)
 	_notice = Label.new()
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.add_theme_font_size_override("font_size", 18)
-	_notice.add_theme_color_override("font_color", Color("#FF8B75"))
+	UITheme.set_status(_notice, UITheme.TONE_ERROR)
 	root.add_child(_notice)
 	var close_button := Button.new()
 	close_button.text = "关闭"
 	close_button.custom_minimum_size = Vector2(180.0, 48.0)
+	UITheme.apply_button(close_button)
 	close_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	close_button.pressed.connect(close)
 	root.add_child(close_button)

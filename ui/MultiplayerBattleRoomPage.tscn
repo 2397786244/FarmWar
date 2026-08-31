@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://f3iq5ikn6ndh"]
 
 [ext_resource type="Script" uid="uid://ry1l6krdebub" path="res://src/multiplayer_battle_room_page.gd" id="1_battle"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_shared_theme"]
 
 [node name="MultiplayerBattleRoomPage" type="Control" unique_id=581366498]
 layout_mode = 3
@@ -9,4 +10,5 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_shared_theme")
 script = ExtResource("1_battle")

@@ -148,9 +148,4 @@ func _input(event: InputEvent) -> void:
 
 
 func _refresh_style(selected: bool) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#172126")
-	style.border_color = Color("#F0C75E") if selected else Color("#4D6E80")
-	style.set_border_width_all(3 if selected else 2)
-	style.set_corner_radius_all(4)
-	add_theme_stylebox_override("panel", style)
+	UITheme.apply_slot(self, selected, available_weight_kg <= 0.0001)

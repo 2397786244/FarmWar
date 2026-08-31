@@ -16,6 +16,7 @@ var _refresh_elapsed := 0.0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	visible = false
 	_build_ui()
 
@@ -44,12 +45,7 @@ func _build_ui() -> void:
 	_panel.position = Vector2(80.0, -330.0)
 	_panel.size = Vector2(780.0, 660.0)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#101416")
-	style.border_color = Color("#D98A32")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(6)
-	_panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(_panel, UITheme.COLOR_PANEL, 2, 4)
 	add_child(_panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 24)
@@ -63,7 +59,7 @@ func _build_ui() -> void:
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 32)
-	_title.add_theme_color_override("font_color", Color("#F2A443"))
+	_title.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	root.add_child(_title)
 	_requirements = Label.new()
 	_requirements.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -81,7 +77,7 @@ func _build_ui() -> void:
 	root.add_child(_slots)
 	_notice = Label.new()
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_notice.add_theme_color_override("font_color", Color("#FF9B75"))
+	_notice.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	root.add_child(_notice)
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -90,11 +86,13 @@ func _build_ui() -> void:
 	_start_button = Button.new()
 	_start_button.text = "开始建造"
 	_start_button.custom_minimum_size = Vector2(190.0, 48.0)
+	UITheme.apply_button(_start_button)
 	_start_button.pressed.connect(func() -> void: _submit("start_construction"))
 	buttons.add_child(_start_button)
 	var close_button := Button.new()
 	close_button.text = "关闭"
 	close_button.custom_minimum_size = Vector2(160.0, 48.0)
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close)
 	buttons.add_child(close_button)
 

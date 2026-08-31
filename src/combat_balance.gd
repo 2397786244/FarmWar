@@ -4,6 +4,76 @@ class_name CombatBalance
 const BUG_STORM_DAMAGE_MULTIPLIER := 10.0
 const MODEL_RECOIL_DURATION := 0.12
 
+# Cosmetic weapon variants resolve to one authoritative combat profile. Keep
+# the item IDs themselves intact in inventory, ammo, and network state; only
+# combat-balance lookups use this mapping.
+const PROFILE_ALIASES := {
+	"ak47_golden": "ak47",
+	"ak47_rusted": "ak47",
+	"ak47_hardenedsteel": "ak47",
+	"remington870_rusted": "remington870",
+	"remington870_hardenedsteel": "remington870",
+	"p90_ruralcamo": "p90",
+	"p90_snowcamo": "p90",
+	"m17_snowcamo": "m17",
+	"m17_ruralcamo": "m17",
+	"m17_hardenedsteel": "m17",
+	"ak47_ruralcamo": "ak47",
+	"ak47_snowcamo": "ak47",
+	"ar15_hardenedsteel": "ar15",
+	"ar15_ruralcamo": "ar15",
+	"ar15_snowcamo": "ar15",
+	"crossbow_hardenedsteel": "crossbow",
+	"m4_hardenedsteel": "m4",
+	"m4_ruralcamo": "m4",
+	"m4_snowcamo": "m4",
+	"mpx_hardenedsteel": "mpx",
+	"mpx_ruralcamo": "mpx",
+	"mpx_snowcamo": "mpx",
+	"remington870_ruralcamo": "remington870",
+	"remington870_snowcamo": "remington870",
+	"shotgun_rusted": "shotgun",
+	"suppressed_pistol_hardenedsteel": "suppressed_pistol",
+	"suppressed_pistol_ruralcamo": "suppressed_pistol",
+	"suppressed_pistol_snowcamo": "suppressed_pistol",
+}
+
+# These are the ordinary damage-dealing handheld weapons that receive the
+# player's upward view/reticle kick. Crossbow is included even though its
+# gameplay projectile is not a conventional firearm: it still needs a small
+# physical firing kick. Special-effect tools such as the flame, freeze,
+# tranquilizer, and medicine pistols deliberately stay out of this set.
+# Cosmetic variants are included automatically through resolve_profile_id().
+const PLAYER_RECOIL_PROFILES := {
+	"rubber_revolver": true,
+	"nail_gun": true,
+	"suppressed_pistol": true,
+	"m17": true,
+	"m4": true,
+	"ar15": true,
+	"ak47": true,
+	"mpx": true,
+	"p90": true,
+	"future_m4": true,
+	"future_mpx": true,
+	"hunting_rifle": true,
+	"shotgun": true,
+	"remington870": true,
+	"crossbow": true,
+}
+
+# Automatic fire is intentionally narrower than PLAYER_RECOIL_PROFILES:
+# pistols, shotguns, and hunting rifles remain click-to-fire weapons.
+const AUTOMATIC_FIRE_PROFILES := {
+	"m4": true,
+	"ar15": true,
+	"ak47": true,
+	"mpx": true,
+	"p90": true,
+	"future_m4": true,
+	"future_mpx": true,
+}
+
 ## Authoritative combat defaults. Scene export values may override these at
 ## runtime, but GameAuthority must never carry a second set of literals.
 const PROFILES := {
@@ -25,6 +95,7 @@ const PROFILES := {
 		"range": 60.0, "damage": 30.0, "knockback": 30.0,
 		"visual_speed": 90.0, "visual_lifetime": 0.6666667,
 		"camera_recoil_strength": 0.045, "camera_recoil_duration": 0.16,
+		"single_recoil_kick_degrees": 5.0,
 		"model_recoil_y": 0.042, "model_recoil_z": 0.104,
 	},
 	"flame_gun": {
@@ -50,13 +121,31 @@ const PROFILES := {
 		"visual_speed": 90.0, "visual_lifetime": 1.1111111,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.020, "camera_recoil_duration": 0.11,
+		"single_recoil_kick_degrees": 0.30,
 		"model_recoil_y": 0.020, "model_recoil_z": 0.050,
+	},
+	"m17": {
+		"range": 80.0, "damage": 31.0, "knockback": 18.0,
+		"visual_speed": 90.0, "visual_lifetime": 0.9,
+		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.022, "camera_recoil_duration": 0.12,
+		"single_recoil_kick_degrees": 0.32,
+		"model_recoil_y": 0.022, "model_recoil_z": 0.055,
 	},
 	"shotgun": {
 		"range": 60.0, "damage": 60.0, "knockback": 30.0,
 		"visual_speed": 100.0, "visual_lifetime": 0.6,
 		"bullet_count": 6, "spread_degrees": 2.0,
 		"camera_recoil_strength": 0.085, "camera_recoil_duration": 0.22,
+		"single_recoil_kick_degrees": 6.5,
+		"model_recoil_y": 0.068, "model_recoil_z": 0.170,
+	},
+	"remington870": {
+		"range": 50.0, "damage": 65.0, "knockback": 30.0,
+		"visual_speed": 100.0, "visual_lifetime": 0.6,
+		"bullet_count": 4, "spread_degrees": 3.0,
+		"camera_recoil_strength": 0.085, "camera_recoil_duration": 0.22,
+		"single_recoil_kick_degrees": 7.0,
 		"model_recoil_y": 0.068, "model_recoil_z": 0.170,
 	},
 	"hunting_rifle": {
@@ -64,6 +153,7 @@ const PROFILES := {
 		"visual_speed": 120.0, "visual_lifetime": 1.25,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.075, "camera_recoil_duration": 0.20,
+		"single_recoil_kick_degrees": 6.0,
 		"model_recoil_y": 0.056, "model_recoil_z": 0.150,
 	},
 	"crossbow": {
@@ -71,6 +161,7 @@ const PROFILES := {
 		"visual_speed": 90.0, "visual_lifetime": 1.3333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.060, "camera_recoil_duration": 0.18,
+		"single_recoil_kick_degrees": 0.50,
 		"model_recoil_y": 0.048, "model_recoil_z": 0.130,
 	},
 	"long_spear": {
@@ -92,20 +183,39 @@ const PROFILES := {
 		"visual_speed": 120.0, "visual_lifetime": 1.0,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.040, "camera_recoil_duration": 0.13,
+		"auto_recoil_kick_degrees": 1.05,
 		"model_recoil_y": 0.036, "model_recoil_z": 0.090,
+	},
+	"ak47": {
+		"range": 120.0, "damage": 50.0, "knockback": 19.0,
+		"visual_speed": 120.0, "visual_lifetime": 1.0,
+		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.050, "camera_recoil_duration": 0.15,
+		"auto_recoil_kick_degrees": 1.35,
+		"model_recoil_y": 0.040, "model_recoil_z": 0.100,
 	},
 	"mpx": {
 		"range": 100.0, "damage": 30.0, "knockback": 18.0,
 		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.028, "camera_recoil_duration": 0.11,
+		"auto_recoil_kick_degrees": 0.62,
 		"model_recoil_y": 0.026, "model_recoil_z": 0.064,
+	},
+	"p90": {
+		"range": 90.0, "damage": 32.0, "knockback": 16.0,
+		"visual_speed": 120.0, "visual_lifetime": 0.75,
+		"bullet_count": 1, "spread_degrees": 0.0,
+		"camera_recoil_strength": 0.032, "camera_recoil_duration": 0.11,
+		"auto_recoil_kick_degrees": 0.55,
+		"model_recoil_y": 0.028, "model_recoil_z": 0.070,
 	},
 	"future_m4": {
 		"range": 120.0, "damage": 48.0, "knockback": 20.0,
 		"visual_speed": 140.0, "visual_lifetime": 0.8571429,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.045, "camera_recoil_duration": 0.13,
+		"auto_recoil_kick_degrees": 1.10,
 		"model_recoil_y": 0.040, "model_recoil_z": 0.100,
 	},
 	"future_mpx": {
@@ -113,6 +223,7 @@ const PROFILES := {
 		"visual_speed": 120.0, "visual_lifetime": 0.8333333,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.032, "camera_recoil_duration": 0.11,
+		"auto_recoil_kick_degrees": 0.60,
 		"model_recoil_y": 0.030, "model_recoil_z": 0.074,
 	},
 	"ar15": {
@@ -120,6 +231,7 @@ const PROFILES := {
 		"visual_speed": 120.0, "visual_lifetime": 1.0,
 		"bullet_count": 1, "spread_degrees": 0.0,
 		"camera_recoil_strength": 0.055, "camera_recoil_duration": 0.17,
+		"auto_recoil_kick_degrees": 1.20,
 		"model_recoil_y": 0.044, "model_recoil_z": 0.110,
 	},
 	"medicine_pistol": {
@@ -307,13 +419,37 @@ const ELECTRONIC_STATUS := {
 }
 
 
+static func resolve_profile_id(profile: String) -> String:
+	return str(PROFILE_ALIASES.get(profile, profile))
+
+
+static func is_profile(profile: String, base_profile: String) -> bool:
+	return resolve_profile_id(profile) == base_profile
+
+
+static func is_player_recoil_weapon(profile: String) -> bool:
+	return PLAYER_RECOIL_PROFILES.has(resolve_profile_id(profile))
+
+
+static func is_hitscan_recoil_weapon(profile: String) -> bool:
+	return is_player_recoil_weapon(profile)
+
+
+static func is_automatic_fire_weapon(profile: String) -> bool:
+	return AUTOMATIC_FIRE_PROFILES.has(resolve_profile_id(profile))
+
+
+static func is_automatic_weapon(profile: String) -> bool:
+	return is_automatic_fire_weapon(profile)
+
+
 static func get_float(profile: String, key: String, fallback: float = 0.0) -> float:
-	var values: Dictionary = PROFILES.get(profile, {})
+	var values: Dictionary = PROFILES.get(resolve_profile_id(profile), {})
 	return float(values.get(key, fallback))
 
 
 static func get_model_recoil_offset(profile: String) -> Vector3:
-	var values: Dictionary = PROFILES.get(profile, {})
+	var values: Dictionary = PROFILES.get(resolve_profile_id(profile), {})
 	return Vector3(
 		0.0,
 		float(values.get("model_recoil_y", 0.025)),
@@ -326,7 +462,7 @@ static func get_bug_storm_impact_damage(strength: float) -> float:
 
 
 static func get_int(profile: String, key: String, fallback: int = 0) -> int:
-	var values: Dictionary = PROFILES.get(profile, {})
+	var values: Dictionary = PROFILES.get(resolve_profile_id(profile), {})
 	return int(values.get(key, fallback))
 
 

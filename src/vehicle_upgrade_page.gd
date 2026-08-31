@@ -17,8 +17,10 @@ var refresh_accumulator := 0.0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	window.visible = false
 	$Window/Margin/VBox/Header/CloseButton.pressed.connect(close)
+	UITheme.apply_button($Window/Margin/VBox/Header/CloseButton)
 
 
 func _process(delta: float) -> void:
@@ -62,13 +64,13 @@ func _refresh() -> void:
 	team_label.text = "红队专属货运车" if str(stats.get("team", "")) == "red" else "蓝队专属货运车"
 	if bool(stats.get("available", false)):
 		status_label.text = "状态：可用"
-		status_label.add_theme_color_override("font_color", Color("#76D99A"))
+		UITheme.set_status(status_label, UITheme.TONE_SUCCESS)
 	elif bool(stats.get("respawn_active", false)):
 		status_label.text = "状态：重生中（%d 秒）" % ceili(float(stats.get("respawn_remaining", 0.0)))
-		status_label.add_theme_color_override("font_color", Color("#FFB85C"))
+		UITheme.set_status(status_label, UITheme.TONE_WARNING)
 	else:
 		status_label.text = "状态：不可用"
-		status_label.add_theme_color_override("font_color", Color("#FF6E73"))
+		UITheme.set_status(status_label, UITheme.TONE_ERROR)
 	hp_value.text = "%.0f / %.0f" % [float(stats.get("hp", 0.0)), float(stats.get("max_hp", 0.0))]
 	cargo_value.text = "%.1f / %.1f kg" % [float(stats.get("cargo_weight_kg", 0.0)), float(stats.get("cargo_capacity_kg", 0.0))]
 	max_speed_value.text = "%.1f m/s" % float(stats.get("max_forward_speed", 0.0))

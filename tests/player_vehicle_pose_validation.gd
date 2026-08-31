@@ -19,6 +19,13 @@ func _run() -> void:
 	add_child(player)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var player_camera := player.camera as Camera3D
+	_check(player_camera != null, "player camera exists")
+	if player_camera != null:
+		_check(is_equal_approx(player_camera.fov, 90.0), "player first-person FOV is 90 degrees")
+		player.is_weapon_aiming = true
+		player._update_weapon_aim(1.0 / 60.0)
+		_check(is_equal_approx(player_camera.fov, 90.0), "aiming keeps the first-person FOV unchanged")
 
 	_check(player.find_child("RightLegIKTarget", true, false) != null, "right leg target exists")
 	_check(player.find_child("LeftLegIKTarget", true, false) != null, "left leg target exists")
@@ -42,6 +49,9 @@ func _run() -> void:
 		return
 	add_child(vehicle)
 	await get_tree().process_frame
+	_check(is_equal_approx(vehicle.vehicle_config.camera_base_fov, 85.0), "vehicle driving base FOV is 85 degrees")
+	_check(is_equal_approx(vehicle.get_camera_fov_for_speed(0.0), 85.0), "vehicle FOV starts at its 85-degree base")
+	_check(is_equal_approx(vehicle.get_camera_fov_for_speed(vehicle.get_max_forward_speed()), 92.5), "vehicle FOV expands dynamically with speed")
 	player.active_vehicle = vehicle
 	player.active_vehicle_seat_index = 0
 	player.vehicle_is_active = true

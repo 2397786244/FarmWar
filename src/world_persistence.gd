@@ -7,6 +7,7 @@ class_name WorldPersistenceService
 
 const FARM_RESTORE_WAIT_FRAMES := 120
 const VehicleColorCatalogScript = preload("res://src/vehicle_color_catalog.gd")
+const PlacedStorageState = preload("res://src/placed_storage_state.gd")
 const WORLD_CLOCK_SCHEMA_VERSION := 1
 
 
@@ -144,18 +145,58 @@ func capture_world_state() -> Dictionary:
 		vehicles.append(state)
 
 	var placed_tools: Array[Dictionary] = []
-	for state_value: Variant in GameAuthority.placed_tool_states.values():
+	for raw_tool_id: Variant in GameAuthority.placed_tool_states.keys():
+		var registry_tool_id := str(raw_tool_id)
+		var state_value: Variant = GameAuthority.placed_tool_states[raw_tool_id]
 		if not state_value is Dictionary:
 			continue
 		var state := (state_value as Dictionary).duplicate(true)
+		# A map facility can be interacted with before it has a full dynamic
+		# placement record. Keep the registry key as a fallback ID so a state
+		# created by a rack action is not silently discarded.
+		var tool_id := str(state.get("tool_id", state.get("device_id", registry_tool_id)))
+		if tool_id.is_empty():
+			tool_id = registry_tool_id
+		state["tool_id"] = tool_id
+		if str(state.get("device_id", "")).is_empty():
+			state["device_id"] = tool_id
+		var tool_node: Variant = GameAuthority.call(
+			"_node_for_tool_ref", {"kind": "placed", "id": registry_tool_id}
+		)
+		if tool_node == null:
+			var saved_path := str(state.get("path", tool_id))
+			if not saved_path.is_empty():
+				tool_node = get_tree().root.get_node_or_null(NodePath(saved_path))
+		if tool_node == null:
+			tool_node = _find_persistent_tool(tool_id)
+		var storage_state := PlacedStorageState.capture(tool_node as Node if tool_node is Node else null)
+		var visual_state: Dictionary = storage_state.duplicate(true)
+		if tool_node is Node and tool_node.has_method("get_network_visual_state"):
+			var visual_value: Variant = tool_node.call("get_network_visual_state")
+			if visual_value is Dictionary:
+				visual_state = (visual_value as Dictionary).duplicate(true)
+		if not storage_state.is_empty():
+			state["storage_state"] = storage_state
+		if tool_node is WireMeshGate:
+			state["is_open"] = (tool_node as WireMeshGate).is_open
+			state["open_angle_degrees"] = (tool_node as WireMeshGate).open_angle_degrees
+		if not visual_state.is_empty():
+			state["visual_state"] = visual_state
+			if visual_state.has("rack_slots"):
+				state["rack_slots"] = visual_state.get("rack_slots", []).duplicate(true)
+		# Besides free-placed objects and cargo crates, persist registered
+		# facilities that implement the explicit storage protocol. The legacy
+		# rack fields remain accepted so existing saves upgrade cleanly; a merely
+		# present network visual state is not enough to turn a combat device into
+		# a persistent container.
+		var has_persistent_storage_state := not storage_state.is_empty() \
+				or state.has("rack_slots") \
+				or state.has("crate_data") \
+				or (state.get("storage_state", {}) is Dictionary \
+				and not (state.get("storage_state", {}) as Dictionary).is_empty())
 		if bool(state.get("free_placement", false)) \
-				or str(state.get("tool_name", "")) == "cargo_crate":
-			var tool_node: Variant = GameAuthority.call(
-				"_node_for_tool_ref", {"kind": "placed", "id": str(state.get("tool_id", ""))}
-			)
-			if tool_node is WireMeshGate:
-				state["is_open"] = (tool_node as WireMeshGate).is_open
-				state["open_angle_degrees"] = (tool_node as WireMeshGate).open_angle_degrees
+				or str(state.get("tool_name", "")) == "cargo_crate" \
+				or has_persistent_storage_state:
 			placed_tools.append(state)
 	for node in get_tree().get_nodes_in_group("cargo_crates"):
 		if not node is CargoCrateGround:
@@ -529,7 +570,11 @@ func _restore_persistent_tools(value: Variant) -> void:
 			continue
 		var state := _decode_state_vectors(state_value as Dictionary)
 		var tool_id := str(state.get("tool_id", state.get("device_id", "")))
-		if tool_id.is_empty() or _find_persistent_tool(tool_id) != null:
+		if tool_id.is_empty():
+			continue
+		var existing_tool := _find_persistent_tool(tool_id)
+		if existing_tool != null:
+			_apply_persistent_state_to_existing_tool(existing_tool, tool_id, state)
 			continue
 		var scene_path := str(state.get("scene_path", ""))
 		if str(state.get("tool_name", "")) == "cargo_crate":
@@ -565,6 +610,39 @@ func _restore_persistent_tools(value: Variant) -> void:
 			node.call("apply_network_health", float(state.get("hp", 0.0)))
 		state["path"] = str(node.get_path())
 		GameAuthority.placed_tool_states[tool_id] = state
+		_apply_saved_visual_state(node, state)
+
+
+func _apply_persistent_state_to_existing_tool(node: Node3D, tool_id: String, state: Dictionary) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var runtime_state: Dictionary = GameAuthority.placed_tool_states.get(tool_id, {})
+	if runtime_state.is_empty():
+		runtime_state = state.duplicate(true)
+	else:
+		runtime_state.merge(state, true)
+	runtime_state["tool_id"] = tool_id
+	if str(runtime_state.get("device_id", "")).is_empty():
+		runtime_state["device_id"] = tool_id
+	runtime_state["path"] = str(node.get_path())
+	if str(runtime_state.get("scene_path", "")).is_empty():
+		runtime_state["scene_path"] = node.scene_file_path
+	GameAuthority.placed_tool_states[tool_id] = runtime_state
+	_apply_saved_visual_state(node, state)
+
+
+func _apply_saved_visual_state(node: Node, state: Dictionary) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	if PlacedStorageState.apply_record(node, state):
+		return
+	if not node.has_method("apply_network_visual_state"):
+		return
+	var visual_state: Variant = state.get("visual_state", {})
+	if not visual_state is Dictionary or (visual_state as Dictionary).is_empty():
+		visual_state = {"rack_slots": state.get("rack_slots", [])} if state.has("rack_slots") else {}
+	if visual_state is Dictionary and not (visual_state as Dictionary).is_empty():
+		node.call("apply_network_visual_state", visual_state)
 
 
 func _restore_persistent_livestock(value: Variant) -> void:
@@ -642,9 +720,19 @@ func _find_vehicle_for_restore(vehicle_id: String) -> VehicleBase:
 
 
 func _find_persistent_tool(tool_id: String) -> Node3D:
-	for node in get_tree().get_nodes_in_group("network_map_devices"):
-		if node is Node3D and str(node.get_meta("network_device_id", "")) == tool_id:
-			return node as Node3D
+	if tool_id.is_empty():
+		return null
+	var direct := get_tree().root.get_node_or_null(NodePath(tool_id))
+	if direct is Node3D and is_instance_valid(direct):
+		return direct as Node3D
+	for group_name in [
+		"network_map_devices", "network_map_facilities", "weapon_display_racks",
+		PlacedStorageState.STORAGE_GROUP,
+	]:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if node is Node3D and is_instance_valid(node) \
+					and str(node.get_meta("network_device_id", "")) == tool_id:
+				return node as Node3D
 	return null
 
 

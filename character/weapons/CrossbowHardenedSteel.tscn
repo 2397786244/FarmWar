@@ -1,0 +1,19 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/tools/other_styles/HardenedSteel/Crossbow_HardenedSteel.glb" id="1_0if3a"]
+[ext_resource type="Script" path="res://src/crossbow.gd" id="2_crossbow"]
+
+[node name="CrossbowHardenedSteel" type="Node3D"]
+script = ExtResource("2_crossbow")
+profile_id = "crossbow"
+
+[node name="Mesh" parent="." instance=ExtResource("1_0if3a")]
+transform = Transform3D(-0.4, 0, -3.4969112e-08, 0, 0.4, 0, 3.4969112e-08, 0, -0.4, 0, 0, 0)
+
+[node name="Muzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19594991, -0.5661568)
+gizmo_extents = 0.5
+
+[node name="LeftHandGrip" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0043347925, -0.11982983, -0.31936696)
+gizmo_extents = 0.12

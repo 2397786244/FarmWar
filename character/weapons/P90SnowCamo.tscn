@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/tools/other_styles/SnowCamo/P90_SnowCamo.glb" id="1_p90_snowcamo"]
+[ext_resource type="Script" path="res://src/nail_firearm.gd" id="2_script"]
+[ext_resource type="Script" path="res://src/muzzle_flash_visual.gd" id="3_muzzle_visual"]
+
+[sub_resource type="Curve" id="Curve_p90_snowcamo"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.25, 0.36906666), -0.78933305, -0.78933305, 0, 0, Vector2(1, 0.09520006), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_p90_snowcamo"]
+curve = SubResource("Curve_p90_snowcamo")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_p90_snowcamo"]
+emission_shape = 1
+emission_sphere_radius = 0.03
+direction = Vector3(0, 0, -1)
+spread = 20.0
+initial_velocity_min = 5.0
+initial_velocity_max = 20.0
+damping_min = 10.0
+damping_max = 30.000002
+scale_min = 2.0
+scale_max = 3.0
+scale_curve = SubResource("CurveTexture_p90_snowcamo")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_p90_snowcamo"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.7764706, 0.43529412, 0.14117648, 1)
+grow_amount = 1.326
+
+[sub_resource type="QuadMesh" id="QuadMesh_p90_snowcamo"]
+material = SubResource("StandardMaterial3D_p90_snowcamo")
+size = Vector2(0.18, 0.18)
+
+[node name="P90SnowCamo" type="Node3D"]
+script = ExtResource("2_script")
+profile_id = "p90"
+
+[node name="Mesh" parent="." instance=ExtResource("1_p90_snowcamo")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0.26636654)
+
+[node name="Muzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.11705738, -0.55438244)
+gizmo_extents = 0.5
+
+[node name="MuzzleFlash" type="GPUParticles3D" parent="Muzzle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.061671972)
+visible = false
+emitting = false
+amount = 10
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+randomness = 0.5
+process_material = SubResource("ParticleProcessMaterial_p90_snowcamo")
+draw_pass_1 = SubResource("QuadMesh_p90_snowcamo")
+
+[node name="MuzzleFlashVisual" type="Node3D" parent="Muzzle"]
+script = ExtResource("3_muzzle_visual")
+flash_scale = 1.05
+
+[node name="LeftHandGrip" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, -0.048529536, -0.42881358)
+gizmo_extents = 0.12

@@ -31,14 +31,9 @@ func setup(owner_page: CargoCrateStoragePage) -> void:
 	_detail_label = Label.new()
 	_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail_label.add_theme_font_size_override("font_size", 17)
-	_detail_label.add_theme_color_override("font_color", Color("#AFC2CC"))
+	UITheme.set_tone(_detail_label, UITheme.TONE_MUTED)
 	box.add_child(_detail_label)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#151B1F")
-	style.border_color = Color("#E7B84D")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(5)
-	add_theme_stylebox_override("panel", style)
+	UITheme.apply_slot(self)
 	gui_input.connect(_on_gui_input)
 
 
@@ -53,6 +48,7 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	if item.is_empty() or page == null:
 		return null
 	var preview := Label.new()
+	UITheme.apply(preview)
 	preview.text = str(item.get("display_name", "物品"))
 	preview.add_theme_font_size_override("font_size", 18)
 	preview.z_as_relative = false

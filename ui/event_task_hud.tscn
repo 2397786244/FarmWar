@@ -1,6 +1,7 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://src/event_task_hud.gd" id="1_script"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_theme"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBox_transparent_global"]
 
@@ -15,6 +16,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
+theme = ExtResource("2_theme")
 
 [node name="GlobalEvents" type="PanelContainer" parent="."]
 layout_mode = 0
@@ -38,7 +40,7 @@ theme_override_constants/separation = 8
 
 [node name="Title" type="Label" parent="GlobalEvents/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 22
@@ -50,7 +52,7 @@ layout_mode = 2
 [node name="EventList" type="RichTextLabel" parent="GlobalEvents/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_colors/default_font_color = Color(1, 1, 1, 1)
+theme_override_colors/default_font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_colors/default_font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 theme_override_font_sizes/normal_font_size = 17
@@ -79,7 +81,7 @@ theme_override_constants/separation = 8
 
 [node name="Title" type="Label" parent="TeamTasks/Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 22
@@ -91,7 +93,7 @@ layout_mode = 2
 [node name="TaskList" type="RichTextLabel" parent="TeamTasks/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_colors/default_font_color = Color(1, 1, 1, 1)
+theme_override_colors/default_font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_colors/default_font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 theme_override_font_sizes/normal_font_size = 17

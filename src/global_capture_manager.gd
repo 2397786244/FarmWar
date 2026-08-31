@@ -205,7 +205,8 @@ func _create_notice_ui() -> void:
 	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_notice_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_notice_label.add_theme_color_override("font_color", Color.WHITE)
+	UITheme.apply(_notice_label)
+	UITheme.set_tone(_notice_label, UITheme.TONE_INFO)
 	_notice_label.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.02))
 	_notice_label.add_theme_constant_override("outline_size", 6)
 	_notice_label.add_theme_font_size_override("font_size", 18)

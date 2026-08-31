@@ -1,8 +1,8 @@
 extends Control
 class_name CooldownRing
 
-const BACKGROUND_COLOR := Color("#5D6770D9")
-const FOREGROUND_COLOR := Color("#F7F9FBEF")
+const BACKGROUND_COLOR := Color(UITheme.COLOR_BORDER, 0.85)
+const FOREGROUND_COLOR := Color(UITheme.COLOR_TEXT, 0.94)
 const RING_WIDTH := 4.0
 const RING_RADIUS := 20.0
 
@@ -11,6 +11,7 @@ var _duration := 0.0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 

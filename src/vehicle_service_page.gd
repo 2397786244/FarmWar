@@ -37,14 +37,14 @@ const SERVICE_MODULES := [
 	},
 ]
 
-const COLOR_BACKGROUND := Color("0b0f13")
-const COLOR_PANEL := Color("182027")
-const COLOR_PANEL_DARK := Color("10161b")
-const COLOR_TEXT := Color("eef3f5")
-const COLOR_MUTED := Color("a8b5bd")
-const COLOR_ACCENT := Color("72c9e8")
-const COLOR_SUCCESS := Color("6fd18a")
-const COLOR_ERROR := Color("ff8178")
+const COLOR_BACKGROUND := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_DARK := UITheme.COLOR_BG
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_ACCENT := UITheme.COLOR_INFO
+const COLOR_SUCCESS := UITheme.COLOR_SUCCESS
+const COLOR_ERROR := UITheme.COLOR_ERROR
 
 var player: GamePlayer
 var terminal: VehicleServiceTerminal
@@ -85,6 +85,7 @@ var _last_status_color := COLOR_MUTED
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	z_index = 90
@@ -310,7 +311,7 @@ func _build_interface() -> void:
 	_window = PanelContainer.new()
 	_window.name = "Window"
 	_window.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_window.add_theme_stylebox_override("panel", _style_box(COLOR_BACKGROUND, 12, Color("4c788b"), 2))
+	_window.add_theme_stylebox_override("panel", UITheme.make_style(COLOR_BACKGROUND, UITheme.COLOR_BORDER, 2, 4))
 	add_child(_window)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 24)
@@ -332,12 +333,13 @@ func _build_interface() -> void:
 	header.add_child(_title)
 	_money_label = Label.new()
 	_money_label.add_theme_font_size_override("font_size", 18)
-	_money_label.add_theme_color_override("font_color", Color("e8bd67"))
+	_money_label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	header.add_child(_money_label)
 	var close_button := Button.new()
 	close_button.text = "×"
 	close_button.custom_minimum_size = Vector2(42, 38)
 	close_button.add_theme_font_size_override("font_size", 24)
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close)
 	header.add_child(close_button)
 	_vehicle_label = Label.new()
@@ -379,6 +381,7 @@ func _build_interface() -> void:
 	_retry_button = Button.new()
 	_retry_button.text = "重试上一次请求"
 	_retry_button.visible = false
+	UITheme.apply_button(_retry_button)
 	_retry_button.pressed.connect(_retry_request)
 	root.add_child(_retry_button)
 	var footer := Label.new()
@@ -407,6 +410,7 @@ func _build_repair_tab(parent: VBoxContainer) -> void:
 	parent.add_child(title)
 	_repair_hp_button = Button.new()
 	_repair_hp_button.custom_minimum_size = Vector2(0, 46)
+	UITheme.apply_button(_repair_hp_button)
 	_repair_hp_button.pressed.connect(func() -> void: _request_action("repair_hp", {}))
 	parent.add_child(_repair_hp_button)
 	parent.add_child(_separator_label("车身颜色更换（每个颜色槽 500 队伍资金）"))
@@ -418,6 +422,7 @@ func _build_repair_tab(parent: VBoxContainer) -> void:
 	body_row.add_child(_body_option)
 	_body_button = Button.new()
 	_body_button.text = "更换车身颜色"
+	UITheme.apply_button(_body_button)
 	_body_button.pressed.connect(func() -> void: _request_selected_color("body"))
 	body_row.add_child(_body_button)
 	var wheel_row := HBoxContainer.new()
@@ -428,6 +433,7 @@ func _build_repair_tab(parent: VBoxContainer) -> void:
 	wheel_row.add_child(_wheel_option)
 	_wheel_button = Button.new()
 	_wheel_button.text = "更换轮毂颜色"
+	UITheme.apply_button(_wheel_button)
 	_wheel_button.pressed.connect(func() -> void: _request_selected_color("wheel"))
 	wheel_row.add_child(_wheel_button)
 
@@ -462,6 +468,7 @@ func _build_upgrade_tab(parent: VBoxContainer) -> void:
 func _make_color_option() -> OptionButton:
 	var option := OptionButton.new()
 	option.custom_minimum_size = Vector2(180, 38)
+	UITheme.apply_button(option)
 	for color_option: Dictionary in VehicleColorCatalogScript.get_options():
 		option.add_item(str(color_option.get("label", color_option.get("id", ""))))
 		option.set_item_metadata(option.item_count - 1, str(color_option.get("id", "black")))
@@ -653,6 +660,7 @@ func _add_module_action_button(
 	var button := Button.new()
 	button.text = text_value
 	button.disabled = initially_disabled or not _pending_request.is_empty() or _request_timed_out
+	UITheme.apply_button(button)
 	button.pressed.connect(_request_action.bind(action_name, {"module_id": module_id}))
 	row.add_child(button)
 
@@ -884,15 +892,4 @@ func _success_text(action_name: String) -> String:
 
 
 func _style_box(fill: Color, radius: int, border := Color.TRANSPARENT, border_width := 0) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = fill
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.border_width_left = border_width
-	style.border_width_top = border_width
-	style.border_width_right = border_width
-	style.border_width_bottom = border_width
-	style.border_color = border
-	return style
+	return UITheme.make_style(fill, border, border_width, radius)

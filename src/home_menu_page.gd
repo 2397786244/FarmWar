@@ -8,17 +8,18 @@ signal map_editor_requested
 signal settings_requested
 signal quit_requested
 
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL_2 := Color("#171B1F")
-const COLOR_ACCENT := Color("#54D6A2")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL_2 := UITheme.COLOR_CONTROL
+const COLOR_ACCENT := UITheme.COLOR_INFO
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
 const START_SCENE := preload("res://ui/start_scene.tscn")
 const RELEASE_CHANNEL := "Alpha"
 
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	UITheme.apply(self)
 	_build_interface()
 
 
@@ -103,7 +104,7 @@ func _build_interface() -> void:
 
 	var version_label := Label.new()
 	version_label.text = "v%s-%s" % [
-		str(ProjectSettings.get_setting("application/config/version", "0.3.4")),
+		str(ProjectSettings.get_setting("application/config/version", "0.3.5")),
 		RELEASE_CHANNEL,
 	]
 	version_label.anchor_left = 0.0
@@ -143,23 +144,5 @@ func _make_button(text: String) -> Button:
 	button.custom_minimum_size = Vector2(310, 52)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	button.add_theme_font_size_override("font_size", 22)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 6))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#C56D31"), 6))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_ACCENT, 6))
-	button.add_theme_stylebox_override("focus", _style_box(Color("#28302D"), 6))
+	UITheme.apply_button(button)
 	return button
-
-
-func _style_box(color: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	return style

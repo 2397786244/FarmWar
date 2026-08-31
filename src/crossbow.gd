@@ -155,12 +155,20 @@ func _get_shooter() -> CollisionObject3D:
 func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not is_instance_valid(shooter):
 		return get_fire_direction()
+	var max_distance := CombatBalance.get_float(profile_id, "range", 120.0)
+	if shooter.has_method("get_shooting_aim_direction"):
+		var shared_direction: Variant = shooter.call(
+			"get_shooting_aim_direction",
+			get_fire_origin(),
+			max_distance
+		)
+		if shared_direction is Vector3 and (shared_direction as Vector3).length_squared() > 0.001:
+			return (shared_direction as Vector3).normalized()
 
 	var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 	if camera == null:
 		return get_fire_direction()
 
-	var max_distance := CombatBalance.get_float(profile_id, "range", 120.0)
 	var screen_center := camera.get_viewport().get_visible_rect().size * 0.5
 	var ray_origin := camera.project_ray_origin(screen_center)
 	var ray_direction := camera.project_ray_normal(screen_center).normalized()

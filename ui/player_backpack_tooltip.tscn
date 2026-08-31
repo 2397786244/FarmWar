@@ -1,22 +1,24 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://src/player_backpack_tooltip.gd" id="1_script"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_shared_theme"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_tooltip"]
-bg_color = Color(0.035, 0.06, 0.08, 0.98)
+bg_color = Color(0.113725, 0.12549, 0.141176, 0.98)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.35, 0.74, 0.66, 1)
-corner_radius_top_left = 5
-corner_radius_top_right = 5
-corner_radius_bottom_right = 5
-corner_radius_bottom_left = 5
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [node name="PlayerBackpackTooltip" type="PanelContainer"]
 custom_minimum_size = Vector2(390, 310)
 mouse_filter = 2
+theme = ExtResource("2_shared_theme")
 theme_override_styles/panel = SubResource("StyleBox_tooltip")
 script = ExtResource("1_script")
 
@@ -33,13 +35,13 @@ theme_override_constants/separation = 6
 
 [node name="Title" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.88, 0.48, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_font_sizes/font_size = 25
 autowrap_mode = 2
 
 [node name="Type" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.48, 0.82, 0.9, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 theme_override_font_sizes/font_size = 17
 
 [node name="Separator" type="HSeparator" parent="Margin/VBox"]
@@ -47,16 +49,16 @@ layout_mode = 2
 
 [node name="Description" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.93, 0.96, 0.98, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_font_sizes/font_size = 19
 autowrap_mode = 2
 
 [node name="Stats" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.73, 0.84, 0.9, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 theme_override_font_sizes/font_size = 17
 
 [node name="Price" type="Label" parent="Margin/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.5, 0.93, 0.67, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 theme_override_font_sizes/font_size = 17

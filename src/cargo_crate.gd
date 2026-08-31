@@ -27,6 +27,7 @@ var active_user_peer_id := 0
 func _ready() -> void:
 	add_to_group("cargo_crates")
 	add_to_group("network_map_devices")
+	add_to_group("persistent_placed_storage")
 	if not has_meta("network_device_id"):
 		set_meta("network_device_id", str(get_path()))
 	if crate_data.is_empty():
@@ -152,10 +153,18 @@ func apply_network_health(hp: float) -> void:
 
 
 func get_network_visual_state() -> Dictionary:
-	return {"crate_data": get_crate_data()}
+	return get_persistent_storage_state()
 
 
 func apply_network_visual_state(state: Dictionary) -> void:
+	apply_persistent_storage_state(state)
+
+
+func get_persistent_storage_state() -> Dictionary:
+	return {"crate_data": get_crate_data()}
+
+
+func apply_persistent_storage_state(state: Dictionary) -> void:
 	var value: Variant = state.get("crate_data", {})
 	if value is Dictionary:
 		setup_crate(value as Dictionary)

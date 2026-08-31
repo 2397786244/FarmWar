@@ -23,6 +23,7 @@ func _process(_delta: float) -> void:
 
 
 func _build_ui() -> void:
+	UITheme.apply(self)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	z_index = 50
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -37,12 +38,7 @@ func _build_ui() -> void:
 	panel.offset_right = 840.0
 	panel.offset_bottom = 340.0
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#111719")
-	style.border_color = Color("#E7B84D")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(panel, UITheme.COLOR_BG, 2, 4)
 	add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 28)
@@ -58,7 +54,7 @@ func _build_ui() -> void:
 	title.text = "货运箱"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color("#F0C75E"))
+	UITheme.set_tone(title, UITheme.TONE_NEUTRAL)
 	box.add_child(title)
 	var hint := Label.new()
 	hint.text = "单格容器：拖动物品在背包与箱子之间转移"
@@ -72,17 +68,18 @@ func _build_ui() -> void:
 	_weight_label = Label.new()
 	_weight_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_weight_label.add_theme_font_size_override("font_size", 24)
-	_weight_label.add_theme_color_override("font_color", Color("#75D49B"))
+	UITheme.set_tone(_weight_label, UITheme.TONE_INFO)
 	box.add_child(_weight_label)
 	_notice = Label.new()
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.add_theme_font_size_override("font_size", 18)
-	_notice.add_theme_color_override("font_color", Color("#FF8B75"))
+	UITheme.set_status(_notice, UITheme.TONE_ERROR)
 	box.add_child(_notice)
 	var close_button := Button.new()
 	close_button.text = "关闭"
 	close_button.custom_minimum_size = Vector2(180.0, 50.0)
 	close_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close)
 	box.add_child(close_button)
 
@@ -160,9 +157,10 @@ func apply_authoritative_result(result: Dictionary) -> void:
 			float(result.get("transferred_weight_kg", 0.0)),
 			float(result.get("remaining_in_backpack_kg", 0.0)),
 		]
-		_notice.add_theme_color_override("font_color", Color("#F0C75E"))
+		UITheme.set_status(_notice, UITheme.TONE_WARNING)
 	else:
 		_notice.text = ""
+		UITheme.set_status(_notice, UITheme.TONE_ERROR)
 	_refresh()
 
 

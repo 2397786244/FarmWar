@@ -16,6 +16,17 @@ const ITEM_ICON_SCENE := preload("res://ui/item_icon.tscn")
 const BAG_SLOT_SCENE := preload("res://ui/player_backpack_slot.tscn")
 const VehicleColorCatalogScript = preload("res://src/vehicle_color_catalog.gd")
 
+# Match the single-player world page: neutral surfaces, a restrained border,
+# and only primary/muted text tones.
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_CONTROL := UITheme.COLOR_CONTROL
+const COLOR_HOVER := UITheme.COLOR_HOVER
+const COLOR_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_BORDER := UITheme.COLOR_BORDER
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+
 @onready var backpack_window: PanelContainer = $BackpackWindow
 @onready var inventory_tabs: TabContainer = $BackpackWindow/Margin/VBox/InventoryTabs
 @onready var bag_grid: GridContainer = $BackpackWindow/Margin/VBox/InventoryTabs/PersonalBackpack/BagGrid
@@ -40,9 +51,10 @@ var _active_drag_data: Dictionary = {}
 var _garage_repair_requests: Dictionary = {}
 var _garage_repair_request_counter := 0
 var _garage_status_message := ""
-var _garage_status_color := Color(0.65, 0.72, 0.76)
+var _garage_status_color := COLOR_MUTED
 
 func _ready() -> void:
+	UITheme.apply(self)
 	bag_grid.columns = bag_slots_per_row
 	for index in range(base_player_bag_slots):
 		var slot := get_node_or_null("BackpackWindow/Margin/VBox/InventoryTabs/PersonalBackpack/BagGrid/BagSlot%d" % index) as PlayerBackpackSlot
@@ -102,7 +114,7 @@ func _process(delta: float) -> void:
 			continue
 		request_state["timed_out"] = true
 		_garage_status_message = "请求超时，服务器可能仍在处理；可重试确认。"
-		_garage_status_color = Color("ff8075")
+		_garage_status_color = COLOR_MUTED
 		_garage_repair_requests[garage_vehicle_id] = request_state
 		if is_open() and inventory_tabs.current_tab == VEHICLE_GARAGE_TAB:
 			_refresh_vehicle_garage()
@@ -416,9 +428,7 @@ func _refresh_team_storage() -> void:
 		return
 	var display_state := GlobalVar.get_team_storage_display_state(player.team)
 	team_storage_money.text = "队伍金钱  %d" % int(round(float(display_state.get("team_money", 0.0))))
-	team_storage_money.add_theme_color_override(
-		"font_color", Color("#FF5656") if player.team == "red" else Color("#69A7FF")
-	)
+	team_storage_money.add_theme_color_override("font_color", COLOR_TEXT)
 	var entries: Array[Dictionary] = display_state.get("entries", [])
 	for entry: Dictionary in entries:
 		_add_team_storage_row(entry)
@@ -434,12 +444,13 @@ func _add_team_storage_row(entry: Dictionary) -> void:
 	var name_label := Label.new()
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.add_theme_font_size_override("font_size", 20)
+	name_label.add_theme_color_override("font_color", COLOR_TEXT)
 	name_label.text = str(entry.get("display_name", entry.get("item_id", "")))
 	var amount_label := Label.new()
 	amount_label.custom_minimum_size.x = 190.0
 	amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	amount_label.add_theme_font_size_override("font_size", 20)
-	amount_label.add_theme_color_override("font_color", Color(0.68, 0.88, 0.94))
+	amount_label.add_theme_color_override("font_color", COLOR_MUTED)
 	if str(entry.get("unit", "kg")) == "kg":
 		amount_label.text = "%.2f kg" % float(entry.get("amount", 0.0))
 	else:
@@ -466,9 +477,7 @@ func _refresh_vehicle_garage() -> void:
 		return
 	var team := str(player.team)
 	vehicle_garage_money.text = "队伍金钱  %d" % int(round(GlobalVar.check_team_item_amount(team, "money")))
-	vehicle_garage_money.add_theme_color_override(
-		"font_color", Color("ff5656") if team == "red" else Color("69a7ff")
-	)
+	vehicle_garage_money.add_theme_color_override("font_color", COLOR_TEXT)
 	var records: Array[Dictionary] = []
 	if is_instance_valid(GameAuthority) and GameAuthority.has_method("get_team_garage_records"):
 		records = GameAuthority.get_team_garage_records(team)
@@ -487,7 +496,7 @@ func _refresh_vehicle_garage() -> void:
 			activated_request = true
 	if activated_request:
 		_garage_status_message = ""
-		_garage_status_color = Color("6fd18a")
+		_garage_status_color = COLOR_TEXT
 	set_process(not _garage_repair_requests.is_empty())
 	for record: Dictionary in records:
 		_add_vehicle_garage_row(record)
@@ -506,6 +515,7 @@ func _add_vehicle_garage_row(record: Dictionary) -> void:
 	details.add_theme_constant_override("separation", 2)
 	var name_label := Label.new()
 	name_label.add_theme_font_size_override("font_size", 19)
+	name_label.add_theme_color_override("font_color", COLOR_TEXT)
 	name_label.text = _vehicle_garage_display_name(record)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	details.add_child(name_label)
@@ -527,7 +537,7 @@ func _add_vehicle_garage_row(record: Dictionary) -> void:
 			and int(quote.get("total_fee", -1)) >= 0
 		var fee_label := Label.new()
 		fee_label.add_theme_font_size_override("font_size", 15)
-		fee_label.add_theme_color_override("font_color", Color("a6afb7"))
+		fee_label.add_theme_color_override("font_color", COLOR_MUTED)
 		fee_label.text = "修理费用不可用" if not quote_available else "修理费：%d + 运送费：%d = 总计：%d" % [
 			int(quote.get("repair_fee", 0)),
 			int(quote.get("delivery_fee", 0)),
@@ -540,20 +550,17 @@ func _add_vehicle_garage_row(record: Dictionary) -> void:
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	status_label.add_theme_font_size_override("font_size", 19)
+	status_label.add_theme_color_override("font_color", COLOR_TEXT)
 	if delivery_pending:
 		status_label.text = "运送中"
-		status_label.add_theme_color_override("font_color", Color("f2b84b"))
 	else:
 		status_label.text = "可用" if status == "active" else "被摧毁"
-		status_label.add_theme_color_override(
-			"font_color", Color("6fd18a") if status == "active" else Color("ff8075")
-		)
 	var repair_button := Button.new()
 	repair_button.custom_minimum_size = Vector2(160.0, 42.0)
 	repair_button.add_theme_font_size_override("font_size", 16)
+	_apply_flat_button_style(repair_button)
 	if request_active:
 		status_label.text = "运送中"
-		status_label.add_theme_color_override("font_color", Color("f2b84b"))
 		repair_button.text = "运送中"
 		repair_button.disabled = true
 		repair_button.visible = true
@@ -613,7 +620,7 @@ func _on_repair_delivery_pressed(garage_vehicle_id: String) -> void:
 	}
 	set_process(true)
 	_garage_status_message = "正在确认队伍资金和载具交付位置……"
-	_garage_status_color = Color("a6afb7")
+	_garage_status_color = COLOR_MUTED
 	_refresh_vehicle_garage()
 	if GameAuthority.should_send_network_requests():
 		var sent := MultiplayerNetwork.submit_shop_transaction(request)
@@ -671,7 +678,7 @@ func apply_vehicle_garage_transaction_result(result: Dictionary) -> void:
 		pending_state["timed_out"] = false
 		_garage_repair_requests[garage_vehicle_id] = pending_state
 		_garage_status_message = "载具正在空投运送中……"
-		_garage_status_color = Color("f2b84b")
+		_garage_status_color = COLOR_MUTED
 		_refresh_vehicle_garage()
 		set_process(true)
 		return
@@ -682,10 +689,10 @@ func apply_vehicle_garage_transaction_result(result: Dictionary) -> void:
 		# The active garage row is the confirmation. Do not leave the old
 		# "checking funds"/delivery message below the list after it is usable.
 		_garage_status_message = ""
-		_garage_status_color = Color("6fd18a")
+		_garage_status_color = COLOR_TEXT
 	else:
 		_garage_status_message = _vehicle_garage_result_message(reason, bool(result.get("refunded", false)))
-		_garage_status_color = Color("ff8075")
+		_garage_status_color = COLOR_MUTED
 	_refresh_vehicle_garage()
 
 
@@ -732,8 +739,16 @@ func flash_hotbar_slot(slot_index: int) -> void:
 		return
 	var slot := hotbar_slots[slot_index]
 	var tween := create_tween()
-	tween.tween_property(slot, "modulate", Color("#FF9D9D"), 0.06)
+	tween.tween_property(slot, "modulate", COLOR_TEXT, 0.06)
 	tween.tween_property(slot, "modulate", Color.WHITE, 0.12)
+
+
+func _apply_flat_button_style(button: Button) -> void:
+	UITheme.apply_button(button)
+
+
+func _make_flat_style(background: Color, border := COLOR_BORDER) -> StyleBoxFlat:
+	return UITheme.make_style(background, border, 1, 3)
 
 
 func _set_window_offsets(offsets: Rect2) -> void:

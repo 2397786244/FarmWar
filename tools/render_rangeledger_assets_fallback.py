@@ -17,8 +17,11 @@ from pathlib import Path
 JOBS = [
     ("mpx", "assets/tools/FTF_Weapon_MPX_Compact_IronSights.glb"),
     ("m4", "assets/tools/M4.glb"),
+    ("ak47", "assets/tools/AK47.glb"),
     ("ar15", "assets/tools/AR15.glb"),
     ("shotgun", "assets/tools/Shotgun.glb"),
+    ("remington870", "assets/tools/Reminton870.glb"),
+    ("p90", "assets/tools/P90.glb"),
     ("hunting_rifle", "assets/tools/HuntingRifle.glb"),
     ("crossbow", "assets/tools/Crossbow.glb"),
     ("suppressed_pistol", "assets/tools/SuppressedPistol.glb"),

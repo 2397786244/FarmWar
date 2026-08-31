@@ -21,6 +21,7 @@
 [ext_resource type="PackedScene" path="res://ui/team_chat_panel.tscn" id="17_team_chat"]
 [ext_resource type="PackedScene" path="res://ui/game_exit_dialog.tscn" id="18_exit_dialog"]
 [ext_resource type="Script" path="res://src/auto_sales_page.gd" id="20_auto_sales_page"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="21_shared_theme"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_dkowc"]
 radius = 2.0
@@ -144,6 +145,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7080579, -0.45418245)
 
 [node name="Camera3D" type="Camera3D" parent="Head" unique_id=1269005610]
 near = 0.12
+fov = 90.0
 
 [node name="UpperBodyLookTarget" type="Marker3D" parent="Head" unique_id=1183878644]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -3)
@@ -218,6 +220,7 @@ offset_top = -74.0
 offset_right = 529.0
 grow_horizontal = 2
 grow_vertical = 0
+theme = ExtResource("21_shared_theme")
 theme_override_font_sizes/normal_font_size = 48
 theme_override_font_sizes/bold_font_size = 48
 theme_override_font_sizes/bold_italics_font_size = 48
@@ -238,6 +241,7 @@ offset_left = -228.0
 offset_top = -74.0
 grow_horizontal = 0
 grow_vertical = 0
+theme = ExtResource("21_shared_theme")
 theme_override_font_sizes/normal_font_size = 48
 theme_override_font_sizes/bold_font_size = 48
 theme_override_font_sizes/bold_italics_font_size = 48
@@ -255,6 +259,7 @@ offset_left = -360.0
 offset_right = 360.0
 offset_bottom = 23.0
 grow_horizontal = 2
+theme = ExtResource("21_shared_theme")
 theme_override_font_sizes/font_size = 50
 horizontal_alignment = 1
 
@@ -270,7 +275,8 @@ offset_bottom = 72.0
 grow_horizontal = 2
 theme_override_font_sizes/normal_font_size = 40
 bbcode_enabled = true
-text = "[center][color=#FF5656]0[/color]             [color=#69A7FF]0[/color][/center]"
+theme = ExtResource("21_shared_theme")
+text = "[center][color=#8FAAC2]0[/color]             [color=#C2A66E]0[/color][/center]"
 
 [node name="RemoteDevicePanel" type="PanelContainer" parent="SubViewport" unique_id=1931146821]
 visible = false
@@ -282,7 +288,7 @@ offset_top = 136.0
 offset_right = -28.0
 offset_bottom = 510.0
 grow_horizontal = 0
-theme = SubResource("Theme_2orxn")
+theme = ExtResource("21_shared_theme")
 
 [node name="MarginContainer" type="MarginContainer" parent="SubViewport/RemoteDevicePanel" unique_id=1931146822]
 layout_mode = 2
@@ -337,7 +343,7 @@ offset_right = 840.0
 offset_bottom = 341.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = SubResource("Theme_2orxn")
+theme = ExtResource("21_shared_theme")
 script = ExtResource("2_monf5")
 
 [node name="AutoSalesPage" type="PanelContainer" parent="SubViewport"]
@@ -354,6 +360,7 @@ offset_bottom = 324.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
+theme = ExtResource("21_shared_theme")
 script = ExtResource("20_auto_sales_page")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="SubViewport/ShopPage" unique_id=1076013086]
@@ -373,7 +380,7 @@ theme_override_constants/separation = 4
 [node name="TabContainer" type="TabContainer" parent="SubViewport/ShopPage/VBoxContainer" unique_id=1285524397]
 custom_minimum_size = Vector2(0, 600)
 layout_mode = 2
-theme = SubResource("Theme_qe16m")
+theme = ExtResource("21_shared_theme")
 tab_alignment = 1
 current_tab = 0
 

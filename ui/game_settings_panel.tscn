@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://src/game_settings_panel.gd" id="1_settings"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_theme"]
 
 [node name="GameSettingsPanel" type="Control"]
 layout_mode = 3
@@ -12,3 +13,4 @@ grow_vertical = 2
 mouse_filter = 1
 visible = false
 script = ExtResource("1_settings")
+theme = ExtResource("2_theme")

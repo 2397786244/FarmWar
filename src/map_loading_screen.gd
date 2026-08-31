@@ -17,6 +17,7 @@ func _ready() -> void:
 	layer = 1000
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_interface()
+	UITheme.apply(_root)
 	_root.visible = false
 
 
@@ -86,7 +87,7 @@ func _build_interface() -> void:
 	add_child(_root)
 
 	var fallback := ColorRect.new()
-	fallback.color = Color("#263D2E")
+	fallback.color = UITheme.COLOR_BG
 	fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(fallback)
 
@@ -112,18 +113,18 @@ func _build_interface() -> void:
 
 	_map_label = Label.new()
 	_map_label.add_theme_font_size_override("font_size", 32)
-	_map_label.add_theme_color_override("font_color", Color.WHITE)
+	_map_label.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	content.add_child(_map_label)
 
 	_tip_label = Label.new()
 	_tip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_tip_label.add_theme_font_size_override("font_size", 18)
-	_tip_label.add_theme_color_override("font_color", Color("#EAF1E8"))
+	_tip_label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	content.add_child(_tip_label)
 
 	_status_label = Label.new()
 	_status_label.add_theme_font_size_override("font_size", 16)
-	_status_label.add_theme_color_override("font_color", Color("#D8E2D5"))
+	_status_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	content.add_child(_status_label)
 
 	_progress_bar = ProgressBar.new()
@@ -131,20 +132,7 @@ func _build_interface() -> void:
 	_progress_bar.min_value = 0.0
 	_progress_bar.max_value = 100.0
 	_progress_bar.show_percentage = false
-	var background_style := StyleBoxFlat.new()
-	background_style.bg_color = Color(0.02, 0.03, 0.025, 0.78)
-	background_style.corner_radius_top_left = 3
-	background_style.corner_radius_top_right = 3
-	background_style.corner_radius_bottom_left = 3
-	background_style.corner_radius_bottom_right = 3
-	var fill_style := StyleBoxFlat.new()
-	fill_style.bg_color = Color("#E6B94D")
-	fill_style.corner_radius_top_left = 3
-	fill_style.corner_radius_top_right = 3
-	fill_style.corner_radius_bottom_left = 3
-	fill_style.corner_radius_bottom_right = 3
-	_progress_bar.add_theme_stylebox_override("background", background_style)
-	_progress_bar.add_theme_stylebox_override("fill", fill_style)
+	UITheme.apply_progress(_progress_bar, UITheme.TONE_INFO)
 	content.add_child(_progress_bar)
 
 

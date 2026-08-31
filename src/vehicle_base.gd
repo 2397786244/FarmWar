@@ -386,7 +386,7 @@ func get_destruction_effect_knockback() -> float:
 ## so temporary upgrades such as NitroBoost affect the view immediately.
 func get_camera_fov_for_speed(speed: float) -> float:
 	if vehicle_config == null:
-		return 72.0
+		return 85.0
 	var base_fov := vehicle_config.camera_base_fov
 	var configured_max_fov := maxf(vehicle_config.camera_max_fov, base_fov)
 	var speed_based_max_fov := base_fov + maxf(get_max_forward_speed(), 0.0) \

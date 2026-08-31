@@ -4,6 +4,7 @@ class_name GamePlayer
 signal computer_interface_requested(computer: ComputerTerminal)
 
 const VEHICLE_INTERACTION_OUTLINE_SCRIPT := preload("res://src/vehicle_interaction_outline.gd")
+const ENVIRONMENT_SCAN_PRESENTATION_SCRIPT := preload("res://src/environment_scan_presentation.gd")
 const VEHICLE_SEAT_HUD_SCRIPT := preload("res://src/vehicle_seat_hud.gd")
 const CHOCOLATE_OS_DESKTOP_SCENE := preload("res://ui/chocolate_os_desktop.tscn")
 const INDUSTRIAL_WORKBENCH_PAGE_SCENE := preload("res://ui/industrial_workbench_page.tscn")
@@ -44,6 +45,21 @@ const DEBUG_CAMERA_SECOND_PERSON := 2
 const DEBUG_CAMERA_DISTANCE := 5.0
 const DEBUG_CAMERA_HEIGHT := 2.2
 const DEBUG_CAMERA_TARGET_HEIGHT := 1.25
+const WEAPON_RECOIL_SINGLE_MIN_DEGREES := 0.18
+const WEAPON_RECOIL_SINGLE_MAX_DEGREES := 8.0
+const WEAPON_RECOIL_AUTO_MIN_DEGREES := 0.45
+const WEAPON_RECOIL_AUTO_MAX_DEGREES := 1.50
+const WEAPON_RECOIL_SINGLE_CAP_DEGREES := 8.0
+const WEAPON_RECOIL_AUTO_CAP_DEGREES := 8.0
+const WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES := 6.0
+const WEAPON_RECOIL_AUTO_RECOVERY_DEGREES := 2.5
+# One logical recoil angle is shared by the camera and the reticle. Keeping the
+# split explicit prevents the same kick from being applied twice to the actual
+# firing ray while still giving the player both visual cues.
+const WEAPON_RECOIL_CAMERA_FRACTION := 0.65
+const WEAPON_RECOIL_CROSSHAIR_FRACTION := 0.35
+const CROSSHAIR_RECOIL_PIXELS_PER_DEGREE := 8.0
+const CROSSHAIR_RECOIL_MAX_PIXELS := 72.0
 const MEDICINE_HEAL_AMOUNT := 50.0
 const PLAYER_COLLISION_LAYER := 8
 const PLAYER_COLLISION_MASK := 12943
@@ -153,6 +169,8 @@ var tool_node: Node3D
 var held_item_node: Node3D
 var placement_preview_controller: PlacementPreviewController
 var tool_cooldowns: Array[float] = []
+var fire_modes_by_tool_id: Dictionary = {}
+var automatic_fire_blocked_until_release := false
 var backpack_items: Array[Dictionary] = []
 var suppress_backpack_layout_sync := false
 var equipped_items: Dictionary = {
@@ -240,12 +258,17 @@ var standing_hit_collision_transform := Transform3D.IDENTITY
 
 var camera_rest_position := Vector3.ZERO
 var camera_rest_rotation := Vector3.ZERO
-var camera_default_fov := 75.0
+# Keep the first-person view wide and stable; aiming changes weapon pose/IK,
+# but does not zoom the camera.
+var camera_default_fov := 90.0
 var debug_camera_mode := DEBUG_CAMERA_FIRST_PERSON
 var rubber_knockback := Vector3.ZERO
 var camera_shake_time := 0.0
 var camera_shake_strength := 0.0
 var camera_shake_duration := 0.22
+var weapon_recoil_pitch := 0.0
+var weapon_recoil_camera_pitch := 0.0
+var crosshair_recoil_offset_pixels := 0.0
 var vehicle_camera_shake_time := 0.0
 var vehicle_camera_shake_strength := 0.0
 var vehicle_camera_shake_duration := 0.32
@@ -311,6 +334,7 @@ var active_vehicle_id := ""
 var active_vehicle_seat_index := -1
 var vehicle_is_active := false
 var _vehicle_interaction_outline: VehicleInteractionOutline
+var _environment_scan_presentation: EnvironmentScanPresentation
 var mounted_machine_gun_is_active := false
 var mounted_machine_gun_vehicle_id := ""
 var mounted_machine_gun: VehicleBaseMachineGun
@@ -1636,7 +1660,7 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera_rest_position = camera.position
 	camera_rest_rotation = camera.rotation
-	camera_default_fov = camera.fov
+	camera.fov = camera_default_fov
 	standing_head_position = Head.position
 	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if body_shape != null:
@@ -1806,8 +1830,26 @@ func _ensure_vehicle_interaction_outline() -> void:
 	_vehicle_interaction_outline.setup(self)
 
 
+func start_environment_scan() -> void:
+	if is_remote_proxy or is_respawning:
+		return
+	if is_instance_valid(_environment_scan_presentation):
+		_environment_scan_presentation.stop()
+	_environment_scan_presentation = ENVIRONMENT_SCAN_PRESENTATION_SCRIPT.new() as EnvironmentScanPresentation
+	_environment_scan_presentation.name = "EnvironmentScanPresentation"
+	add_child(_environment_scan_presentation)
+	_environment_scan_presentation.setup(self, global_position)
+
+
+func _clear_environment_scan() -> void:
+	if is_instance_valid(_environment_scan_presentation):
+		_environment_scan_presentation.stop()
+	_environment_scan_presentation = null
+
+
 func _exit_tree() -> void:
 	_clear_vehicle_interaction_outline()
+	_clear_environment_scan()
 	if is_instance_valid(placement_preview_controller):
 		placement_preview_controller.clear_selection()
 
@@ -1885,6 +1927,7 @@ func _update_remote_interpolation() -> void:
 	if blend >= 0.5:
 		blended["current_tool_index"] = following.get("current_tool_index", current_tool_index)
 		blended["current_tool_id"] = following.get("current_tool_id", "")
+		blended["m17_flashlight_on"] = following.get("m17_flashlight_on", false)
 		blended["selected_weapon_ammo"] = following.get("selected_weapon_ammo", {})
 		blended["selected_shield_hp"] = following.get("selected_shield_hp", {})
 	_apply_remote_render_state(blended)
@@ -1914,6 +1957,11 @@ func _apply_remote_render_state(snapshot: Dictionary) -> void:
 	var next_tool_id := str(snapshot.get("current_tool_id", _selected_tool_id()))
 	if next_tool_index != current_tool_index or next_tool_id != _selected_tool_id():
 		apply_remote_tool_selection(next_tool_index, next_tool_id)
+	if is_remote_proxy:
+		apply_m17_flashlight_state(
+			bool(snapshot.get("m17_flashlight_on", false)),
+			next_tool_id
+		)
 	var selected_ammo_value: Variant = snapshot.get("selected_weapon_ammo", {})
 	if selected_ammo_value is Dictionary and not (selected_ammo_value as Dictionary).is_empty() \
 			and is_instance_valid(tool_node) and tool_node.has_method("set_ammo_loaded"):
@@ -2425,6 +2473,16 @@ func _input(event: InputEvent) -> void:
 				and is_instance_valid(active_vehicle):
 			active_vehicle.rotate_driving_camera(event.relative, mouse_sensitivity)
 		return
+	if event.is_action_pressed("second_action", false) and _current_tool_is_m17() \
+			and not is_prone and not is_respawning:
+		_request_m17_flashlight_toggle()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("second_action", false) and _current_tool_is_automatic() \
+			and not is_prone and not is_respawning:
+		_toggle_current_tool_fire_mode()
+		get_viewport().set_input_as_handled()
+		return
 	if remote_is_active:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and _is_sprout_blaster_selected():
@@ -2489,8 +2547,14 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 		_set_weapon_aiming(mouse_event.pressed)
-	elif mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
-		_use_current_tool()
+	elif mouse_event.button_index == MOUSE_BUTTON_LEFT:
+		if mouse_event.pressed:
+			# A fresh press starts a new automatic-fire trigger cycle. A weapon swap
+			# or mode toggle may have blocked a still-held mouse button.
+			automatic_fire_blocked_until_release = false
+			_use_current_tool()
+		else:
+			automatic_fire_blocked_until_release = false
 
 
 func _tool_index_from_key(key: Key) -> int:
@@ -2585,6 +2649,9 @@ func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 	var tool_id := ""
 	if current_tool_index >= 0 and current_tool_index < tool_definitions.size():
 		tool_id = str(tool_definitions[current_tool_index].get("id", ""))
+	var definition: Dictionary = tool_definitions[current_tool_index] \
+		if current_tool_index >= 0 and current_tool_index < tool_definitions.size() else {}
+	var category := str(definition.get("category", "utility"))
 	var origin := _get_local_aim_origin()
 	var direction := -_get_local_aim_basis().z
 	var muzzle: Node3D = null
@@ -2592,6 +2659,11 @@ func _make_tool_request(use_cached_wall_snap := true) -> Dictionary:
 		muzzle = tool_node.get_node_or_null("Muzzle") as Node3D
 	if muzzle != null:
 		origin = muzzle.global_position
+	if category == "shooting":
+		direction = get_shooting_aim_direction(
+			origin,
+			CombatBalance.get_float(tool_id, "range", 100.0)
+		)
 	var melee_center: Variant = null
 	if tool_id == "long_spear" and is_instance_valid(tool_node):
 		# AttackArea is authored beneath the weapon scene and may become nested in
@@ -3028,6 +3100,25 @@ func _request_vehicle_headlights_toggle() -> void:
 		active_vehicle.call("toggle_headlights")
 
 
+func _request_m17_flashlight_toggle() -> void:
+	if not _current_tool_is_m17() or not is_instance_valid(tool_node) \
+			or not tool_node.has_method("is_flashlight_on") \
+			or not tool_node.has_method("set_flashlight_enabled"):
+		return
+	var enabled := not bool(tool_node.call("is_flashlight_on"))
+	# Predict locally for immediate feedback. The authoritative event and the
+	# following snapshot both carry the same state to every other player.
+	tool_node.call("set_flashlight_enabled", enabled)
+	var action := {"action": "set_flashlight", "enabled": enabled}
+	if GameAuthority.should_send_network_requests():
+		if not MultiplayerNetwork.submit_tool_action(action):
+			tool_node.call("set_flashlight_enabled", not enabled)
+	elif _is_authority_local_player():
+		var result: Dictionary = GameAuthority.local_tool_action(authority_peer_id, action)
+		if not bool(result.get("ok", false)):
+			tool_node.call("set_flashlight_enabled", not enabled)
+
+
 func _request_vehicle_seat_switch(target_seat_index: int) -> void:
 	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
 			or active_vehicle_id.is_empty() \
@@ -3215,6 +3306,8 @@ func _play_vehicle_occupant_animation() -> void:
 
 
 func _set_vehicle_player_runtime(seated: bool) -> void:
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	_set_weapon_aiming(false)
 	var appearance := get_node_or_null("AppearanceNode") as Node3D
 	if appearance != null:
@@ -3771,6 +3864,8 @@ func _select_tool(new_index: int, force := false) -> void:
 	if not force and new_index == current_tool_index and is_instance_valid(tool_node):
 		return
 
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	_set_weapon_aiming(false)
 	_clear_tool_node()
 	_clear_held_item_node()
@@ -3849,6 +3944,8 @@ func _select_handheld_item(new_index: int, item: Dictionary, force := false) -> 
 		return
 	if not force and new_index == current_tool_index and is_instance_valid(held_item_node):
 		return
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	var model_path := _get_handheld_item_model_path(item)
 	if model_path.is_empty():
 		_select_empty_hotbar_slot(new_index)
@@ -4010,6 +4107,8 @@ func _clear_tool_node() -> void:
 	if is_instance_valid(placement_preview_controller):
 		placement_preview_controller.clear_selection()
 	if is_instance_valid(tool_node):
+		if tool_node.has_method("set_flashlight_enabled"):
+			tool_node.call("set_flashlight_enabled", false)
 		tool_pivot.remove_child(tool_node)
 		tool_node.queue_free()
 		tool_node = null
@@ -4034,6 +4133,8 @@ func _disable_handheld_item_collision(node: Node) -> void:
 
 
 func _select_empty_hotbar_slot(selected_slot := -1) -> void:
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	_set_weapon_aiming(false)
 	_clear_tool_node()
 	_clear_held_item_node()
@@ -4117,20 +4218,22 @@ func _use_current_tool() -> void:
 		return
 
 	var ret = null
+	var tool_request := _make_tool_request()
+	var shot_direction: Variant = tool_request.get("direction", Vector3.ZERO)
 	if GameAuthority.should_send_network_requests():
 		_consume_predicted_ammo()
-		MultiplayerNetwork.submit_use_tool(_make_tool_request())
-		_play_local_tool_visual()
+		MultiplayerNetwork.submit_use_tool(tool_request)
+		_play_local_tool_visual(null, shot_direction)
 	elif _is_authority_local_player():
 		# 单人模式也走 GameAuthority 的本地权威入口。
 		# 不能先调用旧 emit() 再调用 local_try_use_tool()，否则 FarmRunner/放置类工具会执行两次。
-		ret = GameAuthority.local_try_use_tool(authority_peer_id, _make_tool_request())
+		ret = GameAuthority.local_try_use_tool(authority_peer_id, tool_request)
 		if ret is Dictionary:
 			var local_slots_value: Variant = (ret as Dictionary).get("player_slots", null)
 			if local_slots_value is Array:
 				apply_cargo_backpack_slots(local_slots_value as Array)
 		if not (ret is Dictionary) or bool((ret as Dictionary).get("ok", false)):
-			_play_local_tool_visual(ret)
+			_play_local_tool_visual(ret, shot_direction)
 	else:
 		# 兼容没有启用 GameAuthority 的旧测试场景。
 		ret = tool_node.call("emit")
@@ -4296,7 +4399,10 @@ func _consume_local_ammo_supply_box_ammo(requested: int) -> int:
 	return transferred
 
 
-func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
+func _play_local_tool_visual(
+	authoritative_result: Variant = null,
+	shot_direction: Variant = null
+) -> void:
 	if not is_instance_valid(tool_node) or not tool_node.has_method("emit"):
 		return
 	# Mouse input can arrive before this frame's regular process pass. Refresh
@@ -4332,10 +4438,21 @@ func _play_local_tool_visual(authoritative_result: Variant = null) -> void:
 			)
 			if hit_position is Vector3:
 				tool_node.call("play_lightning_at", hit_position as Vector3)
+	elif tool_id == "environment_scanner":
+		tool_node.call("emit")
 	elif category == "shooting":
 		# Authoritative shooting is resolved immediately by GameAuthority hitscan.
 		# Local projectiles are presentation only and must never apply a second hit.
-		if tool_node.has_method("emit_visual_only"):
+		var visual_direction: Variant = shot_direction
+		if authoritative_result is Dictionary:
+			var result_direction: Variant = (authoritative_result as Dictionary).get("direction", null)
+			if result_direction is Vector3 and (result_direction as Vector3).length_squared() > 0.001:
+				visual_direction = result_direction
+		if visual_direction is Vector3 \
+				and (visual_direction as Vector3).length_squared() > 0.001 \
+				and tool_node.has_method("emit_visual_only_tracer"):
+			tool_node.call("emit_visual_only_tracer", (visual_direction as Vector3).normalized())
+		elif tool_node.has_method("emit_visual_only"):
 			tool_node.call("emit_visual_only")
 		else:
 			tool_node.call("emit")
@@ -4507,6 +4624,8 @@ func _set_prone_state(value: bool) -> void:
 	var next_prone := value and not is_ladder_climbing and not vehicle_is_active and not remote_is_active and not is_respawning
 	if is_prone == next_prone:
 		return
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	is_prone = next_prone
 	_update_prone_collision_shapes()
 	_set_weapon_aiming(false)
@@ -4577,6 +4696,7 @@ func _process(delta: float) -> void:
 	_ensure_local_camera_ownership()
 	_update_prone_presentation(delta)
 	_update_debug_camera()
+	_update_weapon_recoil(delta)
 	_update_world_post_process(delta)
 	_tick_status_effects(delta)
 	_update_health_ui()
@@ -4734,13 +4854,36 @@ func _update_placement_preview() -> void:
 
 
 func _update_continuous_tool_use() -> void:
-	if _chat_input_captures_gameplay():
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		automatic_fire_blocked_until_release = false
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED \
-			or not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			or is_respawning or is_prone or is_ladder_climbing \
+			or vehicle_is_active or remote_is_active or mounted_machine_gun_is_active \
+			or _inventory_ui_blocks_gameplay_actions() \
+			or ($SubViewport/ShopPage.visible if is_instance_valid($SubViewport/ShopPage) else false):
+		if CombatBalance.is_automatic_fire_weapon(_selected_tool_id()):
+			automatic_fire_blocked_until_release = true
 		return
-	if _selected_tool_id() != "repair_welder" \
-			or current_tool_index < 0 or current_tool_index >= tool_cooldowns.size():
+	if current_tool_index < 0 or current_tool_index >= tool_cooldowns.size():
+		return
+	var selected_tool_id := _selected_tool_id()
+	if CombatBalance.is_automatic_fire_weapon(selected_tool_id):
+		if not _is_auto_fire_mode(selected_tool_id) or automatic_fire_blocked_until_release:
+			return
+		# Avoid repeatedly entering _use_current_tool() while a stale local
+		# magazine/reload state already tells us that this trigger cannot fire.
+		if not _selected_weapon_uses_ammo():
+			return
+		var selected_item := get_backpack_item(current_tool_index)
+		if float(selected_item.get("reload_remaining", 0.0)) > 0.0 \
+				or int(selected_item.get("ammo_in_mag", 0)) <= 0:
+			automatic_fire_blocked_until_release = true
+			return
+		if tool_cooldowns[current_tool_index] <= 0.0:
+			_use_current_tool()
+		return
+	if selected_tool_id != "repair_welder":
 		return
 	if tool_cooldowns[current_tool_index] <= 0.0:
 		_use_current_tool()
@@ -4848,6 +4991,8 @@ func _can_toggle_debug_camera() -> bool:
 
 
 func _cycle_debug_camera_mode() -> void:
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	debug_camera_mode = (debug_camera_mode + 1) % 3
 	if debug_camera_mode == DEBUG_CAMERA_FIRST_PERSON:
 		# Return the same Camera3D to its original Head-relative first-person
@@ -4903,6 +5048,42 @@ func _get_local_aim_origin() -> Vector3:
 	if is_instance_valid(camera):
 		return camera.global_position
 	return global_position + Vector3.UP * 1.4
+
+
+## Returns the world-space direction for a handheld shooting ray.
+##
+## The visible reticle is a CanvasLayer control, so its recoil offset must be
+## converted back into the same Camera3D screen point used for the ray. The
+## muzzle-to-aim-point direction is then shared by the authority request and
+## the local tracer; this keeps weapon parallax and reticle recoil consistent.
+func get_shooting_aim_direction(muzzle_position: Vector3, max_distance: float) -> Vector3:
+	var fallback := -_get_local_aim_basis().z.normalized()
+	if is_remote_proxy or debug_camera_mode != DEBUG_CAMERA_FIRST_PERSON \
+		or not is_instance_valid(camera):
+		return fallback
+	var viewport_size := camera.get_viewport().get_visible_rect().size
+	if viewport_size.x <= 1.0 or viewport_size.y <= 1.0:
+		return fallback
+	var screen_center := viewport_size * 0.5
+	var screen_point := screen_center + Vector2(0.0, -crosshair_recoil_offset_pixels)
+	var ray_origin: Vector3 = camera.project_ray_origin(screen_point)
+	var ray_direction: Vector3 = camera.project_ray_normal(screen_point).normalized()
+	if ray_direction.length_squared() <= 0.001:
+		return fallback
+	var aim_point: Vector3 = ray_origin + ray_direction * maxf(max_distance, 0.01)
+	var world := get_world_3d()
+	if world != null:
+		var query := PhysicsRayQueryParameters3D.create(ray_origin, aim_point, 139)
+		query.collide_with_bodies = true
+		query.collide_with_areas = true
+		query.exclude = [get_rid()]
+		var hit := world.direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var hit_position: Variant = hit.get("position", aim_point)
+			if hit_position is Vector3:
+				aim_point = hit_position as Vector3
+	var muzzle_direction: Vector3 = aim_point - muzzle_position
+	return muzzle_direction.normalized() if muzzle_direction.length_squared() > 0.001 else fallback
 
 
 func _get_active_post_process_camera() -> Camera3D:
@@ -5302,6 +5483,7 @@ func _update_player_action_animation(direction_strength:Vector2):
 func _create_crosshair() -> void:
 	crosshair = Control.new()
 	crosshair.name = "ShootingCrosshair"
+	UITheme.apply(crosshair)
 	crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	crosshair.set_anchors_preset(Control.PRESET_CENTER)
 	crosshair.offset_left = -22.0
@@ -5311,12 +5493,12 @@ func _create_crosshair() -> void:
 	$SubViewport.add_child(crosshair)
 	_create_cooldown_ring()
 
-	var line_color := Color("#F7FBFFFF")
+	var line_color := UITheme.COLOR_TEXT
 	_add_crosshair_line(Vector2(20.0, 5.0), Vector2(4.0, 11.0), line_color)
 	_add_crosshair_line(Vector2(20.0, 28.0), Vector2(4.0, 11.0), line_color)
 	_add_crosshair_line(Vector2(5.0, 20.0), Vector2(11.0, 4.0), line_color)
 	_add_crosshair_line(Vector2(28.0, 20.0), Vector2(11.0, 4.0), line_color)
-	_add_crosshair_line(Vector2(20.0, 20.0), Vector2(4.0, 4.0), Color("#FFAD66"))
+	_add_crosshair_line(Vector2(20.0, 20.0), Vector2(4.0, 4.0), UITheme.COLOR_INFO)
 	_create_hit_marker()
 	_update_crosshair_visibility()
 
@@ -5326,6 +5508,7 @@ func _create_gameplay_notice() -> void:
 		return
 	gameplay_notice = Label.new()
 	gameplay_notice.name = "GameplayNotice"
+	UITheme.apply(gameplay_notice)
 	gameplay_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	gameplay_notice.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	gameplay_notice.offset_left = -430.0
@@ -5334,7 +5517,7 @@ func _create_gameplay_notice() -> void:
 	gameplay_notice.offset_bottom = -160.0
 	gameplay_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gameplay_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	gameplay_notice.add_theme_color_override("font_color", Color("#FFD84A"))
+	gameplay_notice.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	gameplay_notice.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.01, 0.95))
 	gameplay_notice.add_theme_constant_override("outline_size", 7)
 	gameplay_notice.add_theme_font_size_override("font_size", 28)
@@ -5347,6 +5530,7 @@ func _create_weather_notice() -> void:
 		return
 	weather_notice = Label.new()
 	weather_notice.name = "WeatherNotice"
+	UITheme.apply(weather_notice)
 	weather_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	weather_notice.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	weather_notice.offset_left = 24.0
@@ -5355,7 +5539,7 @@ func _create_weather_notice() -> void:
 	weather_notice.offset_bottom = -174.0
 	weather_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	weather_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	weather_notice.add_theme_color_override("font_color", Color("#63FF82"))
+	weather_notice.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	weather_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
 	weather_notice.add_theme_constant_override("outline_size", 6)
 	weather_notice.add_theme_font_size_override("font_size", 23)
@@ -5368,6 +5552,7 @@ func _create_message_area_notice() -> void:
 		return
 	message_area_notice = Label.new()
 	message_area_notice.name = "MessageAreaNotice"
+	UITheme.apply(message_area_notice)
 	message_area_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	message_area_notice.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	message_area_notice.offset_left = -430.0
@@ -5377,7 +5562,7 @@ func _create_message_area_notice() -> void:
 	message_area_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message_area_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	message_area_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	message_area_notice.add_theme_color_override("font_color", Color("#63FF82"))
+	message_area_notice.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	message_area_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
 	message_area_notice.add_theme_constant_override("outline_size", 7)
 	message_area_notice.add_theme_font_size_override("font_size", 28)
@@ -5457,6 +5642,7 @@ func _create_action_reward_feed() -> void:
 		return
 	action_reward_feed = VBoxContainer.new()
 	action_reward_feed.name = "ActionRewardFeed"
+	UITheme.apply(action_reward_feed)
 	action_reward_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	action_reward_feed.set_anchors_preset(Control.PRESET_CENTER)
 	action_reward_feed.offset_left = 58.0
@@ -5478,10 +5664,11 @@ func show_action_reward(amount: int, description: String) -> void:
 		if child is Label:
 			_fade_action_reward_entry(child as Label, 0.22, 0.0)
 	var entry := Label.new()
+	UITheme.apply(entry)
 	entry.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	entry.text = "+%d  %s" % [amount, description]
 	entry.custom_minimum_size = Vector2(400.0, 34.0)
-	entry.add_theme_color_override("font_color", Color("#FF3F4D"))
+	entry.add_theme_color_override("font_color", UITheme.COLOR_SUCCESS)
 	entry.add_theme_color_override("font_outline_color", Color(0.04, 0.01, 0.01, 0.96))
 	entry.add_theme_constant_override("outline_size", 6)
 	entry.add_theme_font_size_override("font_size", 24)
@@ -5512,6 +5699,7 @@ func _create_cooperative_team_hud() -> void:
 	if not is_instance_valid(cooperative_team_money_label):
 		cooperative_team_money_label = Label.new()
 		cooperative_team_money_label.name = "CooperativeTeamMoney"
+		UITheme.apply(cooperative_team_money_label)
 		cooperative_team_money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cooperative_team_money_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 		cooperative_team_money_label.offset_left = -320.0
@@ -5520,7 +5708,7 @@ func _create_cooperative_team_hud() -> void:
 		cooperative_team_money_label.offset_bottom = 48.0
 		cooperative_team_money_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		cooperative_team_money_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cooperative_team_money_label.add_theme_color_override("font_color", Color("#63D487"))
+		cooperative_team_money_label.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 		cooperative_team_money_label.add_theme_color_override("font_outline_color", Color(0.01, 0.06, 0.02, 0.98))
 		cooperative_team_money_label.add_theme_constant_override("outline_size", 6)
 		cooperative_team_money_label.add_theme_font_size_override("font_size", 24)
@@ -5554,6 +5742,7 @@ func _show_cooperative_delta(
 		if child is Label:
 			_fade_cooperative_delta_entry(child as Label, tween_store, 0.18, 0.0)
 	var entry := Label.new()
+	UITheme.apply(entry)
 	entry.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	entry.custom_minimum_size = Vector2(296.0, 25.0)
 	entry.horizontal_alignment = alignment
@@ -5572,7 +5761,7 @@ func show_cooperative_team_money_delta(changed_team: String, delta: float) -> vo
 	if not is_instance_valid(cooperative_money_delta_feed):
 		_create_cooperative_team_hud()
 	var sign := "+" if delta > 0.0 else "-"
-	var color := Color("#63D487") if delta > 0.0 else Color("#FF746B")
+	var color := UITheme.COLOR_SUCCESS if delta > 0.0 else UITheme.COLOR_ERROR
 	_show_cooperative_delta(
 		cooperative_money_delta_feed,
 		"队伍金钱 %s%d" % [sign, int(round(absf(delta)))],
@@ -5628,7 +5817,7 @@ func _create_hit_marker() -> void:
 	hit_marker.visible = false
 	$SubViewport.add_child(hit_marker)
 
-	var marker_color := Color("#FF3F4D")
+	var marker_color := UITheme.COLOR_ERROR
 	_add_hit_marker_line(Vector2(24.0, 3.0), Vector2(4.0, 16.0), marker_color)
 	_add_hit_marker_line(Vector2(24.0, 33.0), Vector2(4.0, 16.0), marker_color)
 	_add_hit_marker_line(Vector2(3.0, 24.0), Vector2(16.0, 4.0), marker_color)
@@ -5648,6 +5837,13 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if is_remote_proxy:
 		return
 	var event_type := str(event.get("type", ""))
+	if event_type == "m17_flashlight_state":
+		if int(event.get("peer_id", 0)) == authority_peer_id:
+			apply_m17_flashlight_state(
+				bool(event.get("enabled", false)),
+				str(event.get("tool_id", ""))
+			)
+		return
 	if event_type == "computer_action_result":
 		var result_value: Variant = event.get("data", {})
 		if result_value is Dictionary:
@@ -6182,13 +6378,14 @@ func _create_health_ui() -> void:
 		return
 	health_root = PanelContainer.new()
 	health_root.name = "HealthPanel"
+	UITheme.apply(health_root)
 	health_root.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	health_root.offset_left = 24.0
 	health_root.offset_top = -164.0
 	health_root.offset_right = 284.0
 	health_root.offset_bottom = -24.0
 	health_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	health_root.add_theme_stylebox_override("panel", _make_panel_style(Color("#080A08F2"), Color("#E98624"), 2))
+	health_root.add_theme_stylebox_override("panel", _make_panel_style(UITheme.COLOR_PANEL, UITheme.COLOR_BORDER, 1))
 	$SubViewport.add_child(health_root)
 
 	var margin := MarginContainer.new()
@@ -6206,21 +6403,21 @@ func _create_health_ui() -> void:
 	team_money_label.text = "队伍金钱  0"
 	team_money_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	team_money_label.add_theme_font_size_override("font_size", 18)
-	team_money_label.add_theme_color_override("font_color", Color("#FFD166"))
+	team_money_label.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	content.add_child(team_money_label)
 
 	ammo_label = Label.new()
 	ammo_label.text = ""
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	ammo_label.add_theme_font_size_override("font_size", 22)
-	ammo_label.add_theme_color_override("font_color", Color("#E98624"))
+	ammo_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	content.add_child(ammo_label)
 
 	health_label = Label.new()
 	health_label.text = "HP 200 / 200"
 	health_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	health_label.add_theme_font_size_override("font_size", 18)
-	health_label.add_theme_color_override("font_color", Color("#63D487"))
+	health_label.add_theme_color_override("font_color", UITheme.COLOR_SUCCESS)
 	content.add_child(health_label)
 
 	health_bar = ProgressBar.new()
@@ -6228,8 +6425,7 @@ func _create_health_ui() -> void:
 	health_bar.value = PLAYER_MAX_HP
 	health_bar.show_percentage = false
 	health_bar.custom_minimum_size = Vector2(230.0, 12.0)
-	health_bar.add_theme_stylebox_override("background", _make_bar_style(Color("#080A08")))
-	health_bar.add_theme_stylebox_override("fill", _make_bar_style(Color("#63D487")))
+	UITheme.apply_progress(health_bar, UITheme.TONE_SUCCESS)
 	content.add_child(health_bar)
 	_update_health_ui()
 	_update_ammo_ui()
@@ -6240,6 +6436,7 @@ func _create_control_status_ui() -> void:
 		return
 	control_status_root = PanelContainer.new()
 	control_status_root.name = "ControlStatusPanel"
+	UITheme.apply(control_status_root)
 	control_status_root.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	control_status_root.offset_left = 24.0
 	control_status_root.offset_top = -168.0
@@ -6247,7 +6444,7 @@ func _create_control_status_ui() -> void:
 	control_status_root.offset_bottom = -24.0
 	control_status_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	control_status_root.add_theme_stylebox_override(
-		"panel", _make_panel_style(Color("#080A08F2"), Color("#E98624"), 2)
+		"panel", _make_panel_style(UITheme.COLOR_PANEL, UITheme.COLOR_BORDER, 1)
 	)
 	$SubViewport.add_child(control_status_root)
 
@@ -6265,40 +6462,41 @@ func _create_control_status_ui() -> void:
 	control_status_team_money_label = Label.new()
 	control_status_team_money_label.text = "队伍金钱  0"
 	control_status_team_money_label.add_theme_font_size_override("font_size", 16)
-	control_status_team_money_label.add_theme_color_override("font_color", Color("#FFD166"))
+	control_status_team_money_label.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	content.add_child(control_status_team_money_label)
 
 	control_status_title = Label.new()
 	control_status_title.add_theme_font_size_override("font_size", 17)
-	control_status_title.add_theme_color_override("font_color", Color("#E98624"))
+	control_status_title.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	content.add_child(control_status_title)
 
 	control_status_primary_label = Label.new()
 	control_status_primary_label.add_theme_font_size_override("font_size", 14)
-	control_status_primary_label.add_theme_color_override("font_color", Color("#63D487"))
+	control_status_primary_label.add_theme_color_override("font_color", UITheme.COLOR_INFO)
 	content.add_child(control_status_primary_label)
-	control_status_primary_bar = _create_control_status_bar(Color("#63D487"))
+	control_status_primary_bar = _create_control_status_bar(UITheme.COLOR_INFO)
 	content.add_child(control_status_primary_bar)
 
 	control_status_secondary_label = Label.new()
 	control_status_secondary_label.add_theme_font_size_override("font_size", 14)
-	control_status_secondary_label.add_theme_color_override("font_color", Color("#E98624"))
+	control_status_secondary_label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	content.add_child(control_status_secondary_label)
-	control_status_secondary_bar = _create_control_status_bar(Color("#E98624"))
+	control_status_secondary_bar = _create_control_status_bar(UITheme.COLOR_MUTED)
 	content.add_child(control_status_secondary_bar)
 
 	control_status_detail_label = Label.new()
 	control_status_detail_label.add_theme_font_size_override("font_size", 14)
-	control_status_detail_label.add_theme_color_override("font_color", Color("#63D487"))
+	control_status_detail_label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	content.add_child(control_status_detail_label)
 	control_status_root.visible = false
 
 
 func _create_control_status_bar(fill_color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
+	UITheme.apply(bar)
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(270.0, 10.0)
-	bar.add_theme_stylebox_override("background", _make_bar_style(Color("#080A08")))
+	bar.add_theme_stylebox_override("background", _make_bar_style(UITheme.COLOR_CONTROL))
 	bar.add_theme_stylebox_override("fill", _make_bar_style(fill_color))
 	return bar
 
@@ -6308,10 +6506,11 @@ func _create_match_timer_ui() -> void:
 		return
 	match_timer_label = Label.new()
 	match_timer_label.name = "MatchTimerLabel"
+	UITheme.apply(match_timer_label)
 	match_timer_label.text = "20:00"
 	match_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	match_timer_label.add_theme_font_size_override("font_size", 28)
-	match_timer_label.add_theme_color_override("font_color", Color("#FFF4C2"))
+	match_timer_label.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	match_timer_label.add_theme_color_override("font_shadow_color", Color("#000000A0"))
 	match_timer_label.add_theme_constant_override("shadow_offset_x", 2)
 	match_timer_label.add_theme_constant_override("shadow_offset_y", 2)
@@ -6337,11 +6536,12 @@ func _ensure_respawn_overlay() -> void:
 	$SubViewport.add_child(respawn_overlay)
 	respawn_label = Label.new()
 	respawn_label.name = "RespawnLabel"
+	UITheme.apply(respawn_label)
 	respawn_label.text = "你死了"
 	respawn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	respawn_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	respawn_label.add_theme_font_size_override("font_size", 96)
-	respawn_label.add_theme_color_override("font_color", Color("#FFF4F4"))
+	respawn_label.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	respawn_label.add_theme_color_override("font_shadow_color", Color("#000000"))
 	respawn_label.add_theme_constant_override("shadow_offset_x", 4)
 	respawn_label.add_theme_constant_override("shadow_offset_y", 4)
@@ -6411,6 +6611,8 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 	var next_is_respawning := respawn_left > 0.0
 	var started_respawning := next_is_respawning and not is_respawning
 	if next_is_respawning:
+		if is_instance_valid(tool_node) and tool_node.has_method("set_flashlight_enabled"):
+			tool_node.call("set_flashlight_enabled", false)
 		_clear_vehicle_occupant_pose()
 		_set_prone_state(false)
 		spicy_remaining = 0.0
@@ -6461,6 +6663,7 @@ func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = nul
 		hit_area.set_deferred("monitoring", not is_respawning and not is_remote_proxy)
 		hit_area.set_deferred("monitorable", not is_respawning and not is_remote_proxy)
 	if is_respawning:
+		_clear_environment_scan()
 		velocity = Vector3.ZERO
 		_play_death_animation()
 		if remote_is_active:
@@ -6604,6 +6807,7 @@ func show_match_end_page(settlement: Dictionary) -> void:
 		cargo_crate_storage_page.close()
 	match_end_page = Control.new()
 	match_end_page.name = "MatchEndPage"
+	UITheme.apply(match_end_page)
 	match_end_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	match_end_page.z_index = 200
 	match_end_page.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -6618,12 +6822,7 @@ func show_match_end_page(settlement: Dictionary) -> void:
 	panel.offset_top = -315.0
 	panel.offset_right = 390.0
 	panel.offset_bottom = 315.0
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color("#101313")
-	panel_style.border_color = Color("#D78A31")
-	panel_style.set_border_width_all(3)
-	panel_style.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", panel_style)
+	UITheme.apply_panel(panel, UITheme.COLOR_PANEL, 2, 4)
 	match_end_page.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 32)
@@ -6651,20 +6850,20 @@ func show_match_end_page(settlement: Dictionary) -> void:
 	title.text = "胜利" if is_victory else "失败"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 52)
-	title.add_theme_color_override("font_color", Color("#72D692") if is_victory else Color("#F06A61"))
+	title.add_theme_color_override("font_color", UITheme.COLOR_SUCCESS if is_victory else UITheme.COLOR_ERROR)
 	content.add_child(title)
 	var score_line := Label.new()
 	score_line.text = "最终得分  %d : %d" % [own_score, opponent_score]
 	score_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	score_line.add_theme_font_size_override("font_size", 22)
-	score_line.add_theme_color_override("font_color", Color("#E8E8E8"))
+	score_line.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	content.add_child(score_line)
 	var table := GridContainer.new()
 	table.columns = 3
 	table.add_theme_constant_override("h_separation", 24)
 	table.add_theme_constant_override("v_separation", 7)
 	content.add_child(table)
-	_add_settlement_cell(table, "", HORIZONTAL_ALIGNMENT_LEFT, Color("#A9B6B2"))
+	_add_settlement_cell(table, "", HORIZONTAL_ALIGNMENT_LEFT, UITheme.COLOR_MUTED)
 	_add_settlement_cell(table, "本队", HORIZONTAL_ALIGNMENT_CENTER, _team_color(team))
 	_add_settlement_cell(table, "对方", HORIZONTAL_ALIGNMENT_CENTER, _team_color(opponent_team))
 	var rows := [
@@ -6673,16 +6872,17 @@ func show_match_end_page(settlement: Dictionary) -> void:
 		["矿产贡献", "mining"], ["战斗贡献", "combat"],
 	]
 	for row: Array in rows:
-		_add_settlement_cell(table, str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, Color("#E6ECE8"))
-		_add_settlement_cell(table, _format_settlement_value(int(own_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
-		_add_settlement_cell(table, _format_settlement_value(int(enemy_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
-	_add_settlement_cell(table, "剩余资金", HORIZONTAL_ALIGNMENT_LEFT, Color("#E6ECE8"))
-	_add_settlement_cell(table, _format_settlement_value(own_money), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
-	_add_settlement_cell(table, _format_settlement_value(enemy_money), HORIZONTAL_ALIGNMENT_CENTER, Color("#E6ECE8"))
+		_add_settlement_cell(table, str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, UITheme.COLOR_TEXT)
+		_add_settlement_cell(table, _format_settlement_value(int(own_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, UITheme.COLOR_TEXT)
+		_add_settlement_cell(table, _format_settlement_value(int(enemy_stats.get(str(row[1]), 0))), HORIZONTAL_ALIGNMENT_CENTER, UITheme.COLOR_TEXT)
+	_add_settlement_cell(table, "剩余资金", HORIZONTAL_ALIGNMENT_LEFT, UITheme.COLOR_TEXT)
+	_add_settlement_cell(table, _format_settlement_value(own_money), HORIZONTAL_ALIGNMENT_CENTER, UITheme.COLOR_TEXT)
+	_add_settlement_cell(table, _format_settlement_value(enemy_money), HORIZONTAL_ALIGNMENT_CENTER, UITheme.COLOR_TEXT)
 	var button := Button.new()
 	button.text = "返回战局浏览器" if GameAuthority.should_send_network_requests() else "返回主界面"
 	button.custom_minimum_size = Vector2(230.0, 50.0)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	UITheme.apply_button(button)
 	button.pressed.connect(_return_from_match_end)
 	content.add_child(button)
 	$SubViewport.add_child(match_end_page)
@@ -6704,7 +6904,7 @@ func _format_settlement_value(value: int) -> String:
 
 
 func _team_color(value: String) -> Color:
-	return Color("#FF6464") if value == "red" else Color("#6FAAFF")
+	return UITheme.COLOR_WARNING if value == "red" else UITheme.COLOR_INFO
 
 
 func _return_from_match_end() -> void:
@@ -6789,11 +6989,11 @@ func _update_match_timer_ui() -> void:
 	var seconds := int(remaining % 60)
 	match_timer_label.text = "%02d:%02d" % [minutes, seconds]
 	if remaining <= 30:
-		match_timer_label.add_theme_color_override("font_color", Color("#FF6565"))
+		match_timer_label.add_theme_color_override("font_color", UITheme.COLOR_ERROR)
 	elif remaining <= 120:
-		match_timer_label.add_theme_color_override("font_color", Color("#FFB45D"))
+		match_timer_label.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	else:
-		match_timer_label.add_theme_color_override("font_color", Color("#FFF4C2"))
+		match_timer_label.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 
 
 func _update_health_ui() -> void:
@@ -6806,9 +7006,9 @@ func _update_health_ui() -> void:
 	health_bar.value = hp
 	health_label.text = "HP %d / %d" % [roundi(hp), roundi(PLAYER_MAX_HP)]
 	var ratio := hp / PLAYER_MAX_HP
-	var fill_color := Color("#E98624")
+	var fill_color := UITheme.COLOR_WARNING
 	if ratio > 0.6:
-		fill_color = Color("#63D487")
+		fill_color = UITheme.COLOR_SUCCESS
 	health_bar.add_theme_stylebox_override("fill", _make_bar_style(fill_color))
 	_update_ammo_ui()
 	_update_sprout_seed_selector()
@@ -6993,7 +7193,7 @@ func _update_vehicle_control_status_ui() -> void:
 		]
 		control_status_secondary_bar.max_value = maxf(cargo_capacity, 1.0)
 		control_status_secondary_bar.value = cargo_weight
-		control_status_secondary_bar.add_theme_stylebox_override("fill", _make_bar_style(Color("#E98624")))
+		control_status_secondary_bar.add_theme_stylebox_override("fill", _make_bar_style(UITheme.COLOR_INFO))
 
 	var speed := absf(active_vehicle.current_speed)
 	var displayed_speed := 0.0 if is_zero_approx(speed) else maxf(speed, 0.1)
@@ -7018,7 +7218,7 @@ func _update_remote_control_status_ui() -> void:
 	control_status_secondary_bar.visible = true
 	control_status_secondary_bar.max_value = 100.0
 	control_status_secondary_bar.value = signal_strength * 100.0
-	control_status_secondary_bar.add_theme_stylebox_override("fill", _make_bar_style(Color("#63D487")))
+	control_status_secondary_bar.add_theme_stylebox_override("fill", _make_bar_style(UITheme.COLOR_INFO))
 	control_status_detail_label.visible = false
 
 
@@ -7059,8 +7259,8 @@ func _set_tool_owner_if_supported(node: Object, owner: String) -> void:
 func _status_health_color(value: float, maximum: float) -> Color:
 	var ratio := value / maxf(maximum, 0.01)
 	if ratio > 0.6:
-		return Color("#63D487")
-	return Color("#E98624")
+		return UITheme.COLOR_SUCCESS
+	return UITheme.COLOR_WARNING
 
 
 func _add_crosshair_line(position: Vector2, size: Vector2, color: Color) -> void:
@@ -7075,6 +7275,7 @@ func _add_crosshair_line(position: Vector2, size: Vector2, color: Color) -> void
 func _update_crosshair_visibility() -> void:
 	if not is_instance_valid(crosshair):
 		return
+	_update_crosshair_recoil_visual()
 	if not _has_equipped_tool(current_tool_index):
 		crosshair.visible = false
 		return
@@ -7136,6 +7337,13 @@ func _update_crosshair_visibility() -> void:
 	# reticle while the grenade's authoritative confirmation is still pending.
 
 
+func _update_crosshair_recoil_visual() -> void:
+	if not is_instance_valid(crosshair):
+		return
+	crosshair.offset_top = -22.0 - crosshair_recoil_offset_pixels
+	crosshair.offset_bottom = 22.0 - crosshair_recoil_offset_pixels
+
+
 func _refresh_hotbar() -> void:
 	if is_instance_valid(player_backpack):
 		player_backpack.refresh()
@@ -7154,28 +7362,11 @@ func _make_panel_style(
 	border_color: Color,
 	border_width: int
 ) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = background
-	style.border_color = border_color
-	style.border_width_left = border_width
-	style.border_width_top = border_width
-	style.border_width_right = border_width
-	style.border_width_bottom = border_width
-	style.corner_radius_top_left = 9
-	style.corner_radius_top_right = 9
-	style.corner_radius_bottom_left = 9
-	style.corner_radius_bottom_right = 9
-	return style
+	return UITheme.make_style(background, border_color, border_width, 4)
 
 
 func _make_bar_style(color: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 3
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 3
-	return style
+	return UITheme.make_style(color, color, 0, 3)
 
 
 func _disable_legacy_tool_ui() -> void:
@@ -7333,6 +7524,8 @@ func _update_interaction() -> void:
 			% [name, authority_peer_id, str(target.get("kind", "")), target_body.get_path() if target_body != null else "<null>"]
 		)
 	match str(target.get("kind", "")):
+		"weapon_display_rack_slot":
+			_request_weapon_display_rack_action(target)
 		"wire_mesh_gate":
 			# Gate interaction is handled before the normal one-shot interaction
 			# dispatch so enemy lockpicking can consume the full key hold.
@@ -7453,6 +7646,25 @@ func _update_interaction() -> void:
 			government_notice_page.open_for(target.get("body") as GovernmentBoard)
 			interact_hint.visible = false
 			_update_crosshair_visibility()
+
+
+func _request_weapon_display_rack_action(target: Dictionary) -> void:
+	var rack := target.get("rack") as Node3D
+	if rack == null or not rack.has_method("get_network_device_id"):
+		return
+	var action := {
+		"station_kind": "weapon_display_rack",
+		"action": "toggle_slot",
+		"rack_id": str(rack.call("get_network_device_id")),
+		"station_path": str(rack.get_path()),
+		"slot_index": int(target.get("slot_index", -1)),
+		"backpack_slot": current_tool_index,
+		"expected_occupied": not (rack.call("get_rack_slot_item", int(target.get("slot_index", -1))) as Dictionary).is_empty(),
+	}
+	if GameAuthority.should_send_network_requests():
+		MultiplayerNetwork.submit_ingredient_pickup_action(action)
+	else:
+		GameAuthority.local_ingredient_pickup_action(authority_peer_id, action)
 
 
 func request_computer_action(target: ComputerTerminal, action_name: String, extra := {}) -> void:
@@ -7779,7 +7991,8 @@ func _create_interact_hint() -> void:
 	interact_hint.visible = false
 	interact_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	interact_hint.add_theme_font_size_override("font_size", 22)
-	interact_hint.add_theme_color_override("font_color", Color("#FFF1A8"))
+	UITheme.apply(interact_hint)
+	interact_hint.add_theme_color_override("font_color", UITheme.COLOR_WARNING)
 	interact_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	interact_hint.position = Vector2(-120.0, -205.0)
 	interact_hint.size = Vector2(240.0, 38.0)
@@ -7892,6 +8105,12 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 	if not ladder_target.is_empty():
 		return ladder_target
 	var candidate_bodies: Dictionary = {}
+	for area_value: Variant in get_tree().get_nodes_in_group("weapon_display_rack_slot_areas"):
+		if area_value is Area3D:
+			var rack_area := area_value as Area3D
+			if is_instance_valid(rack_area) \
+					and rack_area.global_position.distance_to(global_position) <= INTERACTION_MAX_DISTANCE + 1.0:
+				candidate_bodies[rack_area.get_instance_id()] = rack_area
 	for pickup_value: Variant in get_tree().get_nodes_in_group("dropped_pickup_items"):
 		if pickup_value is PickupItem:
 			var pickup := pickup_value as PickupItem
@@ -8035,6 +8254,15 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 				print("[交互筛选][E] %s -> 被墙体遮挡" % body.name)
 			continue
 		var score := distance + (1.0 - front_alignment) * 1.4
+		if str(target.get("kind", "")) == "weapon_display_rack_slot" and camera is Camera3D:
+			var camera_origin := (camera as Camera3D).global_position
+			var camera_forward := -(camera as Camera3D).global_transform.basis.z.normalized()
+			var camera_offset := interaction_position - camera_origin
+			var camera_distance := camera_offset.length()
+			var aim_alignment := camera_forward.dot(camera_offset / maxf(camera_distance, 0.001))
+			if aim_alignment < 0.65:
+				continue
+			score = (1.0 - aim_alignment) * 30.0 + camera_distance * 0.02
 		if score < best_score:
 			best_score = score
 			best_target = target
@@ -8048,6 +8276,19 @@ func _get_best_interaction_target(print_shape_cast_debug := false) -> Dictionary
 
 
 func _build_interaction_target(body: Node3D) -> Dictionary:
+	if body is Area3D and body.is_in_group("weapon_display_rack_slot_areas") \
+			and body.has_method("get_weapon_display_rack"):
+		var rack: Node3D = body.call("get_weapon_display_rack")
+		if rack == null:
+			return {}
+		return {
+			"kind": "weapon_display_rack_slot",
+			"body": body,
+			"rack": rack,
+			"slot_index": int(body.get("slot_index")),
+			"interaction_position": body.global_position,
+			"hint": str(body.call("get_interaction_hint")),
+		}
 	if body is VehiclePlatformInteractionArea:
 		var platform_area := body as VehiclePlatformInteractionArea
 		var platform_vehicle := platform_area.get_vehicle()
@@ -8399,6 +8640,16 @@ func _refresh_interact_hint() -> void:
 		if interact_hint.visible:
 			interact_hint.text = "[C] 打开/关闭车灯"
 		return
+	if _current_tool_is_m17() and not is_prone and not is_respawning:
+		_clear_vehicle_interaction_outline()
+		interact_hint.visible = true
+		interact_hint.text = "[C] 打开/关闭手电筒"
+		return
+	if _current_tool_is_automatic() and not is_prone and not is_respawning:
+		_clear_vehicle_interaction_outline()
+		interact_hint.visible = true
+		interact_hint.text = "[C] 切换 单发/连发"
+		return
 	var target := _get_best_interaction_target()
 	_refresh_vehicle_interaction_outline(target)
 	interact_hint.visible = not target.is_empty()
@@ -8577,20 +8828,9 @@ func _set_weapon_aiming(value: bool) -> void:
 
 
 func _update_weapon_aim(delta: float) -> void:
-	if not _has_equipped_tool(current_tool_index):
-		camera.fov = lerpf(camera.fov, camera_default_fov, 1.0 - exp(-12.0 * delta))
-		return
-	var definition: Dictionary = tool_definitions[current_tool_index]
-	var aim_speed := float(definition.get("aim_speed", 12.0))
-	var blend := 1.0 - exp(-aim_speed * delta)
-
-	var target_fov := float(definition.get("aim_fov", camera_default_fov)) \
-		if is_weapon_aiming else camera_default_fov
-	camera.fov = lerpf(
-		camera.fov,
-		target_fov,
-		blend
-	)
+	# Aiming remains available for weapon pose and hand alignment, but the
+	# player's first-person FOV stays at the configured default.
+	camera.fov = lerpf(camera.fov, camera_default_fov, 1.0 - exp(-12.0 * delta))
 	#print("CORSSHAIR??")
 	_update_crosshair_visibility()
 
@@ -8798,6 +9038,50 @@ func _current_tool_is_shooting() -> bool:
 	return _definition_uses_weapon_orientation(tool_definitions[current_tool_index])
 
 
+func _current_tool_is_m17() -> bool:
+	if not _has_equipped_tool(current_tool_index) or not is_instance_valid(tool_node):
+		return false
+	return CombatBalance.is_profile(
+		str(tool_definitions[current_tool_index].get("id", "")),
+		"m17"
+	)
+
+
+func _current_tool_is_automatic() -> bool:
+	if not _has_equipped_tool(current_tool_index) or not is_instance_valid(tool_node):
+		return false
+	return CombatBalance.is_automatic_fire_weapon(_selected_tool_id())
+
+
+func _get_fire_mode(tool_id: String) -> String:
+	return "auto" if str(fire_modes_by_tool_id.get(tool_id, "single")) == "auto" else "single"
+
+
+func _is_auto_fire_mode(tool_id: String) -> bool:
+	return _get_fire_mode(tool_id) == "auto"
+
+
+func _toggle_current_tool_fire_mode() -> void:
+	var tool_id := _selected_tool_id()
+	if not CombatBalance.is_automatic_fire_weapon(tool_id):
+		return
+	fire_modes_by_tool_id[tool_id] = "single" if _is_auto_fire_mode(tool_id) else "auto"
+	# Do not let a held mouse button turn a mode change into an implicit shot.
+	automatic_fire_blocked_until_release = true
+	_refresh_interact_hint()
+
+
+func apply_m17_flashlight_state(enabled: bool, expected_tool_id := "") -> void:
+	if not is_instance_valid(tool_node) or not tool_node.has_method("set_flashlight_enabled"):
+		return
+	var selected_id := _selected_tool_id()
+	if not CombatBalance.is_profile(selected_id, "m17"):
+		return
+	if not expected_tool_id.is_empty() and selected_id != expected_tool_id:
+		return
+	tool_node.call("set_flashlight_enabled", enabled)
+
+
 func _current_tool_is_shield() -> bool:
 	if not _has_equipped_tool(current_tool_index):
 		return false
@@ -8871,7 +9155,155 @@ func trigger_weapon_camera_recoil(tool_id: String) -> void:
 	)
 	if strength <= 0.0 or duration <= 0.0:
 		return
+	if CombatBalance.is_player_recoil_weapon(tool_id):
+		_apply_weapon_recoil_pitch(tool_id, strength)
 	_apply_camera_recoil(strength, duration)
+
+
+func _weapon_recoil_presentation_blocked() -> bool:
+	if debug_camera_mode != DEBUG_CAMERA_FIRST_PERSON \
+			or is_respawning or is_prone or is_ladder_climbing \
+			or vehicle_is_active or remote_is_active or mounted_machine_gun_is_active \
+			or _inventory_ui_blocks_gameplay_actions():
+		return true
+	if is_instance_valid($SubViewport/ShopPage) and $SubViewport/ShopPage.visible:
+		return true
+	if is_instance_valid(game_exit_dialog) and game_exit_dialog.is_open():
+		return true
+	if is_instance_valid(match_end_page) and match_end_page.visible:
+		return true
+	var pages: Array = [
+		vehicle_upgrade_page,
+		ingredient_pickup_page,
+		plating_station_page,
+		oven_page,
+		griddle_station_page,
+		induction_counter_page,
+		farm_smoker_page,
+		freezer_page,
+		stand_mixer_page,
+		ingredient_extractor_page,
+		auto_cooker_page,
+		industrial_workbench_page,
+		cargo_delivery_page,
+		cargo_car_storage_page,
+		cargo_crate_storage_page,
+		government_notice_page,
+		livestock_chop_page,
+		vehicle_service_page,
+	]
+	for page_value: Variant in pages:
+		var page := page_value as Node
+		if is_instance_valid(page) and page.has_method("is_open") and bool(page.call("is_open")):
+			return true
+	return false
+
+
+func _update_weapon_recoil(delta: float) -> void:
+	if _weapon_recoil_presentation_blocked():
+		_reset_weapon_recoil_state()
+		return
+	if weapon_recoil_pitch <= 0.0:
+		weapon_recoil_pitch = 0.0
+		weapon_recoil_camera_pitch = 0.0
+		_sync_weapon_recoil_visual()
+		return
+	var selected_id := _selected_tool_id()
+	var recovery_degrees := WEAPON_RECOIL_AUTO_RECOVERY_DEGREES \
+		if _is_auto_fire_mode(selected_id) and CombatBalance.is_automatic_fire_weapon(selected_id) \
+		else WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES
+	var previous_pitch := weapon_recoil_pitch
+	weapon_recoil_pitch = move_toward(
+		weapon_recoil_pitch,
+		0.0,
+		deg_to_rad(recovery_degrees) * maxf(delta, 0.0)
+	)
+	var recovered_pitch := previous_pitch - weapon_recoil_pitch
+	var recovered_camera_pitch := minf(
+		weapon_recoil_camera_pitch,
+		recovered_pitch * WEAPON_RECOIL_CAMERA_FRACTION
+	)
+	if recovered_camera_pitch > 0.0 and is_instance_valid(Head):
+		Head.rotation.x = clampf(
+			Head.rotation.x - recovered_camera_pitch,
+			deg_to_rad(-_current_look_angle_limit()),
+			deg_to_rad(_current_look_angle_limit())
+		)
+	weapon_recoil_camera_pitch = maxf(0.0, weapon_recoil_camera_pitch - recovered_camera_pitch)
+	_sync_weapon_recoil_visual()
+
+
+func _apply_weapon_recoil_pitch(tool_id: String, camera_strength: float) -> void:
+	if _weapon_recoil_presentation_blocked() or not is_instance_valid(Head):
+		return
+	var kick_degrees := clampf(
+		camera_strength * 8.0,
+		WEAPON_RECOIL_SINGLE_MIN_DEGREES,
+		WEAPON_RECOIL_SINGLE_MAX_DEGREES
+	)
+	var recoil_cap_degrees := WEAPON_RECOIL_SINGLE_CAP_DEGREES
+	var configured_single_kick := CombatBalance.get_float(
+		tool_id,
+		"single_recoil_kick_degrees",
+		0.0
+	)
+	if configured_single_kick > 0.0:
+		kick_degrees = clampf(
+			configured_single_kick,
+			WEAPON_RECOIL_SINGLE_MIN_DEGREES,
+			WEAPON_RECOIL_SINGLE_MAX_DEGREES
+		)
+	if CombatBalance.is_automatic_fire_weapon(tool_id) and _is_auto_fire_mode(tool_id):
+		var configured_auto_kick := CombatBalance.get_float(
+			tool_id,
+			"auto_recoil_kick_degrees",
+			0.0
+		)
+		kick_degrees = configured_auto_kick if configured_auto_kick > 0.0 \
+			else kick_degrees * 2.0
+		kick_degrees = clampf(kick_degrees, WEAPON_RECOIL_AUTO_MIN_DEGREES, WEAPON_RECOIL_AUTO_MAX_DEGREES)
+		recoil_cap_degrees = WEAPON_RECOIL_AUTO_CAP_DEGREES
+	var recoil_cap := deg_to_rad(recoil_cap_degrees)
+	var remaining := maxf(0.0, recoil_cap - weapon_recoil_pitch)
+	if remaining <= 0.0:
+		return
+	var applied_total_pitch := minf(deg_to_rad(kick_degrees), remaining)
+	var previous_head_pitch: float = Head.rotation.x
+	Head.rotation.x = clampf(
+		Head.rotation.x + applied_total_pitch * WEAPON_RECOIL_CAMERA_FRACTION,
+		deg_to_rad(-_current_look_angle_limit()),
+		deg_to_rad(_current_look_angle_limit())
+	)
+	var applied_camera_pitch := maxf(0.0, Head.rotation.x - previous_head_pitch)
+	weapon_recoil_pitch = minf(recoil_cap, weapon_recoil_pitch + applied_total_pitch)
+	weapon_recoil_camera_pitch = minf(
+		weapon_recoil_camera_pitch + applied_camera_pitch,
+		recoil_cap * WEAPON_RECOIL_CAMERA_FRACTION
+	)
+	_sync_weapon_recoil_visual()
+
+
+func _reset_weapon_recoil_state() -> void:
+	if weapon_recoil_camera_pitch > 0.0 and is_instance_valid(Head):
+		Head.rotation.x = clampf(
+			Head.rotation.x - weapon_recoil_camera_pitch,
+			deg_to_rad(-_current_look_angle_limit()),
+			deg_to_rad(_current_look_angle_limit())
+		)
+	weapon_recoil_pitch = 0.0
+	weapon_recoil_camera_pitch = 0.0
+	_sync_weapon_recoil_visual()
+
+
+func _sync_weapon_recoil_visual() -> void:
+	crosshair_recoil_offset_pixels = clampf(
+		rad_to_deg(weapon_recoil_pitch) \
+			* WEAPON_RECOIL_CROSSHAIR_FRACTION \
+			* CROSSHAIR_RECOIL_PIXELS_PER_DEGREE,
+		0.0,
+		CROSSHAIR_RECOIL_MAX_PIXELS
+	)
+	_update_crosshair_recoil_visual()
 
 
 func _apply_camera_recoil(strength: float, duration: float) -> void:
@@ -8997,6 +9429,8 @@ func _update_camera_shake(delta: float) -> void:
 
 
 func _reset_all_camera_shake() -> void:
+	_reset_weapon_recoil_state()
+	automatic_fire_blocked_until_release = true
 	# Death changes the active camera before the normal shake update can restore
 	# its offset. Reset every possible presentation camera so no pre-death jitter
 	# carries into the respawned first-person view.
@@ -10136,6 +10570,7 @@ func _refresh_remote_device_panel() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(290, 54)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		UITheme.apply_button(button)
 		button.text = _remote_device_status_text(device)
 		button.gui_input.connect(_on_remote_device_item_gui_input.bind(device_id))
 		remote_device_list.add_child(button)

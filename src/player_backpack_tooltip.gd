@@ -18,6 +18,7 @@ var runtime_tools_by_id: Dictionary = {}
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	primary_weapons_by_id = _load_definitions(PRIMARY_WEAPON_PATH, "weapons")
 	special_tools_by_id = _load_definitions(SPECIAL_TOOL_PATH, "tools")
 	runtime_tools_by_id = _load_definitions(RUNTIME_TOOL_PATH, "tools")

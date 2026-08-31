@@ -146,7 +146,7 @@ func _run() -> void:
 	_check(mercer_seed_assets_complete, "Mercer Seed has copied harvest-drop crop images")
 	var range_ledger_assets_complete := true
 	for range_ledger_asset_id: String in [
-		"mpx", "m4", "ar15", "shotgun", "hunting_rifle", "crossbow", "suppressed_pistol",
+		"mpx", "m4", "ak47", "ar15", "shotgun", "remington870", "p90", "hunting_rifle", "crossbow", "suppressed_pistol",
 		"future_m4", "future_mpx", "grenade", "ammo_supply_box",
 	]:
 		if not FileAccess.file_exists("res://assets/icons/rangeledger/%s.png" % range_ledger_asset_id):

@@ -12,6 +12,7 @@ var _countdown_accumulator := 0.0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	_set_mouse_passthrough(self)
 	if not EventBoard.global_events_changed.is_connected(_on_global_events_changed):
 		EventBoard.global_events_changed.connect(_on_global_events_changed)

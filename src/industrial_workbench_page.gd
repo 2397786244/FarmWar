@@ -31,12 +31,16 @@ var last_error_msec := 0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	window.visible = false
 	output_icon = ITEM_ICON_SCENE.instantiate() as ItemIcon
 	output_icon.custom_minimum_size = Vector2(64, 64)
 	output_icon_host.add_child(output_icon)
 	$Window/Margin/HBox/DetailPanel/Margin/VBox/CloseButton.pressed.connect(close)
 	start_button.pressed.connect(_on_primary_action_pressed)
+	UITheme.apply_button(start_button)
+	UITheme.apply_progress(progress, UITheme.TONE_INFO)
+	UITheme.set_status(status_label, UITheme.TONE_INFO)
 
 
 func is_open() -> bool:
@@ -101,6 +105,7 @@ func apply_authoritative_action_result(result: Dictionary) -> void:
 		player.apply_cargo_backpack_slots(slots_value as Array)
 	if not bool(result.get("ok", false)):
 		status_label.text = _reason_text(str(result.get("reason", "操作失败")))
+		UITheme.set_status(status_label, UITheme.TONE_ERROR)
 		last_error_msec = Time.get_ticks_msec()
 		return
 	if str(result.get("action", "")) == "take":
@@ -108,6 +113,7 @@ func apply_authoritative_action_result(result: Dictionary) -> void:
 		last_error_msec = Time.get_ticks_msec()
 	else:
 		status_label.text = ""
+		UITheme.set_status(status_label, UITheme.TONE_INFO)
 	_refresh(true)
 
 
@@ -214,6 +220,7 @@ func _build_recipe_buttons() -> void:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.toggle_mode = true
 		button.add_theme_font_size_override("font_size", 16)
+		UITheme.apply_button(button)
 		button.pressed.connect(_select_recipe.bind(recipe_id))
 		recipe_list.add_child(button)
 		recipe_buttons[recipe_id] = button
@@ -225,9 +232,9 @@ func _update_recipe_buttons() -> void:
 		var button := recipe_buttons[recipe_id] as Button
 		button.button_pressed = recipe_id == selected_recipe_id
 		button.disabled = not workbench.recipe_id.is_empty() and recipe_id != workbench.recipe_id
-		button.add_theme_color_override(
-			"font_color",
-			Color("#FFF0A3") if _has_recipe_inputs(IndustrialRecipeCatalog.get_recipe(recipe_id)) else Color("#9AA9B5")
+		UITheme.set_tone(
+			button,
+			UITheme.TONE_NEUTRAL if _has_recipe_inputs(IndustrialRecipeCatalog.get_recipe(recipe_id)) else UITheme.TONE_MUTED
 		)
 
 
@@ -309,7 +316,7 @@ func _refresh_input_label(row: HBoxContainer, input: Dictionary) -> void:
 		IndustrialRecipeCatalog.format_quantity(personal_amount, unit),
 		IndustrialRecipeCatalog.format_quantity(team_amount, unit),
 	]
-	label.add_theme_color_override("font_color", Color("#B9FFB9") if enough else Color("#FF9696"))
+	UITheme.set_tone(label, UITheme.TONE_NEUTRAL if enough else UITheme.TONE_WARNING)
 
 
 func _set_icon_for_input(icon: ItemIcon, input: Dictionary) -> void:

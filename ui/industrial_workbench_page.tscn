@@ -1,26 +1,27 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://src/industrial_workbench_page.gd" id="1_script"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_theme"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_window"]
-bg_color = Color(0.055, 0.07, 0.085, 0.98)
+bg_color = Color(0.0823529, 0.0901961, 0.101961, 0.98)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.3, 0.68, 0.86, 1)
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
-bg_color = Color(0.075, 0.105, 0.125, 0.96)
+bg_color = Color(0.113725, 0.12549, 0.141176, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.2, 0.38, 0.48, 1)
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
 corner_radius_top_left = 5
 corner_radius_top_right = 5
 corner_radius_bottom_right = 5
@@ -35,6 +36,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
+theme = ExtResource("2_theme")
 
 [node name="Window" type="PanelContainer" parent="."]
 layout_mode = 0
@@ -81,7 +83,7 @@ theme_override_constants/separation = 10
 [node name="Title" type="Label" parent="Window/Margin/HBox/RecipePanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(0.55, 0.86, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "可制作项目"
 horizontal_alignment = 1
 
@@ -114,14 +116,14 @@ theme_override_constants/separation = 12
 [node name="Title" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
-theme_override_colors/font_color = Color(0.65, 0.9, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "工业工作台"
 horizontal_alignment = 1
 
 [node name="DetailTitle" type="Label" parent="Window/Margin/HBox/DetailPanel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 21
-theme_override_colors/font_color = Color(0.95, 0.88, 0.48, 1)
+theme_override_colors/font_color = Color(0.560784, 0.666667, 0.760784, 1)
 horizontal_alignment = 1
 autowrap_mode = 2
 
@@ -129,7 +131,7 @@ autowrap_mode = 2
 layout_mode = 2
 custom_minimum_size = Vector2(0, 28)
 theme_override_font_sizes/font_size = 17
-theme_override_colors/font_color = Color(1, 0.76, 0.42, 1)
+theme_override_colors/font_color = Color(0.560784, 0.666667, 0.760784, 1)
 horizontal_alignment = 1
 autowrap_mode = 2
 
@@ -149,7 +151,7 @@ theme_override_constants/separation = 6
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 42
-theme_override_colors/font_color = Color(0.45, 0.83, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "→"
 horizontal_alignment = 1
 vertical_alignment = 1

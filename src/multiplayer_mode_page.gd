@@ -5,15 +5,16 @@ signal cooperative_requested
 signal competitive_requested
 signal back_requested
 
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
-const COLOR_COOP := Color("#54D6A2")
-const COLOR_PVP := Color("#FFB36B")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_COOP := UITheme.COLOR_INFO
+const COLOR_PVP := UITheme.COLOR_WARNING
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	_build_interface()
 
 
@@ -51,6 +52,7 @@ func _build_interface() -> void:
 	back.text = "返回"
 	back.custom_minimum_size = Vector2(180, 56)
 	back.add_theme_font_size_override("font_size", 24)
+	UITheme.apply_button(back)
 	back.pressed.connect(func() -> void: back_requested.emit())
 	root.add_child(back)
 
@@ -63,17 +65,8 @@ func _make_choice(title_text: String, body_text: String, accent: Color, action: 
 	button.text = "%s\n\n%s" % [title_text, body_text]
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.add_theme_font_size_override("font_size", 32)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL, accent, 26))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#263B57"), accent, 26))
+	UITheme.apply_button(button)
+	button.add_theme_stylebox_override("normal", UITheme.make_style(COLOR_PANEL, UITheme.COLOR_BORDER, 1, 4))
+	button.add_theme_stylebox_override("hover", UITheme.make_style(UITheme.COLOR_HOVER, UITheme.COLOR_BORDER, 1, 4))
 	button.pressed.connect(action)
 	return button
-
-
-func _style_box(color: Color, border: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.border_color = border
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(radius)
-	return style

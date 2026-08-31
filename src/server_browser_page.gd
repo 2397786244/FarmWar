@@ -5,13 +5,13 @@ signal join_server_requested(address: String, port: int)
 signal back_requested
 
 const OFFICIAL_SERVERS_PATH := "res://data/official_servers.json"
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_PANEL_2 := Color("#22324A")
-const COLOR_SELECTED := Color("#54D6A2")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
-const COLOR_WARN := Color("#FFB36B")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_2 := UITheme.COLOR_CONTROL
+const COLOR_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_WARN := UITheme.COLOR_WARNING
 
 var official_servers: Array[Dictionary] = []
 var online_servers: Array[Dictionary] = []
@@ -28,6 +28,7 @@ var refresh_button: Button
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	UITheme.apply(self)
 	_build_interface()
 	_load_official_servers()
 	refresh_servers()
@@ -237,7 +238,7 @@ func _make_server_row(index: int, server: Dictionary) -> Control:
 		"normal",
 		_style_box(COLOR_SELECTED if index == selected_server_index else COLOR_PANEL_2, 18)
 	)
-	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 18))
+	button.add_theme_stylebox_override("hover", _style_box(UITheme.COLOR_HOVER, 18))
 	button.add_theme_stylebox_override("pressed", _style_box(COLOR_SELECTED, 18))
 	button.text = _server_row_text(server)
 	button.pressed.connect(_select_server.bind(index))
@@ -293,22 +294,9 @@ func _make_action_button(text: String) -> Button:
 	button.text = text
 	button.custom_minimum_size = Vector2(170, 58)
 	button.add_theme_font_size_override("font_size", 24)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 18))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 18))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_SELECTED, 18))
+	UITheme.apply_button(button)
 	return button
 
 
 func _style_box(color: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = 14
-	style.content_margin_right = 14
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
-	return style
+	return UITheme.make_style(color, UITheme.COLOR_BORDER, 1, radius)

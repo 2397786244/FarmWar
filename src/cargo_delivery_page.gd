@@ -9,6 +9,7 @@ var _confirm: Button
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	visible = false
 	_build_ui()
 
@@ -38,12 +39,7 @@ func _build_ui() -> void:
 	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#111719")
-	style.border_color = Color("#6FCF82")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", style)
+	UITheme.apply_panel(panel, UITheme.COLOR_PANEL, 2, 4)
 	add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 30)
@@ -57,7 +53,7 @@ func _build_ui() -> void:
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 32)
-	_title.add_theme_color_override("font_color", Color("#8CE49C"))
+	_title.add_theme_color_override("font_color", UITheme.COLOR_TEXT)
 	box.add_child(_title)
 	_details = Label.new()
 	_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -78,6 +74,8 @@ func _build_ui() -> void:
 	_confirm = Button.new()
 	_confirm.text = "确认交付"
 	_confirm.custom_minimum_size = Vector2(220.0, 54.0)
+	UITheme.apply_button(cancel)
+	UITheme.apply_button(_confirm)
 	_confirm.pressed.connect(_confirm_delivery)
 	buttons.add_child(_confirm)
 

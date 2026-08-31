@@ -1,14 +1,15 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://src/vehicle_upgrade_page.gd" id="1_script"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_theme"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_window"]
-bg_color = Color(0.055, 0.085, 0.11, 0.98)
+bg_color = Color(0.0823529, 0.0901961, 0.101961, 0.98)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.33, 0.55, 0.64, 1)
+border_color = Color(0.294118, 0.317647, 0.34902, 1)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
@@ -23,6 +24,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
+theme = ExtResource("2_theme")
 
 [node name="Window" type="PanelContainer" parent="."]
 layout_mode = 0
@@ -57,14 +59,14 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 30
-theme_override_colors/font_color = Color(0.94, 0.97, 1, 1)
+theme_override_colors/font_color = Color(0.941176, 0.945098, 0.94902, 1)
 text = "载具配置"
 
 [node name="Team" type="Label" parent="Window/Margin/VBox/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(0.64, 0.84, 0.92, 1)
+theme_override_colors/font_color = Color(0.560784, 0.666667, 0.760784, 1)
 text = "队伍专属货运车"
 horizontal_alignment = 1
 
@@ -93,7 +95,7 @@ theme_override_constants/v_separation = 24
 [node name="HPLabel" type="Label" parent="Window/Margin/VBox/Stats"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 text = "耐久度（HP）"
 
 [node name="HPValue" type="Label" parent="Window/Margin/VBox/Stats"]
@@ -106,7 +108,7 @@ horizontal_alignment = 2
 [node name="CargoLabel" type="Label" parent="Window/Margin/VBox/Stats"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 text = "当前载货量 / 最大载货量"
 
 [node name="CargoValue" type="Label" parent="Window/Margin/VBox/Stats"]
@@ -118,7 +120,7 @@ horizontal_alignment = 2
 [node name="MaxSpeedLabel" type="Label" parent="Window/Margin/VBox/Stats"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 text = "最大前进速度"
 
 [node name="MaxSpeedValue" type="Label" parent="Window/Margin/VBox/Stats"]
@@ -130,7 +132,7 @@ horizontal_alignment = 2
 [node name="AccelerationLabel" type="Label" parent="Window/Margin/VBox/Stats"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-theme_override_colors/font_color = Color(0.72, 0.82, 0.86, 1)
+theme_override_colors/font_color = Color(0.643137, 0.658824, 0.678431, 1)
 text = "加速度"
 
 [node name="AccelerationValue" type="Label" parent="Window/Margin/VBox/Stats"]

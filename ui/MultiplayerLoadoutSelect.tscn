@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://botledehlutk5"]
 
 [ext_resource type="Script" uid="uid://cq31f5yuu84dx" path="res://src/multiplayer_loadout_select.gd" id="1_loadout"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_shared_theme"]
 
 [node name="MultiplayerLoadoutSelect" type="Control" unique_id=1145561912]
 layout_mode = 3
@@ -9,4 +10,5 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_shared_theme")
 script = ExtResource("1_loadout")

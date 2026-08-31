@@ -1,6 +1,8 @@
 extends Node3D
 class_name FarmWorldInitializer
 
+const PlacedStorageState = preload("res://src/placed_storage_state.gd")
+
 signal map_initialization_progress(progress: float, status: String)
 signal map_initialization_completed
 
@@ -108,9 +110,11 @@ func _register_static_map_facilities() -> void:
 		if not is_instance_valid(node) or not node is Node3D:
 			continue
 		var facility := node as Node3D
-		var category := "defense" if facility is MapDefenseFacility \
-				else "interior" if facility is ComputerTerminal or facility is VehicleServiceTerminal \
-				else "industrial" if facility is IndustrialWorkbench else "kitchen"
+		var category := str(facility.get_meta("map_editor_facility_category", ""))
+		if category.is_empty():
+			category = "defense" if facility is MapDefenseFacility \
+					else "interior" if facility is ComputerTerminal or facility is VehicleServiceTerminal \
+					else "industrial" if facility is IndustrialWorkbench else "kitchen"
 		facility.add_to_group("network_map_facilities")
 		var editor_uuid := str(facility.get_meta("map_editor_uuid", ""))
 		var runtime_id := str(facility.get_meta("network_map_facility_id", ""))
@@ -121,6 +125,25 @@ func _register_static_map_facilities() -> void:
 		facility.set_meta("network_device_id", runtime_id)
 		facility.set_meta("map_facility_category", category)
 		if category != "defense":
+			# Stateful indoor/industrial facilities (such as a weapon rack or a
+			# future storage cabinet) must be registered even though they are not
+			# autonomous defense tools. Their visual state is then included in the
+			# normal world snapshot and restored onto the map node.
+			if (GameAuthority.is_server_authority() or GameAuthority.is_local_authority()) \
+					and PlacedStorageState.is_storage_node(facility):
+				var storage_asset := MapFacilityCatalog.get_asset_by_path(
+					str(facility.get_meta("map_editor_asset_path", facility.scene_file_path))
+				)
+				var storage_tool_name := str(facility.get_meta("map_editor_facility_id", ""))
+				if storage_tool_name.begins_with("interior_"):
+					storage_tool_name = storage_tool_name.trim_prefix("interior_")
+				if storage_tool_name.is_empty():
+					storage_tool_name = str(storage_asset.get("id", "")).trim_prefix("interior_")
+				if not storage_tool_name.is_empty() \
+						and not GameAuthority.authoritative_tool_definitions.get(storage_tool_name, {}).is_empty():
+					GameAuthority.register_map_placed_tool(
+						facility, storage_tool_name, runtime_id, str(facility.get_meta("tool_owner", ""))
+					)
 			continue
 		facility.add_to_group("network_map_devices")
 		var asset := MapFacilityCatalog.get_asset_by_path(
@@ -136,7 +159,9 @@ func _register_static_map_facilities() -> void:
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
 	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility \
-			or node is ComputerTerminal or node is VehicleServiceTerminal:
+			or node is ComputerTerminal or node is VehicleServiceTerminal \
+			or (str(node.get_meta("map_editor_category", "")) == "facility" \
+				and PlacedStorageState.is_storage_node(node)):
 		result.append(node)
 	for child in node.get_children():
 		_collect_static_facilities(child, result)

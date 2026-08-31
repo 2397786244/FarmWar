@@ -18,6 +18,7 @@ var current_page: Control
 func _ready() -> void:
 	print("[MenuFlow] MainMenuRoot ready")
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	UITheme.apply(self)
 	_build_interface()
 	_connect_multiplayer_network_signals()
 	_connect_steam_signals()

@@ -28,7 +28,7 @@ position = Vector3(0, 1.55, 0.15)
 [node name="CameraOrbitPitch" type="Node3D" parent="CameraOrbitYaw"]
 
 [node name="VehicleCamera" type="Camera3D" parent="CameraOrbitYaw/CameraOrbitPitch"]
-fov = 72.0
+fov = 85.0
 
 [node name="ExitPoint" type="Marker3D" parent="."]
 position = Vector3(1.65, 0.1, 0)

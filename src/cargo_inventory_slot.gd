@@ -36,7 +36,7 @@ func setup(owner_page: CargoCarStoragePage, kind: String, index: int) -> void:
 	_detail_label = Label.new()
 	_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail_label.add_theme_font_size_override("font_size", 13)
-	_detail_label.add_theme_color_override("font_color", Color("#AFC2CC"))
+	UITheme.set_tone(_detail_label, UITheme.TONE_MUTED)
 	box.add_child(_detail_label)
 	_refresh_style()
 
@@ -59,18 +59,14 @@ func set_item(value: Dictionary, unavailable := false) -> void:
 
 
 func _refresh_style() -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#151B1F") if not disabled else Color("#241D1D")
-	style.border_color = Color("#D8842E") if not disabled else Color("#704747")
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(4)
-	add_theme_stylebox_override("panel", style)
+	UITheme.apply_slot(self, false, disabled)
 
 
 func _get_drag_data(_position: Vector2) -> Variant:
 	if disabled or item.is_empty() or page == null:
 		return null
 	var preview := Label.new()
+	UITheme.apply(preview)
 	preview.text = str(item.get("display_name", "货运箱"))
 	preview.add_theme_font_size_override("font_size", 18)
 	preview.z_as_relative = false

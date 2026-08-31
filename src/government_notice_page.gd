@@ -3,16 +3,17 @@ class_name GovernmentNoticePage
 
 signal closed
 
-const PANEL_COLOR := Color("#17202A")
-const BORDER_COLOR := Color("#D6A94F")
-const TITLE_COLOR := Color("#F2CE78")
-const TEXT_COLOR := Color("#F4EBD5")
+const PANEL_COLOR := UITheme.COLOR_PANEL
+const BORDER_COLOR := UITheme.COLOR_BORDER
+const TITLE_COLOR := UITheme.COLOR_TEXT
+const TEXT_COLOR := UITheme.COLOR_TEXT
 
 var title_label: Label
 var notice_label: Label
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	z_index = 70
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -54,12 +55,7 @@ func _build_interface() -> void:
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(panel)
 
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = PANEL_COLOR
-	panel_style.border_color = BORDER_COLOR
-	panel_style.set_border_width_all(3)
-	panel_style.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", panel_style)
+	UITheme.apply_panel(panel, PANEL_COLOR, 2, 4)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 34)
@@ -87,6 +83,7 @@ func _build_interface() -> void:
 	close_button.tooltip_text = "关闭公告栏"
 	close_button.custom_minimum_size = Vector2(48.0, 42.0)
 	close_button.add_theme_font_size_override("font_size", 24)
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close)
 	header.add_child(close_button)
 
@@ -105,5 +102,5 @@ func _build_interface() -> void:
 	footer.text = "按 E 或 Esc 关闭"
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	footer.add_theme_font_size_override("font_size", 16)
-	footer.add_theme_color_override("font_color", Color("#B9B2A3"))
+	footer.add_theme_color_override("font_color", UITheme.COLOR_MUTED)
 	content.add_child(footer)

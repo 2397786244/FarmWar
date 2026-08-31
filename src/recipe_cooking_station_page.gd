@@ -39,6 +39,7 @@ func get_page_title() -> String:
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	window.visible = false
 	recipe_panel_title.text = "可制作菜谱"
 	page_title.text = get_page_title()
@@ -47,6 +48,9 @@ func _ready() -> void:
 	start_button.pressed.connect(_on_primary_action_pressed)
 	_install_output_icon()
 	_clear_ingredient_cards()
+	UITheme.apply_button(start_button)
+	UITheme.apply_progress(progress, UITheme.TONE_INFO)
+	UITheme.set_status(status_label, UITheme.TONE_INFO)
 
 
 func is_open() -> bool:
@@ -109,10 +113,12 @@ func apply_authoritative_action_result(result: Dictionary) -> void:
 		return
 	if not bool(result.get("ok", false)):
 		status_label.text = _reason_text(str(result.get("reason", "操作失败")))
+		UITheme.set_status(status_label, UITheme.TONE_ERROR)
 		return
 	if str(result.get("action", "")) == "start":
 		_remove_consumed_personal_ingredients(result.get("consumed_personal_ingredients", []))
 	status_label.text = ""
+	UITheme.set_status(status_label, UITheme.TONE_INFO)
 	_refresh(true)
 
 
@@ -172,6 +178,7 @@ func _build_recipe_buttons() -> void:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.toggle_mode = true
 		button.add_theme_font_size_override("font_size", 17)
+		UITheme.apply_button(button)
 		button.pressed.connect(_select_recipe.bind(recipe_id))
 		recipe_list.add_child(button)
 		recipe_buttons[recipe_id] = button
@@ -185,7 +192,7 @@ func _update_recipe_buttons() -> void:
 		var available := _has_recipe_inputs(RecipeCatalog.get_recipe(recipe_id))
 		button.button_pressed = recipe_id == selected_recipe_id
 		button.disabled = not station.recipe_id.is_empty() and recipe_id != station.recipe_id
-		button.add_theme_color_override("font_color", Color("#FFF0A3") if available else Color("#AEB6BE"))
+		UITheme.set_tone(button, UITheme.TONE_NEUTRAL if available else UITheme.TONE_MUTED)
 
 
 func _select_recipe(recipe_id: String) -> void:

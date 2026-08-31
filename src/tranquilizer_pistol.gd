@@ -26,7 +26,11 @@ func emit_visual_only() -> void:
 	_emit_bullet(true)
 
 
-func _emit_bullet(visual_only: bool) -> void:
+func emit_visual_only_tracer(direction: Vector3, _travel_distance := -1.0) -> void:
+	_emit_bullet(true, direction)
+
+
+func _emit_bullet(visual_only: bool, direction_override := Vector3.ZERO) -> void:
 	play_muzzle_visual()
 	if tool_owner.is_empty() or not is_instance_valid(GlobalVar.gameworld):
 		return
@@ -37,7 +41,10 @@ func _emit_bullet(visual_only: bool) -> void:
 		bullet.make_visual_only()
 	GlobalVar.gameworld.add_child(bullet)
 	var shooter := _get_shooter()
-	bullet.run(muzzle.global_position, _get_center_screen_direction(shooter), tool_owner, shooter)
+	var direction := _get_center_screen_direction(shooter)
+	if direction_override.length_squared() > 0.001:
+		direction = direction_override.normalized()
+	bullet.run(muzzle.global_position, direction, tool_owner, shooter)
 
 
 func play_muzzle_visual(firepower: float = -1.0) -> void:
@@ -62,6 +69,15 @@ func _get_shooter() -> CollisionObject3D:
 func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not is_instance_valid(shooter):
 		return -muzzle.global_transform.basis.z.normalized()
+	var max_distance := CombatBalance.get_float(PROFILE_ID, "range", 60.0)
+	if shooter.has_method("get_shooting_aim_direction"):
+		var shared_direction: Variant = shooter.call(
+			"get_shooting_aim_direction",
+			muzzle.global_position,
+			max_distance
+		)
+		if shared_direction is Vector3 and (shared_direction as Vector3).length_squared() > 0.001:
+			return (shared_direction as Vector3).normalized()
 	var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
 	if camera == null:
 		return -muzzle.global_transform.basis.z.normalized()

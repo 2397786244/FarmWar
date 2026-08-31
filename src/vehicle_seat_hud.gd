@@ -1,14 +1,14 @@
 extends Control
 class_name VehicleSeatHud
 
-const PANEL_COLOR := Color("#777D82")
-const PANEL_BORDER_COLOR := Color("#A8AEB3")
-const SEAT_BAR_COLOR := Color("#A4A9AD")
-const SEAT_BAR_BORDER_COLOR := Color("#D0D4D7")
-const OCCUPIED_COLOR := Color("#E2474F")
-const EMPTY_COLOR := Color("#292E33")
-const CURRENT_SEAT_BORDER_COLOR := Color("#FFFFFF")
-const HINT_TEXT_COLOR := Color("#1D2226")
+const PANEL_COLOR := UITheme.COLOR_PANEL
+const PANEL_BORDER_COLOR := UITheme.COLOR_BORDER
+const SEAT_BAR_COLOR := UITheme.COLOR_CONTROL
+const SEAT_BAR_BORDER_COLOR := UITheme.COLOR_BORDER
+const OCCUPIED_COLOR := UITheme.COLOR_WARNING
+const EMPTY_COLOR := UITheme.COLOR_PANEL
+const CURRENT_SEAT_BORDER_COLOR := UITheme.COLOR_TEXT
+const HINT_TEXT_COLOR := UITheme.COLOR_TEXT
 const DOT_RADIUS := 8.0
 const SEAT_COLUMN_OFFSET := 24.0
 const SEAT_ROW_OFFSET := 10.0
@@ -22,6 +22,7 @@ var displayed_key_hints: Array[String] = []
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	focus_mode = Control.FOCUS_NONE
 	visible = false
@@ -84,7 +85,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER,
 			DOT_RADIUS * 2.0 + 4.0,
 			12,
-			Color.WHITE
+			UITheme.COLOR_TEXT
 		)
 		if seat_index == displayed_current_seat:
 			draw_arc(position, DOT_RADIUS + 3.0, 0.0, TAU, 32, CURRENT_SEAT_BORDER_COLOR, 1.5, true)

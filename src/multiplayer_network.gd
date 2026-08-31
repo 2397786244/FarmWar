@@ -175,6 +175,10 @@ func submit_vehicle_action(action: Dictionary) -> void:
 	NetworkSession.submit_action("vehicle_action", action)
 
 
+func submit_tool_action(action: Dictionary) -> bool:
+	return NetworkSession.submit_action("tool_action", action)
+
+
 func submit_team_chat(message: String, scope := "team") -> void:
 	NetworkSession.submit_action("team_chat", {"message": message, "scope": scope})
 
@@ -205,6 +209,7 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> bool:
 		"vehicle_input": rpc_endpoint.submit_vehicle_input(payload)
 		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
 		"vehicle_action": rpc_endpoint.submit_vehicle_action(payload)
+		"tool_action": rpc_endpoint.submit_tool_action(payload)
 		"gate_action": rpc_endpoint.submit_gate_action(payload)
 		"ladder_action": rpc_endpoint.submit_ladder_action(payload)
 		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))

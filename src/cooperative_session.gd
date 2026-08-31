@@ -945,6 +945,8 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 			GameAuthority.server_vehicle_session(sender_id, str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
 		"vehicle_action":
 			GameAuthority.server_vehicle_action(sender_id, payload)
+		"tool_action":
+			GameAuthority.server_tool_action(sender_id, payload)
 		"team_chat":
 			GameAuthority.server_team_chat(sender_id, str(payload.get("message", "")), str(payload.get("scope", "team")))
 		"gate_action":
@@ -2106,6 +2108,11 @@ func _save_authoritative_world_state() -> bool:
 
 func _capture_persistent_world_state() -> Dictionary:
 	return WorldPersistence.capture_world_state()
+
+
+func _capture_persistent_station_states() -> Array[Dictionary]:
+	var value: Variant = WorldPersistence.call("_capture_station_states")
+	return value as Array[Dictionary] if value is Array else []
 
 
 func _restore_persistent_world_state(scene: Node3D) -> void:

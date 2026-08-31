@@ -13,6 +13,8 @@ var required_is_chopped := false
 
 
 func _ready() -> void:
+	UITheme.apply_slot(self)
+	UITheme.apply_button(place_button)
 	place_button.pressed.connect(func() -> void: place_requested.emit(ingredient_id, required_is_chopped))
 
 
@@ -34,4 +36,5 @@ func set_recipe_slot(entry: Dictionary, player_has_ingredient: bool, editable: b
 	item_weight.text = "已放入" if occupied else "放入 %.2f kg" % required_weight
 	place_button.text = "已放入" if occupied else "放入 %.2f kg" % required_weight
 	place_button.disabled = occupied or not player_has_ingredient or not editable
-	modulate = Color("#FFF2A8") if player_has_ingredient and not occupied else Color.WHITE
+	UITheme.set_tone(item_weight, UITheme.TONE_SUCCESS if player_has_ingredient and not occupied else UITheme.TONE_MUTED)
+	modulate = Color.WHITE

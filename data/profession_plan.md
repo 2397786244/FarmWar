@@ -51,10 +51,10 @@
 + Cook 厨师     ->   香料喷射枪（追踪）,野战厨房，自动做菜机   ｜ 烹饪，农业产出
 + Guard 守卫  -> AntiAir(阻止BoomBullet这样的大型炮弹),ShieldDoor,AutoShooter   ｜  本土守护
 + Apothecary 药剂师  -> MedicinePistol（治疗手枪）,MedicineCannon（药物大炮，发出药物气雾），TranquilizerPistol（镇静手枪，对敌方发射）     ｜ 支援
-+ Assistant 助手   -> NormalDrone,WheatSentry，Shield（手持护盾）  ｜ 本土守护或者完成限时任务
++ Assistant 助手   -> NormalDrone,WheatSentry，AreaProtector（区域护盾）  ｜ 本土守护或者完成限时任务
 + Engineer 工程师  -> SignalJam,TechDrone,SmallMouse  ｜  进攻或帮助防护
 + Mage 魔法师  -> Wand,BugCannon，RiftBook ｜ 进攻
-+ Prospector  调查员 -> TraceTagger（扫描追踪各种工具和人物）,SignalAugment，ProspectScanner，SurveyRider（测绘骑手） ｜ 进攻
++ Prospector  调查员 -> EnvironmentScanner（环境探测器）,SignalAugment，SurveyRider（测绘骑手） ｜ 资源侦察
 + Rider 车手  -> ToolKit,VehicleTracker，BoomBuggy（自爆遥控车） ｜ 进攻
 + Trickster 捣蛋鬼  -> BigMouth,Trap，FakePlayer（产生一个假人，会制作一个专属的假人外观，如果攻击假人，自己的位置会被标记）  ｜ 防护
 ## 详细的规划：
@@ -74,7 +74,7 @@
 其中：
 
 * `Wand` 和 `BugCannon` 虽然属于手持武器，但只能由 Mage 作为职业专属选择。
-* `MedicinePistol`、`TranquilizerPistol`、`ToolKit`、`RiftBook`、`TraceTagger` 等属于手持职业工具，不应归入“可放置道具”。
+* `MedicinePistol`、`TranquilizerPistol`、`ToolKit`、`RiftBook`、`EnvironmentScanner` 等属于手持职业工具，不应归入“可放置道具”。
 * `AntiAir`、`AutoShooter`、`ShieldDoor`、`FarmRunner`、`SignalAugment` 等属于可放置或可部署职业设备。
 * `NormalDrone`、`TechDrone`、`BoomBuggy`、`SmallMouse` 属于远程操控单位或一次性远程设备。
 
@@ -90,7 +90,7 @@
 | CargoModule / CargoRig      | 删除，不作为 Rider 专属                             |
 | EchoProbe 回声探测器             | 删除，不作为调查员专属                                 |
 | PhantomBeacon 假工具、假载具、假人物信号 | 收束为 `FakePlayer`，只生成假人物诱饵                   |
-| TraceTagger 可追踪车辆           | 调整为只追踪人物与工具 / 部署物；车辆由 VehicleTracker 专门追踪   |
+| EnvironmentScanner 环境扫描范围 | 固定为100米，标记资源、掉落物、巨大作物及可驾驶载具，不标记人物 |
 | RiftAnchor 被称为单独设备          | 由 `RiftBook` 这个手持工具创建和回跳，Anchor 本身是技能生成物    |
 
 ---
@@ -121,7 +121,7 @@
 |                    |                       | **BugCannon 虫虫大炮**        | 手持魔法骚扰武器      | 发射魔法虫群，对玩家造成轻度持续干扰，降低交互效率并影响视野或瞄准；对农田造成虫害；对防御设施与无人机造成运行干扰；可在地面形成短时虫群区域。                                                      |
 |                    |                       | **RiftBook 裂隙之书**         | 手持位移工具        | 第一次使用：一道闪电落到目标位置，生成带光柱效果的 `RiftAnchor`。第二次使用：Mage 短暂施法后传送至 Anchor 位置，Anchor 随即消失。完成后进入冷却，才能再次创建新的 Anchor。不能携带货物、巨型作物或驾驶载具传送。 |
 | **Prospector 调查员** | 资源侦察、地图测绘、进攻路线规划 | **SignalAugment 信号增强塔**   | 可放置信号设备       | 提升附近己方的信息能力，包括地图更新、无人机协同和设备共享信息。可与 VehicleTracker、NormalDrone、AutoShooter 形成联动。                     |
-|                    |                       | **ProspectScanner 资源扫描器** | 手持资源探测工具      | 探测矿石、燃油、稀有食材、特殊种子、巨型作物相关资源与地图事件资源。优先显示方向、距离和大致价值，而不是直接全图精确透视。                                                                |
+|                    |                       | **EnvironmentScanner 环境探测器** | 手持扫描工具       | 释放100米蓝色网格扫描，标记附近矿石、蘑菇、掉落物、巨大作物和可驾驶载具；效果仅使用者本地可见。 |
 |                    |                       | **SurveyRider 测绘骑手**       | 可驾驶测绘载具        | 调查员部署后驾驶的轻型双轮载具，用于快速侦察、资源测绘和短距离机动。                                                                        |
 | **Rider 车手**       | 车辆维护、载具追踪、物流截击、道路突袭   | **ToolKit 修车工具箱**         | 修车 |
 |                    |                       | **VehicleLocator 载具追踪器**  | 手持载具追踪工具      | 锁定敌方载具，使其在地图和屏幕中暴露位置、移动方向或最后已知位置。只追踪车辆，不追踪人物和工具。                                                                             |
@@ -135,7 +135,6 @@
 | 系统              | 专属职责                | 不应承担的职责              |
 | --------------- | ------------------- | -------------------- |
 | VehicleTracker  | 追踪载具与运输路线           | 不追踪人物、工具、陷阱          |
-| ProspectScanner | 寻找矿石、燃油、稀有食材和地图资源事件 | 不扫描敌人位置              |
 | SignalAugment   | 强化己方情报共享与设备协同       | 不提供全图透视              |
 | SignalJam       | 让敌方情报延迟、失真或缩短距离     | 不永久关闭所有设备            |
 | PlantProtector  | 保护农田、作物和农业设施        | 不保护整队玩家，也不提供万能护盾     |
@@ -153,10 +152,10 @@
 | Cook       | SpiceSprayer 负责追踪与控场；FieldKitchen 做高价值料理；AutoCooker 批量完成普通订单。    |
 | Guard      | AntiAir 防空；ShieldDoor 封锁路线；AutoShooter 守关键节点。                    |
 | Apothecary | MedicinePistol 救单人；MedicineCannon 守区域；TranquilizerPistol 打断敌方运输和交互。 |
-| Assistant  | NormalDrone 负责小批量物流；WheatSentry 守农田；CargoShield 护送车队与抱箱队伍。       |
+| Assistant  | NormalDrone 负责小批量物流；WheatSentry 守农田。       |
 | Engineer   | SignalJam 压制敌方情报；TechDrone 处理设备；SmallMouse 进行低位渗透和局部破坏。          |
 | Mage       | Wand 提供法术输出；BugCannon 骚扰生产链；RiftBook 绕后和撤离。                      |
-| Prospector | TraceTagger 找人和工具；SignalAugment 放大团队情报；ProspectScanner 找地图资源机会。  |
+| Prospector | EnvironmentScanner 搜索资源、掉落物与载具；SignalAugment 放大团队情报；SurveyRider 负责快速测绘。  |
 | Rider      | ToolKit 保障己方车辆；VehicleTracker 锁定敌方运输；BoomBuggy 主动截停和爆破物流线。       |
 | Trickster  | BigMouth 强伏击；Trap 破坏道路与车辆；FakePlayer 诱导敌方暴露。                     |
 

@@ -65,12 +65,12 @@ const VALID_PRIMARY_WEAPON_IDS := [
 const VALID_SPECIAL_TOOL_IDS_BY_HERO := {
 	"farmer": ["plant_protector", "fertilizer", "farm_runner"],
 	"cook": ["spicy_blaster", "field_kitchen", "auto_cooker"],
-	"guard": ["anti_air", "shield_door", "auto_shooter", "area_protector"],
+	"guard": ["anti_air", "shield_door", "auto_shooter"],
 	"apothecary": ["medicine_pistol", "medicine_cannon", "tranquilizer_pistol"],
-	"assistant": ["normal_drone", "wheat_sentry", "cargo_shield"],
+	"assistant": ["normal_drone", "wheat_sentry", "area_protector"],
 	"engineer": ["signal_jam", "tech_drone", "small_mouse"],
 	"mage": ["wand", "bug_cannon", "rift_book"],
-	"prospector": ["signal_augment", "prospect_scanner", "survey_rider"],
+	"prospector": ["signal_augment", "environment_scanner", "survey_rider"],
 	"rider": ["repair_welder", "vehicle_shield_shooter", "boom_buggy"],
 	"trickster": ["big_mouth", "trap", "fake_player"],
 }
@@ -1350,6 +1350,14 @@ func request_vehicle_action(action: Dictionary) -> void:
 	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
 		return
 	GameAuthority.server_vehicle_action(sender_id, action)
+
+
+@rpc("any_peer", "reliable")
+func request_tool_action(action: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	GameAuthority.server_tool_action(sender_id, action)
 
 
 @rpc("any_peer", "call_remote", "reliable", 4)

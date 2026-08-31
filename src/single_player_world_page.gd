@@ -5,14 +5,14 @@ signal back_requested
 signal world_requested(world_id: String)
 
 const LOADOUT_SCENE := preload("res://ui/MultiplayerLoadoutSelect.tscn")
-const COLOR_BG := Color("#15171A")
-const COLOR_PANEL := Color("#1D2024")
-const COLOR_CONTROL := Color("#272B30")
-const COLOR_HOVER := Color("#32373D")
-const COLOR_SELECTED := Color("#3C4249")
-const COLOR_BORDER := Color("#4B5159")
-const COLOR_TEXT := Color("#F0F1F2")
-const COLOR_MUTED := Color("#A4A8AD")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_CONTROL := UITheme.COLOR_CONTROL
+const COLOR_HOVER := UITheme.COLOR_HOVER
+const COLOR_SELECTED := UITheme.COLOR_SELECTED
+const COLOR_BORDER := UITheme.COLOR_BORDER
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
 
 var world_name_edit: LineEdit
 var map_list: ItemList
@@ -30,6 +30,7 @@ var special_names: Dictionary = {}
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	_load_display_names()
 	_build_interface()
 	_refresh_maps()
@@ -452,29 +453,12 @@ func _make_button(text: String, width: float) -> Button:
 	button.text = text
 	button.custom_minimum_size = Vector2(width, 44)
 	button.add_theme_font_size_override("font_size", 18)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_color_override("font_disabled_color", COLOR_MUTED)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_CONTROL, COLOR_BORDER, 1))
-	button.add_theme_stylebox_override("hover", _style_box(COLOR_HOVER, COLOR_BORDER, 1))
-	button.add_theme_stylebox_override("pressed", _style_box(COLOR_SELECTED, COLOR_BORDER, 1))
-	button.add_theme_stylebox_override("disabled", _style_box(COLOR_PANEL, COLOR_BORDER, 1))
+	UITheme.apply_button(button)
 	return button
 
 
 func _style_box(color: Color, border_color: Color, border_width: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.border_color = border_color
-	style.set_border_width_all(border_width)
-	style.corner_radius_top_left = 3
-	style.corner_radius_top_right = 3
-	style.corner_radius_bottom_left = 3
-	style.corner_radius_bottom_right = 3
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	return style
+	return UITheme.make_style(color, border_color, border_width, 3)
 
 
 func _load_icon(path: String) -> Texture2D:

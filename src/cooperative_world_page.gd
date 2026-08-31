@@ -3,12 +3,12 @@ class_name CooperativeWorldPage
 
 signal back_requested
 
-const COLOR_BG := Color("#0F1724")
-const COLOR_PANEL := Color("#182438")
-const COLOR_PANEL_2 := Color("#22324A")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
-const COLOR_ACCENT := Color("#54D6A2")
+const COLOR_BG := UITheme.COLOR_BG
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_2 := UITheme.COLOR_CONTROL
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_ACCENT := UITheme.COLOR_INFO
 
 var status_label: Label
 var world_name_edit: LineEdit
@@ -26,6 +26,7 @@ var maps: Array[Dictionary] = []
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	_build_interface()
 	SteamService.initialization_completed.connect(_on_steam_initialization_completed)
 	SteamService.cooperative_lobby_error.connect(_on_lobby_error)
@@ -506,9 +507,7 @@ func _make_button(text: String) -> Button:
 	button.text = text
 	button.custom_minimum_size = Vector2(0, 54)
 	button.add_theme_font_size_override("font_size", 19)
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_stylebox_override("normal", _style_box(COLOR_PANEL_2, 16))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#314766"), 16))
+	UITheme.apply_button(button)
 	return button
 
 
@@ -518,16 +517,9 @@ func _make_delete_button() -> Button:
 	button.custom_minimum_size = Vector2(156, 94)
 	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	button.add_theme_font_size_override("font_size", 20)
-	button.add_theme_color_override("font_color", Color("#FFECEC"))
-	button.add_theme_stylebox_override("normal", _style_box(Color("#8B1E2D"), 16))
-	button.add_theme_stylebox_override("hover", _style_box(Color("#C6283D"), 16))
-	button.add_theme_stylebox_override("pressed", _style_box(Color("#6D1421"), 16))
-	button.add_theme_stylebox_override("focus", _style_box(Color("#C6283D"), 16))
+	UITheme.apply_button(button, UITheme.TONE_ERROR)
 	return button
 
 
 func _style_box(color: Color, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.set_corner_radius_all(radius)
-	return style
+	return UITheme.make_style(color, UITheme.COLOR_BORDER, 1, radius)

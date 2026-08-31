@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://src/multiplayer_mode_page.gd" id="1"]
+[ext_resource type="Theme" path="res://ui/shared_ui_theme.tres" id="2_shared_theme"]
 
 [node name="MultiplayerModePage" type="Control"]
 layout_mode = 3
@@ -9,4 +10,5 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_shared_theme")
 script = ExtResource("1")

@@ -5,6 +5,9 @@ const INTERIOR_FACILITY_ROOT := "res://facilities/interior"
 const INTERIOR_LABEL_OVERRIDES := {
 	"laptop": "笔记本电脑",
 	"desktop": "台式机",
+	"coffee_table": "咖啡桌",
+	"dining_table": "餐桌",
+	"sofa": "沙发",
 	"compact_two_post_lift": "双柱汽车举升机",
 	"repair_terminal": "升级维修终端",
 	"ev_charging_station": "EV充电站",

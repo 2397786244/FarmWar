@@ -11,6 +11,8 @@ signal take_requested(slot_index: int)
 
 
 func _ready() -> void:
+	UITheme.apply_slot(self)
+	UITheme.apply_button(take_button)
 	take_button.pressed.connect(func(): take_requested.emit(slot_index))
 
 

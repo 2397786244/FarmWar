@@ -13,4 +13,4 @@ debug_color = Color(0.967213, 0, 0.47868943, 0.41960785)
 
 [node name="VehicleCamera" type="Camera3D" parent="." index="3"]
 transform = Transform3D(1, 0, 0, 0, 0.9781476, 0.2079117, 0, -0.2079117, 0.9781476, 0, 3.2, 7)
-fov = 72.0
+fov = 85.0

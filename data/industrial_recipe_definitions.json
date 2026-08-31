@@ -8,6 +8,10 @@
     "wood_lumber",
     "wood_chest_armor",
     "wood_legwear",
+    "wood_weapons_display_rack",
+	"wood_coffee_table",
+	"wood_dining_table",
+	"wood_sofa",
     "material_plant_fiber_cloth",
     "material_cotton_thread",
     "material_cotton_cloth",
@@ -119,6 +123,42 @@
       "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 2.0, "unit": "kg"}],
       "output": {"kind": "equipment", "id": "legwear_wood", "amount": 1.0, "unit": "item"}
     },
+    {
+      "recipe_id": "wood_weapons_display_rack",
+      "display_name": "制作武器展示架",
+      "workbench_id": "wood_processing_table",
+      "tech_tier": 3,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "metal_defense_net", "amount": 4.0, "unit": "item"}, {"kind": "ingredient", "id": "lumber", "amount": 8.0, "unit": "kg"}],
+      "output": {"kind": "tool", "id": "weapons_display_rack", "amount": 1.0, "unit": "item"}
+    },
+	{
+	  "recipe_id": "wood_coffee_table",
+	  "display_name": "制作咖啡桌",
+	  "workbench_id": "wood_processing_table",
+	  "tech_tier": 3,
+	  "complexity": 3,
+	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 8.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "coffee_table", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "wood_dining_table",
+	  "display_name": "制作餐桌",
+	  "workbench_id": "wood_processing_table",
+	  "tech_tier": 3,
+	  "complexity": 4,
+	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 16.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "dining_table", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "wood_sofa",
+	  "display_name": "制作沙发",
+	  "workbench_id": "wood_processing_table",
+	  "tech_tier": 3,
+	  "complexity": 4,
+	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 8.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton_cloth", "amount": 8.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton", "amount": 20.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "sofa", "amount": 1.0, "unit": "item"}
+	},
     {
       "recipe_id": "material_plant_fiber_cloth",
       "display_name": "编织植物纤维布",

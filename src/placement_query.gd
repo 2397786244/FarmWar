@@ -380,6 +380,95 @@ static func resolve_surface_placement(
 	}
 
 
+## Returns the tabletop support owning a physics collider, if that collider is
+## part of a furniture scene that explicitly exposes a tabletop surface.
+static func tabletop_support_for_collider(collider: Variant) -> Node3D:
+	var current: Node = collider as Node if collider is Node else null
+	while current != null:
+		if current is Node3D and current.is_in_group("tabletop_supports"):
+			return current as Node3D
+		current = current.get_parent()
+	return null
+
+
+static func tabletop_surface_position(support: Node3D, hit_position: Vector3) -> Vector3:
+	if support == null or not is_instance_valid(support):
+		return hit_position
+	var local_center_value: Variant = support.get_meta("tabletop_support_local_center", Vector3.ZERO)
+	var local_center := local_center_value as Vector3 if local_center_value is Vector3 else Vector3.ZERO
+	var local_hit := support.to_local(hit_position)
+	local_hit.y = local_center.y
+	return support.to_global(local_hit)
+
+
+## Ensures the full horizontal BoxShape3D footprint remains strictly inside the
+## configured tabletop rectangle. The same check is used by preview and server.
+static func validate_tabletop_footprint(
+	support: Node3D,
+	root_position: Vector3,
+	placement_yaw: float,
+	collision_shape: Shape3D,
+	collision_transform: Transform3D
+) -> Dictionary:
+	if support == null or not is_instance_valid(support):
+		return {"ok": true}
+	if not collision_shape is BoxShape3D:
+		return {"ok": false, "reason": "placement_unsupported_tabletop_shape"}
+	var size_value: Variant = support.get_meta("tabletop_support_size", Vector2.ZERO)
+	var support_size := size_value as Vector2 if size_value is Vector2 else Vector2.ZERO
+	if support_size.x <= 0.0 or support_size.y <= 0.0:
+		return {"ok": false, "reason": "placement_invalid_tabletop"}
+	var center_value: Variant = support.get_meta("tabletop_support_local_center", Vector3.ZERO)
+	var center := center_value as Vector3 if center_value is Vector3 else Vector3.ZERO
+	var half := (collision_shape as BoxShape3D).size * 0.5
+	var rotation := Basis(Vector3.UP, placement_yaw)
+	for x_sign in [-1.0, 1.0]:
+		for z_sign in [-1.0, 1.0]:
+			var corner := root_position + rotation * (
+				collision_transform.origin + collision_transform.basis * Vector3(half.x * x_sign, 0.0, half.z * z_sign)
+			)
+			var local_corner := support.to_local(corner)
+			if absf(local_corner.x - center.x) > support_size.x * 0.5 + 0.001 \
+					or absf(local_corner.z - center.z) > support_size.y * 0.5 + 0.001:
+				return {"ok": false, "reason": "placement_exceeds_tabletop"}
+	return {"ok": true}
+
+
+static func resolve_tabletop_surface_placement(
+	world: World3D,
+	support: Node3D,
+	hit_position: Vector3,
+	player_position: Vector3,
+	placement_yaw: float,
+	collision_shape: Shape3D,
+	collision_transform: Transform3D,
+	blocking_mask: int,
+	exceptions: Array = [],
+	surface_normal: Vector3 = Vector3.UP,
+	max_slope_degrees: float = DEFAULT_MAX_SLOPE_DEGREES,
+	clearance: float = DEFAULT_CLEARANCE
+) -> Dictionary:
+	var surface_position := tabletop_surface_position(support, hit_position)
+	var result := resolve_surface_placement(
+		world, surface_position, player_position, placement_yaw, collision_shape,
+		collision_transform, blocking_mask, exceptions, surface_normal,
+		max_slope_degrees, clearance
+	)
+	if not bool(result.get("ok", false)):
+		return result
+	var footprint := validate_tabletop_footprint(
+		support,
+		result.get("position", surface_position) as Vector3,
+		placement_yaw,
+		collision_shape,
+		collision_transform
+	)
+	if not bool(footprint.get("ok", false)):
+		result["ok"] = false
+		result["reason"] = str(footprint.get("reason", "placement_exceeds_tabletop"))
+	return result
+
+
 ## Resolve a safe spawn transform for any registered VehicleBase scene.  This
 ## function is intentionally side-effect free: it only reads the scene to
 ## build a cached collision profile and queries the supplied physics world.

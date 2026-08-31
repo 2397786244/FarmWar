@@ -337,17 +337,21 @@ func _update_surface_preview(request: Dictionary, yaw: float, cooldown_active :=
 		"position", _resolve_fallback_target(request)
 	) as Vector3
 	var surface_normal := surface_target.get("normal", Vector3.UP) as Vector3
-	var result := PlacementQueryScript.resolve_surface_placement(
-		player.get_world_3d(),
-		surface_position,
-		player.global_position,
-		yaw,
-		source_collision_shape,
-		source_collision_transform,
-		_placement_blocking_mask(),
-		_placement_exceptions(),
-		surface_normal
-	)
+	var support := PlacementQueryScript.tabletop_support_for_collider(surface_target.get("collider", null))
+	var tabletop_placeable := bool(current_definition.get("tabletop_placeable", false))
+	var result: Dictionary
+	if tabletop_placeable and support != null:
+		result = PlacementQueryScript.resolve_tabletop_surface_placement(
+			player.get_world_3d(), support, surface_position, player.global_position, yaw,
+			source_collision_shape, source_collision_transform, _placement_blocking_mask(),
+			_placement_exceptions(), surface_normal
+		)
+	else:
+		result = PlacementQueryScript.resolve_surface_placement(
+			player.get_world_3d(), surface_position, player.global_position, yaw,
+			source_collision_shape, source_collision_transform, _placement_blocking_mask(),
+			_placement_exceptions(), surface_normal
+		)
 	var position := result.get("position", surface_position) as Vector3
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
 
@@ -463,6 +467,7 @@ func _resolve_surface_target(request: Dictionary) -> Dictionary:
 			return {
 				"position": hit.get("position") as Vector3,
 				"normal": normal_value as Vector3 if normal_value is Vector3 else Vector3.UP,
+				"collider": hit.get("collider", null),
 			}
 	var fallback := _resolve_fallback_target(request)
 	return {"position": fallback, "normal": Vector3.UP}

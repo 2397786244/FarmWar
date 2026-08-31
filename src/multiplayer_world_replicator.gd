@@ -3,6 +3,7 @@ class_name MultiplayerWorldReplicatorService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
+const PlacedStorageState = preload("res://src/placed_storage_state.gd")
 const PLAYER_SCENE := preload("res://character/player.tscn")
 const AI_SCENES := {
 	"farmer": "res://character/FarmerAI.tscn",
@@ -65,6 +66,10 @@ const PLACED_TOOL_SCENES := {
 	"auto_cooker": "res://character/weapons/AutomaticCook.tscn",
 	"laptop": "res://facilities/interior/laptop.tscn",
 	"desktop": "res://facilities/interior/desktop.tscn",
+	"coffee_table": "res://facilities/interior/coffee_table.tscn",
+	"dining_table": "res://facilities/interior/dining_table.tscn",
+	"sofa": "res://facilities/interior/sofa.tscn",
+	"weapons_display_rack": "res://facilities/interior/weapons_display_rack.tscn",
 	"trap": "res://character/weapons/Trap.tscn",
 	"big_mouth": "res://character/weapons/BigMouth.tscn",
 	"fake_player": "res://character/weapons/FakePlayer.tscn",
@@ -533,6 +538,12 @@ func _apply_local_player_snapshot(data: Dictionary) -> void:
 				"apply_vehicle_snapshot", str(data.get("vehicle_id", "")),
 				int(data.get("vehicle_seat_index", -1))
 			)
+			if node.has_method("apply_m17_flashlight_state"):
+				node.call(
+					"apply_m17_flashlight_state",
+					bool(data.get("m17_flashlight_on", false)),
+					str(data.get("current_tool_id", ""))
+				)
 			break
 
 
@@ -951,7 +962,8 @@ func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void
 			node.call("apply_network_health", float(data.get("hp", 0.0)))
 		if node is WireMeshGate and data.has("is_open"):
 			(node as WireMeshGate).apply_network_state(data)
-		if node != null and node.has_method("apply_network_visual_state"):
+		if node != null and not PlacedStorageState.apply_record(node, data) \
+				and node.has_method("apply_network_visual_state"):
 			if visual_state is Dictionary:
 				node.call("apply_network_visual_state", visual_state)
 		if bool(data.get("anchor_landed", false)) and node != null \
@@ -1220,7 +1232,7 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var authority_player_event := NetworkSession.is_listen_server() \
 		and event_type in [
 			"tool_selected", "tool_used", "tool_destroyed", "shield_broken",
-			"dropped_item_action_result"
+			"dropped_item_action_result", "m17_flashlight_state"
 		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
@@ -1235,6 +1247,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_absorption_visual_event(event)
 		"tool_selected":
 			_apply_tool_selected_event(event)
+		"m17_flashlight_state":
+			_apply_m17_flashlight_state_event(event)
 		"tool_used":
 			_apply_tool_used_event(event.get("data", {}))
 		"weapon_ammo_state":
@@ -1381,6 +1395,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_livestock_spawned(event.get("state", {}))
 		"placed_tool_spawned":
 			_apply_placed_tool_spawned(event.get("state", {}))
+		"weapon_display_rack_action_result":
+			_apply_weapon_display_rack_action_result(event.get("data", {}))
 		"gate_state":
 			_apply_gate_state_event(event)
 		"remote_device_spawned":
@@ -1493,6 +1509,33 @@ func _apply_placed_tool_spawned(state_value: Variant) -> void:
 		visual.call("apply_network_health", float(state.get("hp", 0.0)))
 	if visual is WireMeshGate:
 		(visual as WireMeshGate).apply_network_state(state)
+	if not PlacedStorageState.apply_record(visual, state) and visual.has_method("apply_network_visual_state"):
+		var visual_state: Variant = state.get("visual_state", {})
+		if (not visual_state is Dictionary or (visual_state as Dictionary).is_empty()) and state.has("rack_slots"):
+			visual_state = {"rack_slots": state.get("rack_slots", [])}
+		if visual_state is Dictionary:
+			visual.call("apply_network_visual_state", visual_state)
+
+
+func _apply_weapon_display_rack_action_result(data_value: Variant) -> void:
+	if not data_value is Dictionary:
+		return
+	var data := data_value as Dictionary
+	if not bool(data.get("ok", false)):
+		return
+	var rack_id := str(data.get("rack_id", ""))
+	var rack: Node = placed_tool_visuals.get(rack_id, null)
+	if not is_instance_valid(rack):
+		rack = _find_listen_server_authoritative_placed_tool(rack_id)
+	if not is_instance_valid(rack):
+		rack = _find_map_placed_tool(rack_id)
+	var rack_state: Variant = data.get("rack_state", {})
+	if is_instance_valid(rack) and PlacedStorageState.is_storage_node(rack):
+		if rack_state is Dictionary:
+			PlacedStorageState.apply(rack, rack_state)
+	elif is_instance_valid(rack) and rack.has_method("apply_network_visual_state"):
+		if rack_state is Dictionary:
+			rack.call("apply_network_visual_state", rack_state)
 
 
 func _apply_gate_state_event(event: Dictionary) -> void:
@@ -1759,6 +1802,16 @@ func _apply_tool_selected_event(event: Dictionary) -> void:
 	if player is GamePlayer:
 		(player as GamePlayer).apply_remote_tool_selection(
 			int(event.get("tool_index", 0)),
+			str(event.get("tool_id", ""))
+		)
+
+
+func _apply_m17_flashlight_state_event(event: Dictionary) -> void:
+	var peer_id := int(event.get("peer_id", 0))
+	var player: Node = remote_players.get(peer_id, null)
+	if player is GamePlayer:
+		(player as GamePlayer).apply_m17_flashlight_state(
+			bool(event.get("enabled", false)),
 			str(event.get("tool_id", ""))
 		)
 
@@ -2315,7 +2368,9 @@ func _apply_cargo_crate_placed(data_value: Variant) -> void:
 	if crate_id.is_empty():
 		return
 	var visual := _get_or_create_placed_tool_visual(crate_id, data)
-	if visual != null and visual.has_method("apply_network_visual_state"):
+	if visual != null and PlacedStorageState.is_storage_node(visual):
+		PlacedStorageState.apply(visual, {"crate_data": data.get("crate_data", {})})
+	elif visual != null and visual.has_method("apply_network_visual_state"):
 		visual.call("apply_network_visual_state", {"crate_data": data.get("crate_data", {})})
 
 
@@ -3278,6 +3333,10 @@ func _disable_visual_runtime(root: Node, preserve_animation_players := false) ->
 	# their collision and ComputerTerminal script so the local player can see the
 	# [E] prompt and request the next desktop-UI interaction pass.
 	if root is ComputerTerminal:
+		return
+	# Weapon racks need their three interaction Areas and lightweight script on
+	# clients; the displayed guns are sanitized by the rack itself.
+	if root.has_method("get_rack_slot_item") and root.has_method("apply_network_visual_state"):
 		return
 	# The remote terminal still owns visible interaction areas for the local
 	# player. Its authority-only lock decisions are guarded inside the script.

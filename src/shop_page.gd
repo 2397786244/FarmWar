@@ -2,14 +2,14 @@ extends PanelContainer
 
 signal closed
 
-const COLOR_PANEL := Color("#18324A")
-const COLOR_PANEL_DARK := Color("#102436")
-const COLOR_ACCENT := Color("#63D9A6")
-const COLOR_GOLD := Color("#FFD166")
-const COLOR_TEXT := Color("#F4F7FA")
-const COLOR_MUTED := Color("#AFC2D0")
-const COLOR_BUY := Color("#2E9E72")
-const COLOR_SELL := Color("#D8843B")
+const COLOR_PANEL := UITheme.COLOR_PANEL
+const COLOR_PANEL_DARK := UITheme.COLOR_BG
+const COLOR_ACCENT := UITheme.COLOR_SUCCESS
+const COLOR_GOLD := UITheme.COLOR_TEXT
+const COLOR_TEXT := UITheme.COLOR_TEXT
+const COLOR_MUTED := UITheme.COLOR_MUTED
+const COLOR_BUY := UITheme.COLOR_CONTROL
+const COLOR_SELL := UITheme.COLOR_CONTROL
 
 var current_shop: Shop
 var current_team := ""
@@ -27,6 +27,7 @@ var _market_session_refresh_left := 0.0
 
 
 func _ready() -> void:
+	UITheme.apply(self)
 	z_index = 50
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_interface()
@@ -90,7 +91,7 @@ func _build_interface() -> void:
 		child.queue_free()
 
 	custom_minimum_size = Vector2(760.0, 680.0)
-	add_theme_stylebox_override("panel", _style_box(COLOR_PANEL, 18, 3, COLOR_ACCENT))
+	add_theme_stylebox_override("panel", UITheme.make_style(UITheme.COLOR_BG, UITheme.COLOR_BORDER, 2, 4))
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 26)
@@ -122,6 +123,7 @@ func _build_interface() -> void:
 	close_button.text = "  ×  "
 	close_button.tooltip_text = "关闭商店（E / Esc）"
 	close_button.add_theme_font_size_override("font_size", 22)
+	UITheme.apply_button(close_button)
 	close_button.pressed.connect(close_shop)
 	header.add_child(close_button)
 
@@ -147,6 +149,7 @@ func _build_interface() -> void:
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_label.add_theme_font_size_override("font_size", 18)
 	status_label.add_theme_color_override("font_color", COLOR_MUTED)
+	UITheme.set_status(status_label, UITheme.TONE_MUTED)
 	root.add_child(status_label)
 
 
@@ -249,10 +252,7 @@ func _create_product_row(product: Dictionary, is_buy: bool) -> Control:
 	trade_button.text = "购买" if is_buy else "出售"
 	trade_button.custom_minimum_size = Vector2(92.0, 42.0)
 	trade_button.disabled = (not is_buy and owned <= 0) or not market_session_acquired
-	trade_button.add_theme_color_override("font_color", COLOR_TEXT)
-	trade_button.add_theme_stylebox_override(
-		"normal", _style_box(COLOR_BUY if is_buy else COLOR_SELL, 8)
-	)
+	UITheme.apply_button(trade_button)
 	trade_button.pressed.connect(
 		_on_trade_pressed.bind(str(product["id"]), str(product["name"]), is_buy, quantity)
 	)
@@ -284,7 +284,7 @@ func _on_trade_pressed(
 	if GameAuthority.should_send_network_requests():
 		MultiplayerNetwork.submit_shop_transaction(request)
 		status_label.text = "交易请求已发送，等待服务器确认：%s × %s" % [display_name, _format_quantity(amount, unit)]
-		status_label.add_theme_color_override("font_color", COLOR_MUTED)
+		UITheme.set_status(status_label, UITheme.TONE_MUTED)
 		return
 	elif GameAuthority.is_local_interaction_authority():
 		var peer_id := current_player.authority_peer_id if is_instance_valid(current_player) else GameAuthority.LOCAL_PLAYER_ID
@@ -296,10 +296,10 @@ func _on_trade_pressed(
 			else current_shop.sell(current_team, item_id, amount)
 	if success:
 		status_label.text = "%s成功：%s × %s" % ["购买" if is_buy else "出售", display_name, _format_quantity(amount, unit)]
-		status_label.add_theme_color_override("font_color", COLOR_ACCENT)
+		UITheme.set_status(status_label, UITheme.TONE_SUCCESS)
 	else:
 		status_label.text = "交易失败：金币不足、库存不足或该商品不可交易"
-		status_label.add_theme_color_override("font_color", Color("#FF8D8D"))
+		UITheme.set_status(status_label, UITheme.TONE_ERROR)
 	_refresh_interface()
 
 
@@ -328,11 +328,11 @@ func apply_transaction_result(result: Dictionary) -> void:
 			display_name,
 			_format_quantity(amount, unit),
 		]
-		status_label.add_theme_color_override("font_color", COLOR_ACCENT)
+		UITheme.set_status(status_label, UITheme.TONE_SUCCESS)
 	else:
 		var message := _transaction_failure_message(str(result.get("reason", "")))
 		status_label.text = "交易失败：%s" % message
-		status_label.add_theme_color_override("font_color", Color("#FF8D8D"))
+		UITheme.set_status(status_label, UITheme.TONE_ERROR)
 		_show_player_notice(message)
 	_refresh_interface()
 
@@ -362,14 +362,14 @@ func _apply_market_session_result(result: Dictionary, action: String) -> void:
 		_market_session_refresh_left = 5.0
 		if action == "open":
 			status_label.text = "牲畜市场已打开"
-			status_label.add_theme_color_override("font_color", COLOR_ACCENT)
+			UITheme.set_status(status_label, UITheme.TONE_SUCCESS)
 		_refresh_interface()
 		return
 	market_session_acquired = false
 	var message := _transaction_failure_message(str(result.get("reason", "market_in_use")))
 	_show_player_notice(message)
 	status_label.text = message
-	status_label.add_theme_color_override("font_color", Color("#FF8D8D"))
+	UITheme.set_status(status_label, UITheme.TONE_ERROR)
 	close_shop()
 
 

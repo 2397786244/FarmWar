@@ -1,0 +1,68 @@
+[gd_scene format=3 uid="uid://4cmoevpacm0l"]
+
+[ext_resource type="PackedScene" uid="uid://cmceodgvig6af" path="res://assets/facilities/interior/WeaponDisplayRack.glb" id="1_ky6cm"]
+[ext_resource type="Script" uid="uid://bddrqwl0bonob" path="res://src/weapons_display_rack.gd" id="2_rack"]
+[ext_resource type="Script" uid="uid://bjhe780uagr7n" path="res://src/weapon_display_rack_slot_area.gd" id="3_slot"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_slot"]
+size = Vector3(4.2, 0.72, 0.22)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ky6cm"]
+size = Vector3(4.5, 1, 0.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_evhmr"]
+size = Vector3(4.6, 3.8, 0.3)
+
+[node name="WeaponsDisplayRack" type="StaticBody3D" unique_id=344512641]
+transform = Transform3D(0.6, 0, 0, 0, 0.6, 0, 0, 0, 0.6, 0, 0, 0)
+collision_layer = 128
+collision_mask = 0
+script = ExtResource("2_rack")
+
+[node name="Mesh" parent="." unique_id=1387751016 instance=ExtResource("1_ky6cm")]
+
+[node name="Bottom" type="Marker3D" parent="." unique_id=1116848842]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8714885, -0.005418837)
+
+[node name="InteractionArea" type="Area3D" parent="Bottom" unique_id=907896198 groups=["weapon_display_rack_slot_areas"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.19)
+collision_layer = 512
+collision_mask = 8
+script = ExtResource("3_slot")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Bottom/InteractionArea" unique_id=1658269600]
+shape = SubResource("BoxShape3D_slot")
+
+[node name="Medium" type="Marker3D" parent="." unique_id=248625712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.0321977, 0)
+
+[node name="InteractionArea" type="Area3D" parent="Medium" unique_id=1013926604 groups=["weapon_display_rack_slot_areas"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.19)
+collision_layer = 512
+collision_mask = 8
+script = ExtResource("3_slot")
+slot_index = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Medium/InteractionArea" unique_id=2042783024]
+shape = SubResource("BoxShape3D_slot")
+
+[node name="Top" type="Marker3D" parent="." unique_id=1811998731]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.123392, 0)
+
+[node name="InteractionArea" type="Area3D" parent="Top" unique_id=1828884687 groups=["weapon_display_rack_slot_areas"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.19)
+collision_layer = 512
+collision_mask = 8
+script = ExtResource("3_slot")
+slot_index = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Top/InteractionArea" unique_id=1080858060]
+shape = SubResource("BoxShape3D_slot")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1241495638]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.49187577, 0.19323575)
+shape = SubResource("BoxShape3D_ky6cm")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=189053075]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.8589518, -0.089769006)
+shape = SubResource("BoxShape3D_evhmr")

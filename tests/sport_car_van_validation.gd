@@ -6,14 +6,14 @@ const VEHICLE_CASES := [
 		"scene": "res://vehicles/sport_car.tscn",
 		"max_hp": 800.0,
 		"max_speed": 10.0,
-		"top_speed_fov": 87.0,
+		"top_speed_fov": 100.0,
 	},
 	{
 		"label": "Van",
 		"scene": "res://vehicles/van.tscn",
 		"max_hp": 1200.0,
 		"max_speed": 6.0,
-		"top_speed_fov": 81.0,
+		"top_speed_fov": 94.0,
 	},
 ]
 
