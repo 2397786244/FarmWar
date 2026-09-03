@@ -9,8 +9,11 @@ height = 4.0
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_06a3e"]
 height = 4.0
 radius = 0.6
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(4, 1, 1)
 
 [node name="ChainLinkFence" type="StaticBody3D" unique_id=2140708003 groups=["ai_demolition_target"]]
+metadata/map_can_overlap_water = false
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("2_script")
@@ -28,3 +31,11 @@ collision_mask = 41128
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1603734086]
 transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0, 0.5855267, 0)
 shape = SubResource("CylinderShape3D_06a3e")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.59942, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

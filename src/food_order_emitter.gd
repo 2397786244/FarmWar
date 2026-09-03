@@ -1024,5 +1024,7 @@ func emit_recipe_order(target_team: String, recipe_id: String, required_servings
 	if not created.is_empty():
 		for created_task: Dictionary in created:
 			GameAuthority.reserve_ingredient_pickups_for_team(str(created_task.get("team", "")))
+		# TODO：餐饮订单或货运任务出现时，接入全局绿色提示。
+		# 当前仅保留 EventBoard 记录，不显示到 GlobalNotice。
 		EventBoard.add_global_event("公共餐饮订单", "%s：%d 份" % [dish_name, required_servings], "order")
 	return created

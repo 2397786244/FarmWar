@@ -4,5 +4,6 @@
 
 [node name="DebrisCiggrate" type="Node3D" unique_id=803727080]
 metadata/map_can_overlap_water = false
+metadata/map_ground_decoration = true
 
 [node name="CigaretteButt" parent="." unique_id=511547252 instance=ExtResource("1_120x4")]

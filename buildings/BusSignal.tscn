@@ -2,8 +2,27 @@
 
 [ext_resource type="PackedScene" uid="uid://bqv1xyq3w1yau" path="res://assets/buildings/FTF_Street_BusStopSign_2_8m.glb" id="1_2mamk"]
 
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_2mamk"]
+height = 2.7399998
+radius = 0.36
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.08, 4.11, 1.08)
+
 [node name="BusSignal" type="StaticBody3D" unique_id=1611882980]
 metadata/map_can_overlap_water = false
 
 [node name="FTF_Street_BusStopSign_2_8m2" parent="." unique_id=2134944129 instance=ExtResource("1_2mamk")]
 transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1049949884]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 2.0822139, 0)
+shape = SubResource("CylinderShape3D_2mamk")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.08221, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

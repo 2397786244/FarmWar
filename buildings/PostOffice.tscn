@@ -4,6 +4,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_72pfc"]
 size = Vector3(8, 4, 7)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(8, 4, 7)
 
 [node name="PostOffice" type="StaticBody3D" unique_id=1097236851]
 metadata/map_can_overlap_water = false
@@ -15,3 +17,11 @@ collision_mask = 12971
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=661316602]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.0570345, 0)
 shape = SubResource("BoxShape3D_72pfc")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05703, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

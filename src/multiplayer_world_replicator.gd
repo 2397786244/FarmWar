@@ -69,6 +69,11 @@ const PLACED_TOOL_SCENES := {
 	"coffee_table": "res://facilities/interior/coffee_table.tscn",
 	"dining_table": "res://facilities/interior/dining_table.tscn",
 	"sofa": "res://facilities/interior/sofa.tscn",
+	"chair": "res://facilities/interior/chair.tscn",
+	"floor_lamp": "res://facilities/interior/floor_lamp.tscn",
+	"sunset_floor_lamp": "res://facilities/interior/sunset_floor_lamp.tscn",
+	"table_candle": "res://facilities/interior/table_candle.tscn",
+	"standing_torch": "res://facilities/interior/standing_torch.tscn",
 	"weapons_display_rack": "res://facilities/interior/weapons_display_rack.tscn",
 	"trap": "res://character/weapons/Trap.tscn",
 	"big_mouth": "res://character/weapons/BigMouth.tscn",
@@ -962,6 +967,9 @@ func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void
 			node.call("apply_network_health", float(data.get("hp", 0.0)))
 		if node is WireMeshGate and data.has("is_open"):
 			(node as WireMeshGate).apply_network_state(data)
+		if node != null and node.has_method("apply_network_state") \
+			and node.is_in_group("road_barriers"):
+			node.call("apply_network_state", data)
 		if node != null and not PlacedStorageState.apply_record(node, data) \
 				and node.has_method("apply_network_visual_state"):
 			if visual_state is Dictionary:
@@ -1232,7 +1240,7 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var authority_player_event := NetworkSession.is_listen_server() \
 		and event_type in [
 			"tool_selected", "tool_used", "tool_destroyed", "shield_broken",
-			"dropped_item_action_result", "m17_flashlight_state"
+			"dropped_item_action_result", "m17_flashlight_state", "road_barrier_state"
 		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
@@ -1399,6 +1407,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_weapon_display_rack_action_result(event.get("data", {}))
 		"gate_state":
 			_apply_gate_state_event(event)
+		"road_barrier_state":
+			_apply_road_barrier_state_event(event)
 		"remote_device_spawned":
 			_apply_remote_device_spawned(event.get("state", {}))
 		"chopping_action_result":
@@ -1509,6 +1519,8 @@ func _apply_placed_tool_spawned(state_value: Variant) -> void:
 		visual.call("apply_network_health", float(state.get("hp", 0.0)))
 	if visual is WireMeshGate:
 		(visual as WireMeshGate).apply_network_state(state)
+	if visual.has_method("apply_network_state") and visual.is_in_group("road_barriers"):
+		visual.call("apply_network_state", state)
 	if not PlacedStorageState.apply_record(visual, state) and visual.has_method("apply_network_visual_state"):
 		var visual_state: Variant = state.get("visual_state", {})
 		if (not visual_state is Dictionary or (visual_state as Dictionary).is_empty()) and state.has("rack_slots"):
@@ -1562,6 +1574,27 @@ func _apply_gate_state_event(event: Dictionary) -> void:
 	if event.has("position") and event.get("position") is Vector3:
 		gate.global_position = event.get("position") as Vector3
 	gate.rotation.y = float(event.get("yaw", gate.rotation.y))
+
+
+func _apply_road_barrier_state_event(event: Dictionary) -> void:
+	var barrier_id := str(event.get("device_id", event.get("barrier_id", "")))
+	if barrier_id.is_empty() or destroyed_tool_visual_ids.has(barrier_id):
+		return
+	var barrier: Node3D = _find_listen_server_authoritative_placed_tool(barrier_id)
+	if barrier == null:
+		barrier = placed_tool_visuals.get(barrier_id, null) as Node3D
+	if barrier == null:
+		barrier = _find_map_placed_tool(barrier_id)
+	var state_value: Variant = event.get("state", event)
+	if barrier == null and state_value is Dictionary:
+		barrier = _get_or_create_placed_tool_visual(barrier_id, state_value as Dictionary)
+	if barrier == null:
+		return
+	if state_value is Dictionary and barrier.has_method("apply_network_state"):
+		barrier.call("apply_network_state", state_value as Dictionary)
+	if event.has("position") and event.get("position") is Vector3:
+		barrier.global_position = event.get("position") as Vector3
+	barrier.rotation.y = float(event.get("yaw", barrier.rotation.y))
 
 
 func _apply_remote_device_spawned(state_value: Variant) -> void:
@@ -3065,6 +3098,12 @@ func _apply_tool_destroyed_event(event: Dictionary) -> void:
 	var device_id := str(event.get("device_id", event.get("id", "")))
 	if device_id.is_empty():
 		return
+	var destruction_visual: Node = placed_tool_visuals.get(device_id, null)
+	if not is_instance_valid(destruction_visual):
+		destruction_visual = _find_map_placed_tool(device_id)
+	if is_instance_valid(destruction_visual) \
+			and destruction_visual.has_method("play_destruction_effect"):
+		destruction_visual.call("play_destruction_effect")
 	if bool(event.get("auto_respawn", false)):
 		var facility: Node = placed_tool_visuals.get(device_id, null)
 		if not is_instance_valid(facility):
@@ -3100,6 +3139,8 @@ func _apply_tool_respawned_event(event: Dictionary) -> void:
 		visual.call("apply_network_health", float(state.get("hp", 0.0)))
 	if visual is WireMeshGate:
 		(visual as WireMeshGate).apply_network_state(state)
+	if visual.has_method("apply_network_state") and visual.is_in_group("road_barriers"):
+		visual.call("apply_network_state", state)
 
 
 func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:

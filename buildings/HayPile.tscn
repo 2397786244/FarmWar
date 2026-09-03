@@ -4,6 +4,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_xs8rw"]
 size = Vector3(2, 1.5, 1.2)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(2, 1.5, 1.2)
 
 [node name="HayPile" type="StaticBody3D" unique_id=698454119]
 metadata/map_can_overlap_water = false
@@ -14,3 +16,11 @@ collision_layer = 4097
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=820336373]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6807821, 0)
 shape = SubResource("BoxShape3D_xs8rw")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.68078, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

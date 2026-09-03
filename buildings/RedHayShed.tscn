@@ -4,6 +4,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_2gpc0"]
 size = Vector3(5, 4, 3.5)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(5, 4, 3.5)
 
 [node name="RedHayShed" type="StaticBody3D" unique_id=1778631258]
 metadata/map_can_overlap_water = false
@@ -14,3 +16,11 @@ collision_layer = 4096
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1721851346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9965208, 0)
 shape = SubResource("BoxShape3D_2gpc0")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.99652, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

@@ -1,0 +1,37 @@
+[gd_scene format=3 uid="uid://crh06xqxvcyri"]
+
+[ext_resource type="PackedScene" uid="uid://bu1asbqw2ap2s" path="res://assets/buildings/RoadCheckpointWatchtower.glb" id="1_x247w"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vkcxy"]
+size = Vector3(5.2, 9.82, 5.2)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(5.2, 9.82, 5.2)
+
+[node name="CheckpointTower" type="StaticBody3D" unique_id=1672698738]
+collision_layer = 4096
+collision_mask = 45739
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=76947457 instance=ExtResource("1_x247w")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=852984137]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.91, 0)
+shape = SubResource("BoxShape3D_vkcxy")
+
+[node name="AlarmLight" type="Marker3D" parent="." unique_id=549470570]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.64173, 0)
+
+[node name="TowerTopLight" type="OmniLight3D" parent="AlarmLight" unique_id=1549759708]
+light_color = Color(1, 0.63, 0.31, 1)
+light_energy = 0.8
+light_indirect_energy = 0.25
+omni_range = 10.0
+omni_attenuation = 5.0
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.91, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

@@ -580,7 +580,7 @@ func _notify_weather_started(message: String) -> void:
 		return
 	# Player owns the actual lower-left HUD. The group call also works for a
 	# listen server; remote proxies ignore this local-only presentation method.
-	get_tree().call_group("human_players", "show_weather_notice", message, 3.0)
+	get_tree().call_group("human_players", "show_global_notice", message, 3.0)
 
 
 func _create_rain_particles() -> void:

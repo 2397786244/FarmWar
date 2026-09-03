@@ -72,7 +72,8 @@ func _validate_player_recoil_and_modes() -> void:
 
 	player.call("_reset_weapon_recoil_state")
 	player.Head.rotation.x = 0.0
-	_check(str(player.call("_get_fire_mode", "m4")) == "single", "an unseen automatic weapon starts in single mode")
+	_check(str(player.call("_get_fire_mode", "m4")) == "auto", "an unseen automatic weapon starts in automatic mode")
+	player.fire_modes_by_tool_id["m4"] = "single"
 	player.call("_apply_weapon_recoil_pitch", "m4", 0.04)
 	var single_pitch := rad_to_deg(float(player.Head.rotation.x))
 	var single_reticle_offset := float(player.crosshair_recoil_offset_pixels)
@@ -86,13 +87,19 @@ func _validate_player_recoil_and_modes() -> void:
 	var auto_pitch := rad_to_deg(float(player.Head.rotation.x))
 	_check(auto_pitch > single_pitch, "automatic mode has stronger per-shot upward recoil")
 	var auto_logical_pitch := rad_to_deg(float(player.weapon_recoil_pitch))
-	_check(auto_logical_pitch >= 0.45 and auto_logical_pitch <= 1.50, "automatic recoil uses the configured kick bounds")
+	_check(
+		is_equal_approx(auto_logical_pitch, CombatBalance.get_float("m4", "auto_recoil_kick_degrees")),
+		"automatic recoil uses the configured kick bounds"
+	)
 	var accumulated_pitch := auto_pitch
 	for _shot in range(8):
 		player.call("_apply_weapon_recoil_pitch", "m4", 0.04)
 		accumulated_pitch = rad_to_deg(float(player.Head.rotation.x))
 	_check(accumulated_pitch > auto_pitch, "automatic fire visibly accumulates recoil")
-	_check(accumulated_pitch <= 8.0, "automatic recoil has a bounded accumulation")
+	_check(
+		rad_to_deg(float(player.weapon_recoil_pitch)) <= CombatBalance.get_float("m4", "auto_recoil_vertical_cap_degrees") + 0.001,
+		"automatic recoil has a bounded accumulation"
+	)
 
 	var before_recovery := float(player.weapon_recoil_pitch)
 	player.call("_update_weapon_recoil", 0.1)
@@ -113,13 +120,34 @@ func _validate_player_recoil_and_modes() -> void:
 	_check(bool(player.call("_current_tool_is_automatic")), "current M4 is eligible for mode switching")
 	player.fire_modes_by_tool_id.erase("m4")
 	player.call("_toggle_current_tool_fire_mode")
-	_check(str(player.call("_get_fire_mode", "m4")) == "auto", "mode toggle changes M4 to automatic")
+	_check(str(player.call("_get_fire_mode", "m4")) == "single", "mode toggle changes M4 to single shot")
 	player.tool_definitions[0] = player.all_tool_definitions_by_id["m4_ruralcamo"].duplicate(true)
 	player.fire_modes_by_tool_id.erase("m4_ruralcamo")
-	_check(str(player.call("_get_fire_mode", "m4_ruralcamo")) == "single", "a camouflage ID has independent default mode")
+	_check(str(player.call("_get_fire_mode", "m4_ruralcamo")) == "auto", "a camouflage ID has an independent automatic default")
 	player.call("_toggle_current_tool_fire_mode")
-	_check(str(player.call("_get_fire_mode", "m4_ruralcamo")) == "auto", "camouflage mode toggles independently")
-	_check(str(player.call("_get_fire_mode", "m4")) == "auto", "base M4 mode is not merged with camouflage mode")
+	_check(str(player.call("_get_fire_mode", "m4_ruralcamo")) == "single", "camouflage mode toggles independently")
+	_check(str(player.call("_get_fire_mode", "m4")) == "single", "base M4 mode is not merged with camouflage mode")
+
+	player.backpack_items.clear()
+	player.backpack_items.append({
+		"kind": "tool",
+		"tool_id": "m4",
+		"ammo_in_mag": 30,
+		"reserve_ammo": 0,
+	})
+	player.current_tool_index = 0
+	player.fire_modes_by_tool_id["m4"] = "single"
+	var single_weapon_info := str(player.call("_get_selected_item_info_text"))
+	_check(
+		single_weapon_info.split("\n")[0].ends_with(" | 单发"),
+		"left HUD shows single-shot mode beside the automatic weapon name"
+	)
+	player.fire_modes_by_tool_id["m4"] = "auto"
+	var automatic_weapon_info := str(player.call("_get_selected_item_info_text"))
+	_check(
+		automatic_weapon_info.split("\n")[0].ends_with(" | 连发"),
+		"left HUD shows automatic mode beside the automatic weapon name"
+	)
 	_validate_recoil_direction_and_strength()
 	_validate_single_fire_recoil_tuning()
 
@@ -162,6 +190,49 @@ func _validate_recoil_direction_and_strength() -> void:
 		request_direction is Vector3 \
 			and (request_direction as Vector3).distance_to(direction_after) < 0.0001,
 		"tool request uses the same direction as the reticle ray"
+	)
+	var saw_positive_lateral_recoil := false
+	var saw_negative_lateral_recoil := false
+	player.call("_reset_weapon_recoil_state")
+	for _shot in range(80):
+		player.call(
+			"_apply_weapon_recoil_pitch",
+			"ak47",
+			CombatBalance.get_float("ak47", "camera_recoil_strength")
+		)
+		var lateral_recoil := float(player.weapon_recoil_offset_degrees.x)
+		saw_positive_lateral_recoil = saw_positive_lateral_recoil or lateral_recoil > 0.001
+		saw_negative_lateral_recoil = saw_negative_lateral_recoil or lateral_recoil < -0.001
+	_check(saw_positive_lateral_recoil and saw_negative_lateral_recoil, "automatic recoil randomly walks in both horizontal directions")
+	var ak47_cap := CombatBalance.get_float("ak47", "auto_recoil_vertical_cap_degrees")
+	_check(
+		is_equal_approx(float(player.weapon_recoil_offset_degrees.y), ak47_cap),
+		"AK47 recoil reaches but does not exceed its vertical cap"
+	)
+	var full_load_scale: float
+	var empty_load_scale: float
+	player.call("_reset_weapon_recoil_state")
+	empty_load_scale = float(player.call("_get_weapon_recoil_input_scale"))
+	player.weapon_recoil_offset_degrees = Vector2(0.0, ak47_cap)
+	player.call("_sync_weapon_recoil_visual")
+	full_load_scale = float(player.call("_get_weapon_recoil_input_scale"))
+	_check(empty_load_scale > full_load_scale, "automatic recoil adds progressive mouse resistance")
+	_check(
+		is_equal_approx(full_load_scale, CombatBalance.get_float("ak47", "auto_recoil_input_min_scale")),
+		"AK47 recoil reaches its configured minimum mouse input scale"
+	)
+	player.call("_reset_weapon_recoil_state")
+	player.look_pitch_without_recoil = 0.0
+	player.weapon_recoil_offset_degrees = Vector2(0.0, 2.0)
+	player.call("_sync_weapon_recoil_visual")
+	player.call("_consume_recoil_look_input", Vector2(0.0, -2.0))
+	player.call("_sync_weapon_recoil_visual")
+	player.call("_update_weapon_recoil", 1.0)
+	_check(
+		is_zero_approx(float(player.weapon_recoil_offset_degrees.y))
+			and absf(float(player.look_pitch_without_recoil)) < 0.0001
+			and absf(float(player.Head.rotation.x)) < 0.0001,
+		"counter-steering recoil does not cause recovery to overshoot downward"
 	)
 	_check(
 		CombatBalance.get_float("ak47", "auto_recoil_kick_degrees") \
@@ -240,7 +311,7 @@ func _validate_single_fire_recoil_tuning() -> void:
 
 
 func CROSSHAIR_RECOIL_MAX_PIXELS() -> float:
-	return 72.0
+	return 180.0
 
 
 func _definitions_by_id(values: Variant) -> Dictionary:

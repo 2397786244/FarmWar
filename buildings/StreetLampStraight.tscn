@@ -6,6 +6,8 @@
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_jgh1u"]
 height = 4.0
 radius = 0.3
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(0.6, 4, 0.6)
 
 [node name="StreetLampStraight" type="StaticBody3D" unique_id=525411482]
 metadata/map_can_overlap_water = false
@@ -25,3 +27,11 @@ light_energy = 0.0
 light_indirect_energy = 0.0
 omni_range = 9.0
 omni_attenuation = 1.45
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.84431, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

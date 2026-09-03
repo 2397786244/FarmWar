@@ -62,6 +62,25 @@ func _run_validation() -> void:
 	zombie.set_physics_process(false)
 	bear.set_physics_process(false)
 	wreck_ai.set_physics_process(false)
+	var zombie_hit_area := zombie.get_node_or_null("Hit3D") as Area3D
+	_check(zombie_hit_area != null, "zombie body hit area is available for component dispatch")
+	if zombie_hit_area != null:
+		# Hit3D reaches Zombie through the generic damageable-component lookup.
+		# This must use Zombie's six-argument signature; RoadBarrier-style
+		# components are the ones that additionally consume shape_index.
+		zombie.current_hp = 2.0
+		var routed_zombie_hit := bool(GameAuthority.call(
+			"_apply_hit_to_collider",
+			zombie_hit_area,
+			"nail",
+			1.0,
+			"red",
+			-1,
+			ATTACKER_PEER_ID,
+			presentation_player
+		))
+		_check(routed_zombie_hit, "zombie child collider uses its six-argument hit dispatch")
+		_check(is_equal_approx(zombie.current_hp, 1.0), "zombie body hit applies damage after dispatch")
 	zombie.current_hp = 1.0
 	bear.current_hp = 1.0
 	wreck_ai.current_hp = 1.0

@@ -1,7 +1,16 @@
 extends StaticBody3D
 class_name ChainLinkFence
 
+const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
+
 const DAMAGE_PER_SECOND := 20.0
+## A vehicle that remains inside the fence's monitoring area continuously
+## crushes the fence at this rate.  This intentionally does not use the
+## vehicle impact speed threshold: a stopped vehicle still applies pressure
+## while it overlaps the ground fence.
+const VEHICLE_CRUSH_DAMAGE_PER_SECOND := 50.0
+const BREAK_FRAGMENT_COLOR := Color("777d80")
+const BREAK_PARTICLE_SCALE := 1.6
 const TARGET_SPEED_MULTIPLIER := 0.5
 const FENCE_HALF_LENGTH := 2.0
 const FENCE_RADIUS := 0.6
@@ -15,14 +24,17 @@ const TARGET_COLLISION_MASK := (
 )
 
 @export var tool_owner := ""
-@export var max_hp := 300.0
+@export var max_hp := 100.0
 @export var activate_on_ready := false
 @export var network_device_id := ""
+@export var auto_respawn := false
+@export_range(1.0, 3600.0, 1.0) var respawn_seconds := 60.0
 
 var current_hp := 0.0
 var active := false
 var destroyed := false
 var _network_visual_only := false
+var _destruction_effect_played := false
 
 @onready var body_shape: CollisionShape3D = get_node_or_null("CollisionShape3D") as CollisionShape3D
 @onready var hit_area: Area3D = get_node_or_null("Hit3D") as Area3D
@@ -50,31 +62,44 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not active or destroyed or _network_visual_only \
-			or GameAuthority.should_send_network_requests():
+		or GameAuthority.should_send_network_requests():
 		return
 	if not is_instance_valid(hit_area) or not hit_area.monitoring:
 		return
-	var amount := DAMAGE_PER_SECOND * maxf(delta, 0.0)
-	if amount <= 0.0:
+	var elapsed := maxf(delta, 0.0)
+	var amount := DAMAGE_PER_SECOND * elapsed
+	var vehicle_crush_amount := VEHICLE_CRUSH_DAMAGE_PER_SECOND * elapsed
+	if amount <= 0.0 and vehicle_crush_amount <= 0.0:
 		return
 	var processed_targets: Dictionary = {}
 	for body_value: Variant in hit_area.get_overlapping_bodies():
 		if body_value is Node3D and is_instance_valid(body_value):
 			var body := body_value as Node3D
+			var target := body
 			var target_key := body.get_instance_id()
 			if GameAuthority.has_method("_chain_link_target_root"):
 				var resolved: Variant = GameAuthority.call("_chain_link_target_root", body)
 				if resolved is Node3D and is_instance_valid(resolved):
-					target_key = (resolved as Node3D).get_instance_id()
+					target = resolved as Node3D
+					target_key = target.get_instance_id()
 			if processed_targets.has(target_key):
 				continue
 			processed_targets[target_key] = true
+			if target is VehicleBase and vehicle_crush_amount > 0.0:
+				GameAuthority.apply_chain_link_fence_vehicle_crush_damage(
+					self,
+					target as VehicleBase,
+					vehicle_crush_amount
+				)
+				if not active or destroyed:
+					break
 			GameAuthority.apply_chain_link_fence_effect(self, body, amount)
 
 
 func activate_tool() -> void:
 	_network_visual_only = false
 	destroyed = false
+	_destruction_effect_played = false
 	current_hp = maxf(current_hp, max_hp)
 	active = current_hp > 0.0
 	visible = active
@@ -91,19 +116,32 @@ func enable_network_visuals() -> void:
 
 
 func apply_network_health(value: float) -> void:
+	var was_destroyed := destroyed
 	current_hp = clampf(value, 0.0, maxf(max_hp, 0.0))
 	destroyed = current_hp <= 0.0
 	active = not destroyed
 	visible = active
+	if destroyed and not was_destroyed:
+		play_destruction_effect()
 	_set_gameplay_active(active and not _network_visual_only)
 
 
 func apply_network_destroyed() -> void:
+	play_destruction_effect()
 	current_hp = 0.0
 	destroyed = true
 	active = false
 	visible = false
 	_set_gameplay_active(false)
+
+
+func apply_network_respawned(value: float = -1.0) -> void:
+	current_hp = maxf(0.0, max_hp if value < 0.0 else value)
+	destroyed = false
+	_destruction_effect_played = false
+	active = current_hp > 0.0
+	visible = active
+	_set_gameplay_active(active)
 
 
 func impact(_effect: String, strength: float, attacker_team := "") -> bool:
@@ -125,11 +163,37 @@ func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team 
 func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
+		play_destruction_effect()
 		destroyed = true
 		active = false
 		visible = false
 		_set_gameplay_active(false)
 	return true
+
+
+## Spawns a detached one-shot effect so the particles remain visible even when
+## the destroyed fence is removed from the world immediately afterward.  The
+## method is also called by the multiplayer replicator before removing a
+## non-respawning map fence on a remote client.
+func play_destruction_effect() -> void:
+	if _destruction_effect_played:
+		return
+	_destruction_effect_played = true
+	var world_parent: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) \
+		else get_tree().current_scene
+	var effect_position := global_position + Vector3.UP * FENCE_CENTER_HEIGHT
+	if is_instance_valid(hit_shape) and hit_shape.is_inside_tree():
+		effect_position = hit_shape.global_position
+	var particles := NatureResourceHitEffect.spawn(
+		world_parent,
+		effect_position,
+		BREAK_FRAGMENT_COLOR,
+		BREAK_PARTICLE_SCALE,
+		"ChainLinkFenceBreakEffect"
+	)
+	if is_instance_valid(particles):
+		particles.add_to_group("chain_link_fence_break_effects")
+		particles.set_meta("chain_link_fence_break_particle_scale", BREAK_PARTICLE_SCALE)
 
 
 func is_target_slowed(target_team := "", target_kind := "") -> bool:

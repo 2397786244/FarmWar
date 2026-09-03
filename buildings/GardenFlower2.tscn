@@ -2,7 +2,25 @@
 
 [ext_resource type="PackedScene" uid="uid://cjdo3sqcmxkfe" path="res://assets/buildings/FTF_Garden_FlowerBed_Long_4m.glb" id="1_s3mrs"]
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_s3mrs"]
+size = Vector3(4.14, 0.6416398, 1.1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(4.14, 0.64164, 1.1)
+
 [node name="GardenFlower2" type="StaticBody3D" unique_id=1841070220]
 metadata/map_can_overlap_water = false
 
-[node name="FTF_Garden_FlowerBed_Long_4m2" parent="." unique_id=1070540541 instance=ExtResource("1_s3mrs")]
+[node name="Mesh" parent="." unique_id=1070540541 instance=ExtResource("1_s3mrs")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=245847934]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3208199, 0)
+shape = SubResource("BoxShape3D_s3mrs")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.32082, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

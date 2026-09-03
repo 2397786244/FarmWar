@@ -8,6 +8,11 @@ const INTERIOR_LABEL_OVERRIDES := {
 	"coffee_table": "咖啡桌",
 	"dining_table": "餐桌",
 	"sofa": "沙发",
+	"chair": "椅子",
+	"floor_lamp": "落地灯",
+	"sunset_floor_lamp": "夕阳落地灯",
+	"table_candle": "桌面蜡烛",
+	"standing_torch": "立式火炬",
 	"compact_two_post_lift": "双柱汽车举升机",
 	"repair_terminal": "升级维修终端",
 	"ev_charging_station": "EV充电站",
@@ -37,6 +42,8 @@ const DEFENSE_ASSETS: Array[Dictionary] = [
 	{"id": "tall_log_wall", "label": "高大木墙", "path": "res://character/weapons/TallLogWall.tscn", "category": "defense"},
 	{"id": "tall_mesh_wall", "label": "高大铁丝网", "path": "res://character/weapons/TallMeshWall.tscn", "category": "defense"},
 	{"id": "wire_mesh_gate", "label": "铁丝网门", "path": "res://character/weapons/WireMeshGate.tscn", "category": "defense"},
+	{"id": "chain_link_fence", "label": "地面铁丝网", "path": "res://character/weapons/ChainLinkFence.tscn", "category": "defense"},
+	{"id": "road_barrier_left", "label": "左侧道闸", "path": "res://buildings/RoadBarrierLeft.tscn", "category": "defense"},
 ]
 
 const INDUSTRIAL_ASSETS: Array[Dictionary] = [

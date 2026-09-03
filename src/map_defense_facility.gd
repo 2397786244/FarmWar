@@ -1,6 +1,8 @@
 extends StaticBody3D
 class_name MapDefenseFacility
 
+const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
+
 signal defense_destroyed
 signal defense_respawned
 
@@ -8,6 +10,10 @@ signal defense_respawned
 @export var max_hp := 1800.0
 @export var auto_respawn := false
 @export_range(1.0, 3600.0, 1.0) var respawn_seconds := 60.0
+## A transparent color disables the generic break effect for facilities that
+## do not opt into a material-specific destruction effect.
+@export var destruction_particle_color := Color(0.0, 0.0, 0.0, 0.0)
+@export_range(0.1, 5.0, 0.1) var destruction_particle_scale := 1.6
 
 var current_hp := 0.0
 var respawn_left := 0.0
@@ -17,6 +23,7 @@ var _initial_collision_mask := 0
 var _initial_hit_layer := 0
 var _initial_hit_mask := 0
 var _network_visual_only := false
+var _destruction_effect_played := false
 
 
 func _ready() -> void:
@@ -48,12 +55,23 @@ func _on_hit_3d_body_entered(body: Node3D) -> void:
 	var effect := "Explosion" if body is BoomBullet else "None"
 	if body is ColorBullet:
 		effect = str(body.get("bullet_effect"))
-	var attacker_peer_id := GameAuthority.resolve_attacker_peer_id(attacker_team)
+	var attacker_peer_id := 0
+	if body.has_method("get_bullet_shooter"):
+		var shooter: Variant = body.call("get_bullet_shooter")
+		if shooter is Node:
+			attacker_peer_id = GameAuthority.get_authority_player_peer_id(shooter as Node)
+	attacker_peer_id = GameAuthority.resolve_attacker_peer_id(attacker_team, attacker_peer_id)
 	var applied := bool(GameAuthority.call(
 		"_apply_hit_to_collider", self, effect, strength, attacker_team, -1, attacker_peer_id
 	))
 	if applied:
-		GameAuthority.show_local_hit_marker_for_team(attacker_team)
+		GameAuthority.notify_player_hit_confirmation(
+			attacker_peer_id,
+			attacker_team,
+			tool_owner,
+			strength,
+			effect
+		)
 
 
 func _has_property(object: Object, property_name: String) -> bool:
@@ -82,6 +100,7 @@ func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team 
 func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
+		play_destruction_effect()
 		destroyed = true
 		_set_defense_active(false)
 		defense_destroyed.emit()
@@ -89,12 +108,18 @@ func _apply_impact_strength(strength: float) -> bool:
 
 
 func apply_network_health(value: float) -> void:
+	var was_destroyed := destroyed
 	current_hp = clampf(value, 0.0, maxf(max_hp, 0.0))
 	destroyed = current_hp <= 0.0
+	if destroyed and not was_destroyed:
+		play_destruction_effect()
+	elif not destroyed and was_destroyed:
+		_destruction_effect_played = false
 	_set_defense_active(not destroyed)
 
 
 func apply_network_destroyed() -> void:
+	play_destruction_effect()
 	destroyed = true
 	current_hp = 0.0
 	_set_defense_active(false)
@@ -104,8 +129,35 @@ func apply_network_respawned(value: float = -1.0) -> void:
 	current_hp = maxf(0.0, max_hp if value < 0.0 else value)
 	respawn_left = 0.0
 	destroyed = false
+	_destruction_effect_played = false
 	_set_defense_active(true)
 	defense_respawned.emit()
+
+
+## Spawns a detached one-shot effect before this facility is hidden or removed.
+## Keeping the particles outside the facility lets a non-respawning map object
+## finish its break effect after the authoritative destroy path queue-frees it.
+func play_destruction_effect() -> void:
+	if _destruction_effect_played or destruction_particle_color.a <= 0.0:
+		return
+	_destruction_effect_played = true
+	var world_parent: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) \
+		else get_tree().current_scene
+	var effect_position := global_position + Vector3.UP
+	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if is_instance_valid(body_shape) and body_shape.is_inside_tree():
+		effect_position = body_shape.global_position
+	var particles := NatureResourceHitEffect.spawn(
+		world_parent,
+		effect_position,
+		destruction_particle_color,
+		destruction_particle_scale,
+		"MapDefenseBreakEffect"
+	)
+	if is_instance_valid(particles):
+		particles.add_to_group("map_defense_break_effects")
+		particles.set_meta("map_defense_break_particle_color", destruction_particle_color)
+		particles.set_meta("map_defense_break_particle_scale", destruction_particle_scale)
 
 
 func enable_network_visuals() -> void:

@@ -4,5 +4,6 @@
 
 [node name="DebrisCan" type="Node3D" unique_id=520668157]
 metadata/map_can_overlap_water = false
+metadata/map_ground_decoration = true
 
 [node name="CrushedColaCan" parent="." unique_id=1181676741 instance=ExtResource("1_rmg8c")]

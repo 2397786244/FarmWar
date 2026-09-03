@@ -161,6 +161,7 @@ const ENEMY_ONLY_PLACED_TOOL_TYPES := {
 # Water (65536), shops (512), and other non-combat layers intentionally stay out.
 const COLLISION_LAYER_GROUND := 1
 const COLLISION_LAYER_WALL := 2
+const COLLISION_LAYER_PLACEMENT_FOOTPRINT := 16
 const COLLISION_LAYER_WATER := 65536
 const COLLISION_LAYER_CHARACTER := 8
 const COLLISION_LAYER_BULLET := 32
@@ -198,6 +199,7 @@ const EXPLOSION_OCCLUSION_MASK := (
 )
 const FREE_PLACEMENT_BLOCKING_MASK := (
 	COLLISION_LAYER_WALL
+	| COLLISION_LAYER_PLACEMENT_FOOTPRINT
 	| COLLISION_LAYER_CHARACTER
 	| COLLISION_LAYER_TOOL
 	| COLLISION_LAYER_BUILDING
@@ -208,7 +210,9 @@ const FREE_PLACEMENT_BLOCKING_MASK := (
 ## Interior computer facilities may overlap a desk/table support collider, but
 ## must still reject walls, players, vehicles and natural resources.
 const SUPPORT_OVERLAP_BLOCKING_MASK := (
-	FREE_PLACEMENT_BLOCKING_MASK & ~(COLLISION_LAYER_TOOL | COLLISION_LAYER_BUILDING)
+	FREE_PLACEMENT_BLOCKING_MASK & ~(
+		COLLISION_LAYER_TOOL | COLLISION_LAYER_BUILDING | COLLISION_LAYER_PLACEMENT_FOOTPRINT
+	)
 )
 const FREE_PLACEMENT_MAX_SLOPE_DEGREES := 5.0
 # The clearance shape expands 0.15 m beyond the source CollisionShape on every side.
@@ -4322,6 +4326,46 @@ func _emit_gate_state(gate: WireMeshGate, actor_peer_id := 0) -> void:
 		"position": gate.global_position,
 		"yaw": gate.rotation.y,
 		"scene_path": "res://character/weapons/WireMeshGate.tscn",
+		"tick": server_tick,
+	})
+
+
+func notify_road_barrier_state_changed(barrier: Node3D) -> void:
+	if barrier == null or not is_instance_valid(barrier) \
+		or (not is_server_authority() and not is_local_authority()):
+		return
+	# Road barriers are neutral map targets.  Do not let a stale save or a
+	# generic map-facility caller accidentally turn one into a team-owned
+	# defense while publishing its component state.
+	if _node_has_property(barrier, "tool_owner"):
+		barrier.set("tool_owner", "")
+	var tool_ref := _registered_tool_ref_for_node(barrier)
+	if tool_ref.is_empty():
+		return
+	var device_id := str(tool_ref.get("id", ""))
+	var state := _state_dictionary_for_tool_ref(tool_ref)
+	if device_id.is_empty() or state.is_empty():
+		return
+	state["team"] = ""
+	_merge_road_barrier_state_into_tool_state(state, barrier)
+	state["position"] = barrier.global_position
+	state["yaw"] = barrier.rotation.y
+	if str(tool_ref.get("kind", "")) == "placed":
+		placed_tool_states[device_id] = state
+	else:
+		remote_device_states[device_id] = state
+	var barrier_state := state.duplicate(true)
+	reliable_world_event_ready.emit({
+		"type": "road_barrier_state",
+		"device_id": device_id,
+		"barrier_id": device_id,
+		"state": barrier_state,
+		"raised": bool(barrier_state.get("raised", false)),
+		"arm_hp": float(barrier_state.get("arm_hp", 0.0)),
+		"arm_max_hp": float(barrier_state.get("arm_max_hp", 0.0)),
+		"arm_destroyed": bool(barrier_state.get("arm_destroyed", false)),
+		"position": barrier.global_position,
+		"yaw": barrier.rotation.y,
 		"tick": server_tick,
 	})
 
@@ -12273,8 +12317,12 @@ func _server_hitscan(
 		# server-confirmed hits instead of placing effects at the player's feet.
 		hit_position = trace_end
 		hit_kind = "player"
-		if _damage_player(hit_peer_id, applied_damage, knockback, direction, team, effect, peer_id) and show_owner_hit_marker:
-			_emit_hit_confirmed(peer_id, 1, applied_damage, effect)
+		if _damage_player(hit_peer_id, applied_damage, knockback, direction, team, effect, peer_id) \
+			and show_owner_hit_marker:
+			var target_team := str((player_states[hit_peer_id] as Dictionary).get("team", ""))
+			notify_player_hit_confirmation(
+				peer_id, team, target_team, applied_damage, effect
+			)
 	elif hit.has("collider"):
 		var collider = hit.get("collider")
 		var hit_wild_animal := _wild_animal_for_collider(collider)
@@ -12287,7 +12335,12 @@ func _server_hitscan(
 			_apply_wild_animal_knockback(collider, direction, knockback)
 			hit_kind = "wild_animal" if hit_wild_animal != null else "tool"
 			if show_owner_hit_marker:
-				_emit_hit_confirmed(peer_id, 1, applied_damage, effect)
+				var target_team := ""
+				if collider is Node3D:
+					target_team = _explosion_target_team(collider as Node3D)
+				notify_player_hit_confirmation(
+					peer_id, team, target_team, applied_damage, effect
+				)
 	return {
 		"hit_kind": hit_kind,
 		"hit_peer_id": hit_peer_id,
@@ -12577,7 +12630,10 @@ func _server_pellet_shotgun(
 			)
 
 	if confirmed_hits > 0:
-		_emit_hit_confirmed(peer_id, confirmed_hits, total_damage, "nail")
+		var shooter_team := str((player_states[peer_id] as Dictionary).get("team", ""))
+		notify_player_hit_confirmation(
+			peer_id, shooter_team, "", total_damage, "nail"
+		)
 	return {
 		"hit_kind": summary_hit_kind,
 		"hit_position": summary_hit_position,
@@ -12974,10 +13030,8 @@ func _validate_farm_tile_tool_placement(
 	var source := packed.instantiate() as Node3D
 	if source == null:
 		return {"ok": false, "reason": "placement_bad_scene"}
-	var collision_shape := source.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if collision_shape == null:
-		collision_shape = source.get_node_or_null("VehicleShape") as CollisionShape3D
-	if collision_shape == null or collision_shape.shape == null:
+	var placement_shape := _placement_shape_for_scene_node(source)
+	if placement_shape.is_empty():
 		source.free()
 		return {"ok": false, "reason": "placement_missing_collision_shape"}
 	var world_node := GlobalVar.gameworld as Node3D
@@ -12995,13 +13049,13 @@ func _validate_farm_tile_tool_placement(
 		tile.global_position,
 		player_position,
 		placement_yaw,
-		collision_shape.shape,
-		collision_shape.transform,
+		placement_shape["shape"] as Shape3D,
+		placement_shape["transform"] as Transform3D,
 		FREE_PLACEMENT_BLOCKING_MASK,
 		_placement_exception_rids(peer_id),
 		COLLISION_LAYER_GROUND,
 		FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-		FREE_PLACEMENT_CLEARANCE,
+		float(placement_shape.get("clearance", FREE_PLACEMENT_CLEARANCE)),
 		FREE_PLACEMENT_GROUND_RAY_ABOVE,
 		FREE_PLACEMENT_GROUND_RAY_BELOW
 	)
@@ -13606,13 +13660,18 @@ func register_map_placed_tool(
 		return false
 	var tool_max_hp := _configured_tool_hp(tool_name, node)
 	var definition: Dictionary = authoritative_tool_definitions.get(tool_name, {})
+	var normalized_team := team
+	if _is_road_barrier_node(node):
+		normalized_team = ""
+		if _node_has_property(node, "tool_owner"):
+			node.set("tool_owner", "")
 	node.set_meta("network_device_id", tool_id)
 	placed_tool_states[tool_id] = {
 		"tool_id": tool_id,
 		"device_id": tool_id,
 		"tool_name": tool_name,
 		"owner_peer_id": 0,
-		"team": team,
+		"team": normalized_team,
 		"path": str(node.get_path()),
 		"position": node.global_position,
 		"yaw": node.rotation.y,
@@ -13629,6 +13688,8 @@ func register_map_placed_tool(
 		"destroyed": false,
 		"indestructible": bool(_node_has_property(node, "indestructible") and node.get("indestructible")),
 	}
+	if _is_road_barrier_node(node):
+		_merge_road_barrier_state_into_tool_state(placed_tool_states[tool_id], node)
 	if node is WireMeshGate:
 		placed_tool_states[tool_id]["is_open"] = (node as WireMeshGate).is_open
 		placed_tool_states[tool_id]["open_angle_degrees"] = (node as WireMeshGate).open_angle_degrees
@@ -13993,10 +14054,8 @@ func _validate_free_placement(
 	if placement_preview == null:
 		_free_placement_debug("rejected reason=placement_bad_scene")
 		return {"ok": false, "reason": "placement_bad_scene"}
-	var collision_shape := placement_preview.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if collision_shape == null:
-		collision_shape = placement_preview.get_node_or_null("VehicleShape") as CollisionShape3D
-	if collision_shape == null or collision_shape.shape == null:
+	var placement_shape := _placement_shape_for_scene_node(placement_preview)
+	if placement_shape.is_empty():
 		placement_preview.free()
 		_free_placement_debug("rejected reason=placement_missing_collision_shape")
 		return {"ok": false, "reason": "placement_missing_collision_shape"}
@@ -14024,13 +14083,13 @@ func _validate_free_placement(
 			requested_position,
 			player_position,
 			placement_yaw,
-			collision_shape.shape,
-			collision_shape.transform,
+			placement_shape["shape"] as Shape3D,
+			placement_shape["transform"] as Transform3D,
 			blocking_mask,
 			exceptions,
 			surface_normal,
 			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-			FREE_PLACEMENT_CLEARANCE
+			float(placement_shape.get("clearance", FREE_PLACEMENT_CLEARANCE))
 		)
 	elif surface_normal.length_squared() > 0.001:
 		placement = PlacementQueryScript.resolve_surface_placement(
@@ -14038,13 +14097,13 @@ func _validate_free_placement(
 			requested_position,
 			player_position,
 			placement_yaw,
-			collision_shape.shape,
-			collision_shape.transform,
+			placement_shape["shape"] as Shape3D,
+			placement_shape["transform"] as Transform3D,
 			blocking_mask,
 			exceptions,
 			surface_normal,
 			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-			FREE_PLACEMENT_CLEARANCE
+			float(placement_shape.get("clearance", FREE_PLACEMENT_CLEARANCE))
 		)
 	else:
 		placement = PlacementQueryScript.resolve_free_placement(
@@ -14052,13 +14111,13 @@ func _validate_free_placement(
 			requested_position,
 			player_position,
 			placement_yaw,
-			collision_shape.shape,
-			collision_shape.transform,
+			placement_shape["shape"] as Shape3D,
+			placement_shape["transform"] as Transform3D,
 			blocking_mask,
 			exceptions,
 			COLLISION_LAYER_GROUND,
 			FREE_PLACEMENT_MAX_SLOPE_DEGREES,
-			FREE_PLACEMENT_CLEARANCE,
+			float(placement_shape.get("clearance", FREE_PLACEMENT_CLEARANCE)),
 			FREE_PLACEMENT_GROUND_RAY_ABOVE,
 			FREE_PLACEMENT_GROUND_RAY_BELOW
 		)
@@ -14069,7 +14128,7 @@ func _validate_free_placement(
 	_free_placement_debug(
 		"shape=%s position=%s mask=%d collisions=%s"
 		% [
-			collision_shape.shape.get_class(),
+			(placement_shape["shape"] as Shape3D).get_class(),
 			placement.get("position", requested_position),
 			blocking_mask,
 			blocking_colliders,
@@ -14159,6 +14218,24 @@ func _free_placement_support_offset(collision_shape: CollisionShape3D) -> float:
 		collision_shape.shape,
 		collision_shape.transform
 	)
+
+
+func _placement_shape_for_scene_node(scene_root: Node3D) -> Dictionary:
+	var footprint := PlacementQueryScript.placement_footprint_for_node(scene_root)
+	if not footprint.is_empty():
+		return footprint
+	if scene_root == null:
+		return {}
+	var collision_shape := scene_root.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		collision_shape = scene_root.get_node_or_null("VehicleShape") as CollisionShape3D
+	if collision_shape == null or collision_shape.shape == null:
+		return {}
+	return {
+		"shape": collision_shape.shape,
+		"transform": collision_shape.transform,
+		"clearance": FREE_PLACEMENT_CLEARANCE,
+	}
 
 
 func _make_free_placement_clearance_shape(source_shape: Shape3D) -> Shape3D:
@@ -14726,11 +14803,18 @@ func _respawn_registered_map_tool(tool_id: String, tool: Dictionary) -> void:
 	if node == null or not is_instance_valid(node):
 		return
 	node.set_meta("network_device_id", tool_id)
+	if _is_road_barrier_node(node) and _node_has_property(node, "tool_owner"):
+		node.set("tool_owner", "")
 	var position := _vector3_from_value(tool.get("position", node.global_position))
 	node.global_position = position
 	node.rotation.y = float(tool.get("yaw", node.rotation.y))
 	if _node_has_property(node, "tool_owner"):
-		node.set("tool_owner", str(tool.get("team", "")))
+		node.set(
+			"tool_owner",
+			"" if _is_road_barrier_node(node) else str(tool.get("team", ""))
+		)
+	if _is_road_barrier_node(node):
+		tool["team"] = ""
 	var max_hp := maxf(0.0, float(tool.get("max_hp", _configured_tool_hp(str(tool.get("tool_name", "")), node))))
 	tool["path"] = str(node.get_path())
 	tool["max_hp"] = max_hp
@@ -14743,6 +14827,8 @@ func _respawn_registered_map_tool(tool_id: String, tool: Dictionary) -> void:
 		node.set("current_hp", max_hp)
 	if node is WireMeshGate:
 		tool["is_open"] = false
+	if _is_road_barrier_node(node):
+		_merge_road_barrier_state_into_tool_state(tool, node)
 	_notify_dynamic_navigation_obstacle_lifecycle(
 		node,
 		_navigation_obstacle_active_for_node(node)
@@ -15092,7 +15178,8 @@ func apply_local_boom_explosion(
 	radius: float,
 	effect := "Explosion",
 	knockback := 20.0,
-	server_authority := false
+	server_authority := false,
+	show_owner_hit_marker := true
 ) -> void:
 	if (not is_local_authority() and not (server_authority and is_server_authority())) \
 			or radius <= 0.0 or damage <= 0.0:
@@ -15150,7 +15237,15 @@ func apply_local_boom_explosion(
 	_damage_ai_normal_drones_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_vehicles_in_radius(position, radius, damage, team, effect)
 	_damage_mounted_machine_guns_in_radius(position, radius, damage, team, effect)
-	_damage_tools_in_radius(position, radius, damage, team, effect)
+	var damaged_tools := _damage_tools_in_radius(position, radius, damage, team, effect)
+	if show_owner_hit_marker and damaged_tools > 0:
+		notify_player_hit_confirmation(
+			attacker_peer_id,
+			team,
+			"",
+			damage * float(damaged_tools),
+			effect
+		)
 	_damage_harvest_trees_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
 	_damage_nature_resources_in_radius(position, radius, damage, team, effect, false, attacker_peer_id)
 	_damage_wild_animals_in_radius(position, radius, damage, knockback, team, effect, false, attacker_peer_id)
@@ -15164,7 +15259,11 @@ func apply_authoritative_vehicle_explosion(
 	effect := "VehicleExplosion",
 	knockback := 30.0
 ) -> void:
-	apply_local_boom_explosion(position, team, damage, radius, effect, knockback, true)
+	# A vehicle destruction explosion is not a player weapon hit and must not
+	# create a local weapon hit marker, even when the vehicle belongs to a player
+	# team.  The local BoomBullet path keeps the default enabled for player-fired
+	# cannonballs.
+	apply_local_boom_explosion(position, team, damage, radius, effect, knockback, true, false)
 
 
 func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_peer_id := 0, hit_world := true) -> void:
@@ -16002,6 +16101,27 @@ func show_local_hit_marker_for_team(attacker_team: String) -> void:
 			return
 
 
+## Emit the same player-only hit confirmation used by authoritative hitscan and
+## projectiles.  Empty target teams are neutral/unowned, so a player can still
+## receive feedback when hitting a map device such as a RoadBarrier.
+func notify_player_hit_confirmation(
+	attacker_peer_id: int,
+	attacker_team: String,
+	target_team: String,
+	damage: float,
+	source: String
+) -> bool:
+	if damage <= 0.0 or not should_show_player_hit_confirmation(attacker_team, target_team):
+		return false
+	if attacker_peer_id > 0:
+		_emit_hit_confirmed(attacker_peer_id, 1, damage, source)
+		return true
+	if is_local_authority() and not attacker_team.strip_edges().is_empty():
+		show_local_hit_marker_for_team(attacker_team)
+		return true
+	return false
+
+
 func _begin_player_respawn(peer_id: int) -> void:
 	if not player_states.has(peer_id):
 		return
@@ -16437,6 +16557,35 @@ func _apply_hit_to_collider(
 			))
 		if node is VehicleBase:
 			return _damage_vehicle(node as VehicleBase, damage, effect, attacker_team)
+		var component_node: Node = _find_component_damageable_ancestor(node as Node)
+		if component_node != null:
+			# Zombie exposes a compatible-looking impact_from_collider() method,
+			# but its six-argument signature intentionally omits shape_index.  A
+			# Head3D/Hit3D collider reaches this ancestor lookup before the loop
+			# reaches the Zombie root, so dispatch it explicitly here instead of
+			# sending the seven-argument component call below.
+			if component_node is Zombie:
+				return bool((component_node as Zombie).impact_from_collider(
+					collider,
+					effect,
+					damage,
+					attacker_team,
+					attacker_peer_id,
+					attacker_node
+				))
+			var component_applied := bool(component_node.call(
+				"impact_from_collider",
+				collider,
+				effect,
+				damage,
+				attacker_team,
+				shape_index,
+				attacker_peer_id,
+				attacker_node
+			))
+			if component_applied:
+				_sync_component_damageable_node(component_node)
+			return component_applied
 		var tool_ref := _registered_tool_ref_for_node(node)
 		if not tool_ref.is_empty():
 			return _damage_registered_tool_ref(tool_ref, damage, effect, attacker_team)
@@ -16721,6 +16870,8 @@ func _tool_max_hp(tool_name: String) -> float:
 			return CombatBalance.get_tool_max_hp("wire_mesh_gate")
 		"chain_link_fence", "ChainLinkFence":
 			return CombatBalance.get_tool_max_hp("chain_link_fence")
+		"road_barrier", "road_barrier_left", "RoadBarrier", "RoadBarrierLeft":
+			return 500.0
 		_:
 			return CombatBalance.get_tool_max_hp("default")
 
@@ -16833,7 +16984,14 @@ func _damage_registered_tool_ref(
 		return false
 	if bool(state.get("indestructible", false)):
 		return false
-	var team := str(state.get("team", ""))
+	var node = _node_for_tool_ref(tool_ref)
+	var is_road_barrier := _is_road_barrier_node(node) \
+		or _is_road_barrier_tool_name(str(state.get("tool_name", state.get("device_type", ""))))
+	var team := "" if is_road_barrier else str(state.get("team", ""))
+	if is_road_barrier:
+		state["team"] = ""
+		if node != null and is_instance_valid(node) and _node_has_property(node, "tool_owner"):
+			node.set("tool_owner", "")
 	var confirmation_team := attacker_team if hit_confirmation_team.is_empty() else hit_confirmation_team
 	var enemy_only := _is_enemy_only_tool_state(state) and not team.is_empty()
 	var is_enemy_tool := not attacker_team.is_empty() and not team.is_empty() and team != attacker_team
@@ -16841,7 +16999,6 @@ func _damage_registered_tool_ref(
 		return false
 	if not allow_friendly_fire and not attacker_team.is_empty() and team == attacker_team:
 		return false
-	var node = _node_for_tool_ref(tool_ref)
 	var before_hp := float(state.get("hp", _tool_max_hp(str(state.get("tool_name", state.get("device_type", ""))))))
 	if node != null and is_instance_valid(node):
 		if allow_friendly_fire and node.has_method("impact_with_friendly_fire"):
@@ -16861,6 +17018,8 @@ func _damage_registered_tool_ref(
 	else:
 		after_hp = 0.0
 	state["hp"] = maxf(0.0, after_hp)
+	if _is_road_barrier_node(node):
+		_merge_road_barrier_state_into_tool_state(state, node)
 	if kind == "remote" and float(state["hp"]) < before_hp:
 		reliable_world_event_ready.emit({
 			"type": "remote_device_damaged",
@@ -16877,8 +17036,74 @@ func _damage_registered_tool_ref(
 		placed_tool_states[id] = state
 	elif kind == "remote":
 		remote_device_states[id] = state
+	if _is_road_barrier_node(node):
+		notify_road_barrier_state_changed(node as Node3D)
 	return should_show_player_hit_confirmation(confirmation_team, team) \
 		and float(state.get("hp", before_hp)) < before_hp
+
+
+func _is_road_barrier_node(node: Variant) -> bool:
+	if not node is Node or not is_instance_valid(node):
+		return false
+	return (node as Node).is_in_group("road_barriers") \
+		or (node as Node).has_method("is_barrier_raised")
+
+
+func _is_road_barrier_tool_name(tool_name: String) -> bool:
+	return tool_name.strip_edges().to_lower() in [
+		"road_barrier",
+		"road_barrier_left",
+		"roadbarrier",
+		"roadbarrierleft",
+	]
+
+
+func _find_component_damageable_ancestor(node: Node) -> Node:
+	var cursor := node
+	while cursor != null:
+		if cursor.has_method("impact_from_collider"):
+			return cursor
+		cursor = cursor.get_parent()
+	return null
+
+
+func _merge_road_barrier_state_into_tool_state(state: Dictionary, node: Node) -> void:
+	if node == null or not is_instance_valid(node) or not node.has_method("get_network_state"):
+		return
+	var barrier_state: Variant = node.call("get_network_state")
+	if not barrier_state is Dictionary:
+		return
+	for key: String in [
+		"hp", "max_hp", "destroyed", "respawn_left", "raised",
+		"arm_hp", "arm_max_hp", "arm_destroyed"
+	]:
+		if (barrier_state as Dictionary).has(key):
+			state[key] = (barrier_state as Dictionary)[key]
+
+
+func _sync_component_damageable_node(node: Node) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var tool_ref := _registered_tool_ref_for_node(node)
+	if tool_ref.is_empty():
+		return
+	var id := str(tool_ref.get("id", ""))
+	var state := _state_dictionary_for_tool_ref(tool_ref)
+	if id.is_empty() or state.is_empty():
+		return
+	if _is_road_barrier_node(node):
+		state["team"] = ""
+		if _node_has_property(node, "tool_owner"):
+			node.set("tool_owner", "")
+	_merge_road_barrier_state_into_tool_state(state, node)
+	if str(tool_ref.get("kind", "")) == "placed":
+		placed_tool_states[id] = state
+	else:
+		remote_device_states[id] = state
+	if bool(state.get("destroyed", false)) or float(state.get("hp", 0.0)) <= 0.0:
+		_destroy_registered_tool_ref(tool_ref)
+	elif _is_road_barrier_node(node):
+		notify_road_barrier_state_changed(node as Node3D)
 
 
 func get_chain_link_fence_speed_multiplier(
@@ -16899,6 +17124,41 @@ func get_chain_link_fence_speed_multiplier(
 		if bool(fence.call("is_target_slowed", target_team, target_kind)):
 			multiplier = minf(multiplier, 0.5)
 	return multiplier
+
+
+## A ground fence is intentionally an Area3D rather than a blocking body, so a
+## vehicle does not generate a KinematicCollision3D for the normal ramming
+## path.  Let the fence's authoritative overlap loop route this continuous
+## crush damage through the same registered-tool state path used by weapons
+## and explosions.  No speed threshold is applied here: remaining overlapped
+## with the fence is sufficient to deal damage each physics tick.
+func apply_chain_link_fence_vehicle_crush_damage(
+	fence: Node3D,
+	vehicle: VehicleBase,
+	damage: float
+) -> bool:
+	if fence == null or vehicle == null or not is_instance_valid(fence) \
+			or not is_instance_valid(vehicle) or damage <= 0.0 \
+			or (not is_server_authority() and not is_local_authority()) \
+			or vehicle.current_hp <= 0.0:
+		return false
+	if not fence.has_method("impact"):
+		return false
+	var vehicle_team := _vehicle_team(vehicle)
+	var fence_ref := _registered_tool_ref_for_node(fence)
+	if not fence_ref.is_empty():
+		# Keep the normal ownership rule: neutral/enemy fences can be crushed,
+		# while a vehicle does not damage its own team's fence.  The registered
+		# route also updates placed_tool_states and emits destruction state.
+		return _damage_registered_tool_ref(
+			fence_ref,
+			damage,
+			"vehicle_crush",
+			vehicle_team
+		)
+	# Unregistered local test/map nodes still receive the gameplay damage, but
+	# cannot be persisted until the normal tool registration has occurred.
+	return bool(fence.call("impact", "vehicle_crush", damage, vehicle_team))
 
 
 func apply_chain_link_fence_effect(
@@ -17026,12 +17286,18 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 		release_big_mouth_captures_for_device(id, "destroyed")
 	var node = _node_for_tool_ref(tool_ref)
 	var auto_respawn := kind == "placed" and bool(state.get("auto_respawn", false))
+	if node != null and is_instance_valid(node) and node.has_method("play_destruction_effect"):
+		node.call("play_destruction_effect")
 	if auto_respawn:
 		_cancel_gate_lockpick_state(id, "gate_destroyed")
 		var respawn_seconds := maxf(1.0, float(state.get("respawn_seconds", 60.0)))
 		state["hp"] = 0.0
 		state["respawn_left"] = respawn_seconds
 		state["destroyed"] = true
+		if _is_road_barrier_node(node):
+			state["raised"] = false
+			state["arm_hp"] = 0.0
+			state["arm_destroyed"] = true
 		if node != null and is_instance_valid(node):
 			if node.has_method("apply_network_destroyed"):
 				node.call("apply_network_destroyed")
@@ -17324,7 +17590,8 @@ func apply_authoritative_vehicle_impact(
 	collider: Variant,
 	_contact_point: Vector3,
 	collision_normal: Vector3,
-	closing_speed: float
+	closing_speed: float,
+	collider_shape: int = -1
 ) -> Dictionary:
 	var result := {
 		"accepted": false,
@@ -17399,7 +17666,7 @@ func apply_authoritative_vehicle_impact(
 			"vehicle_impact",
 			damage,
 			attacker_team,
-			-1,
+			collider_shape,
 			attacker_peer_id,
 			vehicle
 		)
@@ -18899,6 +19166,11 @@ func _build_world_snapshot() -> Dictionary:
 			"yaw": float(tool.get("yaw", 0.0)),
 			"hp": float(tool.get("hp", 0.0)),
 		}
+		if _is_road_barrier_node(node) or str(tool.get("tool_name", "")).to_lower() == "road_barrier_left":
+			public_tool["raised"] = bool(tool.get("raised", false))
+			public_tool["arm_hp"] = float(tool.get("arm_hp", 0.0))
+			public_tool["arm_max_hp"] = float(tool.get("arm_max_hp", 100.0))
+			public_tool["arm_destroyed"] = bool(tool.get("arm_destroyed", false))
 		if str(tool.get("tool_name", "")).to_lower() == "wire_mesh_gate":
 			public_tool["is_open"] = bool(tool.get("is_open", false))
 			public_tool["open_angle_degrees"] = float(tool.get("open_angle_degrees", 90.0))

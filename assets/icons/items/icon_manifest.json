@@ -1659,6 +1659,62 @@
       "icon": "res://assets/icons/items/tools/sofa.png",
       "status": "rendered",
       "error": ""
+    },
+    {
+      "id": "chair",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/chair.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "floor_lamp",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/floor_lamp.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "sunset_floor_lamp",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/sunset_floor_lamp.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "table_candle",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/table_candle.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "standing_torch",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/standing_torch.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cargo_crate_small",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/cargo_crate_small.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cargo_crate_medium",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/cargo_crate_medium.png",
+      "status": "rendered",
+      "error": ""
+    },
+    {
+      "id": "cargo_crate_large",
+      "category": "tools",
+      "icon": "res://assets/icons/items/tools/cargo_crate_large.png",
+      "status": "rendered",
+      "error": ""
     }
   ]
 }

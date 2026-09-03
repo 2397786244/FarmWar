@@ -2,7 +2,26 @@
 
 [ext_resource type="PackedScene" uid="uid://cbkv758smq6ba" path="res://assets/environment/FTF_Garden_PlanterTall_RedYellowFlowers_2_2m.glb" id="1_fiv6i"]
 
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fiv6i"]
+height = 1.0
+radius = 1.13
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(2.26, 1, 2.26)
+
 [node name="GardenFlower" type="StaticBody3D" unique_id=99533876]
 metadata/map_can_overlap_water = false
 
-[node name="FTF_Garden_PlanterTall_RedYellowFlowers_2_2m2" parent="." unique_id=1980401356 instance=ExtResource("1_fiv6i")]
+[node name="Mesh" parent="." unique_id=1980401356 instance=ExtResource("1_fiv6i")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1815998321]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.57232034, 0)
+shape = SubResource("CylinderShape3D_fiv6i")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.57232, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

@@ -5,6 +5,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_3ly7j"]
 size = Vector3(1.4, 1.6, 1)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.4, 1.6, 1)
 
 [node name="ComprehensiveMaterialProcessingStation" type="StaticBody3D" unique_id=1110017380 groups=["comprehensive_material_processing_stations", "industrial_workbenches"]]
 collision_layer = 512
@@ -27,3 +29,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1977241105]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8474171, 0)
 shape = SubResource("BoxShape3D_3ly7j")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.84742, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

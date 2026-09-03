@@ -14,6 +14,8 @@ size = Vector3(6.5, 4.5, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_13yxh"]
 size = Vector3(6, 1, 3)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(10.48, 6.5495, 9.494)
 
 [node name="AutoSales" type="StaticBody3D" unique_id=335845555]
 script = ExtResource("5_auto_sales")
@@ -46,3 +48,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.7038865, 0.07339263, 0)
 
 [node name="MiniCar" parent="." unique_id=297327600 instance=ExtResource("4_j2ldy")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9389864, 0.09054959, 0)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.18475, 0.003)
+shape = SubResource("BoxShape3D_placement_footprint")

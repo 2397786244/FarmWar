@@ -25,6 +25,7 @@ ICON_IMPORT_X_ROTATIONS = {
     "coffee_table": -90.0,
     "dining_table": -90.0,
     "sofa": -90.0,
+    "chair": -90.0,
 }
 
 
@@ -139,6 +140,20 @@ def collect_jobs(project):
             add_job(jobs, item_id, category, model)
             if model is not None:
                 seen_tools.add(item_id)
+
+    # Cargo crates are runtime inventory items rather than entries in one of
+    # the item definition JSON files. Keep them in the same icon pipeline so
+    # their fallback tools/<item_id>.png icons and manifest entries are
+    # reproducible alongside the rest of the inventory.
+    cargo_crate_scenes = {
+        "cargo_crate_small": "items/CargoCrateSmall.tscn",
+        "cargo_crate_medium": "items/CargoCrateMedium.tscn",
+        "cargo_crate_large": "items/CragoCrateLarge.tscn",
+    }
+    for item_id, scene_value in cargo_crate_scenes.items():
+        scene_path = res_path(project, scene_value)
+        model = first_glb_from_scene(project, scene_path)
+        add_job(jobs, item_id, "tools", model)
     return jobs
 
 

@@ -1,19 +1,11 @@
 {
   "content": {
-    "ai_configuration": [
-      {
-        "ai_type": "futurewarrior",
-        "name": "",
-        "respawn_seconds": 60.0,
-        "spawn_point_id": "",
-        "team": "blue"
-      }
-    ],
-    "ai_count": 1,
-    "building_count": 34,
-    "defense_facility_count": 0,
+    "ai_configuration": [],
+    "ai_count": 0,
+    "building_count": 59,
+    "defense_facility_count": 19,
     "editor_objects": "editor_objects.dat",
-    "facility_count": 13,
+    "facility_count": 32,
     "farmland_count": 1,
     "ground_rock_count": 0,
     "industrial_facility_count": 4,

@@ -4,6 +4,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1eql4"]
 size = Vector3(2, 0.8, 0.6)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(2, 0.8, 0.6)
 
 [node name="DiningTable" type="StaticBody3D" unique_id=2128304022 groups=["tabletop_supports"]]
 collision_layer = 128
@@ -18,3 +20,11 @@ transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1342078541]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38738555, 0)
 shape = SubResource("BoxShape3D_1eql4")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38739, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

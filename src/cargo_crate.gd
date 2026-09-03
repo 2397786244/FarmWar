@@ -8,7 +8,11 @@ const LAYER_BULLET := 32
 const LAYER_TOOL := 128
 const LAYER_VEHICLE := 8192
 const LAYER_WILD_ANIMAL := 32768
-const GROUND_SCALE := 5.0
+const GROUND_SCALE_BY_SIZE := {
+	"small": 5.0,
+	"medium": 5.0,
+	"large": 3.0,
+}
 
 @export_enum("small", "medium", "large") var crate_size := "medium"
 @export var crate_instance_id := ""
@@ -53,10 +57,15 @@ func _apply_ground_scale() -> void:
 	if bool(get_meta("ground_scale_applied", false)):
 		return
 	set_meta("ground_scale_applied", true)
-	scale *= GROUND_SCALE
+	var ground_scale := _get_ground_scale()
+	scale *= ground_scale
 	# Keep the world-space HP text readable while its anchor follows the larger box.
 	if is_instance_valid(health_label):
-		health_label.scale /= GROUND_SCALE
+		health_label.scale /= ground_scale
+
+
+func _get_ground_scale() -> float:
+	return float(GROUND_SCALE_BY_SIZE.get(str(crate_size).to_lower(), 5.0))
 
 
 func setup_crate(value: Dictionary) -> void:

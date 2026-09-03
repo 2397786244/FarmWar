@@ -12,7 +12,15 @@
 	"wood_coffee_table",
 	"wood_dining_table",
 	"wood_sofa",
-    "material_plant_fiber_cloth",
+	"wood_chair",
+	"wood_tall_log_wall",
+	"material_table_candle",
+	"material_standing_torch",
+	"material_tall_brick_wall",
+	"material_tall_mesh_wall",
+	"material_wire_mesh_gate",
+	"material_chain_link_fence",
+	"material_plant_fiber_cloth",
     "material_cotton_thread",
     "material_cotton_cloth",
     "material_engineering_plastic",
@@ -48,6 +56,8 @@
     "electronic_vehicle_machine_gun",
     "electronic_nitro_boost",
     "electronic_roof_headlights",
+    "electronic_floor_lamp",
+    "electronic_sunset_floor_lamp",
     "electronic_laptop"
   ],
   "recipes": [
@@ -158,6 +168,78 @@
 	  "complexity": 4,
 	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 8.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton_cloth", "amount": 8.0, "unit": "kg"}, {"kind": "ingredient", "id": "cotton", "amount": 20.0, "unit": "kg"}],
 	  "output": {"kind": "tool", "id": "sofa", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "wood_chair",
+	  "display_name": "制作椅子",
+	  "workbench_id": "wood_processing_table",
+	  "tech_tier": 3,
+	  "complexity": 2,
+	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 6.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "chair", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "wood_tall_log_wall",
+	  "display_name": "制作高大木墙",
+	  "workbench_id": "wood_processing_table",
+	  "tech_tier": 3,
+	  "complexity": 4,
+	  "inputs": [{"kind": "ingredient", "id": "lumber", "amount": 24.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 4.0, "unit": "item"}],
+	  "output": {"kind": "tool", "id": "tall_log_wall", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_table_candle",
+	  "display_name": "制作桌面蜡烛",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 2,
+	  "complexity": 2,
+	  "inputs": [{"kind": "ingredient", "id": "oil", "amount": 0.2, "unit": "kg"}, {"kind": "ingredient", "id": "cotton", "amount": 0.05, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "table_candle", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_standing_torch",
+	  "display_name": "制作立式火炬",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 3,
+	  "complexity": 3,
+	  "inputs": [{"kind": "ingredient", "id": "oil", "amount": 0.8, "unit": "kg"}, {"kind": "ingredient", "id": "cotton", "amount": 0.2, "unit": "kg"}, {"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "standing_torch", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_tall_brick_wall",
+	  "display_name": "制作高大砖墙",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 4,
+	  "complexity": 4,
+	  "inputs": [{"kind": "ingredient", "id": "stone", "amount": 32.0, "unit": "kg"}, {"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 4.0, "unit": "item"}],
+	  "output": {"kind": "tool", "id": "tall_brick", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_tall_mesh_wall",
+	  "display_name": "制作高大铁丝网",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 3,
+	  "complexity": 4,
+	  "inputs": [{"kind": "ingredient", "id": "metal_defense_net", "amount": 3.0, "unit": "item"}, {"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}],
+	  "output": {"kind": "tool", "id": "tall_mesh_wall", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_wire_mesh_gate",
+	  "display_name": "制作铁丝网门",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 4,
+	  "complexity": 5,
+	  "inputs": [{"kind": "ingredient", "id": "metal_defense_net", "amount": 3.0, "unit": "item"}, {"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "metal_connector", "amount": 2.0, "unit": "item"}, {"kind": "ingredient", "id": "bearing", "amount": 2.0, "unit": "item"}],
+	  "output": {"kind": "tool", "id": "wire_mesh_gate", "amount": 1.0, "unit": "item"}
+	},
+	{
+	  "recipe_id": "material_chain_link_fence",
+	  "display_name": "制作地面铁丝网",
+	  "workbench_id": "comprehensive_material_processing_station",
+	  "tech_tier": 3,
+	  "complexity": 3,
+	  "inputs": [{"kind": "ingredient", "id": "metal_defense_net", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "steel_plate", "amount": 1.0, "unit": "kg"}],
+	  "output": {"kind": "tool", "id": "chain_link_fence", "amount": 1.0, "unit": "item"}
 	},
     {
       "recipe_id": "material_plant_fiber_cloth",
@@ -482,6 +564,24 @@
       "complexity": 4,
       "inputs": [{"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "battery_pack", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "metal_connector", "amount": 1.0, "unit": "item"}],
       "output": {"kind": "ingredient", "id": "vehicle_roof_headlights", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_floor_lamp",
+      "display_name": "组装落地灯",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "tool", "id": "floor_lamp", "amount": 1.0, "unit": "item"}
+    },
+    {
+      "recipe_id": "electronic_sunset_floor_lamp",
+      "display_name": "组装夕阳落地灯",
+      "workbench_id": "electronic_assembly_station",
+      "tech_tier": 4,
+      "complexity": 4,
+      "inputs": [{"kind": "ingredient", "id": "steel_plate", "amount": 2.0, "unit": "kg"}, {"kind": "ingredient", "id": "glass_panes", "amount": 1.0, "unit": "kg"}, {"kind": "ingredient", "id": "circuit_board", "amount": 1.0, "unit": "item"}, {"kind": "ingredient", "id": "copper_wire", "amount": 1.0, "unit": "kg"}],
+      "output": {"kind": "tool", "id": "sunset_floor_lamp", "amount": 1.0, "unit": "item"}
     },
     {
       "recipe_id": "electronic_laptop",

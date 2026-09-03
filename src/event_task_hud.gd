@@ -1,10 +1,8 @@
 extends Control
 class_name EventTaskHud
 
-const MAX_VISIBLE_GLOBAL_EVENTS := 2
 const MAX_VISIBLE_TEAM_TASKS := 2
 
-@onready var global_event_list: RichTextLabel = $GlobalEvents/Margin/VBox/EventList
 @onready var team_task_list: RichTextLabel = $TeamTasks/Margin/VBox/TaskList
 
 var player: GamePlayer
@@ -14,8 +12,6 @@ var _countdown_accumulator := 0.0
 func _ready() -> void:
 	UITheme.apply(self)
 	_set_mouse_passthrough(self)
-	if not EventBoard.global_events_changed.is_connected(_on_global_events_changed):
-		EventBoard.global_events_changed.connect(_on_global_events_changed)
 	if not EventBoard.team_tasks_changed.is_connected(_on_team_tasks_changed):
 		EventBoard.team_tasks_changed.connect(_on_team_tasks_changed)
 	_refresh()
@@ -44,10 +40,6 @@ func bind_player(next_player: GamePlayer) -> void:
 	_refresh()
 
 
-func _on_global_events_changed(_events: Array[Dictionary]) -> void:
-	_refresh()
-
-
 func _on_team_tasks_changed(_team: String, _tasks: Array[Dictionary]) -> void:
 	_refresh()
 
@@ -56,15 +48,6 @@ func _refresh() -> void:
 	visible = not CooperativeSession.is_active()
 	if not visible:
 		return
-	var global_lines: Array[String] = []
-	var global_events := EventBoard.get_global_events()
-	for index in range(mini(MAX_VISIBLE_GLOBAL_EVENTS, global_events.size())):
-		var event: Dictionary = global_events[index]
-		global_lines.append("%s\n%s" % [
-			_escape(str(event.get("title", ""))),
-			_escape(str(event.get("description", ""))),
-		])
-	global_event_list.text = "\n\n".join(global_lines) if not global_lines.is_empty() else "暂无公共事件"
 	var team := player.team if is_instance_valid(player) else ""
 	var task_lines: Array[String] = []
 	if team in EventBoard.VALID_TEAMS:

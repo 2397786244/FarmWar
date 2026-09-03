@@ -590,6 +590,8 @@ func _restore_persistent_tools(value: Variant) -> void:
 		node.global_position = _as_vector3(state.get("position", Vector3.ZERO))
 		node.rotation.y = float(state.get("yaw", 0.0))
 		node.set_meta("network_device_id", tool_id)
+		var restored_team := _restored_tool_team(node, state)
+		state["team"] = restored_team
 		if node is CargoCrateGround:
 			var crate_data: Variant = state.get("crate_data", {})
 			if crate_data is Dictionary:
@@ -598,14 +600,14 @@ func _restore_persistent_tools(value: Variant) -> void:
 		else:
 			if GameAuthority.has_method("_node_has_property") \
 					and bool(GameAuthority.call("_node_has_property", node, "tool_owner")):
-				node.set("tool_owner", str(state.get("team", "red")))
+				node.set("tool_owner", restored_team)
 			if node is KitchenAppliance:
-				(node as KitchenAppliance).owner_team = str(state.get("team", "red"))
+				(node as KitchenAppliance).owner_team = restored_team
 			if node.has_method("activate_tool"):
 				node.call("activate_tool")
 			if node is WireMeshGate:
 				(node as WireMeshGate).apply_network_state(state)
-			GameAuthority.register_map_placed_tool(node, str(state.get("tool_name", "")), tool_id, str(state.get("team", "red")))
+			GameAuthority.register_map_placed_tool(node, str(state.get("tool_name", "")), tool_id, restored_team)
 		if node.has_method("apply_network_health"):
 			node.call("apply_network_health", float(state.get("hp", 0.0)))
 		state["path"] = str(node.get_path())
@@ -627,8 +629,24 @@ func _apply_persistent_state_to_existing_tool(node: Node3D, tool_id: String, sta
 	runtime_state["path"] = str(node.get_path())
 	if str(runtime_state.get("scene_path", "")).is_empty():
 		runtime_state["scene_path"] = node.scene_file_path
+	var restored_team := _restored_tool_team(node, runtime_state)
+	runtime_state["team"] = restored_team
+	if GameAuthority.has_method("_node_has_property") \
+			and bool(GameAuthority.call("_node_has_property", node, "tool_owner")):
+		node.set("tool_owner", restored_team)
 	GameAuthority.placed_tool_states[tool_id] = runtime_state
+	state["team"] = restored_team
 	_apply_saved_visual_state(node, state)
+
+
+func _restored_tool_team(node: Node, state: Dictionary) -> String:
+	# Road barriers are neutral map infrastructure.  Older saves and the generic
+	# fallback below may contain no team field (or an old red default), but that
+	# must never make a restored barrier belong to red.
+	if node != null and is_instance_valid(node) \
+			and (node.is_in_group("road_barriers") or node.has_method("is_barrier_raised")):
+		return ""
+	return str(state.get("team", "red"))
 
 
 func _apply_saved_visual_state(node: Node, state: Dictionary) -> void:

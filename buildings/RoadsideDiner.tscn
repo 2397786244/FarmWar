@@ -8,6 +8,8 @@ size = Vector3(9, 4, 8)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_plynf"]
 size = Vector3(8, 1, 5)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(9, 4, 8)
 
 [node name="RoadsideDiner" type="StaticBody3D" unique_id=187125575]
 metadata/map_can_overlap_water = false
@@ -37,3 +39,11 @@ collision_mask = 8200
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5.7577777)
 shape = SubResource("BoxShape3D_plynf")
 debug_color = Color(0.9477678, 0.15741414, 0.42874974, 0.41960785)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.11746, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

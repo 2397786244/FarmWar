@@ -53,13 +53,16 @@ const WEAPON_RECOIL_SINGLE_CAP_DEGREES := 8.0
 const WEAPON_RECOIL_AUTO_CAP_DEGREES := 8.0
 const WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES := 6.0
 const WEAPON_RECOIL_AUTO_RECOVERY_DEGREES := 2.5
-# One logical recoil angle is shared by the camera and the reticle. Keeping the
-# split explicit prevents the same kick from being applied twice to the actual
-# firing ray while still giving the player both visual cues.
-const WEAPON_RECOIL_CAMERA_FRACTION := 0.65
-const WEAPON_RECOIL_CROSSHAIR_FRACTION := 0.35
-const CROSSHAIR_RECOIL_PIXELS_PER_DEGREE := 8.0
-const CROSSHAIR_RECOIL_MAX_PIXELS := 72.0
+const WEAPON_RECOIL_AUTO_IDLE_RECOVERY_DEGREES := 7.0
+const WEAPON_RECOIL_AUTO_HORIZONTAL_RECOVERY_DEGREES := 4.0
+const WEAPON_RECOIL_AUTO_HORIZONTAL_IDLE_RECOVERY_DEGREES := 9.0
+# One canonical screen-space recoil vector is shared by the camera and reticle.
+# The camera receives the larger portion so the weapon/view visibly kicks, while
+# the reticle still moves enough to make the spray direction easy to read.
+const WEAPON_RECOIL_CAMERA_FRACTION := 0.55
+const WEAPON_RECOIL_CROSSHAIR_FRACTION := 0.45
+const CROSSHAIR_RECOIL_PIXELS_PER_DEGREE := 14.0
+const CROSSHAIR_RECOIL_MAX_PIXELS := 180.0
 const MEDICINE_HEAL_AMOUNT := 50.0
 const PLAYER_COLLISION_LAYER := 8
 const PLAYER_COLLISION_MASK := 12943
@@ -228,8 +231,8 @@ var damage_flash_root: Control
 var damage_flash_tween: Tween
 var gameplay_notice: Label
 var gameplay_notice_tween: Tween
-var weather_notice: Label
-var weather_notice_tween: Tween
+var global_notice: Label
+var global_notice_tween: Tween
 var message_area_notice: Label
 var action_reward_feed: VBoxContainer
 var action_reward_tweens: Dictionary = {}
@@ -258,16 +261,24 @@ var standing_hit_collision_transform := Transform3D.IDENTITY
 
 var camera_rest_position := Vector3.ZERO
 var camera_rest_rotation := Vector3.ZERO
-# Keep the first-person view wide and stable; aiming changes weapon pose/IK,
-# but does not zoom the camera.
+# Keep the first-person view wide by default; aimable weapons temporarily use
+# their configured aim_fov while the right mouse button is held.
 var camera_default_fov := 90.0
 var debug_camera_mode := DEBUG_CAMERA_FIRST_PERSON
 var rubber_knockback := Vector3.ZERO
 var camera_shake_time := 0.0
 var camera_shake_strength := 0.0
 var camera_shake_duration := 0.22
+# `weapon_recoil_offset_degrees` is the single source of truth for angular
+# recoil. The scalar fields below remain as compatibility mirrors for existing
+# diagnostics and tests.
+var weapon_recoil_offset_degrees := Vector2.ZERO
+var weapon_recoil_rng := RandomNumberGenerator.new()
+var look_pitch_without_recoil := 0.0
+var head_yaw_without_recoil := 0.0
 var weapon_recoil_pitch := 0.0
 var weapon_recoil_camera_pitch := 0.0
+var crosshair_recoil_offset := Vector2.ZERO
 var crosshair_recoil_offset_pixels := 0.0
 var vehicle_camera_shake_time := 0.0
 var vehicle_camera_shake_strength := 0.0
@@ -1661,6 +1672,9 @@ func _ready() -> void:
 	camera_rest_position = camera.position
 	camera_rest_rotation = camera.rotation
 	camera.fov = camera_default_fov
+	look_pitch_without_recoil = Head.rotation.x
+	head_yaw_without_recoil = Head.rotation.y
+	weapon_recoil_rng.randomize()
 	standing_head_position = Head.position
 	var body_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if body_shape != null:
@@ -1710,7 +1724,7 @@ func _ready() -> void:
 		_create_crosshair()
 		_create_interact_hint()
 		_create_gameplay_notice()
-		_create_weather_notice()
+		_create_global_notice()
 		_create_message_area_notice()
 		_create_damage_feedback_ui()
 		_create_action_reward_feed()
@@ -2444,7 +2458,7 @@ func _input(event: InputEvent) -> void:
 			)
 			if is_instance_valid(mounted_machine_gun):
 				mounted_machine_gun.set_aim(mounted_machine_gun_yaw, mounted_machine_gun_elevation)
-			Head.rotation.x = deg_to_rad(mounted_machine_gun_elevation)
+			_set_local_look_pitch(deg_to_rad(mounted_machine_gun_elevation))
 			return
 		if event is InputEventMouseButton:
 			var gun_mouse_event := event as InputEventMouseButton
@@ -2511,21 +2525,9 @@ func _input(event: InputEvent) -> void:
 		return
 		
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-
 		var sensitivity_scale := 0.62 if is_weapon_aiming else 1.0
 		var horizontal_scale := sensitivity_scale / 3.0 if is_prone else sensitivity_scale
-		rotate_y(-event.relative.x * mouse_sensitivity * horizontal_scale)
-		# 瞄准期间锁定俯仰角，准心不会因鼠标上下移动而离开枪口轴线。
-		#if not is_weapon_aiming:
-			#print("ROTATION HEAD")
-		Head.rotation.x -= \
-			event.relative.y * mouse_sensitivity * sensitivity_scale
-		Head.rotation.x = clamp(
-				Head.rotation.x,
-				deg_to_rad(-_current_look_angle_limit()),
-				deg_to_rad(_current_look_angle_limit())
-			)
-			#tool_node.rotation.x = -Head.rotation.x
+		_apply_mouse_look_input(event.relative, sensitivity_scale, horizontal_scale)
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -3032,7 +3034,7 @@ func _update_mounted_machine_gun_presentation() -> void:
 	global_position = mounted_machine_gun.get_stand_transform().origin
 	var direction := mounted_machine_gun.get_fire_direction()
 	rotation.y = atan2(-direction.x, -direction.z)
-	Head.rotation.x = deg_to_rad(mounted_machine_gun.elevation_degrees)
+	_set_local_look_pitch(deg_to_rad(mounted_machine_gun.elevation_degrees))
 	if is_instance_valid(tool_node):
 		tool_node.visible = false
 	if is_instance_valid(held_item_node):
@@ -4632,11 +4634,11 @@ func _set_prone_state(value: bool) -> void:
 	if is_prone:
 		action_anim_locked = false
 		landing_animation = false
-		Head.rotation.x = clampf(
-			Head.rotation.x,
+		_set_local_look_pitch(clampf(
+			look_pitch_without_recoil,
 			deg_to_rad(-_current_look_angle_limit()),
 			deg_to_rad(_current_look_angle_limit())
-		)
+		))
 	if is_instance_valid(tool_node):
 		tool_node.visible = not is_prone and not vehicle_is_active and not is_respawning
 	if is_instance_valid(held_item_node):
@@ -4687,6 +4689,11 @@ func _process(delta: float) -> void:
 		_update_upper_body_aim(delta)
 		_update_remote_held_model_alignment()
 		return
+	# Several gameplay UIs return early below, before the normal recoil tick. Clear
+	# the canonical recoil state here as soon as any non-gameplay presentation
+	# state becomes active so closing an interface can never restore an old kick.
+	if _weapon_recoil_presentation_blocked():
+		_reset_weapon_recoil_state()
 	# Self-heal the host's interaction runtime after scene bootstrap and deferred
 	# physics transitions. This is idempotent and does not re-enable a dead,
 	# seated, or respawning player.
@@ -5064,8 +5071,7 @@ func get_shooting_aim_direction(muzzle_position: Vector3, max_distance: float) -
 	var viewport_size := camera.get_viewport().get_visible_rect().size
 	if viewport_size.x <= 1.0 or viewport_size.y <= 1.0:
 		return fallback
-	var screen_center := viewport_size * 0.5
-	var screen_point := screen_center + Vector2(0.0, -crosshair_recoil_offset_pixels)
+	var screen_point := _get_crosshair_screen_point(viewport_size)
 	var ray_origin: Vector3 = camera.project_ray_origin(screen_point)
 	var ray_direction: Vector3 = camera.project_ray_normal(screen_point).normalized()
 	if ray_direction.length_squared() <= 0.001:
@@ -5525,26 +5531,26 @@ func _create_gameplay_notice() -> void:
 	$SubViewport.add_child(gameplay_notice)
 
 
-func _create_weather_notice() -> void:
-	if is_instance_valid(weather_notice):
+func _create_global_notice() -> void:
+	if is_instance_valid(global_notice):
 		return
-	weather_notice = Label.new()
-	weather_notice.name = "WeatherNotice"
-	UITheme.apply(weather_notice)
-	weather_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	weather_notice.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	weather_notice.offset_left = 24.0
-	weather_notice.offset_top = -218.0
-	weather_notice.offset_right = 560.0
-	weather_notice.offset_bottom = -174.0
-	weather_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	weather_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	weather_notice.add_theme_color_override("font_color", UITheme.COLOR_INFO)
-	weather_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
-	weather_notice.add_theme_constant_override("outline_size", 6)
-	weather_notice.add_theme_font_size_override("font_size", 23)
-	weather_notice.visible = false
-	$SubViewport.add_child(weather_notice)
+	global_notice = Label.new()
+	global_notice.name = "GlobalNotice"
+	UITheme.apply(global_notice)
+	global_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	global_notice.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	global_notice.offset_left = 24.0
+	global_notice.offset_top = -218.0
+	global_notice.offset_right = 560.0
+	global_notice.offset_bottom = -174.0
+	global_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	global_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	global_notice.add_theme_color_override("font_color", UITheme.COLOR_SUCCESS)
+	global_notice.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.03, 0.98))
+	global_notice.add_theme_constant_override("outline_size", 6)
+	global_notice.add_theme_font_size_override("font_size", 23)
+	global_notice.visible = false
+	$SubViewport.add_child(global_notice)
 
 
 func _create_message_area_notice() -> void:
@@ -5621,20 +5627,25 @@ func show_gameplay_notice(message: String, duration := 2.2) -> void:
 	gameplay_notice_tween.tween_callback(func() -> void: gameplay_notice.visible = false)
 
 
-func show_weather_notice(message: String, duration := 3.0) -> void:
+func show_global_notice(message: String, duration := 3.0) -> void:
 	if is_remote_proxy or is_respawning or message.strip_edges().is_empty():
 		return
-	if not is_instance_valid(weather_notice):
-		_create_weather_notice()
-	if is_instance_valid(weather_notice_tween):
-		weather_notice_tween.kill()
-	weather_notice.text = message
-	weather_notice.modulate = Color.WHITE
-	weather_notice.visible = true
-	weather_notice_tween = create_tween()
-	weather_notice_tween.tween_interval(maxf(0.2, duration))
-	weather_notice_tween.tween_property(weather_notice, "modulate:a", 0.0, 0.25)
-	weather_notice_tween.tween_callback(func() -> void: weather_notice.visible = false)
+	if not is_instance_valid(global_notice):
+		_create_global_notice()
+	if is_instance_valid(global_notice_tween):
+		global_notice_tween.kill()
+	global_notice.text = message
+	global_notice.modulate = Color.WHITE
+	global_notice.visible = true
+	global_notice_tween = create_tween()
+	global_notice_tween.tween_interval(maxf(0.2, duration))
+	global_notice_tween.tween_property(global_notice, "modulate:a", 0.0, 0.25)
+	global_notice_tween.tween_callback(func() -> void: global_notice.visible = false)
+
+
+func show_weather_notice(message: String, duration := 3.0) -> void:
+	# Compatibility wrapper for weather systems and external callers.
+	show_global_notice(message, duration)
 
 
 func _create_action_reward_feed() -> void:
@@ -5926,6 +5937,12 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if event_type == "gameplay_notice":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
 			show_gameplay_notice(str(event.get("text", "")))
+		return
+	if event_type == "global_notice":
+		show_global_notice(
+			str(event.get("text", "")),
+			float(event.get("duration", 3.0))
+		)
 		return
 	if event_type == "cargo_delivery_preview" and int(event.get("peer_id", 0)) == authority_peer_id:
 		var preview_value: Variant = event.get("data", {})
@@ -7033,6 +7050,9 @@ func _get_selected_item_info_text() -> String:
 		var tool_id := str(item.get("tool_id", ""))
 		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 		var tool_name := str(definition.get("name", definition.get("short", tool_id)))
+		var fire_mode_label := _get_fire_mode_display_label(tool_id)
+		if not fire_mode_label.is_empty():
+			tool_name += " | " + fire_mode_label
 		if tool_id == "sprout_blaster":
 			return "播种枪"
 		if tool_id == AMMO_SUPPLY_BOX_ID:
@@ -7340,8 +7360,19 @@ func _update_crosshair_visibility() -> void:
 func _update_crosshair_recoil_visual() -> void:
 	if not is_instance_valid(crosshair):
 		return
-	crosshair.offset_top = -22.0 - crosshair_recoil_offset_pixels
-	crosshair.offset_bottom = 22.0 - crosshair_recoil_offset_pixels
+	crosshair.offset_left = -22.0 + crosshair_recoil_offset.x
+	crosshair.offset_right = 22.0 + crosshair_recoil_offset.x
+	crosshair.offset_top = -22.0 - crosshair_recoil_offset.y
+	crosshair.offset_bottom = 22.0 - crosshair_recoil_offset.y
+
+
+func _get_crosshair_screen_point(viewport_size: Vector2) -> Vector2:
+	if is_instance_valid(crosshair):
+		return crosshair.get_global_rect().get_center()
+	return viewport_size * 0.5 + Vector2(
+		crosshair_recoil_offset.x,
+		-crosshair_recoil_offset.y
+	)
 
 
 func _refresh_hotbar() -> void:
@@ -8828,9 +8859,20 @@ func _set_weapon_aiming(value: bool) -> void:
 
 
 func _update_weapon_aim(delta: float) -> void:
-	# Aiming remains available for weapon pose and hand alignment, but the
-	# player's first-person FOV stays at the configured default.
-	camera.fov = lerpf(camera.fov, camera_default_fov, 1.0 - exp(-12.0 * delta))
+	if not _has_equipped_tool(current_tool_index):
+		camera.fov = lerpf(camera.fov, camera_default_fov, 1.0 - exp(-12.0 * delta))
+		return
+	var definition: Dictionary = tool_definitions[current_tool_index]
+	var aim_speed := float(definition.get("aim_speed", 12.0))
+	var blend := 1.0 - exp(-aim_speed * delta)
+
+	var target_fov := float(definition.get("aim_fov", camera_default_fov)) \
+		if is_weapon_aiming else camera_default_fov
+	camera.fov = lerpf(
+		camera.fov,
+		target_fov,
+		blend
+	)
 	#print("CORSSHAIR??")
 	_update_crosshair_visibility()
 
@@ -9054,7 +9096,15 @@ func _current_tool_is_automatic() -> bool:
 
 
 func _get_fire_mode(tool_id: String) -> String:
-	return "auto" if str(fire_modes_by_tool_id.get(tool_id, "single")) == "auto" else "single"
+	if not CombatBalance.is_automatic_fire_weapon(tool_id):
+		return "single"
+	return "auto" if str(fire_modes_by_tool_id.get(tool_id, "auto")) == "auto" else "single"
+
+
+func _get_fire_mode_display_label(tool_id: String) -> String:
+	if not CombatBalance.is_automatic_fire_weapon(tool_id):
+		return ""
+	return "连发" if _is_auto_fire_mode(tool_id) else "单发"
 
 
 func _is_auto_fire_mode(tool_id: String) -> bool:
@@ -9065,10 +9115,12 @@ func _toggle_current_tool_fire_mode() -> void:
 	var tool_id := _selected_tool_id()
 	if not CombatBalance.is_automatic_fire_weapon(tool_id):
 		return
+	_reset_weapon_recoil_state()
 	fire_modes_by_tool_id[tool_id] = "single" if _is_auto_fire_mode(tool_id) else "auto"
 	# Do not let a held mouse button turn a mode change into an implicit shot.
 	automatic_fire_blocked_until_release = true
 	_refresh_interact_hint()
+	_update_ammo_ui()
 
 
 func apply_m17_flashlight_state(enabled: bool, expected_tool_id := "") -> void:
@@ -9203,107 +9255,211 @@ func _update_weapon_recoil(delta: float) -> void:
 	if _weapon_recoil_presentation_blocked():
 		_reset_weapon_recoil_state()
 		return
-	if weapon_recoil_pitch <= 0.0:
-		weapon_recoil_pitch = 0.0
-		weapon_recoil_camera_pitch = 0.0
+	if weapon_recoil_offset_degrees.length_squared() <= 0.000001:
+		weapon_recoil_offset_degrees = Vector2.ZERO
 		_sync_weapon_recoil_visual()
 		return
 	var selected_id := _selected_tool_id()
-	var recovery_degrees := WEAPON_RECOIL_AUTO_RECOVERY_DEGREES \
-		if _is_auto_fire_mode(selected_id) and CombatBalance.is_automatic_fire_weapon(selected_id) \
-		else WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES
-	var previous_pitch := weapon_recoil_pitch
-	weapon_recoil_pitch = move_toward(
-		weapon_recoil_pitch,
+	var is_auto_recoil := _is_auto_recoil_active_for_tool(selected_id)
+	var trigger_held := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var vertical_recovery := WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES
+	var horizontal_recovery := WEAPON_RECOIL_SINGLE_RECOVERY_DEGREES
+	if is_auto_recoil:
+		vertical_recovery = WEAPON_RECOIL_AUTO_RECOVERY_DEGREES if trigger_held \
+			else WEAPON_RECOIL_AUTO_IDLE_RECOVERY_DEGREES
+		horizontal_recovery = WEAPON_RECOIL_AUTO_HORIZONTAL_RECOVERY_DEGREES if trigger_held \
+			else WEAPON_RECOIL_AUTO_HORIZONTAL_IDLE_RECOVERY_DEGREES
+	weapon_recoil_offset_degrees.x = move_toward(
+		weapon_recoil_offset_degrees.x,
 		0.0,
-		deg_to_rad(recovery_degrees) * maxf(delta, 0.0)
+		horizontal_recovery * maxf(delta, 0.0)
 	)
-	var recovered_pitch := previous_pitch - weapon_recoil_pitch
-	var recovered_camera_pitch := minf(
-		weapon_recoil_camera_pitch,
-		recovered_pitch * WEAPON_RECOIL_CAMERA_FRACTION
+	weapon_recoil_offset_degrees.y = move_toward(
+		weapon_recoil_offset_degrees.y,
+		0.0,
+		vertical_recovery * maxf(delta, 0.0)
 	)
-	if recovered_camera_pitch > 0.0 and is_instance_valid(Head):
-		Head.rotation.x = clampf(
-			Head.rotation.x - recovered_camera_pitch,
-			deg_to_rad(-_current_look_angle_limit()),
-			deg_to_rad(_current_look_angle_limit())
-		)
-	weapon_recoil_camera_pitch = maxf(0.0, weapon_recoil_camera_pitch - recovered_camera_pitch)
 	_sync_weapon_recoil_visual()
 
 
 func _apply_weapon_recoil_pitch(tool_id: String, camera_strength: float) -> void:
 	if _weapon_recoil_presentation_blocked() or not is_instance_valid(Head):
 		return
-	var kick_degrees := clampf(
-		camera_strength * 8.0,
-		WEAPON_RECOIL_SINGLE_MIN_DEGREES,
-		WEAPON_RECOIL_SINGLE_MAX_DEGREES
-	)
-	var recoil_cap_degrees := WEAPON_RECOIL_SINGLE_CAP_DEGREES
+	var is_automatic_profile := CombatBalance.is_automatic_fire_weapon(tool_id)
+	var is_auto_recoil := is_automatic_profile and _is_auto_fire_mode(tool_id)
 	var configured_single_kick := CombatBalance.get_float(
 		tool_id,
 		"single_recoil_kick_degrees",
 		0.0
 	)
-	if configured_single_kick > 0.0:
-		kick_degrees = clampf(
-			configured_single_kick,
-			WEAPON_RECOIL_SINGLE_MIN_DEGREES,
-			WEAPON_RECOIL_SINGLE_MAX_DEGREES
-		)
-	if CombatBalance.is_automatic_fire_weapon(tool_id) and _is_auto_fire_mode(tool_id):
+	var kick_degrees := configured_single_kick if configured_single_kick > 0.0 else clampf(
+		camera_strength * 8.0,
+		WEAPON_RECOIL_SINGLE_MIN_DEGREES,
+		WEAPON_RECOIL_SINGLE_MAX_DEGREES
+	)
+	if is_auto_recoil:
 		var configured_auto_kick := CombatBalance.get_float(
 			tool_id,
 			"auto_recoil_kick_degrees",
 			0.0
 		)
-		kick_degrees = configured_auto_kick if configured_auto_kick > 0.0 \
-			else kick_degrees * 2.0
-		kick_degrees = clampf(kick_degrees, WEAPON_RECOIL_AUTO_MIN_DEGREES, WEAPON_RECOIL_AUTO_MAX_DEGREES)
-		recoil_cap_degrees = WEAPON_RECOIL_AUTO_CAP_DEGREES
-	var recoil_cap := deg_to_rad(recoil_cap_degrees)
-	var remaining := maxf(0.0, recoil_cap - weapon_recoil_pitch)
-	if remaining <= 0.0:
-		return
-	var applied_total_pitch := minf(deg_to_rad(kick_degrees), remaining)
-	var previous_head_pitch: float = Head.rotation.x
-	Head.rotation.x = clampf(
-		Head.rotation.x + applied_total_pitch * WEAPON_RECOIL_CAMERA_FRACTION,
-		deg_to_rad(-_current_look_angle_limit()),
-		deg_to_rad(_current_look_angle_limit())
-	)
-	var applied_camera_pitch := maxf(0.0, Head.rotation.x - previous_head_pitch)
-	weapon_recoil_pitch = minf(recoil_cap, weapon_recoil_pitch + applied_total_pitch)
-	weapon_recoil_camera_pitch = minf(
-		weapon_recoil_camera_pitch + applied_camera_pitch,
-		recoil_cap * WEAPON_RECOIL_CAMERA_FRACTION
-	)
+		kick_degrees = configured_auto_kick if configured_auto_kick > 0.0 else maxf(
+			WEAPON_RECOIL_AUTO_MIN_DEGREES,
+			kick_degrees * 2.0
+		)
+		var vertical_cap := maxf(
+			WEAPON_RECOIL_AUTO_MIN_DEGREES,
+			CombatBalance.get_float(
+				tool_id,
+				"auto_recoil_vertical_cap_degrees",
+				WEAPON_RECOIL_AUTO_CAP_DEGREES
+			)
+		)
+		var horizontal_cap := maxf(
+			0.01,
+			CombatBalance.get_float(tool_id, "auto_recoil_horizontal_cap_degrees", 3.0)
+		)
+		var lateral_sway := maxf(
+			0.0,
+			CombatBalance.get_float(tool_id, "auto_recoil_sway_degrees", 0.0)
+		)
+		weapon_recoil_offset_degrees.x = clampf(
+			weapon_recoil_offset_degrees.x + weapon_recoil_rng.randf_range(-lateral_sway, lateral_sway),
+			-horizontal_cap,
+			horizontal_cap
+		)
+		weapon_recoil_offset_degrees.y = clampf(
+			weapon_recoil_offset_degrees.y + kick_degrees,
+			0.0,
+			vertical_cap
+		)
+	elif is_automatic_profile:
+		# Automatic weapons in single-shot mode get one light impulse rather than
+		# the accumulating spray pattern or progressive input resistance.
+		var single_sway := maxf(
+			0.0,
+			CombatBalance.get_float(tool_id, "single_recoil_sway_degrees", 0.0)
+		)
+		weapon_recoil_offset_degrees = Vector2(
+			weapon_recoil_rng.randf_range(-single_sway, single_sway),
+			clampf(kick_degrees, WEAPON_RECOIL_SINGLE_MIN_DEGREES, WEAPON_RECOIL_SINGLE_MAX_DEGREES)
+		)
+	else:
+		# Non-automatic weapons keep their existing single-shot vertical recoil.
+		weapon_recoil_offset_degrees.x = 0.0
+		weapon_recoil_offset_degrees.y = minf(
+			WEAPON_RECOIL_SINGLE_CAP_DEGREES,
+			weapon_recoil_offset_degrees.y + clampf(
+				kick_degrees,
+				WEAPON_RECOIL_SINGLE_MIN_DEGREES,
+				WEAPON_RECOIL_SINGLE_MAX_DEGREES
+			)
+		)
 	_sync_weapon_recoil_visual()
 
 
 func _reset_weapon_recoil_state() -> void:
-	if weapon_recoil_camera_pitch > 0.0 and is_instance_valid(Head):
-		Head.rotation.x = clampf(
-			Head.rotation.x - weapon_recoil_camera_pitch,
-			deg_to_rad(-_current_look_angle_limit()),
-			deg_to_rad(_current_look_angle_limit())
-		)
+	weapon_recoil_offset_degrees = Vector2.ZERO
 	weapon_recoil_pitch = 0.0
 	weapon_recoil_camera_pitch = 0.0
+	crosshair_recoil_offset = Vector2.ZERO
+	crosshair_recoil_offset_pixels = 0.0
 	_sync_weapon_recoil_visual()
 
 
 func _sync_weapon_recoil_visual() -> void:
-	crosshair_recoil_offset_pixels = clampf(
-		rad_to_deg(weapon_recoil_pitch) \
-			* WEAPON_RECOIL_CROSSHAIR_FRACTION \
-			* CROSSHAIR_RECOIL_PIXELS_PER_DEGREE,
-		0.0,
-		CROSSHAIR_RECOIL_MAX_PIXELS
-	)
+	var camera_offset_degrees := weapon_recoil_offset_degrees * WEAPON_RECOIL_CAMERA_FRACTION
+	weapon_recoil_pitch = deg_to_rad(weapon_recoil_offset_degrees.y)
+	weapon_recoil_camera_pitch = deg_to_rad(camera_offset_degrees.y)
+	if is_instance_valid(Head) and not is_remote_proxy:
+		Head.rotation.x = clampf(
+			look_pitch_without_recoil + deg_to_rad(camera_offset_degrees.y),
+			deg_to_rad(-_current_look_angle_limit()),
+			deg_to_rad(_current_look_angle_limit())
+		)
+		Head.rotation.y = head_yaw_without_recoil + deg_to_rad(camera_offset_degrees.x)
+	crosshair_recoil_offset = weapon_recoil_offset_degrees \
+		* WEAPON_RECOIL_CROSSHAIR_FRACTION \
+		* CROSSHAIR_RECOIL_PIXELS_PER_DEGREE
+	crosshair_recoil_offset_pixels = crosshair_recoil_offset.y
 	_update_crosshair_recoil_visual()
+
+
+func _is_auto_recoil_active_for_tool(tool_id: String) -> bool:
+	return CombatBalance.is_automatic_fire_weapon(tool_id) and _is_auto_fire_mode(tool_id)
+
+
+func _get_weapon_recoil_input_scale() -> float:
+	var tool_id := _selected_tool_id()
+	if not _is_auto_recoil_active_for_tool(tool_id):
+		return 1.0
+	var vertical_cap := maxf(
+		WEAPON_RECOIL_AUTO_MIN_DEGREES,
+		CombatBalance.get_float(
+			tool_id,
+			"auto_recoil_vertical_cap_degrees",
+			WEAPON_RECOIL_AUTO_CAP_DEGREES
+		)
+	)
+	var horizontal_cap := maxf(
+		0.01,
+		CombatBalance.get_float(tool_id, "auto_recoil_horizontal_cap_degrees", 3.0)
+	)
+	var load := maxf(
+		absf(weapon_recoil_offset_degrees.x) / horizontal_cap,
+		clampf(weapon_recoil_offset_degrees.y / vertical_cap, 0.0, 1.0)
+	)
+	var minimum_scale := clampf(
+		CombatBalance.get_float(tool_id, "auto_recoil_input_min_scale", 0.5),
+		0.20,
+		1.0
+	)
+	return lerpf(1.0, minimum_scale, pow(clampf(load, 0.0, 1.0), 0.80))
+
+
+func _consume_recoil_look_input(input_degrees: Vector2) -> Vector2:
+	var residual := input_degrees
+	if not is_zero_approx(residual.x) and not is_zero_approx(weapon_recoil_offset_degrees.x) \
+			and signf(residual.x) != signf(weapon_recoil_offset_degrees.x):
+		var consumed_x := minf(absf(residual.x), absf(weapon_recoil_offset_degrees.x))
+		var recoil_change_x := -signf(weapon_recoil_offset_degrees.x) * consumed_x
+		weapon_recoil_offset_degrees.x += recoil_change_x
+		residual.x -= recoil_change_x
+	if not is_zero_approx(residual.y) and not is_zero_approx(weapon_recoil_offset_degrees.y) \
+			and signf(residual.y) != signf(weapon_recoil_offset_degrees.y):
+		var consumed_y := minf(absf(residual.y), absf(weapon_recoil_offset_degrees.y))
+		var recoil_change_y := -signf(weapon_recoil_offset_degrees.y) * consumed_y
+		weapon_recoil_offset_degrees.y += recoil_change_y
+		residual.y -= recoil_change_y
+	return residual
+
+
+func _apply_mouse_look_input(relative: Vector2, sensitivity_scale: float, horizontal_scale: float) -> void:
+	var input_scale := _get_weapon_recoil_input_scale()
+	var input_degrees := Vector2(
+		-relative.x * mouse_sensitivity * horizontal_scale,
+		-relative.y * mouse_sensitivity * sensitivity_scale
+	) * input_scale
+	var residual := _consume_recoil_look_input(Vector2(
+		rad_to_deg(input_degrees.x),
+		rad_to_deg(input_degrees.y)
+	))
+	rotation.y += deg_to_rad(residual.x)
+	look_pitch_without_recoil = clampf(
+		look_pitch_without_recoil + deg_to_rad(residual.y),
+		deg_to_rad(-_current_look_angle_limit()),
+		deg_to_rad(_current_look_angle_limit())
+	)
+	_sync_weapon_recoil_visual()
+
+
+func _set_local_look_pitch(value: float) -> void:
+	look_pitch_without_recoil = clampf(
+		value,
+		deg_to_rad(-_current_look_angle_limit()),
+		deg_to_rad(_current_look_angle_limit())
+	)
+	_sync_weapon_recoil_visual()
 
 
 func _apply_camera_recoil(strength: float, duration: float) -> void:

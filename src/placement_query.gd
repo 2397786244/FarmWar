@@ -6,6 +6,8 @@ const VehicleSpawnCatalogScript = preload("res://src/vehicle_spawn_catalog.gd")
 const DEFAULT_GROUND_MASK := 1
 const DEFAULT_MAX_SLOPE_DEGREES := 5.0
 const DEFAULT_CLEARANCE := 0.15
+const PLACEMENT_FOOTPRINT_CLEARANCE := 0.02
+const PLACEMENT_FOOTPRINT_NODE_NAME := "PlacementFootprint"
 const DEFAULT_GROUND_RAY_ABOVE := 20.0
 const DEFAULT_GROUND_RAY_BELOW := 48.0
 const WALL_SNAP_DISTANCE := 1.0
@@ -48,6 +50,26 @@ const DEFAULT_AIRDROP_EXTRA_HEIGHT := 1.0
 const DEFAULT_AIRDROP_TIMEOUT := 3.0
 
 static var _vehicle_profile_cache: Dictionary = {}
+
+
+## Returns the placement-only box authored on a map building/facility.  The
+## transform is relative to the scene root and can be passed directly to the
+## shared placement resolvers.  Legacy scenes intentionally return an empty
+## result so they retain their existing collision-shape behavior.
+static func placement_footprint_for_node(node: Node) -> Dictionary:
+	if node == null or not is_instance_valid(node):
+		return {}
+	var footprint_root := node.get_node_or_null(NodePath(PLACEMENT_FOOTPRINT_NODE_NAME)) as Node3D
+	if footprint_root == null:
+		return {}
+	var collision_shape := footprint_root.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null or not collision_shape.shape is BoxShape3D:
+		return {}
+	return {
+		"shape": collision_shape.shape,
+		"transform": footprint_root.transform * collision_shape.transform,
+		"clearance": PLACEMENT_FOOTPRINT_CLEARANCE,
+	}
 
 
 static func wall_family_for_tool(tool_id: String) -> String:

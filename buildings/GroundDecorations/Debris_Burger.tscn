@@ -4,5 +4,6 @@
 
 [node name="DebrisBurger" type="Node3D" unique_id=804064569]
 metadata/map_can_overlap_water = false
+metadata/map_ground_decoration = true
 
 [node name="BurgerLettuceScraps" parent="." unique_id=1562270773 instance=ExtResource("1_jkt5a")]

@@ -5,6 +5,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bus"]
 size = Vector3(3, 3.6, 10)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(3, 3.6, 10)
 
 [node name="SpawnRedBus" type="StaticBody3D"]
 metadata/map_can_overlap_water = false
@@ -18,3 +20,11 @@ script = ExtResource("2_spawn_bus")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9499588, 0)
 shape = SubResource("BoxShape3D_bus")
 debug_color = Color(0.91, 0.27, 0.36, 0.42)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.94996, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

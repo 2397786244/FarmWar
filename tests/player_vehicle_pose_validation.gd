@@ -23,9 +23,15 @@ func _run() -> void:
 	_check(player_camera != null, "player camera exists")
 	if player_camera != null:
 		_check(is_equal_approx(player_camera.fov, 90.0), "player first-person FOV is 90 degrees")
+		player.tool_definitions[0] = player.all_tool_definitions_by_id["m4"].duplicate(true)
+		player.current_tool_index = 0
 		player.is_weapon_aiming = true
 		player._update_weapon_aim(1.0 / 60.0)
-		_check(is_equal_approx(player_camera.fov, 90.0), "aiming keeps the first-person FOV unchanged")
+		_check(player_camera.fov < 90.0, "aiming narrows the first-person FOV")
+		player.is_weapon_aiming = false
+		for _frame in range(60):
+			player._update_weapon_aim(1.0 / 60.0)
+		_check(absf(player_camera.fov - 90.0) < 0.01, "releasing aim restores the first-person FOV")
 
 	_check(player.find_child("RightLegIKTarget", true, false) != null, "right leg target exists")
 	_check(player.find_child("LeftLegIKTarget", true, false) != null, "left leg target exists")

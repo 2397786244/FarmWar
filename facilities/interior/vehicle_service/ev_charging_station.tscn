@@ -1,8 +1,44 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://cxr0pwkkvk7gn"]
 
-[ext_resource type="PackedScene" path="res://assets/facilities/interior/vehicle_service/EVChargingStation.glb" id="1_model"]
+[ext_resource type="PackedScene" uid="uid://bvr8mbc8ey8j7" path="res://assets/facilities/interior/vehicle_service/EVChargingStation.glb" id="1_model"]
 
-[node name="EVChargingStation" type="StaticBody3D" groups=["vehicle_service_facilities", "vehicle_service_noninteractive"]]
+[sub_resource type="BoxShape3D" id="BoxShape3D_6wmsk"]
+size = Vector3(0.051357053, 0.31016123, 0.054)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7ooco"]
+size = Vector3(0.076084524, 0.15, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_x3gib"]
+size = Vector3(0.051357053, 0.28460497, 0.054)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1b3sj"]
+size = Vector3(0.095, 0.27, 0.13)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ad3gb"]
+size = Vector3(0.13, 0.08, 0.22)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_px82w"]
+size = Vector3(0.1, 0.3, 0.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gvk5r"]
+size = Vector3(0.075, 0.18, 0.1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_u88m8"]
+size = Vector3(0.195, 0.165, 0.012)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rgfrq"]
+size = Vector3(0.145, 0.018, 0.018)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mb3ok"]
+size = Vector3(0.056, 0.032, 0.056)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gtl0x"]
+size = Vector3(0.52, 2.05, 0.43199998)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(0.672, 2.05, 0.432)
+
+[node name="EVChargingStation" type="StaticBody3D" unique_id=454606098 groups=["vehicle_service_facilities", "vehicle_service_noninteractive"]]
 collision_layer = 0
 collision_mask = 0
 metadata/map_can_overlap_water = false
@@ -11,4 +47,56 @@ metadata/facility_id = "ev_charging_station"
 metadata/display_name = "EV充电站"
 metadata/interaction_enabled = false
 
-[node name="Mesh" parent="." instance=ExtResource("1_model")]
+[node name="Mesh" parent="." unique_id=109143182 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1281831989]
+transform = Transform3D(-1.1920929e-07, -0.3546542, 0.9349975, -7.4505806e-08, -0.93499756, -0.3546542, 0.99999994, -1.3411045e-07, 1.1920929e-07, 0.375, 0.615, -0.02)
+shape = SubResource("BoxShape3D_6wmsk")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=1214835343]
+transform = Transform3D(0, 1, 0, 0, 0, -1, -1, 0, 0, 0.265, 0.47, -0.02)
+shape = SubResource("BoxShape3D_7ooco")
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=238469726]
+transform = Transform3D(0, 0.31622776, -0.94868326, 2.9802322e-08, -0.94868326, -0.31622776, -1, -2.9802322e-08, 0, 0.385, 0.895, -0.02)
+shape = SubResource("BoxShape3D_x3gib")
+
+[node name="CollisionShape3D4" type="CollisionShape3D" parent="." unique_id=639547497]
+transform = Transform3D(0.9975641, 0.009708224, -0.069077596, -4.656613e-10, 0.99026805, 0.1391731, 0.06975646, -0.13883407, 0.98785585, 0.32, 1.25, 0.015)
+shape = SubResource("BoxShape3D_1b3sj")
+
+[node name="CollisionShape3D5" type="CollisionShape3D" parent="." unique_id=755921456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.285, 1.12, 0.015)
+shape = SubResource("BoxShape3D_ad3gb")
+
+[node name="CollisionShape3D6" type="CollisionShape3D" parent="." unique_id=59189715]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.215, 1.25, 0.015)
+shape = SubResource("BoxShape3D_px82w")
+
+[node name="CollisionShape3D7" type="CollisionShape3D" parent="." unique_id=1978097436]
+transform = Transform3D(0.9975641, 0.009708224, -0.069077596, -4.656613e-10, 0.99026805, 0.1391731, 0.06975646, -0.13883407, 0.98785585, 0.34, 1.1, 0.015)
+shape = SubResource("BoxShape3D_gvk5r")
+
+[node name="CollisionShape3D8" type="CollisionShape3D" parent="." unique_id=1281694098]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0.21)
+shape = SubResource("BoxShape3D_u88m8")
+
+[node name="CollisionShape3D9" type="CollisionShape3D" parent="." unique_id=2100360810]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.415, 0.184)
+shape = SubResource("BoxShape3D_rgfrq")
+
+[node name="CollisionShape3D10" type="CollisionShape3D" parent="." unique_id=1543569827]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.125, 1.84, 0.168)
+shape = SubResource("BoxShape3D_mb3ok")
+
+[node name="CollisionShape3D11" type="CollisionShape3D" parent="." unique_id=209424469]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.025, 0.0059999973)
+shape = SubResource("BoxShape3D_gtl0x")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.076, 1.025, 0.006)
+shape = SubResource("BoxShape3D_placement_footprint")

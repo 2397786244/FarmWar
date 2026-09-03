@@ -12,6 +12,8 @@ radius = 1.0
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4xnmn"]
 size = Vector3(3, 1, 8)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(6, 5.19604, 8)
 
 [node name="FoodCar" type="StaticBody3D" unique_id=70156359]
 metadata/map_can_overlap_water = false
@@ -42,3 +44,11 @@ collision_mask = 8
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7501297, 0.52998924, 0)
 shape = SubResource("BoxShape3D_4xnmn")
 debug_color = Color(0.89636004, 0.21778783, 0.58393556, 0.41960785)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.94886, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

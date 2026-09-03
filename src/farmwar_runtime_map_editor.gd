@@ -134,7 +134,7 @@ const DEFAULT_RAIN_INTENSITY := 0.82
 const WATER_BODY_PATH = "res://worlds/shared/WaterBody3D.tscn"
 const TEAM_SPAWN_POINT_PATH = "res://buildings/TeamSpawnPoint.tscn"
 const ENEMY_SQUAD_SPAWNER_PATH = "res://character/EnemySquadSpawner.tscn"
-const SQUAD_TARGET_POINT_PATH = "res://buildings/SquadTargetPoint.tscn"
+const SQUAD_TARGET_POINT_PATH = "res://buildings/auxiliary/SquadTargetPoint.tscn"
 const ZOMBIE_GENERATOR_PATH = "res://buildings/auxiliary/ZombieGenerator.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
@@ -374,7 +374,7 @@ const FALLBACK_SURFACES = [
 @export_range(0.0, 45.0, 0.5) var building_max_slope_degrees = 12.0
 @export_range(1.0, 90.0, 1.0) var building_rotation_step_degrees = 15.0
 @export_range(0.0, 2.0, 0.01) var building_ground_offset = 0.02
-@export_range(0.0, 4.0, 0.05) var building_overlap_margin = 0.15
+@export_range(0.0, 4.0, 0.01) var building_overlap_margin = 0.02
 @export var building_overlap_checks_resources = true
 @export_range(0.05, 0.95, 0.05) var building_preview_transparency = 0.55
 
@@ -9920,6 +9920,10 @@ func _apply_building_placement(center: Vector3) -> void:
 	if is_vehicle:
 		_disable_editor_vehicle_cameras(instance)
 	_place_map_object_at_terrain(instance, Vector2(placement_center.x, placement_center.z), _building_preview_yaw, false, building_ground_offset)
+	if is_vehicle and instance is VehicleBase:
+		# VehicleBase reapplies its authoritative upright_yaw during physics. Keep it
+		# in sync with the map-editor rotation so the placed heading is not reset.
+		(instance as VehicleBase).set_upright_yaw(_building_preview_yaw)
 	var validation = _validate_building_node(
 		instance,
 		instance,
@@ -10160,8 +10164,24 @@ func _validate_building_node(
 	ignored_wall_source_id := ""
 ) -> Dictionary:
 	var polygon = _get_node_footprint_polygon(node)
+	var is_ground_decoration := _is_ground_decoration_node(node)
+	var is_auxiliary := _is_auxiliary_building_node(node)
+	var skips_building_overlap := is_ground_decoration or is_auxiliary
 	if polygon.size() < 3:
-		return {"valid": false, "reason": "building has no usable visual bounds"}
+		if not skips_building_overlap:
+			return {"valid": false, "reason": "building has no placement footprint"}
+		var decoration_center := Vector2(node.global_position.x, node.global_position.z)
+		if not _point_inside_map(decoration_center, 0.05):
+			return {"valid": false, "reason": "decoration crosses the map boundary"}
+		if not _can_overlap_water(node) and _is_point_in_water(decoration_center, node.global_position.y):
+			return {"valid": false, "reason": "decoration is inside water"}
+		var decoration_normal := get_terrain_normal_world(decoration_center)
+		var decoration_slope := rad_to_deg(acos(clampf(decoration_normal.dot(Vector3.UP), -1.0, 1.0)))
+		if decoration_slope > building_max_slope_degrees:
+			return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [decoration_slope, building_max_slope_degrees]}
+		# Ground decorations and auxiliary map objects deliberately have no placement
+		# footprint: they can sit on indoor or outdoor terrain without building overlap checks.
+		return {"valid": true, "reason": ""}
 	for corner in polygon:
 		if not _point_inside_map(corner, 0.05):
 			return {"valid": false, "reason": "footprint crosses the map boundary"}
@@ -10176,6 +10196,8 @@ func _validate_building_node(
 	var slope_degrees = rad_to_deg(acos(clampf(normal.dot(Vector3.UP), -1.0, 1.0)))
 	if slope_degrees > building_max_slope_degrees:
 		return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [slope_degrees, building_max_slope_degrees]}
+	if skips_building_overlap:
+		return {"valid": true, "reason": ""}
 	var allow_kitchen_inside_buildings := _is_kitchen_facility_node(node)
 	var require_enterable_building := _is_interior_facility_node(node)
 	var allow_support_object_overlap := bool(node.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false))
@@ -10220,6 +10242,21 @@ func _is_kitchen_facility_node(node: Node3D) -> bool:
 			str(node.get_meta("map_editor_asset_path", node.scene_file_path))
 		).get("category", ""))
 	return facility_category == "kitchen"
+
+
+func _is_ground_decoration_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	return bool(node.get_meta("map_ground_decoration", false))
+
+
+func _is_auxiliary_building_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	if node == _building_preview and asset_path.is_empty():
+		asset_path = str(_selected_building_asset.get("path", ""))
+	return asset_path.begins_with("res://buildings/auxiliary/")
 
 
 func _is_interior_facility_node(node: Node3D) -> bool:
@@ -10275,24 +10312,22 @@ func _get_building_overlap_candidates() -> Array[Node3D]:
 
 func _get_node_footprint_polygon(node: Node3D) -> PackedVector2Array:
 	if _is_vehicle_map_node(node):
-		var vehicle_polygon := _get_vehicle_footprint_polygon(node)
-		if vehicle_polygon.size() >= 3:
-			return vehicle_polygon
-	var local_aabb = _calculate_node_aabb_relative_to(node, node)
-	if local_aabb.size.length_squared() <= 0.000001:
-		local_aabb = AABB(Vector3(-0.5, 0.0, -0.5), Vector3(1.0, 1.0, 1.0))
-	var projected_points = PackedVector2Array()
-	for x_index in [0, 1]:
-		for y_index in [0, 1]:
-			for z_index in [0, 1]:
-				var local_corner = local_aabb.position + Vector3(
-					local_aabb.size.x * x_index,
-					local_aabb.size.y * y_index,
-					local_aabb.size.z * z_index
-				)
-				var world_corner = node.to_global(local_corner)
-				projected_points.append(Vector2(world_corner.x, world_corner.z))
-	var hull = Geometry2D.convex_hull(projected_points)
+		return _get_vehicle_footprint_polygon(node)
+	var footprint := PLACEMENT_QUERY_SCRIPT.placement_footprint_for_node(node)
+	if footprint.is_empty():
+		return PackedVector2Array()
+	var box := footprint.get("shape", null) as BoxShape3D
+	if box == null:
+		return PackedVector2Array()
+	var local_transform := footprint.get("transform", Transform3D.IDENTITY) as Transform3D
+	var shape_transform := node.global_transform * local_transform
+	var half := box.size * 0.5
+	var projected_points := PackedVector2Array()
+	for x_sign in [-1.0, 1.0]:
+		for z_sign in [-1.0, 1.0]:
+			var world_corner := shape_transform * Vector3(half.x * x_sign, 0.0, half.z * z_sign)
+			projected_points.append(Vector2(world_corner.x, world_corner.z))
+	var hull := Geometry2D.convex_hull(projected_points)
 	if hull.size() > 1 and hull[0].is_equal_approx(hull[hull.size() - 1]):
 		hull.resize(hull.size() - 1)
 	return hull
@@ -11089,8 +11124,18 @@ func _duplicate_selected_object() -> void:
 			str(record["uuid"]).right(6),
 		]
 	var transform_value = record.get("transform", Transform3D.IDENTITY) as Transform3D
+	var footprint := _get_node_footprint_polygon(_selected_map_object)
+	var footprint_width := 0.0
+	if footprint.size() >= 3:
+		var minimum_x := footprint[0].x
+		var maximum_x := minimum_x
+		for point in footprint:
+			minimum_x = minf(minimum_x, point.x)
+			maximum_x = maxf(maximum_x, point.x)
+		footprint_width = maximum_x - minimum_x
 	var local_aabb = _calculate_node_aabb_relative_to(_selected_map_object, _selected_map_object)
-	var offset_distance = maxf(1.0, local_aabb.size.x + building_overlap_margin + 0.5)
+	var duplicate_width: float = footprint_width if footprint_width > 0.001 else local_aabb.size.x
+	var offset_distance = maxf(1.0, duplicate_width + building_overlap_margin + 0.5)
 	transform_value.origin += Vector3(offset_distance, 0.0, 0.0)
 	record["transform"] = transform_value
 	var records: Array = [record]

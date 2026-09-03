@@ -112,7 +112,7 @@ func _register_static_map_facilities() -> void:
 		var facility := node as Node3D
 		var category := str(facility.get_meta("map_editor_facility_category", ""))
 		if category.is_empty():
-			category = "defense" if facility is MapDefenseFacility \
+			category = "defense" if facility is MapDefenseFacility or facility is ChainLinkFence \
 					else "interior" if facility is ComputerTerminal or facility is VehicleServiceTerminal \
 					else "industrial" if facility is IndustrialWorkbench else "kitchen"
 		facility.add_to_group("network_map_facilities")
@@ -146,19 +146,24 @@ func _register_static_map_facilities() -> void:
 					)
 			continue
 		facility.add_to_group("network_map_devices")
+		if facility is ChainLinkFence and facility.has_method("activate_tool"):
+			# Map-authored fences start inactive so player-placed copies can be
+			# explicitly activated after the placement request. A map facility must
+			# be live as soon as the runtime world is initialized.
+			facility.call("activate_tool")
 		var asset := MapFacilityCatalog.get_asset_by_path(
 			str(facility.get_meta("map_editor_asset_path", facility.scene_file_path))
 		)
 		var tool_name := str(facility.get_meta("map_editor_facility_id", asset.get("id", facility.name.to_snake_case())))
 		if tool_name.is_empty():
 			tool_name = facility.name.to_snake_case()
-		var team := str(facility.get("tool_owner")) if facility is MapDefenseFacility else ""
+		var team := str(facility.get("tool_owner")) if facility is MapDefenseFacility or facility is ChainLinkFence else ""
 		if GameAuthority.is_server_authority() or GameAuthority.is_local_authority():
 			GameAuthority.register_map_placed_tool(facility, tool_name, runtime_id, team)
 
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
-	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility \
+	if node is KitchenAppliance or node is IndustrialWorkbench or node is MapDefenseFacility or node is ChainLinkFence \
 			or node is ComputerTerminal or node is VehicleServiceTerminal \
 			or (str(node.get_meta("map_editor_category", "")) == "facility" \
 				and PlacedStorageState.is_storage_node(node)):

@@ -13,6 +13,8 @@ size = Vector3(4, 3.8, 0.5)
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_autorepair_ramp"]
 points = PackedVector3Array(-2.2, 0, -1.25, 2.2, 0, -1.25, -2.2, 0, 1.25, 2.2, 0, 1.25, -2.2, 0.3, -1.25, 2.2, 0.3, -1.25)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(12.72, 8.2625, 11.66)
 
 [node name="AutoRepair" type="StaticBody3D" unique_id=871121174]
 collision_layer = 4096
@@ -38,3 +40,11 @@ shape = SubResource("BoxShape3D_lr7iy")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 0, 5.65)
 shape = SubResource("ConvexPolygonShape3D_autorepair_ramp")
 debug_color = Color(0.2, 0.8, 1, 0.55)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.04125, 1.07)
+shape = SubResource("BoxShape3D_placement_footprint")

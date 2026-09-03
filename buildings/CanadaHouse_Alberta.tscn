@@ -247,6 +247,8 @@ size = Vector3(10.6, 0.12, 1.75)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_lavck"]
 size = Vector3(10.85, 0.13, 1.7755281)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(15.786, 5.2797, 12.95398)
 
 [node name="CanadaHouseAlberta" type="StaticBody3D" unique_id=1725529573]
 collision_layer = 4096
@@ -582,3 +584,11 @@ shape = SubResource("BoxShape3D_mno2g")
 [node name="CollisionShape3D82" type="CollisionShape3D" parent="." unique_id=2053427068]
 transform = Transform3D(1, 0, 0, 0, 0.9856222, -0.16896382, 0, 0.16896382, 0.9856222, -0.3, 2.57, 6.275)
 shape = SubResource("BoxShape3D_lavck")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.63985, 0.68399)
+shape = SubResource("BoxShape3D_placement_footprint")

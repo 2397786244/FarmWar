@@ -8,6 +8,8 @@ size = Vector3(6, 10, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_6wt5j"]
 size = Vector3(6.2, 10.2, 1)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(6, 10, 1)
 
 [node name="TallBrick" type="StaticBody3D" unique_id=1172522295 groups=["ai_demolition_target"]]
 metadata/map_can_overlap_water = false
@@ -15,6 +17,7 @@ collision_layer = 128
 collision_mask = 12427
 script = ExtResource("2_defense")
 max_hp = 1800.0
+destruction_particle_color = Color(0.352941, 0.094118, 0.12549, 1)
 
 [node name="Mesh" parent="." unique_id=859957877 instance=ExtResource("1_xy7k8")]
 
@@ -36,3 +39,11 @@ collision_mask = 32
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1198011135]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.077685356, 4.979625, 0)
 shape = SubResource("BoxShape3D_6wt5j")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.95611, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

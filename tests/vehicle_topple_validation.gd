@@ -39,6 +39,26 @@ func _run_validation() -> void:
 	await get_tree().process_frame
 	_check(vehicle.vehicle_config != null, "FarmBaseVehicle has a vehicle config")
 
+	# Match the map editor's placement order: add the vehicle first, apply the
+	# editor-selected root yaw, then keep VehicleBase.upright_yaw synchronized.
+	# A physics frame must not restore the scene's original heading.
+	var editor_placement_yaw := deg_to_rad(45.0)
+	vehicle.global_transform = Transform3D(
+		Basis(Vector3.UP, editor_placement_yaw).scaled(vehicle.scale),
+		vehicle.global_position
+	)
+	vehicle.set_upright_yaw(editor_placement_yaw)
+	vehicle.simulate_authority(1.0 / 60.0)
+	_check(
+		is_equal_approx(
+			wrapf(vehicle.upright_yaw, -PI, PI),
+			wrapf(editor_placement_yaw, -PI, PI)
+		)
+			and absf(wrapf(vehicle.rotation.y - editor_placement_yaw, -PI, PI)) <= 0.01,
+		"map-editor vehicle placement keeps the selected yaw through physics"
+	)
+	vehicle.set_upright_yaw(0.0)
+
 	vehicle.set_platform_passenger_seat_count(2)
 	vehicle.set_platform_machine_gun_installed(true)
 	vehicle.set_harvest_reel_installed(true)

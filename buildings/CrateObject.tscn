@@ -2,7 +2,25 @@
 
 [ext_resource type="PackedScene" uid="uid://dx4hsewe5y4nu" path="res://tools/generated_farmtown_props/FTF_Prop_WoodenCrate_Sealed_3m_Dark_v1.glb" id="1_70mnt"]
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_70mnt"]
+size = Vector3(3, 3, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(3, 3, 3)
+
 [node name="CrateObject" type="StaticBody3D" unique_id=1985016907]
 metadata/map_can_overlap_water = false
 
 [node name="FTF_Prop_WoodenCrate_Sealed_3m_Dark_v12" parent="." unique_id=734621422 instance=ExtResource("1_70mnt")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=605759361]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -1.1920929e-07)
+shape = SubResource("BoxShape3D_70mnt")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -0)
+shape = SubResource("BoxShape3D_placement_footprint")

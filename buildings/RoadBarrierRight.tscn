@@ -1,0 +1,99 @@
+[gd_scene format=3 uid="uid://xwbtkyqbgrn4"]
+
+[ext_resource type="PackedScene" uid="uid://bdhfdv2ft3nlx" path="res://assets/buildings/RoadBarrierRight.glb" id="1_q2teh"]
+[ext_resource type="Script" uid="uid://c36kb4sj8smw5" path="res://src/road_barrier.gd" id="2_road_barrier"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kqr3o"]
+size = Vector3(0.57, 0.22, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jgjnu"]
+size = Vector3(0.66, 0.075, 0.43)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_2dv7l"]
+size = Vector3(0.48, 0.65, 0.38)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ghof0"]
+size = Vector3(3.9, 0.11, 0.12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(4.55, 1, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_616ik"]
+size = Vector3(4, 1, 6)
+
+[node name="RoadBarrierRight" type="StaticBody3D" unique_id=974064062 groups=["ai_demolition_target"]]
+collision_layer = 128
+collision_mask = 12427
+script = ExtResource("2_road_barrier")
+arm_rotation_degrees = -90.0
+max_hp = 500.0
+metadata/map_can_overlap_water = false
+metadata/road_barrier = true
+metadata/map_editor_facility_id = "road_barrier_right"
+metadata/map_editor_facility_category = "defense"
+
+[node name="Mesh" parent="." unique_id=214453255 instance=ExtResource("1_q2teh")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=974064063]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.155, 0)
+shape = SubResource("BoxShape3D_kqr3o")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=974064064]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.925, 0)
+shape = SubResource("BoxShape3D_jgjnu")
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=974064065]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.575, 0)
+shape = SubResource("BoxShape3D_2dv7l")
+
+[node name="ArmShape" type="CollisionShape3D" parent="." unique_id=974064066]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.11500001, 0.92, 0)
+shape = SubResource("BoxShape3D_ghof0")
+
+[node name="ControlHit3D" type="Area3D" parent="." unique_id=974064067]
+collision_layer = 128
+collision_mask = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ControlHit3D" unique_id=974064068]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.155, 0)
+shape = SubResource("BoxShape3D_kqr3o")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="ControlHit3D" unique_id=974064069]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.925, 0)
+shape = SubResource("BoxShape3D_jgjnu")
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="ControlHit3D" unique_id=974064070]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 0.575, 0)
+shape = SubResource("BoxShape3D_2dv7l")
+
+[node name="ArmHit3D" type="Area3D" parent="." unique_id=974064071]
+collision_layer = 128
+collision_mask = 32
+
+[node name="ArmShape" type="CollisionShape3D" parent="ArmHit3D" unique_id=974064072]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.11500001, 0.92, 0)
+shape = SubResource("BoxShape3D_ghof0")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="." unique_id=974064073]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint" unique_id=974064074]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1825, 0.5, 0)
+shape = SubResource("BoxShape3D_placement_footprint")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="." unique_id=974064075]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0)
+height = 0.93
+vertices = PackedVector3Array(2.385, 0, -0.225, -2.065, 0, -0.225, -2.065, 0, 0.225, 2.385, 0, 0.225)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+
+[node name="TestEnterArea" type="Area3D" parent="." unique_id=492751847]
+collision_layer = 512
+collision_mask = 8200
+monitoring = true
+monitorable = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TestEnterArea" unique_id=180529436]
+shape = SubResource("BoxShape3D_616ik")

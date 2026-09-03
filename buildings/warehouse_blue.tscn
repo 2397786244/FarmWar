@@ -8,6 +8,8 @@ size = Vector3(16, 9, 12)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_xpimq"]
 size = Vector3(14, 1, 8)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(16, 9, 12)
 
 [node name="WarehouseBlue" type="StaticBody3D" unique_id=29900678]
 metadata/map_can_overlap_water = false
@@ -36,3 +38,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5571017, 0)
 shape = SubResource("BoxShape3D_xpimq")
 
 [node name="Mesh" parent="." unique_id=296068557 instance=ExtResource("2_rkct8")]
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.60679, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

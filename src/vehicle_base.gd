@@ -550,7 +550,8 @@ func _process_vehicle_slide_impacts(drive_velocity: Vector3) -> void:
 			impact_target if impact_target != null else collider,
 			collision.get_position(),
 			normal,
-			closing_speed
+			closing_speed,
+			collision.get_collider_shape_index(0)
 		)
 		if bool(result.get("accepted", false)):
 			current_speed *= COMBAT_BALANCE.get_float(

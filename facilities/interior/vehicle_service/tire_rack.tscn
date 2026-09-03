@@ -1,8 +1,53 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://cmhxq51qauqv7"]
 
-[ext_resource type="PackedScene" path="res://assets/facilities/interior/vehicle_service/TireRack.glb" id="1_model"]
+[ext_resource type="PackedScene" uid="uid://cmfbvv3f80rb2" path="res://assets/facilities/interior/vehicle_service/TireRack.glb" id="1_model"]
 
-[node name="TireRack" type="StaticBody3D" groups=["vehicle_service_facilities", "vehicle_service_noninteractive"]]
+[sub_resource type="BoxShape3D" id="BoxShape3D_q2nwl"]
+size = Vector3(1.55, 0.1, 0.46)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bog6f"]
+size = Vector3(0.07, 1.36, 0.07)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rq0nb"]
+size = Vector3(0.07, 1.36, 0.07)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0w6tj"]
+size = Vector3(0.07, 1.36, 0.07)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jlgf4"]
+size = Vector3(0.07, 1.36, 0.07)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_k4oiy"]
+size = Vector3(1.55, 0.07, 0.46)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4y7wn"]
+size = Vector3(1.55, 0.07, 0.46)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tgex8"]
+size = Vector3(1.55, 0.06, 0.46)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vs4qj"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_e3xet"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pvl3n"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ee0ai"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0sspa"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hmrca"]
+size = Vector3(0.45, 0.14663139, 0.45)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.55, 1.365, 0.47)
+
+[node name="TireRack" type="StaticBody3D" unique_id=1405008358 groups=["vehicle_service_facilities", "vehicle_service_noninteractive"]]
 collision_layer = 0
 collision_mask = 0
 metadata/map_can_overlap_water = false
@@ -11,4 +56,68 @@ metadata/facility_id = "tire_rack"
 metadata/display_name = "轮胎架"
 metadata/interaction_enabled = false
 
-[node name="Mesh" parent="." instance=ExtResource("1_model")]
+[node name="Mesh" parent="." unique_id=1549004291 instance=ExtResource("1_model")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1080357635]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+shape = SubResource("BoxShape3D_q2nwl")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=2076661756]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.68, 0.2)
+shape = SubResource("BoxShape3D_bog6f")
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=2046898342]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.68, -0.2)
+shape = SubResource("BoxShape3D_rq0nb")
+
+[node name="CollisionShape3D4" type="CollisionShape3D" parent="." unique_id=1849649774]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.68, 0.2)
+shape = SubResource("BoxShape3D_0w6tj")
+
+[node name="CollisionShape3D5" type="CollisionShape3D" parent="." unique_id=1276384544]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.68, -0.2)
+shape = SubResource("BoxShape3D_jlgf4")
+
+[node name="CollisionShape3D6" type="CollisionShape3D" parent="." unique_id=1866914255]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("BoxShape3D_k4oiy")
+
+[node name="CollisionShape3D7" type="CollisionShape3D" parent="." unique_id=1698004486]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.34, 0)
+shape = SubResource("BoxShape3D_4y7wn")
+
+[node name="CollisionShape3D8" type="CollisionShape3D" parent="." unique_id=1245253825]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.33, 0)
+shape = SubResource("BoxShape3D_tgex8")
+
+[node name="CollisionShape3D9" type="CollisionShape3D" parent="." unique_id=269584190]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.42, 0.58, 0.045684297)
+shape = SubResource("BoxShape3D_vs4qj")
+
+[node name="CollisionShape3D10" type="CollisionShape3D" parent="." unique_id=205150103]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.58, 0.045684297)
+shape = SubResource("BoxShape3D_e3xet")
+
+[node name="CollisionShape3D11" type="CollisionShape3D" parent="." unique_id=865662113]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.42, 0.58, 0.045684297)
+shape = SubResource("BoxShape3D_pvl3n")
+
+[node name="CollisionShape3D12" type="CollisionShape3D" parent="." unique_id=1845634064]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.42, 1.14, 0.045684297)
+shape = SubResource("BoxShape3D_ee0ai")
+
+[node name="CollisionShape3D13" type="CollisionShape3D" parent="." unique_id=1965912635]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 1.14, 0.045684297)
+shape = SubResource("BoxShape3D_0sspa")
+
+[node name="CollisionShape3D14" type="CollisionShape3D" parent="." unique_id=1242148468]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.42, 1.14, 0.045684297)
+shape = SubResource("BoxShape3D_hmrca")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6825, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

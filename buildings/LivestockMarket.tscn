@@ -5,6 +5,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cthxv"]
 size = Vector3(7, 3, 5)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(7, 3, 5)
 
 [node name="LivestockMarket" type="StaticBody3D" unique_id=1307688524]
 metadata/map_can_overlap_water = false
@@ -30,3 +32,11 @@ shape = SubResource("BoxShape3D_cthxv")
 [node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=1156254314]
 depth = 7.0
 polygon = PackedVector2Array(-5.0765967, 0.22859049, -5.0857778, 4.185856, -1.4131429, 5.746726, 2.3145826, 4.139948, 2.2962196, 3.4972365, 5.1884203, 3.0014307, 5.1700573, -0.02849412, -5.074193, 0.017670497)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

@@ -345,7 +345,7 @@ func _ensure_building_navigation_obstacles() -> void:
 func _ensure_one_building_navigation_obstacle(building: Node3D) -> void:
 	if not is_instance_valid(building) or building.is_queued_for_deletion():
 		return
-	## 可爆破的五种设施仍由 ai_demolition_target 自己管理，不能被这里
+	## 可爆破的防御设施仍由 ai_demolition_target 自己管理，不能被这里
 	## 改成“仅导航障碍”或覆盖它们的生命/导航状态。
 	if building.is_in_group(OBSTACLE_GROUP):
 		return

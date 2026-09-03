@@ -18,6 +18,7 @@ func _run() -> void:
 	var expected_sizes := ["small", "medium", "large"]
 	var expected_capacities := [10.0, 20.0, 40.0]
 	var expected_tares := [1.0, 2.0, 4.0]
+	var expected_ground_scales := [5.0, 5.0, 3.0]
 	var crates: Array[CargoCrateGround] = []
 	for index in range(paths.size()):
 		var packed := load(paths[index]) as PackedScene
@@ -35,9 +36,12 @@ func _run() -> void:
 		_check(is_equal_approx(float(data.get("total_weight_kg", 0.0)), expected_tares[index]), "empty crate keeps tare weight")
 		_check(crate.collision_layer == 128, "crate body uses tool collision layer")
 		_check(crate.hit_area.collision_mask == 32, "crate Hit3D listens for bullets")
-		_check(crate.scale.is_equal_approx(Vector3.ONE * 5.0), "ground crate uses five-times world scale")
+		_check(crate.scale.is_equal_approx(Vector3.ONE * expected_ground_scales[index]), "ground crate uses the size-specific world scale")
 		_check(crate.get_interaction_hint(null) == "按E打开货运箱子    长按E捡起", "ground crate exposes both interaction hints")
 		_check(str(data.get("item_id", "")) == "cargo_crate_" + expected_sizes[index], "crate has a registered item id")
+		var crate_item_id: String = "cargo_crate_" + expected_sizes[index]
+		_check(FileAccess.file_exists("res://assets/icons/items/tools/%s.png" % crate_item_id), "crate item icon file exists")
+		_check(ItemIconCatalog.get_tool_icon(crate_item_id) != null, "crate item icon resolves")
 
 	var held_packed := load(paths[0]) as PackedScene
 	var held_preview := held_packed.instantiate() as CargoCrateGround if held_packed != null else null

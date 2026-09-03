@@ -8,6 +8,8 @@ size = Vector3(4, 10, 0.6)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ies3u"]
 size = Vector3(4.2, 10.2, 0.6)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.6, 4, 0.24)
 
 [node name="TallMeshWall" type="StaticBody3D" unique_id=1774406780 groups=["ai_demolition_target"]]
 metadata/map_can_overlap_water = false
@@ -15,6 +17,7 @@ collision_layer = 128
 collision_mask = 12427
 script = ExtResource("2_defense")
 max_hp = 1200.0
+destruction_particle_color = Color(0.466667, 0.490196, 0.501961, 1)
 
 [node name="Mesh" parent="." unique_id=2060617120 instance=ExtResource("1_ies3u")]
 transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
@@ -37,3 +40,11 @@ collision_mask = 32
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Hit3D" unique_id=1460229566]
 transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0.022288322, 2.065568, 0)
 shape = SubResource("BoxShape3D_ies3u")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.04798, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

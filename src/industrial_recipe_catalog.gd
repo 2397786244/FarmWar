@@ -138,8 +138,8 @@ static func format_quantity(amount: float, unit: String) -> String:
 static func validate_catalog() -> Dictionary:
 	var errors: Array[String] = []
 	var recipes := get_recipes()
-	if recipes.size() != 49:
-		errors.append("expected 49 recipes, got %d" % recipes.size())
+	if recipes.size() != 59:
+		errors.append("expected 59 recipes, got %d" % recipes.size())
 	for recipe in recipes:
 		var recipe_id := str(recipe.get("recipe_id", ""))
 		if recipe_id.is_empty():

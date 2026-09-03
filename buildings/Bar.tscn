@@ -8,6 +8,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_thtex"]
 size = Vector3(8, 1, 8)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(8, 1, 8)
 
 [node name="Bar" type="StaticBody3D" unique_id=1082154414]
 metadata/map_can_overlap_water = false
@@ -48,3 +50,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.378598, 0.334023, -4.29533
 
 [node name="PlatingStation" parent="." unique_id=454375648 instance=ExtResource("4_xwuow")]
 transform = Transform3D(0.051551625, 0, 0.99867034, 0, 1, 0, -0.99867034, 0, 0.051551625, -4.304429, 0.50372314, -2.1615915)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.50456, 0.5246, 2.47111)
+shape = SubResource("BoxShape3D_placement_footprint")

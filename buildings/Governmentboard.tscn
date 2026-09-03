@@ -5,6 +5,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_board_interaction"]
 size = Vector3(4, 3, 3)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(4, 3, 3)
 
 [node name="Governmentboard" type="StaticBody3D" unique_id=691644752]
 metadata/map_can_overlap_water = false
@@ -26,3 +28,11 @@ shape = SubResource("BoxShape3D_board_interaction")
 [node name="CollisionPolygon3D" type="CollisionPolygon3D" parent="." unique_id=506094700]
 polygon = PackedVector2Array(-1.2743826, 0.07073116, -1.3056252, 3.326203, -0.0246813, 3.7073622, 1.2875049, 3.3137062, 1.2750084, 0.026991606)
 debug_color = Color(0.97459465, 0.10128724, 0.32062137, 0.41960785)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

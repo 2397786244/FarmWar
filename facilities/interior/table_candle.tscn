@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://cc51tve86ws3w"]
+
+[ext_resource type="PackedScene" uid="uid://dbht0so7jldsy" path="res://assets/facilities/interior/TableCandle.glb" id="1_rlhpm"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rlhpm"]
+size = Vector3(0.28, 0.48, 0.28)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(0.28, 0.48, 0.28)
+
+[node name="TableCandle" type="StaticBody3D" unique_id=1754351925]
+collision_layer = 128
+collision_mask = 0
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=93867040 instance=ExtResource("1_rlhpm")]
+
+[node name="Glow" type="Marker3D" parent="." unique_id=2124464448]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3280111, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=591179447]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.24, 0)
+shape = SubResource("BoxShape3D_rlhpm")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.24, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

@@ -14,11 +14,11 @@ const PREVIEW_TARGET_MASK := (
 	1 | 2 | 8 | 64 | 128 | 4096 | 8192 | 16384 | 32768
 )
 const PREVIEW_BLOCKING_MASK := (
-	2 | 8 | 128 | 4096 | 8192 | 32768
+	2 | 8 | 16 | 128 | 4096 | 8192 | 32768
 	| 16384
 )
 const SUPPORT_OVERLAP_BLOCKING_MASK := (
-	PREVIEW_BLOCKING_MASK & ~(128 | 4096)
+	PREVIEW_BLOCKING_MASK & ~(16 | 128 | 4096)
 )
 const FARM_TILE_TOOL_IDS := {
 	"auto_shooter": "AutoShooter",
@@ -57,6 +57,7 @@ var current_definition: Dictionary = {}
 var current_item: Dictionary = {}
 var source_collision_shape: Shape3D
 var source_collision_transform := Transform3D.IDENTITY
+var source_placement_clearance := PlacementQueryScript.DEFAULT_CLEARANCE
 var preview_valid := false
 var preview_cooldown_active := false
 var wall_snap_active := false
@@ -109,6 +110,7 @@ func clear_selection() -> void:
 	current_item.clear()
 	source_collision_shape = null
 	source_collision_transform = Transform3D.IDENTITY
+	source_placement_clearance = PlacementQueryScript.DEFAULT_CLEARANCE
 	preview_valid = false
 	preview_cooldown_active = false
 	wall_snap_active = false
@@ -210,16 +212,25 @@ func _resolve_placement_definition(definition: Dictionary, item: Dictionary) -> 
 
 
 func _build_preview_model(scene_path: String) -> void:
+	source_collision_shape = null
+	source_collision_transform = Transform3D.IDENTITY
+	source_placement_clearance = PlacementQueryScript.DEFAULT_CLEARANCE
 	var packed := load(scene_path) as PackedScene
 	if packed == null:
 		return
 	var source := packed.instantiate() as Node3D
 	if source == null:
 		return
-	var source_collision := _find_collision_shape(source)
-	if source_collision != null and source_collision.shape != null:
-		source_collision_shape = source_collision.shape.duplicate(true) as Shape3D
-		source_collision_transform = source_collision.transform
+	var footprint := PlacementQueryScript.placement_footprint_for_node(source)
+	if not footprint.is_empty():
+		source_collision_shape = (footprint["shape"] as Shape3D).duplicate(true) as Shape3D
+		source_collision_transform = footprint["transform"] as Transform3D
+		source_placement_clearance = float(footprint.get("clearance", PlacementQueryScript.DEFAULT_CLEARANCE))
+	else:
+		var source_collision := _find_collision_shape(source)
+		if source_collision != null and source_collision.shape != null:
+			source_collision_shape = source_collision.shape.duplicate(true) as Shape3D
+			source_collision_transform = source_collision.transform
 	var clone := source.duplicate() as Node3D
 	source.free()
 	if clone == null:
@@ -325,7 +336,7 @@ func _update_farm_tile_preview(request: Dictionary, yaw: float, cooldown_active 
 			source_collision_shape,
 			source_collision_transform,
 			_placement_blocking_mask(),
-			_placement_exceptions()
+			_placement_exceptions(), 1, 5.0, source_placement_clearance, 20.0, 48.0
 		)
 		valid = bool(placement.get("ok", false))
 	_set_preview_transform(tile.global_position + Vector3.UP * 0.1, yaw, valid, cooldown_active)
@@ -344,13 +355,13 @@ func _update_surface_preview(request: Dictionary, yaw: float, cooldown_active :=
 		result = PlacementQueryScript.resolve_tabletop_surface_placement(
 			player.get_world_3d(), support, surface_position, player.global_position, yaw,
 			source_collision_shape, source_collision_transform, _placement_blocking_mask(),
-			_placement_exceptions(), surface_normal
+			_placement_exceptions(), surface_normal, 5.0, source_placement_clearance
 		)
 	else:
 		result = PlacementQueryScript.resolve_surface_placement(
 			player.get_world_3d(), surface_position, player.global_position, yaw,
 			source_collision_shape, source_collision_transform, _placement_blocking_mask(),
-			_placement_exceptions(), surface_normal
+			_placement_exceptions(), surface_normal, 5.0, source_placement_clearance
 		)
 	var position := result.get("position", surface_position) as Vector3
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)
@@ -399,7 +410,7 @@ func _update_free_preview(request: Dictionary, yaw: float, cooldown_active := fa
 		source_collision_shape,
 		source_collision_transform,
 		_placement_blocking_mask(),
-		placement_exceptions,
+		placement_exceptions, 1, 5.0, source_placement_clearance, 20.0, 48.0
 	)
 	var position := result.get("position", placement_position) as Vector3
 	_set_preview_transform(position, yaw, bool(result.get("ok", false)), cooldown_active)

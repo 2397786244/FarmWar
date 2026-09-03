@@ -4,6 +4,8 @@
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_oh8lq"]
 size = Vector3(0.3, 1.5, 10)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(3.73907, 1.5, 10)
 
 [node name="WoodBridge" type="StaticBody3D" unique_id=1907636449]
 metadata/map_can_overlap_water = true
@@ -26,3 +28,11 @@ debug_color = Color(0.9672547, 0.04608774, 0.4492057, 0.41960785)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7232832, 0.8916119, 0)
 shape = SubResource("BoxShape3D_oh8lq")
 debug_color = Color(0.9672547, 0.04608774, 0.4492057, 0.41960785)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00375, 0.89161, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

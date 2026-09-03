@@ -6,6 +6,7 @@ signal team_tasks_changed(team: String, tasks: Array[Dictionary])
 
 const MAX_GLOBAL_EVENTS := 6
 const MAX_TEAM_TASKS := 6
+const RARE_RESOURCE_NOTICE_DURATION_SECONDS := 6.0
 const TEAM_ALL := "all"
 const VALID_TEAMS := ["red", "blue"]
 
@@ -52,6 +53,8 @@ func add_global_event(title: String, description := "", event_type := "info") ->
 		global_events.resize(MAX_GLOBAL_EVENTS)
 	global_events_changed.emit(global_events.duplicate(true))
 	_broadcast_state()
+	if event_type == "rare_resource":
+		_broadcast_global_notice(event)
 	return event.duplicate(true)
 
 
@@ -161,6 +164,20 @@ func _broadcast_state() -> void:
 			"type": "event_board_state",
 			"tick": GameAuthority.server_tick,
 		})
+
+
+func _broadcast_global_notice(event: Dictionary) -> void:
+	var text := str(event.get("title", "")).strip_edges()
+	if text.is_empty():
+		return
+	GameAuthority.reliable_world_event_ready.emit({
+		"type": "global_notice",
+		"category": "rare_resource",
+		"text": text,
+		"duration": RARE_RESOURCE_NOTICE_DURATION_SECONDS,
+		"event_id": int(event.get("event_id", 0)),
+		"tick": GameAuthority.server_tick,
+	})
 
 
 func _can_mutate() -> bool:

@@ -2,8 +2,26 @@
 
 [ext_resource type="PackedScene" uid="uid://cpvhnxops0o5b" path="res://assets/buildings/FTF_Prop_FarmWindVane_3m.glb" id="1_xwmwe"]
 
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_xwmwe"]
+height = 5.2
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1, 5.2, 1)
+
 [node name="FarmVane" type="StaticBody3D" unique_id=1715592418]
 metadata/map_can_overlap_water = false
 
-[node name="FTF_Prop_FarmWindVane_3m2" parent="." unique_id=1782659801 instance=ExtResource("1_xwmwe")]
+[node name="Mesh" parent="." unique_id=1782659801 instance=ExtResource("1_xwmwe")]
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=900695660]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.863235, 0.04000002)
+shape = SubResource("CylinderShape3D_xwmwe")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.86323, 0.04)
+shape = SubResource("BoxShape3D_placement_footprint")

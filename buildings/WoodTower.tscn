@@ -14,6 +14,8 @@ data = PackedVector3Array(-0.103099994, -5.0920997, 0.3505, -0.0682, -5.0474, 0.
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hmlmk"]
 size = Vector3(1.2, 10.2, 0.3)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(5.88, 12.06, 5.88)
 
 [node name="WoodTower" type="StaticBody3D" unique_id=131246713]
 script = ExtResource("2_script")
@@ -54,3 +56,11 @@ debug_color = Color(0, 0.64705884, 0.24705882, 1)
 
 [node name="ClimbDownPos" type="Marker3D" parent="." unique_id=1751461015]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.548191, 2.9139955)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0, 6.03, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

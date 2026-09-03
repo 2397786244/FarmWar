@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://dvefuifdh33vy"]
+
+[ext_resource type="PackedScene" uid="uid://dw6s4ja2xgbb7" path="res://assets/facilities/interior/StandingTorch.glb" id="1_fjdl2"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fjdl2"]
+height = 1.8
+radius = 0.2
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(0.4, 1.8, 0.4)
+
+[node name="StandingTorch" type="StaticBody3D" unique_id=1281228717]
+collision_layer = 128
+collision_mask = 0
+metadata/map_can_overlap_water = false
+
+[node name="Mesh" parent="." unique_id=1505771419 instance=ExtResource("1_fjdl2")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1964135593]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9119047, 0)
+shape = SubResource("CylinderShape3D_fjdl2")
+
+[node name="Marker3D" type="Marker3D" parent="." unique_id=1719599156]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6661825, 0)
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9119, 0)
+shape = SubResource("BoxShape3D_placement_footprint")

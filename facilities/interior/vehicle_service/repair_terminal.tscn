@@ -11,6 +11,8 @@ size = Vector3(1, 0.5, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_elwgs"]
 size = Vector3(7, 0.5, 5)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(0.5, 1.5, 0.5)
 
 [node name="RepairTerminal" type="StaticBody3D" unique_id=999531084 groups=["vehicle_service_facilities", "vehicle_service_terminals"]]
 collision_layer = 128
@@ -50,3 +52,11 @@ shape = SubResource("BoxShape3D_elwgs")
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1001345317]
 transform = Transform3D(-0.44927332, 0.5315418, -0.7180645, 0.0057457127, 0.8054512, 0.5926342, 0.8933759, 0.26212895, -0.36492178, -3.8880866, 3.585886, 0)
 fov = 60.0
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75651, 0)
+shape = SubResource("BoxShape3D_placement_footprint")
