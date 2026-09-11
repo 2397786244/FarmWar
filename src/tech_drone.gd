@@ -82,10 +82,6 @@ func get_primary_action_cooldown_duration() -> float:
 	return repair_pulse_cooldown
 
 
-func _update_flight(delta: float) -> void:
-	super._update_flight(delta)
-
-
 func simulate_authoritative_remote_input(input_frame: Dictionary, delta: float) -> void:
 	super.simulate_authoritative_remote_input(input_frame, delta)
 

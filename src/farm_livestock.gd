@@ -330,6 +330,10 @@ func get_network_state() -> Dictionary:
 		"labeled_remaining": labeled_remaining,
 		"milk_charges_remaining": milk_charges_remaining,
 		"milk_countdown": milk_countdown,
+		"death_cleanup_left": maxf(
+			0.0,
+			CombatBalance.get_float("farm_livestock", "death_visible_seconds", 4.0) - _state_elapsed
+		) if state == State.DEAD else 0.0,
 	}
 
 

@@ -3,7 +3,9 @@
 [ext_resource type="Script" uid="uid://d3ri251wgrunu" path="res://src/farm_init.gd" id="0_farm_init"]
 [ext_resource type="Shader" uid="uid://pu5wb13ismhh" path="res://src/terrain/terrain_surface.gdshader" id="1_surface_shader"]
 [ext_resource type="Resource" uid="uid://bq4al68uh2lox" path="res://worlds/creston_town/creston_town_surface_palette.tres" id="2_surface_palette"]
-[ext_resource type="Texture2D" uid="uid://khactk46ojgl" path="res://worlds/creston_town/creston_town_surface_mask.res" id="3_iqwys"]
+[ext_resource type="Texture2D" path="res://worlds/creston_town/creston_town_surface_ids.res" id="3_surface_ids"]
+[ext_resource type="Texture2D" path="res://worlds/creston_town/creston_town_surface_weights.res" id="3_surface_weights"]
+[ext_resource type="Texture2D" path="res://worlds/creston_town/creston_town_surface_render.res" id="3_surface_render"]
 [ext_resource type="Texture2D" uid="uid://brxjgmnimm2im" path="res://worlds/creston_town/creston_town_surface_palette_lookup.res" id="4_t83tk"]
 [ext_resource type="Script" uid="uid://dxqsp0d6acd74" path="res://src/terrain/surface_area_3d.gd" id="5_surface_area"]
 [ext_resource type="Script" uid="uid://dn8o1sjdmg6re" path="res://src/terrain/terrain_surface_baker.gd" id="6_surface_baker"]
@@ -123,8 +125,7 @@ agent_radius = 0.4
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ybevs"]
 render_priority = 0
 shader = ExtResource("1_surface_shader")
-shader_parameter/surface_mask = ExtResource("3_iqwys")
-shader_parameter/surface_palette = ExtResource("4_t83tk")
+shader_parameter/surface_render = ExtResource("3_surface_render")
 shader_parameter/terrain_origin = Vector2(-128, -128)
 shader_parameter/terrain_size = Vector2(256, 256)
 
@@ -326,7 +327,8 @@ dry_grass_scene = ExtResource("86_grass_dry")
 black_eyed_susan_scene = ExtResource("83_black_eyed_susan")
 coneflower_scene = ExtResource("84_coneflower")
 fern_scene = ExtResource("85_fern")
-surface_mask = ExtResource("3_iqwys")
+surface_id_map = ExtResource("3_surface_ids")
+surface_weight_map = ExtResource("3_surface_weights")
 small_density = 0.2
 tall_density = 0.02
 dry_density = 0.01

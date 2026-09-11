@@ -2,15 +2,23 @@
 class_name TerrainSurfaceBaker
 extends Node3D
 
+const SurfaceBlend = preload("res://src/terrain/terrain_surface_blend.gd")
+
 @export var palette: TerrainSurfacePalette
 @export var target_mesh: NodePath
 @export var area_root: NodePath
 @export var terrain_center := Vector2.ZERO
 @export var terrain_size := Vector2(512.0, 512.0)
 @export_range(128, 4096, 128) var mask_resolution: int = 2048
-@export_file("*.res") var mask_output_path := "res://worlds/creston_town/creston_town_surface_mask.res"
+@export_file("*.res") var id_map_output_path := "res://worlds/creston_town/creston_town_surface_ids.res"
+@export_file("*.res") var weight_map_output_path := "res://worlds/creston_town/creston_town_surface_weights.res"
+@export_file("*.res") var render_output_path := "res://worlds/creston_town/creston_town_surface_render.res"
 @export_file("*.res") var palette_output_path := "res://worlds/creston_town/creston_town_surface_palette_lookup.res"
-@export_tool_button("Bake Terrain Mask") var bake_button: Callable = bake_surface_mask
+@export var surface_blend_noise_seed := 72451
+@export_range(0.01, 1.0, 0.01) var surface_blend_noise_frequency := 0.18
+@export_tool_button("Bake Terrain Surfaces") var bake_button: Callable = bake_surface_mask
+
+var _edge_noise: FastNoiseLite
 
 
 func bake_surface_mask() -> void:
@@ -24,39 +32,69 @@ func bake_surface_mask() -> void:
 		push_error("TerrainSurfaceBaker: terrain_size must be positive.")
 		return
 
-	var default_encoded := float(palette.default_surface_id) / 255.0
-	var mask_image := Image.create(mask_resolution, mask_resolution, false, Image.FORMAT_RGBA8)
-	mask_image.fill(Color(default_encoded, default_encoded, 0.0, 0.0))
+	var id_image := Image.create(mask_resolution, mask_resolution, false, Image.FORMAT_RGBA8)
+	var weight_image := Image.create(mask_resolution, mask_resolution, false, Image.FORMAT_RGBA8)
+	id_image.fill(SurfaceBlend.make_default_ids(palette.default_surface_id))
+	weight_image.fill(SurfaceBlend.make_default_weights())
+	_edge_noise = FastNoiseLite.new()
+	_edge_noise.seed = surface_blend_noise_seed
+	_edge_noise.frequency = surface_blend_noise_frequency
+	_edge_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 
 	var areas := _collect_surface_areas()
 	areas.sort_custom(func(a: SurfaceArea3D, b: SurfaceArea3D) -> bool: return a.priority < b.priority)
 	for area in areas:
-		_paint_area(mask_image, area)
-
-	var mask_texture := ImageTexture.create_from_image(mask_image)
-	var mask_error := ResourceSaver.save(mask_texture, mask_output_path, ResourceSaver.FLAG_COMPRESS)
-	if mask_error != OK:
-		push_error("TerrainSurfaceBaker: could not save mask to %s (error %d)." % [mask_output_path, mask_error])
-		return
+		_paint_area(id_image, weight_image, area)
 
 	var palette_texture := palette.create_lookup_texture()
-	var palette_error := ResourceSaver.save(palette_texture, palette_output_path, ResourceSaver.FLAG_COMPRESS)
-	if palette_error != OK:
-		push_error("TerrainSurfaceBaker: could not save palette lookup to %s (error %d)." % [palette_output_path, palette_error])
+	var render_image := _build_render_image(id_image, weight_image, palette_texture.get_image())
+	if not _save_image_texture(id_image, id_map_output_path, "surface ID map"):
+		return
+	if not _save_image_texture(weight_image, weight_map_output_path, "surface weight map"):
+		return
+	if not _save_image_texture(render_image, render_output_path, "surface render map"):
+		return
+	if not _save_texture(palette_texture, palette_output_path, "palette lookup"):
 		return
 
-	var saved_mask := ResourceLoader.load(
-		mask_output_path,
+	var saved_render := ResourceLoader.load(
+		render_output_path,
 		"",
 		ResourceLoader.CACHE_MODE_REPLACE
 	) as Texture2D
-	var saved_palette := ResourceLoader.load(
-		palette_output_path,
-		"",
-		ResourceLoader.CACHE_MODE_REPLACE
-	) as Texture2D
-	_apply_material_parameters(saved_mask, saved_palette)
-	print("TerrainSurfaceBaker: baked %d surface areas to %s" % [areas.size(), mask_output_path])
+	_apply_material_parameters(saved_render)
+	print("TerrainSurfaceBaker: baked %d surface areas to %s" % [areas.size(), render_output_path])
+
+
+func _save_image_texture(image: Image, path: String, label: String) -> bool:
+	return _save_texture(ImageTexture.create_from_image(image), path, label)
+
+
+func _save_texture(texture: Texture2D, path: String, label: String) -> bool:
+	var error := ResourceSaver.save(texture, path, ResourceSaver.FLAG_COMPRESS)
+	if error != OK:
+		push_error("TerrainSurfaceBaker: could not save %s to %s (error %d)." % [label, path, error])
+		return false
+	return true
+
+
+func _build_render_image(id_image: Image, weight_image: Image, palette_image: Image) -> Image:
+	var render_image := Image.create(
+		id_image.get_width(), id_image.get_height(), false, Image.FORMAT_RGBA8
+	)
+	for y in range(id_image.get_height()):
+		for x in range(id_image.get_width()):
+			render_image.set_pixel(
+				x,
+				y,
+				SurfaceBlend.resolve_color(
+					id_image.get_pixel(x, y),
+					weight_image.get_pixel(x, y),
+					palette_image,
+					palette.default_surface_id
+				)
+			)
+	return render_image
 
 
 func _collect_surface_areas() -> Array[SurfaceArea3D]:
@@ -76,7 +114,7 @@ func _collect_surface_areas_recursive(node: Node, result: Array[SurfaceArea3D]) 
 		_collect_surface_areas_recursive(child, result)
 
 
-func _paint_area(image: Image, area: SurfaceArea3D) -> void:
+func _paint_area(id_image: Image, weight_image: Image, area: SurfaceArea3D) -> void:
 	var points := area.get_world_points()
 	var minimum_points := 3 if area.draw_mode == SurfaceArea3D.DrawMode.CLOSED_AREA else 2
 	if points.size() < minimum_points:
@@ -98,9 +136,23 @@ func _paint_area(image: Image, area: SurfaceArea3D) -> void:
 		for pixel_x in range(min_x, max_x + 1):
 			var world_point := _pixel_to_world(Vector2i(pixel_x, pixel_y))
 			var coverage := _get_coverage(world_point, points, area)
+			if coverage > 0.0 and coverage < 1.0 and area.edge_variation > 0.0:
+				coverage = clampf(
+					coverage + _edge_noise.get_noise_2d(world_point.x, world_point.y) * area.edge_variation,
+					0.0,
+					1.0
+				)
 			if coverage <= 0.0:
 				continue
-			_write_surface_pixel(image, pixel_x, pixel_y, area.surface_id, coverage)
+			var painted := SurfaceBlend.paint_encoded(
+				id_image.get_pixel(pixel_x, pixel_y),
+				weight_image.get_pixel(pixel_x, pixel_y),
+				area.surface_id,
+				coverage,
+				palette.default_surface_id
+			)
+			id_image.set_pixel(pixel_x, pixel_y, painted["ids"] as Color)
+			weight_image.set_pixel(pixel_x, pixel_y, painted["weights"] as Color)
 
 
 func _get_coverage(point: Vector2, points: PackedVector2Array, area: SurfaceArea3D) -> float:
@@ -143,16 +195,6 @@ func _distance_to_segment(point: Vector2, start: Vector2, finish: Vector2) -> fl
 	return point.distance_to(start + segment * amount)
 
 
-func _write_surface_pixel(image: Image, x: int, y: int, surface_id: int, coverage: float) -> void:
-	var current := image.get_pixel(x, y)
-	var current_id := int(round(current.g * 255.0)) if current.b >= 0.5 else int(round(current.r * 255.0))
-	var encoded_id := float(surface_id) / 255.0
-	if coverage >= 0.999:
-		image.set_pixel(x, y, Color(encoded_id, encoded_id, 0.0, current.a))
-	else:
-		image.set_pixel(x, y, Color(float(current_id) / 255.0, encoded_id, coverage, current.a))
-
-
 func _calculate_bounds(points: PackedVector2Array, margin: float) -> Rect2:
 	var minimum := points[0]
 	var maximum := points[0]
@@ -173,7 +215,7 @@ func _pixel_to_world(pixel: Vector2i) -> Vector2:
 	return origin + uv * terrain_size
 
 
-func _apply_material_parameters(mask_texture: Texture2D, palette_texture: Texture2D) -> void:
+func _apply_material_parameters(render_texture: Texture2D) -> void:
 	var mesh_instance := get_node_or_null(target_mesh) as MeshInstance3D
 	if mesh_instance == null:
 		push_error("TerrainSurfaceBaker: target_mesh does not point to a MeshInstance3D.")
@@ -182,7 +224,6 @@ func _apply_material_parameters(mask_texture: Texture2D, palette_texture: Textur
 	if material == null:
 		push_error("TerrainSurfaceBaker: target mesh does not use a ShaderMaterial.")
 		return
-	material.set_shader_parameter("surface_mask", mask_texture)
-	material.set_shader_parameter("surface_palette", palette_texture)
+	material.set_shader_parameter("surface_render", render_texture)
 	material.set_shader_parameter("terrain_origin", terrain_center - terrain_size * 0.5)
 	material.set_shader_parameter("terrain_size", terrain_size)

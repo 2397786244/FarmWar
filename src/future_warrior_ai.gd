@@ -155,7 +155,7 @@ var grenade_mode: int = GrenadeMode.AUTO
 
 @export_category("Health")
 
-@export var max_hp: float = 260.0
+@export var max_hp: float = 100.0
 
 ## 兼容旧地图/测试场景的序列化字段。FutureAI 现在不会在原节点上单体复活；
 ## 小队的下一批生成由 EnemySquadSpawner.respawn_seconds 负责。
@@ -388,9 +388,10 @@ var ar15_burst_size: int = 5
 @export var target_height: float = 1.05
 @export var aim_prediction_seconds: float = 0.15
 
-## 轻微误差可避免 AI 像自瞄一样永不失手。
-@export var standing_aim_error: float = 0.055
-@export var moving_aim_error: float = 0.13
+## 每次开火时在目标方向周围取一个随机圆锥方向，避免 AI 像自瞄一样
+## 永不失手。单位是角度，而不是固定世界坐标距离，远近距离的手感更一致。
+@export_range(0.0, 30.0, 0.1) var standing_aim_spread_degrees: float = 3.5
+@export_range(0.0, 30.0, 0.1) var moving_aim_spread_degrees: float = 5.0
 
 
 # ------------------------------------------------------------------
@@ -3569,9 +3570,7 @@ func _try_fire_weapon(slot: int) -> void:
 		)
 	)
 
-	aim_position += _make_aim_error(
-		aim_position
-	)
+	aim_position = _apply_aim_spread(aim_position)
 
 	_aim_at(aim_position)
 
@@ -3720,35 +3719,30 @@ func _get_predicted_aim_position(
 	)
 
 
-func _make_aim_error(
-	aim_position: Vector3
-) -> Vector3:
-	var is_moving := (
-		Vector2(
-			velocity.x,
-			velocity.z
-		).length() > 0.4
+func _apply_aim_spread(aim_position: Vector3) -> Vector3:
+	var origin := head.global_position if is_instance_valid(head) else global_position
+	var to_target := aim_position - origin
+	var target_distance := to_target.length()
+	if target_distance <= 0.001:
+		return aim_position
+	var is_moving := Vector2(velocity.x, velocity.z).length() > 0.4
+	var spread_degrees := (
+		moving_aim_spread_degrees if is_moving else standing_aim_spread_degrees
 	)
-
-	var error_amount := (
-		moving_aim_error
-		if is_moving
-		else standing_aim_error
-	)
-
-	var distance_scale := clampf(
-		global_position.distance_to(
-			aim_position
-		) / 15.0,
-		0.6,
-		1.8
-	)
-
-	return Vector3(
-		rng.randf_range(-1.0, 1.0),
-		rng.randf_range(-0.6, 0.6),
-		rng.randf_range(-1.0, 1.0)
-	) * error_amount * distance_scale
+	if spread_degrees <= 0.0:
+		return aim_position
+	var direction := to_target / target_distance
+	var reference_up := Vector3.UP
+	if absf(direction.dot(reference_up)) > 0.98:
+		reference_up = Vector3.RIGHT
+	var right := direction.cross(reference_up).normalized()
+	var up := right.cross(direction).normalized()
+	var angle := rng.randf_range(0.0, TAU)
+	## sqrt keeps samples uniform over the cone disk instead of clustering near
+	## the center, while tan converts the angular radius into a direction offset.
+	var radius := tan(deg_to_rad(spread_degrees)) * sqrt(rng.randf())
+	var offset := (right * cos(angle) + up * sin(angle)) * radius
+	return origin + (direction + offset).normalized() * target_distance
 
 
 func _aim_at(

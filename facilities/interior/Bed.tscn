@@ -11,6 +11,9 @@ size = Vector3(3.2, 2, 0.3)
 size = Vector3(3.2, 2.1342, 4.2)
 
 [node name="Bed" type="StaticBody3D" unique_id=1404832993]
+collision_layer = 128
+collision_mask = 0
+metadata/map_can_overlap_water = false
 
 [node name="Mesh" parent="." unique_id=541720298 instance=ExtResource("1_8s4jn")]
 
@@ -30,5 +33,5 @@ collision_layer = 16
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.02116, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0671, 0)
 shape = SubResource("BoxShape3D_placement_footprint")

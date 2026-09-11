@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://donoxwhgt08tp"]
+
+[ext_resource type="PackedScene" uid="uid://bw551rtjbv5x7" path="res://assets/facilities/interior/WoodenCashierCounter.glb" id="1_jc1hj"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wo2tk"]
+size = Vector3(2.35, 1.4250001, 1.1325)
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(2.35, 1.4250001, 1.1325)
+
+[node name="WoodenCashier" type="StaticBody3D" unique_id=1743901807 groups=["tabletop_supports"]]
+collision_layer = 128
+collision_mask = 0
+metadata/map_can_overlap_water = false
+metadata/tabletop_support_local_center = Vector3(0, 1.50999999, 0.016250014)
+metadata/tabletop_support_size = Vector2(2.2, 1)
+
+[node name="WoodenCashierCounter" parent="." unique_id=545541936 instance=ExtResource("1_jc1hj")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=683603330]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.79749995, 0.016250014)
+shape = SubResource("BoxShape3D_wo2tk")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.71250004, 0.016250014)
+shape = SubResource("BoxShape3D_placement_footprint")

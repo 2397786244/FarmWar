@@ -69,7 +69,7 @@ const REMOTE_GROUPS: Array[StringName] = [
 @export var server_authoritative: bool = true
 
 @export_category("Health")
-@export var max_hp: float = 200.0
+@export var max_hp: float = 100.0
 ## 与玩家和 FutureWarriorAI 保持一致：死亡后倒地 10 秒，再回到本队出生点。
 @export_range(1.0, 30.0, 0.5) var respawn_seconds: float = 10.0
 @export var default_bullet_damage: float = 12.0
@@ -128,7 +128,8 @@ const REMOTE_GROUPS: Array[StringName] = [
 @export var aim_height_player: float = 0.95
 @export var aim_height_ground_device: float = 0.35
 @export var aim_height_air_device: float = 0.0
-@export var combat_aim_error: float = 0.04
+## 霰弹枪每次开火在目标方向周围取样的角度散布。
+@export_range(0.0, 30.0, 0.1) var shotgun_aim_spread_degrees: float = 4.5
 
 @export_category("Fallback Tool Scenes")
 ## 仅当当前 tool_definitions.json 中没有相应条目时使用。
@@ -1301,17 +1302,31 @@ func _fire_shotgun(world_target: Vector3) -> bool:
 		push_warning("[FarmerAI] Resolved Shotgun has no emit().")
 		return false
 
-	var final_target := world_target + Vector3(
-		rng.randf_range(-combat_aim_error, combat_aim_error),
-		rng.randf_range(-combat_aim_error, combat_aim_error),
-		rng.randf_range(-combat_aim_error, combat_aim_error)
-	)
+	var final_target := _apply_aim_spread(world_target, shotgun_aim_spread_degrees)
 	_aim_tool(final_target)
 	_update_tool_camera_alignment()
 	_set_tool_action(shotgun_tool_id)
 	held_tool.call("emit")
 	_set_tool_cooldown(shotgun_tool_id, shotgun_fallback_cooldown)
 	return true
+
+
+func _apply_aim_spread(world_target: Vector3, spread_degrees: float) -> Vector3:
+	var origin := head.global_position if is_instance_valid(head) else global_position
+	var to_target := world_target - origin
+	var target_distance := to_target.length()
+	if target_distance <= 0.001 or spread_degrees <= 0.0:
+		return world_target
+	var direction := to_target / target_distance
+	var reference_up := Vector3.UP
+	if absf(direction.dot(reference_up)) > 0.98:
+		reference_up = Vector3.RIGHT
+	var right := direction.cross(reference_up).normalized()
+	var up := right.cross(direction).normalized()
+	var angle := rng.randf_range(0.0, TAU)
+	var radius := tan(deg_to_rad(spread_degrees)) * sqrt(rng.randf())
+	var offset := (right * cos(angle) + up * sin(angle)) * radius
+	return origin + (direction + offset).normalized() * target_distance
 
 
 func _combat_aim_position(target: Node3D) -> Vector3:

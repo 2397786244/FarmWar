@@ -3,6 +3,9 @@ class_name ChainLinkFence
 
 const NatureResourceHitEffect = preload("res://src/nature_resource_hit_effect.gd")
 
+signal defense_destroyed
+signal defense_respawned
+
 const DAMAGE_PER_SECOND := 20.0
 ## A vehicle that remains inside the fence's monitoring area continuously
 ## crushes the fence at this rate.  This intentionally does not use the
@@ -124,6 +127,8 @@ func apply_network_health(value: float) -> void:
 	if destroyed and not was_destroyed:
 		play_destruction_effect()
 	_set_gameplay_active(active and not _network_visual_only)
+	if was_destroyed and not destroyed:
+		defense_respawned.emit()
 
 
 func apply_network_destroyed() -> void:
@@ -142,6 +147,7 @@ func apply_network_respawned(value: float = -1.0) -> void:
 	active = current_hp > 0.0
 	visible = active
 	_set_gameplay_active(active)
+	defense_respawned.emit()
 
 
 func impact(_effect: String, strength: float, attacker_team := "") -> bool:
@@ -160,6 +166,21 @@ func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team 
 	return _apply_impact_strength(strength)
 
 
+## Keep ChainLinkFence on the same collider-preserving damage path as
+## MapDefenseFacility. Its root body intentionally has collision_layer 0, so
+## GameAuthority must be able to resolve the Hit3D Area back to this node.
+func impact_from_collider(
+	_collider: Variant,
+	effect: String,
+	strength: float,
+	attacker_team := "",
+	_shape_index := -1,
+	_attacker_peer_id := 0,
+	_attacker_node: Node3D = null
+) -> bool:
+	return impact(effect, strength, attacker_team)
+
+
 func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
@@ -168,6 +189,7 @@ func _apply_impact_strength(strength: float) -> bool:
 		active = false
 		visible = false
 		_set_gameplay_active(false)
+		defense_destroyed.emit()
 	return true
 
 
@@ -241,7 +263,17 @@ func _handle_hit_contact(contact: Node) -> void:
 	var effect := "Explosion" if bullet is BoomBullet else "None"
 	if bullet is ColorBullet or bullet is DetectLaserBullet:
 		effect = str(bullet.get("bullet_effect"))
-	var attacker_peer_id := GameAuthority.resolve_attacker_peer_id(attacker_team)
+	# Preserve the authoritative shooter when this Hit3D callback runs on a
+	# dedicated server. Falling back to the team lookup is only valid for the
+	# single-player/listen-server compatibility path; without the shooter, a
+	# remote player's fence hit would be classified as non-player damage and a
+	# checkpoint alarm could be missed.
+	var attacker_peer_id := 0
+	if bullet.has_method("get_bullet_shooter"):
+		var shooter: Variant = bullet.call("get_bullet_shooter")
+		if shooter is Node:
+			attacker_peer_id = GameAuthority.get_authority_player_peer_id(shooter as Node)
+	attacker_peer_id = GameAuthority.resolve_attacker_peer_id(attacker_team, attacker_peer_id)
 	var applied := bool(GameAuthority.call(
 		"_apply_hit_to_collider", self, effect, strength, attacker_team, -1, attacker_peer_id
 	))

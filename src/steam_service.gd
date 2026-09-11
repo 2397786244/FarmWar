@@ -10,6 +10,8 @@ signal invite_feedback(message: String)
 
 const COOPERATIVE_MODE_TAG := "farmwar_pve_coop"
 const LOBBY_SCHEMA_VERSION := "1"
+const COOP_TRANSPORT_PROTOCOL_VERSION := 2
+const STEAM_MULTIPLAYER_LANE_COUNT := 9
 const STEAM_RESULT_NAMES := {
 	1: "k_EResultOK",
 	2: "k_EResultFail",
@@ -155,6 +157,10 @@ func get_current_lobby_data() -> Dictionary:
 		"death_drop_mode": Steam.getLobbyData(cooperative_lobby_id, "death_drop_mode"),
 		"host_steam_id": int(Steam.getLobbyData(cooperative_lobby_id, "host_steam_id")),
 		"session_state": Steam.getLobbyData(cooperative_lobby_id, "session_state"),
+		"transport_protocol_version": int(Steam.getLobbyData(
+			cooperative_lobby_id, "transport_protocol_version"
+		)),
+		"steam_lane_count": int(Steam.getLobbyData(cooperative_lobby_id, "steam_lane_count")),
 	}
 
 
@@ -282,6 +288,10 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	cooperative_lobby_host_steam_id = steam_id
 	Steam.setLobbyData(lobby_id, "game_mode", COOPERATIVE_MODE_TAG)
 	Steam.setLobbyData(lobby_id, "schema", LOBBY_SCHEMA_VERSION)
+	Steam.setLobbyData(
+		lobby_id, "transport_protocol_version", str(COOP_TRANSPORT_PROTOCOL_VERSION)
+	)
+	Steam.setLobbyData(lobby_id, "steam_lane_count", str(STEAM_MULTIPLAYER_LANE_COUNT))
 	Steam.setLobbyData(lobby_id, "world_id", str(_pending_world.get("world_id", "")))
 	Steam.setLobbyData(lobby_id, "world_name", str(_pending_world.get("display_name", "合作农场")))
 	Steam.setLobbyData(lobby_id, "map_id", str(_pending_world.get("map_id", "")))
@@ -312,6 +322,25 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: int, response: 
 	if Steam.getLobbyData(lobby_id, "game_mode") != COOPERATIVE_MODE_TAG:
 		cooperative_lobby_error.emit("该 Steam Lobby 不是 Harvest Operation 联机合作世界。")
 		Steam.leaveLobby(lobby_id)
+		return
+	var advertised_protocol := int(Steam.getLobbyData(lobby_id, "transport_protocol_version"))
+	var advertised_lane_count := int(Steam.getLobbyData(lobby_id, "steam_lane_count"))
+	if advertised_protocol != COOP_TRANSPORT_PROTOCOL_VERSION \
+			or advertised_lane_count != STEAM_MULTIPLAYER_LANE_COUNT:
+		var compatibility_error := (
+			"Steam 合作协议不兼容：房主协议=%d、通道数=%d，本地要求协议=%d、通道数=%d。"
+			% [
+				advertised_protocol,
+				advertised_lane_count,
+				COOP_TRANSPORT_PROTOCOL_VERSION,
+				STEAM_MULTIPLAYER_LANE_COUNT,
+			]
+		)
+		_log_cooperative_debug(compatibility_error)
+		Steam.leaveLobby(lobby_id)
+		cooperative_lobby_error.emit(compatibility_error)
+		GlobalVar.open_cooperative_worlds_on_main_menu = true
+		GlobalVar.cooperative_return_notice = compatibility_error
 		return
 	var advertised_map := {
 		"map_id": Steam.getLobbyData(lobby_id, "map_id"),
@@ -383,7 +412,7 @@ func _steam_result_name(result: int) -> String:
 
 func _log_cooperative_debug(message: String) -> void:
 	var info := get_cooperative_lobby_debug_info()
-	print("[SteamService][CoopLobby] %s | initialized=%s configured_app_id=%d runtime_app_id=%d steam_id=%d lobby_id=%d pending_map=%s" % [
+	print("[SteamService][CoopLobby] %s | initialized=%s configured_app_id=%d runtime_app_id=%d steam_id=%d lobby_id=%d pending_map=%s protocol=%d lanes=%d" % [
 		message,
 		bool(info.get("initialized", false)),
 		int(info.get("configured_app_id", 0)),
@@ -391,12 +420,19 @@ func _log_cooperative_debug(message: String) -> void:
 		int(info.get("steam_id", 0)),
 		int(info.get("current_lobby_id", 0)),
 		str(info.get("pending_map_id", "")),
+		COOP_TRANSPORT_PROTOCOL_VERSION,
+		int(ProjectSettings.get_setting("steam/multiplayer_peer/max_channels", 0)),
 	])
 
 
 func _on_lobby_chat_update(lobby_id: int, _changed_id: int, _making_change_id: int, _chat_state: int) -> void:
 	_verify_cooperative_lobby_host(lobby_id)
 	if lobby_id == cooperative_lobby_id:
+		_log_cooperative_debug("lobby member update: changed_id=%d state=%d members=%d" % [
+			_changed_id,
+			_chat_state,
+			Steam.getNumLobbyMembers(lobby_id),
+		])
 		cooperative_lobby_members_changed.emit()
 
 

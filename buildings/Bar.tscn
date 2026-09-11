@@ -16,6 +16,7 @@ metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 12971
 metadata/map_enterable = true
+metadata/map_indoor_floor_y = 0.0
 script = ExtResource("5_cargo_delivery")
 building_id = "creston_bar"
 display_name = "克勒斯顿酒吧"

@@ -132,6 +132,18 @@ func play(firepower: float = DEFAULT_FIREPOWER) -> void:
 	_tween.chain().tween_callback(_hide_flash)
 
 
+## Called before an owning AI is interest-slept.  A disabled process tree does
+## not advance the short presentation Tween, so cancel it and hide immediately.
+func stop() -> void:
+	if _tween != null:
+		_tween.kill()
+		_tween = null
+	if _particles != null:
+		_particles.emitting = false
+		_particles.visible = false
+	_hide_flash()
+
+
 func _build_visuals() -> void:
 	if (
 		_flame != null

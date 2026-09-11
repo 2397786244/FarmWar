@@ -18,7 +18,7 @@ func _run() -> void:
 	})
 	GlobalVar.gameworld = self
 
-	_check(str(ProjectSettings.get_setting("application/config/version", "")) == "0.3.5", "project version is 0.3.5")
+	_check(str(ProjectSettings.get_setting("application/config/version", "")) == "0.3.7", "project version is 0.3.7")
 	_tile = FARM_TILE_SCENE.instantiate() as FarmTile
 	_check(_tile != null, "FarmTile scene loads")
 	if _tile == null:

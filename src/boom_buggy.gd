@@ -54,6 +54,7 @@ const NETWORK_SIMULATION_DELTA := 1.0 / 60.0
 const SOFT_CORRECTION_DISTANCE := 0.04
 const HARD_CORRECTION_DISTANCE := 1.5
 const CORRECTION_BLEND := 0.25
+const NETWORK_PREDICTION_DIAGNOSTICS_ENABLED := false
 
 signal explosion_triggered(position: Vector3, owner_team: String, reason: String)
 signal detonation_blocked_by_jam
@@ -149,6 +150,16 @@ var _server_authority_simulation := false
 var _last_server_input_seq := 0
 var _pending_network_inputs: Array[Dictionary] = []
 var _pending_authority_snapshot: Dictionary = {}
+var _latest_local_prediction_frame: Dictionary = {}
+var _last_local_prediction_seq := 0
+var _network_prediction_diagnostics := {
+	"soft_corrections": 0,
+	"hard_corrections": 0,
+	"last_error_m": 0.0,
+	"max_error_m": 0.0,
+	"last_replay_frames": 0,
+	"last_input_ack_gap": 0,
+}
 var _local_remote_runtime_enabled := false
 var _local_remote_process_before := true
 var _local_remote_physics_before := true
@@ -585,7 +596,6 @@ func _physics_process(delta: float) -> void:
 		var authority_snapshot := _pending_authority_snapshot
 		_pending_authority_snapshot = {}
 		_apply_authoritative_snapshot(authority_snapshot)
-		return
 
 	if _remote_control_active and not _has_remote_link():
 		_handle_remote_link_lost()
@@ -595,7 +605,7 @@ func _physics_process(delta: float) -> void:
 		_apply_idle_physics(NETWORK_SIMULATION_DELTA)
 		return
 
-	_update_drive(NETWORK_SIMULATION_DELTA)
+	_consume_local_prediction_frame()
 	_submit_remote_authority_input()
 	_update_remote_actions(delta)
 
@@ -619,18 +629,6 @@ func _apply_idle_physics(delta: float) -> void:
 
 	move_and_slide()
 	_update_wheels(delta)
-
-
-func _update_drive(delta: float) -> void:
-	# 与 NormalDrone 的水平移动一致：四个方向只形成水平平面向量。
-	# 不存在 ascend / descend / jump，也不会主动给 velocity.y 正值。
-	var move_input: Vector2 = Input.get_vector(
-		"remote_left",
-		"remote_right",
-		"remote_forward",
-		"remote_backward"
-	)
-	_simulate_drive(move_input, delta)
 
 
 func _simulate_drive(move_input: Vector2, delta: float) -> void:
@@ -736,6 +734,26 @@ func record_network_prediction(input_frame: Dictionary) -> void:
 		_pending_network_inputs.pop_front()
 
 
+func submit_local_prediction_frame(input_frame: Dictionary) -> void:
+	if not _remote_control_active:
+		return
+	_latest_local_prediction_frame = input_frame.duplicate(true)
+	record_network_prediction(input_frame)
+
+
+func _consume_local_prediction_frame() -> void:
+	if _latest_local_prediction_frame.is_empty():
+		return
+	var input_seq := int(_latest_local_prediction_frame.get("input_seq", 0))
+	if input_seq <= _last_local_prediction_seq:
+		return
+	_last_local_prediction_seq = input_seq
+	rotation.y = float(_latest_local_prediction_frame.get("yaw", rotation.y))
+	var move_value: Variant = _latest_local_prediction_frame.get("move", Vector2.ZERO)
+	var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
+	_simulate_drive(move, NETWORK_SIMULATION_DELTA)
+
+
 func apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	_pending_authority_snapshot = snapshot.duplicate(true)
 
@@ -751,7 +769,9 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	var server_velocity: Variant = snapshot.get("velocity", velocity)
 	if not server_position is Vector3 or not server_velocity is Vector3:
 		return
-	var acknowledged_seq := int(snapshot.get("last_input_seq", 0))
+	var acknowledged_seq := int(
+		snapshot.get("last_processed_input_seq", snapshot.get("last_input_seq", 0))
+	)
 	if acknowledged_seq < _last_server_input_seq:
 		return
 	_last_server_input_seq = acknowledged_seq
@@ -768,10 +788,16 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 		var move_value: Variant = frame.get("move", Vector2.ZERO)
 		var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
 		_simulate_drive(move, NETWORK_SIMULATION_DELTA)
+		_last_local_prediction_seq = maxi(_last_local_prediction_seq, int(frame.get("input_seq", 0)))
 	var reconciled_position := global_position
 	var reconciled_velocity := velocity
 	var reconciled_yaw := rotation.y
 	var correction_distance := rendered_position.distance_to(reconciled_position)
+	_record_network_prediction_diagnostics(
+		correction_distance,
+		_pending_network_inputs.size(),
+		maxi(0, _last_local_prediction_seq - acknowledged_seq)
+	)
 	if correction_distance >= HARD_CORRECTION_DISTANCE:
 		global_position = reconciled_position
 		velocity = reconciled_velocity
@@ -784,6 +810,27 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 		global_position = rendered_position
 		velocity = rendered_velocity
 		rotation.y = rendered_yaw
+
+
+func _record_network_prediction_diagnostics(
+	correction_distance: float,
+	replay_frames: int,
+	input_ack_gap: int
+) -> void:
+	if not NETWORK_PREDICTION_DIAGNOSTICS_ENABLED:
+		return
+	_network_prediction_diagnostics["last_error_m"] = correction_distance
+	_network_prediction_diagnostics["max_error_m"] = maxf(float(_network_prediction_diagnostics.get("max_error_m", 0.0)), correction_distance)
+	_network_prediction_diagnostics["last_replay_frames"] = replay_frames
+	_network_prediction_diagnostics["last_input_ack_gap"] = input_ack_gap
+	if correction_distance >= HARD_CORRECTION_DISTANCE:
+		_network_prediction_diagnostics["hard_corrections"] = int(_network_prediction_diagnostics.get("hard_corrections", 0)) + 1
+	elif correction_distance >= SOFT_CORRECTION_DISTANCE:
+		_network_prediction_diagnostics["soft_corrections"] = int(_network_prediction_diagnostics.get("soft_corrections", 0)) + 1
+
+
+func get_network_prediction_diagnostics() -> Dictionary:
+	return _network_prediction_diagnostics.duplicate(true)
 
 
 func _update_wheels(delta: float) -> void:

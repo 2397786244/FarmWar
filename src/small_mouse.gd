@@ -53,6 +53,7 @@ const NETWORK_SIMULATION_DELTA := 1.0 / 60.0
 const SOFT_CORRECTION_DISTANCE := 0.04
 const HARD_CORRECTION_DISTANCE := 1.5
 const CORRECTION_BLEND := 0.25
+const NETWORK_PREDICTION_DIAGNOSTICS_ENABLED := false
 const REMOTE_PRECISION_ACTION_MIN_EFFECTIVE_SIGNAL := 0.20
 
 
@@ -141,6 +142,17 @@ var _last_server_input_seq := 0
 var _last_authoritative_jump_seq := 0
 var _pending_network_inputs: Array[Dictionary] = []
 var _pending_authority_snapshot: Dictionary = {}
+var _latest_local_prediction_frame: Dictionary = {}
+var _last_local_prediction_seq := 0
+var _last_local_prediction_jump_seq := 0
+var _network_prediction_diagnostics := {
+	"soft_corrections": 0,
+	"hard_corrections": 0,
+	"last_error_m": 0.0,
+	"max_error_m": 0.0,
+	"last_replay_frames": 0,
+	"last_input_ack_gap": 0,
+}
 var _local_remote_runtime_enabled := false
 var _local_remote_process_before := true
 var _local_remote_physics_before := true
@@ -391,16 +403,12 @@ func _physics_process(delta: float) -> void:
 		var authority_snapshot := _pending_authority_snapshot
 		_pending_authority_snapshot = {}
 		_apply_authoritative_snapshot(authority_snapshot)
-		return
 
 	if not _remote_control_active:
 		_update_idle_motion(NETWORK_SIMULATION_DELTA)
 		return
 
-	_update_ground_motion(NETWORK_SIMULATION_DELTA)
-
-	if _jump_pressed():
-		_try_jump()
+	_consume_local_prediction_frame()
 
 func _update_idle_motion(delta: float) -> void:
 	velocity.x = move_toward(
@@ -416,16 +424,6 @@ func _update_idle_motion(delta: float) -> void:
 
 	_apply_gravity(delta)
 	move_and_slide()
-
-
-func _update_ground_motion(delta: float) -> void:
-	var move_input := Input.get_vector(
-		"remote_left",
-		"remote_right",
-		"remote_forward",
-		"remote_backward"
-	)
-	_simulate_ground_motion(move_input, delta)
 
 
 func _simulate_ground_motion(move_input: Vector2, delta: float) -> void:
@@ -520,6 +518,30 @@ func record_network_prediction(input_frame: Dictionary) -> void:
 		_pending_network_inputs.pop_front()
 
 
+func submit_local_prediction_frame(input_frame: Dictionary) -> void:
+	if not _remote_control_active:
+		return
+	_latest_local_prediction_frame = input_frame.duplicate(true)
+	record_network_prediction(input_frame)
+
+
+func _consume_local_prediction_frame() -> void:
+	if _latest_local_prediction_frame.is_empty():
+		return
+	var input_seq := int(_latest_local_prediction_frame.get("input_seq", 0))
+	if input_seq <= _last_local_prediction_seq:
+		return
+	_last_local_prediction_seq = input_seq
+	rotation.y = float(_latest_local_prediction_frame.get("yaw", rotation.y))
+	var move_value: Variant = _latest_local_prediction_frame.get("move", Vector2.ZERO)
+	var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
+	_simulate_ground_motion(move, NETWORK_SIMULATION_DELTA)
+	var jump_seq := int(_latest_local_prediction_frame.get("jump_seq", 0))
+	if jump_seq > _last_local_prediction_jump_seq:
+		_last_local_prediction_jump_seq = jump_seq
+		_try_jump()
+
+
 func apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	_pending_authority_snapshot = snapshot.duplicate(true)
 
@@ -542,7 +564,9 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	var server_velocity: Variant = snapshot.get("velocity", velocity)
 	if not server_position is Vector3 or not server_velocity is Vector3:
 		return
-	var acknowledged_seq := int(snapshot.get("last_input_seq", 0))
+	var acknowledged_seq := int(
+		snapshot.get("last_processed_input_seq", snapshot.get("last_input_seq", 0))
+	)
 	if acknowledged_seq < _last_server_input_seq:
 		return
 	_last_server_input_seq = acknowledged_seq
@@ -559,6 +583,11 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 		var move_value: Variant = frame.get("move", Vector2.ZERO)
 		var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
 		_simulate_ground_motion(move, NETWORK_SIMULATION_DELTA)
+		var jump_seq := int(frame.get("jump_seq", 0))
+		if jump_seq > _last_authoritative_jump_seq:
+			_last_authoritative_jump_seq = jump_seq
+			_try_jump()
+		_last_local_prediction_seq = maxi(_last_local_prediction_seq, int(frame.get("input_seq", 0)))
 	var reconciled_position := global_position
 	var reconciled_velocity := velocity
 	var reconciled_yaw := rotation.y
@@ -567,6 +596,11 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 	# an older snapshot must not override the mouse-driven body orientation.
 	var local_first_yaw := reconciled_yaw if not _pending_network_inputs.is_empty() else rendered_yaw
 	var correction_distance := rendered_position.distance_to(reconciled_position)
+	_record_network_prediction_diagnostics(
+		correction_distance,
+		_pending_network_inputs.size(),
+		maxi(0, _last_local_prediction_seq - acknowledged_seq)
+	)
 	if correction_distance >= HARD_CORRECTION_DISTANCE:
 		global_position = reconciled_position
 		velocity = reconciled_velocity
@@ -581,26 +615,32 @@ func _apply_authoritative_snapshot(snapshot: Dictionary) -> void:
 		rotation.y = rendered_yaw
 
 
+func _record_network_prediction_diagnostics(
+	correction_distance: float,
+	replay_frames: int,
+	input_ack_gap: int
+) -> void:
+	if not NETWORK_PREDICTION_DIAGNOSTICS_ENABLED:
+		return
+	_network_prediction_diagnostics["last_error_m"] = correction_distance
+	_network_prediction_diagnostics["max_error_m"] = maxf(float(_network_prediction_diagnostics.get("max_error_m", 0.0)), correction_distance)
+	_network_prediction_diagnostics["last_replay_frames"] = replay_frames
+	_network_prediction_diagnostics["last_input_ack_gap"] = input_ack_gap
+	if correction_distance >= HARD_CORRECTION_DISTANCE:
+		_network_prediction_diagnostics["hard_corrections"] = int(_network_prediction_diagnostics.get("hard_corrections", 0)) + 1
+	elif correction_distance >= SOFT_CORRECTION_DISTANCE:
+		_network_prediction_diagnostics["soft_corrections"] = int(_network_prediction_diagnostics.get("soft_corrections", 0)) + 1
+
+
+func get_network_prediction_diagnostics() -> Dictionary:
+	return _network_prediction_diagnostics.duplicate(true)
+
+
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
 		velocity += get_gravity() * delta
 	elif velocity.y < 0.0:
 		velocity.y = 0.0
-
-
-func _jump_pressed() -> bool:
-	# 推荐你在 Input Map 新建 remote_jump。
-	# 为兼容已有 NormalDrone 输入，也允许 remote_ascend 作为备用跳跃键。
-	var action_name := (
-		"remote_jump"
-		if InputMap.has_action("remote_jump")
-		else "remote_ascend"
-	)
-
-	return (
-		InputMap.has_action(action_name)
-		and Input.is_action_just_pressed(action_name)
-	)
 
 
 func _try_jump() -> void:

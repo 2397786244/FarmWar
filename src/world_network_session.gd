@@ -9,6 +9,7 @@ signal reliable_world_event_received(event: Dictionary)
 signal visual_world_event_received(event: Dictionary)
 signal inventory_state_received(state: Dictionary)
 signal player_correction_received(correction: Dictionary)
+signal controlled_remote_correction_received(correction: Dictionary)
 signal team_chat_message_received(message: Dictionary)
 signal disconnected(reason: String)
 
@@ -28,6 +29,9 @@ func _ready() -> void:
 	)
 	MultiplayerNetwork.player_correction_received.connect(
 		func(correction: Dictionary) -> void: player_correction_received.emit(correction)
+	)
+	MultiplayerNetwork.controlled_remote_correction_received.connect(
+		func(correction: Dictionary) -> void: controlled_remote_correction_received.emit(correction)
 	)
 	MultiplayerNetwork.team_chat_message_received.connect(
 		func(message: Dictionary) -> void: team_chat_message_received.emit(message)

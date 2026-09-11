@@ -2,6 +2,7 @@ extends Node3D
 
 const PLAYER_SCENE := preload("res://character/player.tscn")
 const VEHICLE_SCENE := preload("res://vehicles/cargo_car.tscn")
+const CLOSED_VEHICLE_SCENE := preload("res://vehicles/sedan.tscn")
 
 var failures := 0
 
@@ -88,6 +89,40 @@ func _run() -> void:
 		player.right_hand_ik_target.position.is_equal_approx(player.punch_hand_camera_offset),
 		"exiting with a visible tool restores the camera-space hand target"
 	)
+
+	var closed_vehicle := CLOSED_VEHICLE_SCENE.instantiate() as VehicleBase
+	_check(closed_vehicle != null, "closed-cabin vehicle creates a VehicleBase")
+	if closed_vehicle != null:
+		closed_vehicle.network_id = "closed_vehicle_camera_validation"
+		add_child(closed_vehicle)
+		await get_tree().process_frame
+		player.active_vehicle = closed_vehicle
+		player.active_vehicle_id = closed_vehicle.get_vehicle_id()
+		player.active_vehicle_seat_index = 0
+		player.vehicle_is_active = true
+		player._set_vehicle_player_runtime(true)
+		player._ensure_vehicle_camera()
+		var closed_vehicle_camera := closed_vehicle.get_driving_camera()
+		_check(
+			closed_vehicle_camera != null
+				and get_viewport().get_camera_3d() == closed_vehicle_camera
+				and not player_camera.current,
+			"entering a closed vehicle switches away from the first-person camera"
+		)
+		player_camera.make_current()
+		_check(get_viewport().get_camera_3d() == player_camera, "validation can simulate camera ownership being stolen")
+		player._ensure_local_camera_ownership()
+		_check(
+			get_viewport().get_camera_3d() == closed_vehicle_camera,
+			"seated camera ownership self-heals before gameplay UI early returns"
+		)
+		player.vehicle_is_active = false
+		player.active_vehicle_id = ""
+		player.active_vehicle_seat_index = -1
+		player.active_vehicle = null
+		player._set_vehicle_player_runtime(false)
+		player_camera.make_current()
+		closed_vehicle.queue_free()
 
 	player.queue_free()
 	vehicle.queue_free()

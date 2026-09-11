@@ -39,6 +39,13 @@ func _ready() -> void:
 		world_data["map_icon_path"] = str(local_map.get("icon_path", world_data.get("map_icon_path", "")))
 		world_data["map_scene_path"] = str(local_map.get("scene_path", world_data.get("map_scene_path", "")))
 	world_id = str(world_data.get("world_id", ""))
+	print("[CoopJoin][lobby_ui] ready: lobby=%d world=%s map=%s host=%s running=%s" % [
+		SteamService.cooperative_lobby_id,
+		world_id,
+		str(world_data.get("map_id", "")),
+		SteamService.is_current_lobby_host(),
+		SteamService.is_cooperative_world_running(),
+	])
 	if not CooperativeSession.session_failed.is_connected(_on_session_failed):
 		CooperativeSession.session_failed.connect(_on_session_failed)
 	if not SteamService.invite_feedback.is_connected(_on_invite_feedback):
@@ -266,13 +273,21 @@ func _on_leave_pressed() -> void:
 
 
 func _on_enter_world_pressed() -> void:
+	print("[CoopJoin][lobby_ui] enter button pressed: in_progress=%s lobby=%d world=%s" % [
+		enter_world_in_progress, SteamService.cooperative_lobby_id, world_id
+	])
 	if enter_world_in_progress:
+		print("[CoopJoin][lobby_ui] duplicate enter press ignored")
 		return
 	var profile := CooperativeWorldStorage.get_local_profile(world_id, SteamService.steam_id)
 	if profile.is_empty():
+		print("[CoopJoin][lobby_ui] enter rejected: local cooperative profile is missing")
 		status_label.text = "请先选择角色和初始道具。"
 		return
 	var is_host := SteamService.is_current_lobby_host()
+	print("[CoopJoin][lobby_ui] enter accepted: is_host=%s world_running=%s; scheduling session start" % [
+		is_host, SteamService.is_cooperative_world_running()
+	])
 	enter_world_in_progress = true
 	enter_world_button.disabled = true
 	leave_lobby_button.disabled = true
@@ -283,13 +298,21 @@ func _on_enter_world_pressed() -> void:
 
 
 func _continue_enter_world(profile: Dictionary, is_host: bool) -> void:
+	print("[CoopJoin][lobby_ui] deferred session start entered: inside_tree=%s in_progress=%s" % [
+		is_inside_tree(), enter_world_in_progress
+	])
 	if not is_inside_tree() or not enter_world_in_progress:
+		print("[CoopJoin][lobby_ui] deferred session start cancelled before first frame")
 		return
 	await get_tree().process_frame
+	print("[CoopJoin][lobby_ui] process frame completed; waiting for rendered frame")
 	await RenderingServer.frame_post_draw
+	print("[CoopJoin][lobby_ui] rendered frame completed; calling CooperativeSession")
 	if not is_inside_tree() or not enter_world_in_progress:
+		print("[CoopJoin][lobby_ui] deferred session start cancelled after rendered frame")
 		return
 	var started := CooperativeSession.start_host(world_data, profile) if is_host else CooperativeSession.join_hosted_world()
+	print("[CoopJoin][lobby_ui] CooperativeSession start returned: %s" % started)
 	if not started:
 		enter_world_in_progress = false
 		_refresh()
@@ -297,6 +320,7 @@ func _continue_enter_world(profile: Dictionary, is_host: bool) -> void:
 
 
 func _on_session_failed(message: String) -> void:
+	print("[CoopJoin][lobby_ui] session failed: %s" % message)
 	enter_world_in_progress = false
 	_refresh()
 	if is_instance_valid(status_label):

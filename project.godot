@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Harvest Operation"
-config/version="0.3.6"
+config/version="0.3.7"
 run/main_scene="uid://bi010yget6nhi"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.png"
@@ -38,6 +38,11 @@ SinglePlayerSession="*res://src/single_player_session.gd"
 NetworkSession="*res://src/world_network_session.gd"
 GameMapRegistry="*res://src/game_map_registry.gd"
 DisplaySettings="*res://src/display_settings.gd"
+
+[debug]
+
+file_logging/enable_file_logging=true
+file_logging/max_log_files=10
 
 [display]
 
@@ -228,3 +233,4 @@ anti_aliasing/quality/msaa_3d=2
 [steam]
 
 initialization/app_data/app_id=480
+multiplayer_peer/max_channels=9

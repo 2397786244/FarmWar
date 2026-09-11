@@ -74,6 +74,30 @@ const AUTOMATIC_FIRE_PROFILES := {
 	"future_mpx": true,
 }
 
+# Channel 7 is reserved for the high-frequency handheld weapons whose fire,
+# reload, and selection requests are latency-sensitive. Cosmetic variants are
+# resolved through PROFILE_ALIASES. This is intentionally not a generic
+# "anything that deals damage" set: profession tools and other low-frequency
+# cooldown tools remain on the legacy request path, even when they create a
+# projectile or apply combat effects.
+const CHANNEL7_COMBAT_FIRE_PROFILES := {
+	"rubber_revolver": true,
+	"nail_gun": true,
+	"suppressed_pistol": true,
+	"m17": true,
+	"shotgun": true,
+	"remington870": true,
+	"hunting_rifle": true,
+	"crossbow": true,
+	"m4": true,
+	"ar15": true,
+	"ak47": true,
+	"mpx": true,
+	"p90": true,
+	"future_m4": true,
+	"future_mpx": true,
+}
+
 ## Authoritative combat defaults. Scene export values may override these at
 ## runtime, but GameAuthority must never carry a second set of literals.
 const PROFILES := {
@@ -365,7 +389,7 @@ const PROFILES := {
 		"shake_radius": 20.0, "knockback": 24.0,
 	},
 	"black_bear": {
-		"max_hp": 1000.0, "attack_damage": 50.0,
+		"max_hp": 500.0, "attack_damage": 50.0,
 		"detection_range": 40.0, "attack_range": 2.2,
 		"attack_hit_range": 2.25, "attack_exit_range": 2.65,
 		"attack_approach_range": 3.5, "attack_approach_speed": 3.0,
@@ -462,6 +486,10 @@ static func is_automatic_fire_weapon(profile: String) -> bool:
 
 static func is_automatic_weapon(profile: String) -> bool:
 	return is_automatic_fire_weapon(profile)
+
+
+static func is_channel7_combat_fire_weapon(profile: String) -> bool:
+	return CHANNEL7_COMBAT_FIRE_PROFILES.has(resolve_profile_id(profile))
 
 
 static func get_float(profile: String, key: String, fallback: float = 0.0) -> float:

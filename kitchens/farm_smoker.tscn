@@ -6,6 +6,9 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_smoker"]
 size = Vector3(1.46, 2.075, 0.985)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.46, 2.075, 0.985)
+
 [sub_resource type="StandardMaterial3D" id="Material_progress_back"]
 shading_mode = 0
 albedo_color = Color(0.06, 0.08, 0.08, 0.9)
@@ -50,3 +53,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 2.27, -0.005)
 visible = false
 material_override = SubResource("Material_progress_fill")
 mesh = SubResource("BoxMesh_progress_fill")
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0375, 0.0225)
+shape = SubResource("BoxShape3D_placement_footprint")

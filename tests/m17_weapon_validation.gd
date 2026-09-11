@@ -34,6 +34,7 @@ func _run() -> void:
 	_validate_combat_profile()
 	await _validate_definitions_and_scenes()
 	_validate_icons_and_catalogs()
+	_validate_interaction_hint_priority()
 	_validate_get_ammo_authority_and_flashlight_sync()
 	_finish()
 
@@ -188,6 +189,26 @@ func _validate_icons_and_catalogs() -> void:
 		supply_ids.append(str(reward.get("item_id", "")))
 	for id_value: Variant in VARIANTS.keys():
 		_check(not supply_ids.has(str(id_value)), "%s is not in the supply relay reward pool" % str(id_value))
+
+
+func _validate_interaction_hint_priority() -> void:
+	var player_source := _read_text("res://src/player.gd")
+	var function_start := player_source.find("func _refresh_interact_hint() -> void:")
+	var function_end := player_source.find("\nfunc _refresh_vehicle_interaction_outline", function_start)
+	_check(function_start >= 0 and function_end > function_start, "player interaction hint function is present")
+	if function_start < 0 or function_end <= function_start:
+		return
+	var hint_source := player_source.substr(function_start, function_end - function_start)
+	var target_scan := hint_source.find("var target := _get_best_interaction_target()")
+	var m17_fallback := hint_source.find("if _current_tool_is_m17()")
+	var automatic_fallback := hint_source.find("if _current_tool_is_automatic()")
+	_check(target_scan >= 0, "interaction hint scans for an E target")
+	_check(target_scan < m17_fallback, "E interaction hint takes priority over the M17 flashlight hint")
+	_check(target_scan < automatic_fallback, "E interaction hint takes priority over the fire-mode hint")
+	_check(
+		hint_source.find("_refresh_vehicle_interaction_outline(target)", target_scan) >= 0,
+		"the same E target drives the vehicle interaction outline"
+	)
 
 
 func _validate_get_ammo_authority_and_flashlight_sync() -> void:

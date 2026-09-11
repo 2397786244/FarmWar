@@ -6,6 +6,7 @@ signal computer_interface_requested(computer: ComputerTerminal)
 const VEHICLE_INTERACTION_OUTLINE_SCRIPT := preload("res://src/vehicle_interaction_outline.gd")
 const ENVIRONMENT_SCAN_PRESENTATION_SCRIPT := preload("res://src/environment_scan_presentation.gd")
 const VEHICLE_SEAT_HUD_SCRIPT := preload("res://src/vehicle_seat_hud.gd")
+const REALTIME_INPUT_STREAM_SCRIPT := preload("res://src/realtime_input_stream.gd")
 const CHOCOLATE_OS_DESKTOP_SCENE := preload("res://ui/chocolate_os_desktop.tscn")
 const INDUSTRIAL_WORKBENCH_PAGE_SCENE := preload("res://ui/industrial_workbench_page.tscn")
 const VEHICLE_SERVICE_PAGE_SCENE := preload("res://ui/vehicle_service_page.tscn")
@@ -36,6 +37,13 @@ const PLAYER_SOFT_CORRECTION_DISTANCE := 0.10
 const PLAYER_HARD_CORRECTION_DISTANCE := 2.0
 const PLAYER_CORRECTION_BLEND := 0.12
 const PLAYER_AIRBORNE_VERTICAL_TOLERANCE := 0.35
+## Steam P2P corrections can arrive several predicted frames behind at 100ms+
+## RTT.  Consume small reconciliation errors over time instead of moving the
+## camera-bearing CharacterBody in one visible pull.
+const COOP_SOFT_CORRECTION_SPEED := 2.5
+const COOP_SOFT_CORRECTION_MAX_DISTANCE := 1.95
+const COOP_SOFT_VELOCITY_BLEND_SPEED := 8.0
+const COOP_MOVEMENT_DIAGNOSTICS_ENABLED := false
 const REMOTE_INTERPOLATION_DELAY_MSEC := 100
 const REMOTE_MAX_EXTRAPOLATION_MSEC := 100
 const REMOTE_CONTROL_LOST_EFFECTIVE_SIGNAL := 0.20
@@ -117,7 +125,19 @@ var jump_sequence := 0
 var last_server_correction_seq := 0
 var last_server_jump_correction_seq := 0
 var pending_input_frames: Array[Dictionary] = []
+var pending_remote_input_frames: Array[Dictionary] = []
+var pending_vehicle_input_frames: Array[Dictionary] = []
 var pending_server_correction: Dictionary = {}
+var coop_soft_correction_remaining := Vector3.ZERO
+var coop_soft_velocity_target := Vector3.ZERO
+var coop_movement_diagnostics := {
+	"soft_corrections": 0,
+	"hard_corrections": 0,
+	"last_error_m": 0.0,
+	"max_error_m": 0.0,
+	"last_replay_frames": 0,
+	"last_input_ack_gap": 0,
+}
 var is_remote_proxy := false
 var remote_snapshot_buffer: Array[Dictionary] = []
 var remote_locomotion_state := "idle"
@@ -127,6 +147,10 @@ var authoritative_grounded := true
 var server_hp := PLAYER_MAX_HP
 var respawn_left := 0.0
 var is_respawning := false
+## Last authoritative lifecycle update accepted from either a reliable event or
+## a world snapshot.  World snapshots are unordered, so an old death snapshot
+## must never overwrite a newer respawn event.
+var last_life_state_tick := -1
 var death_respawn_duration := 0.0
 var death_animation_started := false
 var is_ladder_climbing := false
@@ -176,6 +200,8 @@ var fire_modes_by_tool_id: Dictionary = {}
 var automatic_fire_blocked_until_release := false
 var backpack_items: Array[Dictionary] = []
 var suppress_backpack_layout_sync := false
+var accepted_ammo_revisions: Dictionary = {}
+var latest_ammo_states_by_tool_id: Dictionary = {}
 var equipped_items: Dictionary = {
 	"backpack": {},
 	"chest_armor": {},
@@ -344,6 +370,27 @@ var active_vehicle: VehicleBase
 var active_vehicle_id := ""
 var active_vehicle_seat_index := -1
 var vehicle_is_active := false
+var vehicle_headlight_request_sequence := 0
+var vehicle_session_request_sequence := 0
+var pending_vehicle_session_request_id := 0
+var pending_vehicle_session_base_revision := 0
+var pending_vehicle_session_connected := false
+var pending_vehicle_session_vehicle_id := ""
+var pending_vehicle_session_seat_index := -1
+var pending_vehicle_session_elapsed := 0.0
+var confirmed_vehicle_session_revision := 0
+const VEHICLE_NET_CLIENT_DIAGNOSTIC_INTERVAL_SECONDS := 5.0
+var vehicle_net_client_diagnostic_elapsed := 0.0
+var vehicle_net_client_vehicle_id := ""
+var vehicle_net_client_tx_packets := 0
+var vehicle_net_client_first_seq := 0
+var vehicle_net_client_last_seq := 0
+var vehicle_net_client_last_send_usec := 0
+var vehicle_net_client_tx_interval_sum_ms := 0.0
+var vehicle_net_client_tx_interval_count := 0
+var vehicle_net_client_tx_interval_min_ms := INF
+var vehicle_net_client_tx_interval_max_ms := 0.0
+var vehicle_net_client_packet_frames := 0
 var _vehicle_interaction_outline: VehicleInteractionOutline
 var _environment_scan_presentation: EnvironmentScanPresentation
 var mounted_machine_gun_is_active := false
@@ -543,6 +590,8 @@ func _create_hotbar() -> void:
 
 func _initialize_backpack(selected_definitions: Array[Dictionary]) -> void:
 	backpack_items.clear()
+	accepted_ammo_revisions.clear()
+	latest_ammo_states_by_tool_id.clear()
 	backpack_items.resize(BASE_PLAYER_BAG_SLOTS)
 	for index in range(BASE_PLAYER_BAG_SLOTS):
 		backpack_items[index] = {}
@@ -1047,6 +1096,8 @@ func _make_tool_backpack_item(tool_id: String, source: Dictionary = {}) -> Dicti
 		item["reserve_ammo"] = 0
 		item["reload_remaining"] = maxf(0.0, float(item.get("reload_remaining", 0.0)))
 		item["reload_duration"] = maxf(0.0, float(item.get("reload_duration", 0.0)))
+		item["reload_ammo_amount"] = maxi(0, int(item.get("reload_ammo_amount", 0)))
+		item["ammo_revision"] = maxi(0, int(item.get("ammo_revision", 0)))
 	return item
 
 
@@ -1069,6 +1120,123 @@ func _normalize_local_ammo_supply_box_items() -> void:
 		backpack_items[index] = item
 
 
+func _local_ammo_state_from_item(item: Dictionary) -> Dictionary:
+	var tool_id := str(item.get("tool_id", ""))
+	var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+	var capacity := maxi(1, int(definition.get("magazine_size", 1)))
+	return {
+		"ammo_in_mag": clampi(int(item.get("ammo_in_mag", capacity)), 0, capacity),
+		"reserve_ammo": 0,
+		"reload_remaining": maxf(0.0, float(item.get("reload_remaining", 0.0))),
+		"reload_duration": maxf(0.0, float(item.get("reload_duration", 0.0))),
+		"reload_ammo_amount": maxi(0, int(item.get("reload_ammo_amount", 0))),
+		"ammo_revision": maxi(0, int(item.get("ammo_revision", 0))),
+	}
+
+
+func _remember_local_ammo_state(tool_id: String, ammo_state: Dictionary) -> void:
+	if tool_id.is_empty():
+		return
+	var normalized := ammo_state.duplicate(true)
+	var revision := maxi(0, int(normalized.get("ammo_revision", 0)))
+	normalized["ammo_revision"] = revision
+	accepted_ammo_revisions[tool_id] = revision
+	latest_ammo_states_by_tool_id[tool_id] = normalized
+
+
+func _apply_local_ammo_state_to_item(
+	item: Dictionary,
+	tool_id: String,
+	ammo_state: Dictionary
+) -> Dictionary:
+	var result := item.duplicate(true)
+	var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+	if not definition.has("magazine_size"):
+		return result
+	var capacity := maxi(1, int(definition.get("magazine_size", 1)))
+	result["ammo_in_mag"] = clampi(
+		int(ammo_state.get("ammo_in_mag", result.get("ammo_in_mag", capacity))),
+		0,
+		capacity
+	)
+	result["reserve_ammo"] = 0
+	result["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
+	result["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
+	result["reload_ammo_amount"] = maxi(0, int(ammo_state.get("reload_ammo_amount", 0)))
+	result["ammo_revision"] = maxi(0, int(ammo_state.get("ammo_revision", 0)))
+	return result
+
+
+func _capture_local_ammo_states() -> void:
+	for item in backpack_items:
+		if str(item.get("kind", "")) != "tool":
+			continue
+		var tool_id := str(item.get("tool_id", ""))
+		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+		if not definition.has("magazine_size"):
+			continue
+		var item_state := _local_ammo_state_from_item(item)
+		var item_revision := int(item_state.get("ammo_revision", 0))
+		var accepted_revision := int(accepted_ammo_revisions.get(tool_id, -1))
+		if item_revision >= accepted_revision:
+			_remember_local_ammo_state(tool_id, item_state)
+
+
+func _replace_backpack_slots_preserving_newer_ammo(slots_value: Array) -> void:
+	_capture_local_ammo_states()
+	var current_ammo_tool_ids := {}
+	for current_item in backpack_items:
+		if str(current_item.get("kind", "")) != "tool":
+			continue
+		var current_tool_id := str(current_item.get("tool_id", ""))
+		var current_definition: Dictionary = all_tool_definitions_by_id.get(current_tool_id, {})
+		if current_definition.has("magazine_size"):
+			current_ammo_tool_ids[current_tool_id] = true
+	var incoming_ammo_tool_ids := {}
+	for value: Variant in slots_value:
+		if not value is Dictionary:
+			continue
+		var incoming_item := value as Dictionary
+		if str(incoming_item.get("kind", "")) != "tool":
+			continue
+		var incoming_tool_id := str(incoming_item.get("tool_id", ""))
+		var incoming_definition: Dictionary = all_tool_definitions_by_id.get(incoming_tool_id, {})
+		if incoming_definition.has("magazine_size"):
+			incoming_ammo_tool_ids[incoming_tool_id] = true
+	# A weapon ID that disappeared from the authoritative slot list represents a
+	# new inventory generation when it later reappears. Do not apply an old
+	# Channel 7 revision to that new item instance.
+	for cached_tool_id_value: Variant in accepted_ammo_revisions.keys():
+		var cached_tool_id := str(cached_tool_id_value)
+		if not current_ammo_tool_ids.has(cached_tool_id) \
+				or not incoming_ammo_tool_ids.has(cached_tool_id):
+			accepted_ammo_revisions.erase(cached_tool_id)
+			latest_ammo_states_by_tool_id.erase(cached_tool_id)
+	var next_slots: Array[Dictionary] = []
+	for value: Variant in slots_value:
+		var item: Dictionary = (value as Dictionary).duplicate(true) if value is Dictionary else {}
+		if str(item.get("kind", "")) == "tool":
+			var tool_id := str(item.get("tool_id", ""))
+			var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
+			if definition.has("magazine_size"):
+				var incoming_state := _local_ammo_state_from_item(item)
+				var incoming_revision := int(incoming_state.get("ammo_revision", 0))
+				var accepted_revision := int(accepted_ammo_revisions.get(tool_id, -1))
+				if accepted_revision > incoming_revision \
+						and latest_ammo_states_by_tool_id.has(tool_id):
+					item = _apply_local_ammo_state_to_item(
+						item,
+						tool_id,
+						latest_ammo_states_by_tool_id[tool_id] as Dictionary
+					)
+				else:
+					_remember_local_ammo_state(tool_id, incoming_state)
+		next_slots.append(item)
+	backpack_items.clear()
+	for item in next_slots:
+		backpack_items.append(item)
+
+
 func _normalize_local_weapon_ammo_items() -> void:
 	for index in range(backpack_items.size()):
 		var item := backpack_items[index]
@@ -1078,12 +1246,17 @@ func _normalize_local_weapon_ammo_items() -> void:
 		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
 		if not definition.has("magazine_size"):
 			continue
-		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
-		item["ammo_in_mag"] = clampi(int(item.get("ammo_in_mag", capacity)), 0, capacity)
-		item["reserve_ammo"] = 0
-		item["reload_remaining"] = maxf(0.0, float(item.get("reload_remaining", 0.0)))
-		item["reload_duration"] = maxf(0.0, float(item.get("reload_duration", 0.0)))
-		item["reload_ammo_amount"] = maxi(0, int(item.get("reload_ammo_amount", 0)))
+		var item_state := _local_ammo_state_from_item(item)
+		var item_revision := int(item_state.get("ammo_revision", 0))
+		var accepted_revision := int(accepted_ammo_revisions.get(tool_id, -1))
+		if accepted_revision > item_revision and latest_ammo_states_by_tool_id.has(tool_id):
+			item = _apply_local_ammo_state_to_item(
+				item,
+				tool_id,
+				latest_ammo_states_by_tool_id[tool_id] as Dictionary
+			)
+		else:
+			_remember_local_ammo_state(tool_id, item_state)
 		backpack_items[index] = item
 
 
@@ -1111,6 +1284,27 @@ func apply_test_backpack_grant(entries: Array) -> void:
 				)
 			"equipment":
 				add_equipment_item(str(entry.get("equipment_id", entry.get("id", ""))), entry)
+			"key_item":
+				var item_id := str(entry.get("item_id", entry.get("card_id", entry.get("id", "")))).strip_edges()
+				if item_id.is_empty():
+					continue
+				var already_has := false
+				for existing_value: Variant in backpack_items:
+					if not existing_value is Dictionary:
+						continue
+					var existing := existing_value as Dictionary
+					if str(existing.get("kind", "")) == "key_item" \
+						and str(existing.get("item_id", existing.get("card_id", ""))) == item_id:
+						already_has = true
+						break
+				if already_has:
+					continue
+				for index in range(backpack_items.size()):
+					if not backpack_items[index].is_empty():
+						continue
+					backpack_items[index] = {"kind": "key_item", "item_id": item_id}
+					_refresh_selected_item_after_inventory_change()
+					break
 			"cargo_crate":
 				var crate := CargoCrateData.normalize(entry)
 				for index in range(backpack_items.size()):
@@ -1665,6 +1859,8 @@ func _ready() -> void:
 		authority_peer_id = network_peer_id
 	if not is_remote_proxy and not GameAuthority.player_correction_ready.is_connected(_on_authority_player_correction):
 		GameAuthority.player_correction_ready.connect(_on_authority_player_correction)
+	if not is_remote_proxy and not GameAuthority.vehicle_driver_correction_ready.is_connected(_on_authority_vehicle_driver_correction):
+		GameAuthority.vehicle_driver_correction_ready.connect(_on_authority_vehicle_driver_correction)
 	if not is_remote_proxy and not GameAuthority.reliable_world_event_ready.is_connected(_on_authority_world_event):
 		GameAuthority.reliable_world_event_ready.connect(_on_authority_world_event)
 	if not is_remote_proxy:
@@ -1948,11 +2144,21 @@ func _update_remote_interpolation() -> void:
 
 
 func _apply_remote_render_state(snapshot: Dictionary) -> void:
-	apply_respawn_state(float(snapshot.get("respawn_left", 0.0)))
+	var remote_respawn_left := float(snapshot.get("respawn_left", 0.0))
+	var remote_respawn_position: Variant = null
+	if remote_respawn_left <= 0.0 and is_respawning:
+		remote_respawn_position = snapshot.get("position", null)
+	if not apply_network_respawn_state(
+		remote_respawn_left,
+		remote_respawn_position,
+		int(snapshot.get("tick", -1))
+	):
+		return
 	labeled_remaining = maxf(0.0, float(snapshot.get("labeled_remaining", 0.0)))
 	apply_vehicle_snapshot(
 		str(snapshot.get("vehicle_id", "")),
-		int(snapshot.get("vehicle_seat_index", -1))
+		int(snapshot.get("vehicle_seat_index", -1)),
+		int(snapshot.get("vehicle_session_revision", 0))
 	)
 	apply_mounted_machine_gun_snapshot(str(snapshot.get("mounted_machine_gun_vehicle_id", "")))
 	var target_position: Variant = snapshot.get("position", global_position)
@@ -2620,7 +2826,13 @@ func _submit_authority_input(
 		pending_input_frames.append(prediction_frame)
 		if pending_input_frames.size() > 120:
 			pending_input_frames.pop_front()
-		MultiplayerNetwork.submit_player_input(transport_frame)
+		var realtime_packet := REALTIME_INPUT_STREAM_SCRIPT.make_packet(transport_frame, pending_input_frames)
+		var packet_frames: Variant = realtime_packet.get("frames", [])
+		if packet_frames is Array:
+			for packet_frame: Variant in packet_frames:
+				if packet_frame is Dictionary:
+					(packet_frame as Dictionary)["jump_seq"] = 0
+		MultiplayerNetwork.submit_player_input(realtime_packet)
 		if jumped:
 			MultiplayerNetwork.submit_player_jump(_make_player_jump_request(frame))
 	elif _is_authority_local_player():
@@ -2803,15 +3015,112 @@ func _submit_remote_control_frame() -> void:
 		"velocity": remote_tool_node.get("velocity") if remote_tool_node is CharacterBody3D else Vector3.ZERO,
 		"yaw": remote_tool_node.rotation.y,
 	}
-	if remote_tool_node.has_method("record_network_prediction"):
+	# The controlled device consumes this exact sampled frame for both local
+	# prediction and reconciliation replay.  Do not let the device sample Input a
+	# second time later in its own physics callback.
+	if remote_tool_node.has_method("submit_local_prediction_frame"):
+		remote_tool_node.call("submit_local_prediction_frame", frame)
+	elif remote_tool_node.has_method("record_network_prediction"):
 		remote_tool_node.call("record_network_prediction", frame)
+	pending_remote_input_frames.append(frame.duplicate(true))
+	if pending_remote_input_frames.size() > 120:
+		pending_remote_input_frames.pop_front()
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_remote_control_input(frame)
+		MultiplayerNetwork.submit_remote_control_input(
+			REALTIME_INPUT_STREAM_SCRIPT.make_packet(frame, pending_remote_input_frames)
+		)
 	elif _is_authority_local_player():
 		GameAuthority.local_remote_control_input(authority_peer_id, frame)
 
 
+func _reset_vehicle_net_client_diagnostics() -> void:
+	vehicle_net_client_diagnostic_elapsed = 0.0
+	vehicle_net_client_vehicle_id = ""
+	vehicle_net_client_tx_packets = 0
+	vehicle_net_client_first_seq = 0
+	vehicle_net_client_last_seq = 0
+	vehicle_net_client_last_send_usec = 0
+	vehicle_net_client_tx_interval_sum_ms = 0.0
+	vehicle_net_client_tx_interval_count = 0
+	vehicle_net_client_tx_interval_min_ms = INF
+	vehicle_net_client_tx_interval_max_ms = 0.0
+	vehicle_net_client_packet_frames = 0
+
+
+func _record_vehicle_net_client_send(vehicle_id: String, input_seq: int, packet: Dictionary) -> void:
+	if not CooperativeSession.is_client() or vehicle_id.is_empty():
+		return
+	if vehicle_net_client_vehicle_id != vehicle_id:
+		_reset_vehicle_net_client_diagnostics()
+		vehicle_net_client_vehicle_id = vehicle_id
+	var now_usec := Time.get_ticks_usec()
+	if vehicle_net_client_last_send_usec > 0:
+		var interval_ms := float(now_usec - vehicle_net_client_last_send_usec) / 1000.0
+		vehicle_net_client_tx_interval_sum_ms += interval_ms
+		vehicle_net_client_tx_interval_count += 1
+		vehicle_net_client_tx_interval_min_ms = minf(
+			vehicle_net_client_tx_interval_min_ms,
+			interval_ms
+		)
+		vehicle_net_client_tx_interval_max_ms = maxf(
+			vehicle_net_client_tx_interval_max_ms,
+			interval_ms
+		)
+	vehicle_net_client_last_send_usec = now_usec
+	vehicle_net_client_tx_packets += 1
+	if vehicle_net_client_first_seq <= 0:
+		vehicle_net_client_first_seq = input_seq
+	vehicle_net_client_last_seq = input_seq
+	var packet_frames_value: Variant = packet.get("frames", [])
+	if packet_frames_value is Array:
+		vehicle_net_client_packet_frames += (packet_frames_value as Array).size()
+	else:
+		vehicle_net_client_packet_frames += 1
+
+
+func _process_vehicle_net_client_diagnostics(delta: float) -> void:
+	if not CooperativeSession.is_client() or not vehicle_is_active \
+			or not is_instance_valid(active_vehicle) \
+			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
+		_reset_vehicle_net_client_diagnostics()
+		return
+	vehicle_net_client_diagnostic_elapsed += maxf(0.0, delta)
+	if vehicle_net_client_diagnostic_elapsed < VEHICLE_NET_CLIENT_DIAGNOSTIC_INTERVAL_SECONDS:
+		return
+	vehicle_net_client_diagnostic_elapsed = 0.0
+	if vehicle_net_client_vehicle_id.is_empty() or vehicle_net_client_tx_packets <= 0:
+		return
+	var interval_avg_ms := 0.0
+	if vehicle_net_client_tx_interval_count > 0:
+		interval_avg_ms = vehicle_net_client_tx_interval_sum_ms / float(
+			vehicle_net_client_tx_interval_count
+		)
+	var interval_min_ms := 0.0 if vehicle_net_client_tx_interval_count <= 0 else vehicle_net_client_tx_interval_min_ms
+	print("[VehicleNet][client] id=%s tx_packets=%d tx_hz=%.1f seq=%d..%d pending=%d send_gap_ms=%.1f/%.1f/%.1f packet_frames_avg=%.1f" % [
+		vehicle_net_client_vehicle_id,
+		vehicle_net_client_tx_packets,
+		float(vehicle_net_client_tx_packets) / VEHICLE_NET_CLIENT_DIAGNOSTIC_INTERVAL_SECONDS,
+		vehicle_net_client_first_seq,
+		vehicle_net_client_last_seq,
+		pending_vehicle_input_frames.size(),
+		interval_avg_ms,
+		interval_min_ms,
+		vehicle_net_client_tx_interval_max_ms,
+		float(vehicle_net_client_packet_frames) / float(maxi(vehicle_net_client_tx_packets, 1)),
+	])
+	vehicle_net_client_tx_packets = 0
+	vehicle_net_client_first_seq = 0
+	vehicle_net_client_last_seq = 0
+	vehicle_net_client_tx_interval_sum_ms = 0.0
+	vehicle_net_client_tx_interval_count = 0
+	vehicle_net_client_tx_interval_min_ms = INF
+	vehicle_net_client_tx_interval_max_ms = 0.0
+	vehicle_net_client_packet_frames = 0
+
+
 func _submit_vehicle_control_frame() -> void:
+	if pending_vehicle_session_request_id > 0:
+		return
 	if not is_instance_valid(active_vehicle) or active_vehicle_id.is_empty() \
 			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
 		return
@@ -2824,14 +3133,23 @@ func _submit_vehicle_control_frame() -> void:
 		"steering": 0.0 if ui_blocks_drive else Input.get_axis("left", "right"),
 		"brake": 1.0 if ui_blocks_drive or Input.is_action_pressed("jump") else 0.0,
 	}
+	pending_vehicle_input_frames.append(frame.duplicate(true))
+	if pending_vehicle_input_frames.size() > 120:
+		pending_vehicle_input_frames.pop_front()
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_vehicle_input(frame)
+		# Predict from the exact input frame that is serialized to Channel 6.
+		# Sampling Input again inside VehicleBase would create a one-tick mismatch
+		# between local presentation, replay and the authority simulation.
+		active_vehicle.submit_local_driver_prediction_frame(frame)
+		var packet := REALTIME_INPUT_STREAM_SCRIPT.make_packet(frame, pending_vehicle_input_frames)
+		if MultiplayerNetwork.submit_vehicle_input(packet):
+			_record_vehicle_net_client_send(active_vehicle_id, vehicle_input_sequence, packet)
 	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_input(authority_peer_id, frame)
 
 
 func _request_vehicle_enter(vehicle: VehicleBase, requested_seat_index := -1) -> void:
-	if vehicle_is_active or mounted_machine_gun_is_active or vehicle == null or not vehicle.can_team_enter(team):
+	if pending_vehicle_session_request_id > 0 or vehicle_is_active or mounted_machine_gun_is_active or vehicle == null or not vehicle.can_team_enter(team):
 		return
 	if requested_seat_index >= 0:
 		if not vehicle.has_method("can_enter_platform_passenger") \
@@ -2842,7 +3160,11 @@ func _request_vehicle_enter(vehicle: VehicleBase, requested_seat_index := -1) ->
 	_set_prone_state(false)
 	var vehicle_id := vehicle.get_vehicle_id()
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_vehicle_session(vehicle_id, true, requested_seat_index)
+		var predicted_seat_index := requested_seat_index \
+			if requested_seat_index >= 0 else vehicle.get_available_seat_index(true)
+		vehicle_session_request_sequence += 1
+		_begin_predicted_vehicle_session(vehicle, true, predicted_seat_index, vehicle_session_request_sequence)
+		MultiplayerNetwork.submit_vehicle_session(vehicle_id, true, requested_seat_index, vehicle_session_request_sequence)
 	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_session(authority_peer_id, vehicle_id, true, requested_seat_index)
 	else:
@@ -3086,20 +3408,25 @@ func _clear_mounted_machine_gun_collision_exception() -> void:
 
 
 func _request_vehicle_headlights_toggle() -> void:
-	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
+	if pending_vehicle_session_request_id > 0 or not vehicle_is_active or not is_instance_valid(active_vehicle) \
 			or active_vehicle_id.is_empty() or not _active_vehicle_can_toggle_headlights() \
-			or not active_vehicle.has_method("toggle_headlights"):
+			or not active_vehicle.has_method("predict_headlights_state"):
 		return
+	vehicle_headlight_request_sequence += 1
+	var enabled := not bool(active_vehicle.get("headlights_on"))
 	var action := {
 		"vehicle_id": active_vehicle_id,
-		"action": "toggle_headlights",
+		"action": "set_headlights",
+		"enabled": enabled,
+		"request_id": vehicle_headlight_request_sequence,
 	}
 	if GameAuthority.should_send_network_requests():
+		active_vehicle.predict_headlights_state(enabled, vehicle_headlight_request_sequence)
 		MultiplayerNetwork.submit_vehicle_action(action)
 	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_action(authority_peer_id, action)
 	else:
-		active_vehicle.call("toggle_headlights")
+		active_vehicle.predict_headlights_state(enabled, vehicle_headlight_request_sequence)
 
 
 func _request_m17_flashlight_toggle() -> void:
@@ -3166,14 +3493,17 @@ func _active_vehicle_can_toggle_headlights() -> bool:
 			or active_vehicle_seat_index < 0 \
 			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
 		return false
-	return active_vehicle.has_method("toggle_headlights")
+	return active_vehicle.has_method("predict_headlights_state")
 
 
 func _request_vehicle_exit() -> void:
-	if not vehicle_is_active or active_vehicle_id.is_empty():
+	if pending_vehicle_session_request_id > 0 or not vehicle_is_active or active_vehicle_id.is_empty():
 		return
 	if GameAuthority.should_send_network_requests():
-		MultiplayerNetwork.submit_vehicle_session(active_vehicle_id, false)
+		var requested_vehicle_id := active_vehicle_id
+		vehicle_session_request_sequence += 1
+		_begin_predicted_vehicle_session(active_vehicle, false, active_vehicle_seat_index, vehicle_session_request_sequence)
+		MultiplayerNetwork.submit_vehicle_session(requested_vehicle_id, false, -1, vehicle_session_request_sequence)
 	elif _is_authority_local_player():
 		GameAuthority.local_vehicle_session(authority_peer_id, active_vehicle_id, false)
 	elif is_instance_valid(active_vehicle):
@@ -3187,14 +3517,99 @@ func _request_vehicle_exit() -> void:
 		}, active_vehicle)
 
 
+func _begin_predicted_vehicle_session(
+	vehicle: VehicleBase,
+	connected: bool,
+	seat_index: int,
+	request_id: int
+) -> void:
+	pending_vehicle_session_request_id = request_id
+	pending_vehicle_session_base_revision = confirmed_vehicle_session_revision
+	pending_vehicle_session_connected = connected
+	pending_vehicle_session_vehicle_id = vehicle.get_vehicle_id() if is_instance_valid(vehicle) else active_vehicle_id
+	pending_vehicle_session_seat_index = seat_index
+	pending_vehicle_session_elapsed = 0.0
+	if connected:
+		active_vehicle = vehicle
+		active_vehicle_id = pending_vehicle_session_vehicle_id
+		active_vehicle_seat_index = seat_index
+		vehicle_is_active = is_instance_valid(active_vehicle) and seat_index >= 0
+		if vehicle_is_active:
+			active_vehicle.set_local_driver_prediction_active(false)
+			_set_vehicle_player_runtime(true)
+			active_vehicle.reset_driving_camera_orbit()
+			_ensure_vehicle_camera()
+			# Network vehicle visuals and other local cameras can finish their own
+			# ready/current transitions later in this frame. Reassert ownership once
+			# those deferred transitions have completed.
+			call_deferred("_ensure_vehicle_camera")
+			_update_vehicle_occupant_presentation()
+		return
+	# The server remains responsible for the actual exit position and collision.
+	# This branch only makes the local view and controls responsive.
+	vehicle_is_active = false
+	active_vehicle_id = ""
+	active_vehicle_seat_index = -1
+	active_vehicle = null
+	_set_vehicle_player_runtime(false)
+	if is_instance_valid(camera):
+		camera.make_current()
+
+
+func _clear_pending_vehicle_session() -> void:
+	pending_vehicle_session_request_id = 0
+	pending_vehicle_session_connected = false
+	pending_vehicle_session_base_revision = confirmed_vehicle_session_revision
+	pending_vehicle_session_vehicle_id = ""
+	pending_vehicle_session_seat_index = -1
+	pending_vehicle_session_elapsed = 0.0
+
+
+func _rollback_predicted_vehicle_session() -> void:
+	var restore_connected := not pending_vehicle_session_connected
+	var restore_vehicle := _find_vehicle_by_id(pending_vehicle_session_vehicle_id)
+	if restore_connected and is_instance_valid(restore_vehicle):
+		apply_vehicle_session_result({
+			"ok": true,
+			"connected": true,
+			"vehicle_id": pending_vehicle_session_vehicle_id,
+			"seat_index": pending_vehicle_session_seat_index,
+		}, restore_vehicle)
+	else:
+		apply_vehicle_session_result({"ok": true, "connected": false, "exit_position": global_position})
+	_clear_pending_vehicle_session()
+
+
+func _tick_pending_vehicle_session(delta: float) -> void:
+	if pending_vehicle_session_request_id <= 0:
+		return
+	pending_vehicle_session_elapsed += maxf(0.0, delta)
+	if pending_vehicle_session_elapsed >= 3.0:
+		print("[VehicleSession] local prediction timed out; rolling back request=%d" % pending_vehicle_session_request_id)
+		_rollback_predicted_vehicle_session()
+
+
 func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = null) -> void:
 	if int(result.get("peer_id", authority_peer_id)) != authority_peer_id:
 		return
+	var request_id := int(result.get("request_id", 0))
+	if pending_vehicle_session_request_id > 0 and request_id > 0 \
+			and request_id != pending_vehicle_session_request_id:
+		return
 	if not bool(result.get("ok", false)):
 		print("[VehicleSession] local request rejected: %s" % str(result.get("reason", "unknown")))
+		if pending_vehicle_session_request_id > 0 and request_id == pending_vehicle_session_request_id:
+			_rollback_predicted_vehicle_session()
 		return
+	confirmed_vehicle_session_revision = maxi(
+		confirmed_vehicle_session_revision, int(result.get("session_revision", confirmed_vehicle_session_revision))
+	)
+	if pending_vehicle_session_request_id > 0 and request_id == pending_vehicle_session_request_id:
+		_clear_pending_vehicle_session()
 	var connected := bool(result.get("connected", false))
 	if connected:
+		_reset_vehicle_net_client_diagnostics()
+		pending_vehicle_input_frames.clear()
 		_clear_fall_damage_tracking()
 		_disconnect_active_vehicle_damage_signal()
 		active_vehicle = vehicle if is_instance_valid(vehicle) else _find_vehicle_by_id(str(result.get("vehicle_id", "")))
@@ -3203,6 +3618,10 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		active_vehicle_id = active_vehicle.get_vehicle_id()
 		active_vehicle_seat_index = int(result.get("seat_index", -1))
 		vehicle_is_active = active_vehicle_seat_index >= 0
+		active_vehicle.set_local_driver_prediction_active(false)
+		if active_vehicle.seat_can_drive(active_vehicle_seat_index):
+			vehicle_input_sequence = 0
+		active_vehicle.set_local_driver_prediction_active(CooperativeSession.is_client())
 		if bool(result.get("seat_switched", false)):
 			var occupants_value: Variant = result.get("seat_occupants", null)
 			if occupants_value is Array:
@@ -3211,8 +3630,13 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		_set_vehicle_player_runtime(true)
 		active_vehicle.reset_driving_camera_orbit()
 		_ensure_vehicle_camera()
+		call_deferred("_ensure_vehicle_camera")
 		_update_vehicle_occupant_presentation()
 	else:
+		_reset_vehicle_net_client_diagnostics()
+		pending_vehicle_input_frames.clear()
+		if is_instance_valid(active_vehicle):
+			active_vehicle.set_local_driver_prediction_active(false)
 		_clear_fall_damage_tracking()
 		_disconnect_active_vehicle_damage_signal()
 		var exit_position: Variant = result.get("exit_position", Vector3.ZERO)
@@ -3220,6 +3644,7 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 		active_vehicle_id = ""
 		active_vehicle_seat_index = -1
 		active_vehicle = null
+		vehicle_input_sequence = 0
 		_set_vehicle_player_runtime(false)
 		if exit_position is Vector3:
 			global_position = exit_position
@@ -3228,7 +3653,15 @@ func apply_vehicle_session_result(result: Dictionary, vehicle: VehicleBase = nul
 			camera.make_current()
 
 
-func apply_vehicle_snapshot(vehicle_id: String, seat_index: int) -> void:
+func apply_vehicle_snapshot(vehicle_id: String, seat_index: int, session_revision := 0) -> void:
+	if pending_vehicle_session_request_id > 0:
+		# Ignore every snapshot from before the pending request.  The reliable
+		# session result is the commit/rollback point, so old snapshots cannot
+		# bounce the camera between on-foot and seated states.
+		if session_revision <= pending_vehicle_session_base_revision:
+			return
+		return
+	confirmed_vehicle_session_revision = maxi(confirmed_vehicle_session_revision, session_revision)
 	if vehicle_id.is_empty() or seat_index < 0:
 		if vehicle_is_active:
 			apply_vehicle_session_result({"ok": true, "connected": false, "exit_position": global_position})
@@ -3260,13 +3693,28 @@ func _find_vehicle_by_id(vehicle_id: String) -> VehicleBase:
 
 
 func _ensure_vehicle_camera() -> void:
-	if not vehicle_is_active or not is_instance_valid(active_vehicle):
+	if is_remote_proxy or is_respawning or respawn_left > 0.0 or remote_is_active \
+			or is_vehicle_service_view_active() or not vehicle_is_active:
+		return
+	# A cooperative snapshot may replace or finish spawning the local vehicle
+	# visual after the predicted session began. Rebind by the stable network ID
+	# before resolving its camera instead of retaining a stale proxy reference.
+	if (not is_instance_valid(active_vehicle) or active_vehicle.is_queued_for_deletion()) \
+			and not active_vehicle_id.is_empty():
+		active_vehicle = _find_vehicle_by_id(active_vehicle_id)
+	if not is_instance_valid(active_vehicle) or active_vehicle.is_queued_for_deletion():
 		return
 	var vehicle_camera := active_vehicle.get_driving_camera()
-	if is_instance_valid(vehicle_camera):
-		if is_instance_valid(camera):
-			camera.current = false
-		vehicle_camera.make_current()
+	if not is_instance_valid(vehicle_camera) or not vehicle_camera.is_inside_tree():
+		return
+	# Camera3D.current can briefly disagree with the viewport's actual camera
+	# while cameras are being added/removed. The viewport identity is the source
+	# of truth for the rendered view.
+	if get_viewport().get_camera_3d() == vehicle_camera:
+		return
+	if is_instance_valid(camera):
+		camera.current = false
+	vehicle_camera.make_current()
 
 
 func _update_vehicle_occupant_presentation() -> void:
@@ -3423,7 +3871,9 @@ func _remote_device_type(node: Node) -> String:
 func _on_authority_player_correction(peer_id: int, correction: Dictionary) -> void:
 	if peer_id != authority_peer_id:
 		return
-	var acknowledged_seq := int(correction.get("input_seq", 0))
+	var acknowledged_seq := int(
+		correction.get("last_processed_input_seq", correction.get("input_seq", 0))
+	)
 	if acknowledged_seq < last_server_correction_seq:
 		return
 	last_server_correction_seq = acknowledged_seq
@@ -3440,6 +3890,25 @@ func _on_authority_player_correction(peer_id: int, correction: Dictionary) -> vo
 		int(correction.get("last_jump_seq", last_server_jump_correction_seq))
 	)
 	pending_server_correction = correction.duplicate(true)
+
+
+func _on_authority_vehicle_driver_correction(peer_id: int, correction: Dictionary) -> void:
+	if peer_id != authority_peer_id or not CooperativeSession.is_client():
+		return
+	if not vehicle_is_active or not is_instance_valid(active_vehicle) \
+			or not active_vehicle.seat_can_drive(active_vehicle_seat_index):
+		return
+	if str(correction.get("vehicle_id", "")) != active_vehicle_id:
+		return
+	var acknowledged_seq := int(correction.get(
+		"last_processed_input_seq", correction.get("last_input_seq", 0)
+	))
+	var remaining_frames: Array[Dictionary] = []
+	for frame in pending_vehicle_input_frames:
+		if int(frame.get("input_seq", 0)) > acknowledged_seq:
+			remaining_frames.append(frame)
+	pending_vehicle_input_frames = remaining_frames
+	active_vehicle.apply_local_driver_correction(correction)
 
 
 func _apply_server_correction() -> void:
@@ -3459,10 +3928,13 @@ func _apply_server_correction() -> void:
 		# A dead player must never replay buffered input. Keep its presentation
 		# anchored to the authoritative state until the respawn event arrives.
 		pending_input_frames.clear()
+		_clear_coop_soft_correction()
 		global_position = server_position
 		velocity = Vector3.ZERO
 		return
-	var acknowledged_seq := int(correction.get("input_seq", 0))
+	var acknowledged_seq := int(
+		correction.get("last_processed_input_seq", correction.get("input_seq", 0))
+	)
 	var acknowledged_jump_seq := maxi(
 		last_server_jump_correction_seq,
 		int(correction.get("last_jump_seq", last_server_jump_correction_seq))
@@ -3487,6 +3959,34 @@ func _apply_server_correction() -> void:
 	var reconciled_position := global_position
 	var reconciled_velocity := velocity
 	var correction_distance := rendered_position.distance_to(reconciled_position)
+	if CooperativeSession.is_client():
+		# Reconciliation needs the real server baseline and input replay above, but
+		# a small correction must not instantly drag the first-person camera. Restore
+		# the rendered body and consume the newest error across following physics
+		# frames. Large errors remain immediate to preserve collision authority.
+		global_position = rendered_position
+		velocity = rendered_velocity
+		_record_coop_correction_diagnostics(
+			correction_distance,
+			pending_input_frames.size(),
+			maxi(0, input_sequence - acknowledged_seq)
+		)
+		if correction_distance >= PLAYER_HARD_CORRECTION_DISTANCE:
+			_clear_coop_soft_correction()
+			global_position = reconciled_position
+			velocity = reconciled_velocity
+			if COOP_MOVEMENT_DIAGNOSTICS_ENABLED:
+				coop_movement_diagnostics["hard_corrections"] = int(coop_movement_diagnostics.get("hard_corrections", 0)) + 1
+		elif correction_distance >= PLAYER_SOFT_CORRECTION_DISTANCE:
+			coop_soft_correction_remaining = (reconciled_position - rendered_position).limit_length(
+				COOP_SOFT_CORRECTION_MAX_DISTANCE
+			)
+			coop_soft_velocity_target = reconciled_velocity
+			if COOP_MOVEMENT_DIAGNOSTICS_ENABLED:
+				coop_movement_diagnostics["soft_corrections"] = int(coop_movement_diagnostics.get("soft_corrections", 0)) + 1
+		else:
+			_clear_coop_soft_correction()
+		return
 	if correction_distance >= PLAYER_HARD_CORRECTION_DISTANCE:
 		global_position = reconciled_position
 		velocity = reconciled_velocity
@@ -3506,6 +4006,45 @@ func _apply_server_correction() -> void:
 	else:
 		global_position = rendered_position
 		velocity = rendered_velocity
+
+
+func _apply_coop_soft_correction(delta: float) -> void:
+	if not CooperativeSession.is_client() or coop_soft_correction_remaining.length_squared() <= 0.000001:
+		return
+	var step := coop_soft_correction_remaining.limit_length(COOP_SOFT_CORRECTION_SPEED * maxf(delta, 0.0))
+	if step.length_squared() <= 0.000001:
+		return
+	var collision := move_and_collide(step)
+	if collision != null:
+		# Never keep pressing an authoritative correction into a wall; the next
+		# snapshot will produce a fresh, collision-aware target.
+		coop_soft_correction_remaining = Vector3.ZERO
+	else:
+		coop_soft_correction_remaining -= step
+	velocity = velocity.lerp(
+		coop_soft_velocity_target,
+		1.0 - exp(-COOP_SOFT_VELOCITY_BLEND_SPEED * maxf(delta, 0.0))
+	)
+
+
+func _clear_coop_soft_correction() -> void:
+	coop_soft_correction_remaining = Vector3.ZERO
+	coop_soft_velocity_target = Vector3.ZERO
+
+
+func _record_coop_correction_diagnostics(error_m: float, replay_frames: int, input_ack_gap: int) -> void:
+	if not COOP_MOVEMENT_DIAGNOSTICS_ENABLED:
+		return
+	coop_movement_diagnostics["last_error_m"] = error_m
+	coop_movement_diagnostics["max_error_m"] = maxf(
+		float(coop_movement_diagnostics.get("max_error_m", 0.0)), error_m
+	)
+	coop_movement_diagnostics["last_replay_frames"] = replay_frames
+	coop_movement_diagnostics["last_input_ack_gap"] = input_ack_gap
+
+
+func get_coop_movement_diagnostics() -> Dictionary:
+	return coop_movement_diagnostics.duplicate(true)
 
 
 func _replay_predicted_input(frame: Dictionary) -> void:
@@ -4224,7 +4763,10 @@ func _use_current_tool() -> void:
 	var shot_direction: Variant = tool_request.get("direction", Vector3.ZERO)
 	if GameAuthority.should_send_network_requests():
 		_consume_predicted_ammo()
-		MultiplayerNetwork.submit_use_tool(tool_request)
+		if CombatBalance.is_channel7_combat_fire_weapon(selected_tool_id):
+			MultiplayerNetwork.submit_combat_fire(tool_request)
+		else:
+			MultiplayerNetwork.submit_use_tool(tool_request)
 		_play_local_tool_visual(null, shot_direction)
 	elif _is_authority_local_player():
 		# 单人模式也走 GameAuthority 的本地权威入口。
@@ -4445,19 +4987,32 @@ func _play_local_tool_visual(
 	elif category == "shooting":
 		# Authoritative shooting is resolved immediately by GameAuthority hitscan.
 		# Local projectiles are presentation only and must never apply a second hit.
-		var visual_direction: Variant = shot_direction
-		if authoritative_result is Dictionary:
-			var result_direction: Variant = (authoritative_result as Dictionary).get("direction", null)
-			if result_direction is Vector3 and (result_direction as Vector3).length_squared() > 0.001:
-				visual_direction = result_direction
-		if visual_direction is Vector3 \
-				and (visual_direction as Vector3).length_squared() > 0.001 \
-				and tool_node.has_method("emit_visual_only_tracer"):
-			tool_node.call("emit_visual_only_tracer", (visual_direction as Vector3).normalized())
-		elif tool_node.has_method("emit_visual_only"):
-			tool_node.call("emit_visual_only")
+		var resolved_profile_id := CombatBalance.resolve_profile_id(tool_id)
+		var authoritative_pellets: Variant = (authoritative_result as Dictionary).get(
+			"pellet_results", []
+		) if authoritative_result is Dictionary else []
+		if resolved_profile_id in ["shotgun", "remington870"] \
+				and authoritative_pellets is Array \
+				and not (authoritative_pellets as Array).is_empty() \
+				and tool_node.has_method("emit_visual_only_pellets"):
+			# Local authority uses the exact same directions as gameplay hitscan.
+			tool_node.call("emit_visual_only_pellets", authoritative_pellets as Array)
 		else:
-			tool_node.call("emit")
+			var visual_direction: Variant = shot_direction
+			if authoritative_result is Dictionary:
+				var result_direction: Variant = (authoritative_result as Dictionary).get("direction", null)
+				if result_direction is Vector3 and (result_direction as Vector3).length_squared() > 0.001:
+					visual_direction = result_direction
+			if visual_direction is Vector3 \
+					and (visual_direction as Vector3).length_squared() > 0.001 \
+					and tool_node.has_method("emit_visual_only_tracer"):
+				# Network prediction has no result yet; NailFirearm now creates a
+				# circular random pellet cone around this center direction.
+				tool_node.call("emit_visual_only_tracer", (visual_direction as Vector3).normalized())
+			elif tool_node.has_method("emit_visual_only"):
+				tool_node.call("emit_visual_only")
+			else:
+				tool_node.call("emit")
 	elif tool_id == "bug_cannon" and _is_authority_local_player():
 		tool_node.call("emit")
 	elif tool_id == "medicine_cannon" and _is_authority_local_player():
@@ -4689,6 +5244,7 @@ func _process(delta: float) -> void:
 		_update_upper_body_aim(delta)
 		_update_remote_held_model_alignment()
 		return
+	_tick_pending_vehicle_session(delta)
 	# Several gameplay UIs return early below, before the normal recoil tick. Clear
 	# the canonical recoil state here as soon as any non-gameplay presentation
 	# state becomes active so closing an interface can never restore an old kick.
@@ -4897,8 +5453,18 @@ func _update_continuous_tool_use() -> void:
 
 
 func _ensure_local_camera_ownership() -> void:
-	if is_respawning or remote_is_active or vehicle_is_active \
-			or is_vehicle_service_view_active() or not is_instance_valid(camera):
+	# Death, remote-control and service views own the viewport above both the
+	# on-foot and vehicle cameras.
+	if is_respawning or respawn_left > 0.0 or remote_is_active \
+			or is_vehicle_service_view_active():
+		return
+	if vehicle_is_active:
+		# This runs before every UI early-return in _process(), so a pending page
+		# close cannot prevent a cooperative client from reclaiming the vehicle
+		# camera after an enter/session event.
+		_ensure_vehicle_camera()
+		return
+	if not is_instance_valid(camera):
 		return
 	if not camera.current:
 		print("[CameraOwnership] Restoring local player camera for peer=%d" % authority_peer_id)
@@ -5225,7 +5791,9 @@ func _update_team_money_ui() -> void:
 func _physics_process(delta: float) -> void:
 	if is_remote_proxy:
 		return
+	_process_vehicle_net_client_diagnostics(delta)
 	if GameAuthority.should_send_network_requests():
+		_apply_coop_soft_correction(delta)
 		_apply_server_correction()
 	if GameAuthority.is_local_authority() and global_position.y < GameAuthority.PLAYER_VOID_DEATH_Y:
 		GameAuthority.check_local_player_void_fall(authority_peer_id, global_position)
@@ -6040,23 +6608,45 @@ func _on_authority_world_event(event: Dictionary) -> void:
 	if event_type == "player_died" \
 			and not GameAuthority.is_local_authority() \
 			and int(event.get("peer_id", 0)) == authority_peer_id:
+		print("[PlayerRespawnClient] phase=death_event_received peer_id=%d tick=%d respawn_seconds=%.3f last_life_tick=%d" % [
+			authority_peer_id,
+			int(event.get("tick", -1)),
+			float(event.get("respawn_seconds", 0.0)),
+			last_life_state_tick,
+		])
 		apply_death_inventory_drop(event.get("dropped_inventory_items", []))
-		apply_respawn_state(float(event.get("respawn_seconds", 0.0)))
+		apply_network_respawn_state(
+			float(event.get("respawn_seconds", 0.0)), null, int(event.get("tick", -1))
+		)
 		return
 	if event_type == "player_respawned" \
 			and not GameAuthority.is_local_authority() \
 			and int(event.get("peer_id", 0)) == authority_peer_id:
 		var respawn_position: Variant = event.get("position", null)
-		apply_respawn_state(
+		print("[PlayerRespawnClient] phase=respawn_event_received peer_id=%d tick=%d position=%s last_life_tick=%d" % [
+			authority_peer_id,
+			int(event.get("tick", -1)),
+			str(respawn_position),
+			last_life_state_tick,
+		])
+		apply_network_respawn_state(
 			0.0,
-			respawn_position as Vector3 if respawn_position is Vector3 else null
+			respawn_position as Vector3 if respawn_position is Vector3 else null,
+			int(event.get("tick", -1))
 		)
 		return
 	if event_type == "weapon_ammo_state":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
 			var ammo_value: Variant = event.get("ammo_state", {})
 			if ammo_value is Dictionary:
-				apply_weapon_ammo_state(str(event.get("tool_id", "")), ammo_value as Dictionary)
+				var ammo_state := (ammo_value as Dictionary).duplicate(true)
+				# Older senders may put the revision on the event envelope rather
+				# than inside ammo_state. Normalize both forms before the revision
+				# gate so a Channel 1/Channel 7 mixed-version session cannot apply
+				# an unversioned state over a newer one.
+				if event.has("ammo_revision") and not ammo_state.has("ammo_revision"):
+					ammo_state["ammo_revision"] = int(event.get("ammo_revision", 0))
+				apply_weapon_ammo_state(str(event.get("tool_id", "")), ammo_state)
 		return
 	if event_type == "shield_state":
 		if int(event.get("peer_id", 0)) == authority_peer_id:
@@ -6085,6 +6675,13 @@ func _on_authority_world_event(event: Dictionary) -> void:
 					and (float(event.get("damage", 0.0)) > 0.0 \
 					or float(event.get("absorbed_damage", 0.0)) > 0.0):
 				_show_player_damage_feedback()
+			var damage_direction: Variant = event.get("direction", Vector3.ZERO)
+			if damage_direction is Vector3:
+				receive_bullet_hit(
+					damage_direction as Vector3,
+					float(event.get("knockback", 0.0)),
+					""
+				)
 			var effect := str(event.get("effect", "")).to_lower()
 			if effect == TranquilizerBullet.EFFECT_TRANQUILIZER:
 				apply_tranquilizer_effect()
@@ -6616,6 +7213,38 @@ func _update_tranquilizer_overlay() -> void:
 	tranquilizer_overlay.color.a = wave * CombatBalance.get_float("tranquilizer_pistol", "darkness_alpha")
 
 
+func apply_network_respawn_state(
+	next_respawn_left: float,
+	spawn_position: Variant = null,
+	state_tick := -1
+) -> bool:
+	var next_is_respawning := next_respawn_left > 0.0
+	if state_tick >= 0 and last_life_state_tick >= 0 and state_tick < last_life_state_tick:
+		if next_is_respawning != is_respawning:
+			print("[PlayerRespawnClient] phase=life_state_rejected peer_id=%d remote_proxy=%s incoming_tick=%d last_life_tick=%d incoming_respawn=%.3f current_respawning=%s" % [
+				authority_peer_id,
+				str(is_remote_proxy),
+				state_tick,
+				last_life_state_tick,
+				next_respawn_left,
+				str(is_respawning),
+			])
+		return false
+	var state_changed := next_is_respawning != is_respawning
+	if state_tick >= 0:
+		last_life_state_tick = state_tick
+	apply_respawn_state(next_respawn_left, spawn_position)
+	if state_changed:
+		print("[PlayerRespawnClient] phase=life_state_applied peer_id=%d remote_proxy=%s tick=%d respawning=%s position=%s" % [
+			authority_peer_id,
+			str(is_remote_proxy),
+			state_tick,
+			str(is_respawning),
+			str(spawn_position),
+		])
+	return true
+
+
 func apply_respawn_state(next_respawn_left: float, spawn_position: Variant = null) -> void:
 	_clear_fall_damage_tracking()
 	if next_respawn_left > 0.0 or (spawn_position is Vector3 and next_respawn_left <= 0.0):
@@ -7103,45 +7732,39 @@ func _sync_selected_weapon_ammo_visual() -> void:
 
 
 func apply_weapon_ammo_state(tool_id: String, ammo_state: Dictionary) -> void:
+	if tool_id.is_empty():
+		return
+	var matching_indices: Array[int] = []
 	for index in range(backpack_items.size()):
 		var item := backpack_items[index]
-		if str(item.get("kind", "")) != "tool" or str(item.get("tool_id", "")) != tool_id:
-			continue
-		item["ammo_in_mag"] = maxi(0, int(ammo_state.get("ammo_in_mag", item.get("ammo_in_mag", 0))))
-		item["reserve_ammo"] = 0
-		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
-		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
-		backpack_items[index] = item
-		break
+		if str(item.get("kind", "")) == "tool" and str(item.get("tool_id", "")) == tool_id:
+			matching_indices.append(index)
+	if matching_indices.is_empty():
+		return
+	var incoming_state := ammo_state.duplicate(true)
+	var incoming_revision := maxi(0, int(incoming_state.get("ammo_revision", 0)))
+	var accepted_revision := int(accepted_ammo_revisions.get(tool_id, -1))
+	if incoming_revision < accepted_revision:
+		return
+	incoming_state["ammo_revision"] = incoming_revision
+	_remember_local_ammo_state(tool_id, incoming_state)
+	for index in matching_indices:
+		backpack_items[index] = _apply_local_ammo_state_to_item(
+			backpack_items[index],
+			tool_id,
+			incoming_state
+		)
 	_sync_selected_weapon_ammo_visual()
 	_update_ammo_ui()
 	_update_cooldown_ring()
 
 
 func apply_weapon_ammo_states_snapshot(ammo_states: Dictionary) -> void:
-	for index in range(backpack_items.size()):
-		var item := backpack_items[index]
-		var tool_id := str(item.get("tool_id", ""))
-		if str(item.get("kind", "")) != "tool" or not ammo_states.has(tool_id):
-			continue
+	for tool_id_value: Variant in ammo_states.keys():
+		var tool_id := str(tool_id_value)
 		var ammo_value: Variant = ammo_states.get(tool_id, {})
-		if not ammo_value is Dictionary:
-			continue
-		var ammo_state := ammo_value as Dictionary
-		var definition: Dictionary = all_tool_definitions_by_id.get(tool_id, {})
-		if not definition.has("magazine_size"):
-			continue
-		var capacity := maxi(1, int(definition.get("magazine_size", 1)))
-		item["ammo_in_mag"] = clampi(
-			int(ammo_state.get("ammo_in_mag", capacity)),
-			0,
-			capacity
-		)
-		item["reserve_ammo"] = 0
-		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
-		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
-		item["reload_ammo_amount"] = maxi(0, int(ammo_state.get("reload_ammo_amount", 0)))
-		backpack_items[index] = item
+		if ammo_value is Dictionary:
+			apply_weapon_ammo_state(tool_id, ammo_value as Dictionary)
 	var previous_suppress_sync := suppress_backpack_layout_sync
 	suppress_backpack_layout_sync = true
 	_sync_equipped_tools_from_backpack()
@@ -7857,9 +8480,7 @@ func _on_government_notice_closed() -> void:
 
 func apply_cargo_backpack_slots(slots_value: Array) -> void:
 	suppress_backpack_layout_sync = true
-	backpack_items.clear()
-	for value: Variant in slots_value:
-		backpack_items.append((value as Dictionary).duplicate(true) if value is Dictionary else {})
+	_replace_backpack_slots_preserving_newer_ammo(slots_value)
 	_normalize_local_weapon_ammo_items()
 	_normalize_local_ammo_supply_box_items()
 	_sync_equipped_tools_from_backpack()
@@ -7873,9 +8494,7 @@ func apply_authoritative_shield_state(event: Dictionary) -> void:
 	var broken := bool(event.get("broken", false))
 	suppress_backpack_layout_sync = true
 	if slots_value is Array:
-		backpack_items.clear()
-		for value: Variant in slots_value as Array:
-			backpack_items.append((value as Dictionary).duplicate(true) if value is Dictionary else {})
+		_replace_backpack_slots_preserving_newer_ammo(slots_value as Array)
 	elif broken and slot_index >= 0 and slot_index < backpack_items.size():
 		if str(backpack_items[slot_index].get("tool_id", "")) == "medieval_shield":
 			backpack_items[slot_index] = {}
@@ -8671,21 +9290,24 @@ func _refresh_interact_hint() -> void:
 		if interact_hint.visible:
 			interact_hint.text = "[C] 打开/关闭车灯"
 		return
+	# World interactions always take priority over weapon secondary-action hints.
+	# The old ordering returned for M17/automatic weapons before scanning the
+	# world, which hid every E prompt and also cleared a valid vehicle outline.
+	var target := _get_best_interaction_target()
+	_refresh_vehicle_interaction_outline(target)
+	if not target.is_empty():
+		interact_hint.visible = true
+		interact_hint.text = str(target.get("hint", "[E] 交互"))
+		return
 	if _current_tool_is_m17() and not is_prone and not is_respawning:
-		_clear_vehicle_interaction_outline()
 		interact_hint.visible = true
 		interact_hint.text = "[C] 打开/关闭手电筒"
 		return
 	if _current_tool_is_automatic() and not is_prone and not is_respawning:
-		_clear_vehicle_interaction_outline()
 		interact_hint.visible = true
 		interact_hint.text = "[C] 切换 单发/连发"
 		return
-	var target := _get_best_interaction_target()
-	_refresh_vehicle_interaction_outline(target)
-	interact_hint.visible = not target.is_empty()
-	if interact_hint.visible:
-		interact_hint.text = str(target.get("hint", "[E] 交互"))
+	interact_hint.visible = false
 
 
 func _refresh_vehicle_interaction_outline(target: Dictionary) -> void:
@@ -10006,8 +10628,17 @@ func _is_occluded_from_local_camera() -> bool:
 	query.collide_with_bodies = true
 	var exclusions: Array[RID] = []
 	for node in get_tree().get_nodes_in_group("human_players"):
-		if node is CollisionObject3D and not (node as GamePlayer).is_remote_proxy:
-			exclusions.append((node as CollisionObject3D).get_rid())
+		# Listen servers keep both full GamePlayer presentation nodes and
+		# ServerPlayerPhysicsBody authority proxies in human_players. Neither is
+		# world geometry, so exclude every player collision object without casting
+		# it to GamePlayer. The previous cast failed for authority proxies and could
+		# also make the target proxy look like an occluding wall.
+		if not node is CollisionObject3D:
+			continue
+		var collision_object := node as CollisionObject3D
+		var rid := collision_object.get_rid()
+		if rid.is_valid() and not exclusions.has(rid):
+			exclusions.append(rid)
 	query.exclude = exclusions
 	return not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
@@ -10556,9 +11187,11 @@ func remote_device_start():
 		return
 	if remote_tool_node.has_method("set_local_remote_control_runtime"):
 		remote_tool_node.call("set_local_remote_control_runtime", true)
-	remote_camera_rest_position = remote_control_camera.position
-	remote_is_active = true
-	active_remote_device_id = _remote_device_id(remote_tool_node)
+		remote_camera_rest_position = remote_control_camera.position
+		remote_is_active = true
+		remote_input_sequence = 0
+		pending_remote_input_frames.clear()
+		active_remote_device_id = _remote_device_id(remote_tool_node)
 	pending_remote_device_id = ""
 	_update_control_status_ui()
 	_ensure_remote_device_camera()
@@ -10585,8 +11218,10 @@ func remote_device_close(notify_authority := true):
 	if is_instance_valid(remote_effect):
 		_set_remote_effect_signal_strength(remote_effect, 1.0)
 		remote_effect.visible = false
-	_reset_remote_camera_shake()
-	remote_is_active = false
+		_reset_remote_camera_shake()
+		remote_is_active = false
+		remote_input_sequence = 0
+		pending_remote_input_frames.clear()
 	active_remote_device_id = ""
 	remote_control_camera = null
 	_update_control_status_ui()
@@ -10604,9 +11239,11 @@ func remote_destoryed():
 	if is_instance_valid(remote_effect):
 		_set_remote_effect_signal_strength(remote_effect, 1.0)
 		remote_effect.visible = false
-	remote_tool_node = null
-	remote_is_active = false
-	remote_control_camera = null
+		remote_tool_node = null
+		remote_is_active = false
+		remote_input_sequence = 0
+		pending_remote_input_frames.clear()
+		remote_control_camera = null
 	_update_control_status_ui()
 	camera.make_current()
 
@@ -10826,9 +11463,11 @@ func _on_remote_device_tree_exited(device_id: String) -> void:
 		remote_control_camera = null
 	elif not is_instance_valid(remote_tool_node):
 		remote_tool_node = null
-	if active_remote_device_id == device_id:
-		remote_is_active = false
-		active_remote_device_id = ""
+		if active_remote_device_id == device_id:
+			remote_is_active = false
+			remote_input_sequence = 0
+			pending_remote_input_frames.clear()
+			active_remote_device_id = ""
 		remote_control_camera = null
 		_update_control_status_ui()
 		if is_instance_valid(remote_effect):

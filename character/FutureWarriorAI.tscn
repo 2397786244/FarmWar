@@ -4,4 +4,4 @@
 
 [node name="FutureWarriorAi" type="CharacterBody3D" unique_id=1965960060]
 script = ExtResource("1_qifu7")
-max_hp = 200.0
+max_hp = 100.0

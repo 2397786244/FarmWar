@@ -11,6 +11,7 @@ enum DrawMode {
 @export var draw_mode: DrawMode = DrawMode.CLOSED_AREA
 @export_range(0.1, 100.0, 0.1, "or_greater") var width: float = 6.0
 @export_range(0.0, 20.0, 0.1, "or_greater") var edge_softness: float = 1.0
+@export_range(0.0, 0.35, 0.01) var edge_variation: float = 0.12
 @export var priority: int = 0
 @export var area_enabled: bool = true
 

@@ -255,6 +255,7 @@ collision_layer = 4096
 collision_mask = 45995
 metadata/map_can_overlap_water = false
 metadata/map_enterable = true
+metadata/map_indoor_floor_y = 0.0
 
 [node name="Mesh" parent="." unique_id=1460876727 instance=ExtResource("1_3gth4")]
 

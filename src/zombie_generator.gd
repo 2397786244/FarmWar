@@ -1,9 +1,9 @@
 extends Marker3D
 class_name ZombieGenerator
 
-## A map generator is a clock, not a population controller: every interval
-## produces at most one Zombie when its weather/time conditions are satisfied,
-## even if the previous zombie is still alive.
+## Each generator owns at most one spawned Zombie at a time. The initial spawn
+## uses `initial_spawn_delay`; after that Zombie is destroyed,
+## `spawn_interval_seconds` is the delay before the next spawn.
 
 const ZOMBIE_SCENE_PATH := "res://character/Zombie.tscn"
 
@@ -19,6 +19,7 @@ const ZOMBIE_SCENE_PATH := "res://character/Zombie.tscn"
 
 var _spawn_timer := 0.0
 var _spawn_sequence := 0
+var _spawned_zombie: Zombie = null
 
 
 func _ready() -> void:
@@ -31,41 +32,67 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not enabled or not _has_generation_authority():
 		return
+	if _has_active_zombie():
+		return
 	_spawn_timer -= maxf(0.0, delta)
 	if _spawn_timer > 0.0:
 		return
-	_spawn_timer = maxf(1.0, spawn_interval_seconds)
 	if not _generation_conditions_met():
+		_spawn_timer = maxf(1.0, spawn_interval_seconds)
 		return
-	_spawn_zombie()
+	if not _spawn_zombie():
+		# Keep failed instantiation/load attempts from becoming a per-frame loop.
+		_spawn_timer = maxf(1.0, spawn_interval_seconds)
 
 
 func _has_generation_authority() -> bool:
 	return GameAuthority.is_server_authority() or GameAuthority.is_local_authority()
 
 
-func _spawn_zombie() -> void:
+func _has_active_zombie() -> bool:
+	if _spawned_zombie == null:
+		return false
+	if not is_instance_valid(_spawned_zombie):
+		# In normal gameplay a Zombie is freed only after it has been marked
+		# destroyed. Treat an invalid reference as the end of that lifecycle too,
+		# rather than allowing an immediate replacement or a stale reference.
+		_spawned_zombie = null
+		_begin_respawn_wait()
+		return false
+	if _spawned_zombie.destroyed:
+		_spawned_zombie = null
+		_begin_respawn_wait()
+		return false
+	return true
+
+
+func _begin_respawn_wait() -> void:
+	_spawn_timer = maxf(1.0, spawn_interval_seconds)
+
+
+func _spawn_zombie() -> bool:
 	var packed := zombie_scene
 	if packed == null:
 		packed = load(ZOMBIE_SCENE_PATH) as PackedScene
 	if packed == null:
-		return
-	var zombie := packed.instantiate() as Node3D
+		return false
+	var zombie := packed.instantiate() as Zombie
 	var world: Node = GlobalVar.gameworld if is_instance_valid(GlobalVar.gameworld) else get_tree().current_scene
 	if zombie == null or world == null:
 		if zombie != null:
 			zombie.queue_free()
-		return
+		return false
 	_spawn_sequence += 1
 	zombie.name = "%s_Zombie_%03d" % [generator_id, _spawn_sequence]
 	var assigned_id := "%s:%d" % [generator_id, _spawn_sequence]
-	zombie.set("zombie_id", assigned_id)
-	zombie.set("animal_id", assigned_id)
-	zombie.set("zombie_gender", "female" if zombie_gender == "female" else "male")
-	zombie.set("home_generator", self)
+	zombie.zombie_id = assigned_id
+	zombie.animal_id = assigned_id
+	zombie.zombie_gender = "female" if zombie_gender == "female" else "male"
+	zombie.home_generator = self
 	world.add_child(zombie)
-	if zombie is Node3D:
-		(zombie as Node3D).global_transform = global_transform
+	zombie.global_transform = global_transform
+	_spawned_zombie = zombie
+	return true
 
 
 func _generation_conditions_met() -> bool:

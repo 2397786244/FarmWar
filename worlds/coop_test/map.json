@@ -2,10 +2,10 @@
   "content": {
     "ai_configuration": [],
     "ai_count": 0,
-    "building_count": 59,
+    "building_count": 72,
     "defense_facility_count": 19,
     "editor_objects": "editor_objects.dat",
-    "facility_count": 32,
+    "facility_count": 40,
     "farmland_count": 1,
     "ground_rock_count": 0,
     "industrial_facility_count": 4,
@@ -15,10 +15,11 @@
     "ore_count": 11,
     "promotional_dummy_count": 0,
     "promotional_vehicle_driver_dummy_count": 0,
+    "road_checkpoint_count": 1,
     "road_count": 0,
     "roads": "roads.dat",
-    "spawn_count": 30,
-    "squad_generator_count": 0,
+    "spawn_count": 39,
+    "squad_generator_count": 1,
     "tree_count": 52,
     "water_bodies": "water_bodies.dat",
     "water_count": 0,
@@ -36,6 +37,7 @@
     "object_transform_enabled": true,
     "promotional_dummies_enabled": true,
     "promotional_vehicle_driver_dummies_enabled": true,
+    "road_checkpoints_enabled": true,
     "size_aware_far_scenery": true,
     "time_settings_enabled": true,
     "water_bodies_enabled": true,
@@ -43,7 +45,7 @@
     "xyz_gizmo_enabled": true,
     "zombie_generators_enabled": true
   },
-  "format_version": 5,
+  "format_version": 6,
   "icon": "map_icon.png",
   "map_id": "coop_test",
   "scene": "coop_test.tscn",
@@ -85,13 +87,16 @@
       257,
       257
     ],
-    "surface_mask": "surface_mask.png",
+    "surface_blend_noise_seed": 72451,
+    "surface_ids": "surface_ids.png",
     "surface_mask_resolution": [
       1024,
       1024
     ],
     "surface_palette": "surface_palette.png",
     "surface_palette_resource": "surface_palette.tres",
+    "surface_render": "surface_render.png",
+    "surface_weights": "surface_weights.png",
     "vertex_spacing": 1.0
   },
   "time": {

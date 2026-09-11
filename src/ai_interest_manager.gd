@@ -19,6 +19,7 @@ const ACTIVE_CHUNK_OFFSETS: Array[Vector2i] = [
 const AI_GROUPS: Array[StringName] = [
 	&"farmer_ai",
 	&"future_warrior_ai",
+	&"road_blockers",
 	&"assistant_ai",
 	&"ai_normal_drones",
 ]
@@ -136,8 +137,11 @@ func _build_active_chunks() -> Dictionary:
 		if not state_value is Dictionary:
 			continue
 		var state := state_value as Dictionary
-		if float(state.get("respawn_left", 0.0)) > 0.0:
-			continue
+		# A dead player has not relocated yet.  Keep the chunks around the last
+		# authoritative death position active through the respawn countdown so AI
+		# combat, projectiles and short-lived presentation effects can finish.
+		# Once respawn writes the new position, this same normal distance policy
+		# naturally releases the old chunks and activates the new ones.
 		var position_value: Variant = state.get("position", null)
 		if not position_value is Vector3:
 			if position_value is Array and (position_value as Array).size() >= 3:
@@ -204,8 +208,24 @@ func _sleep_entity(entity: Node) -> void:
 		"physics_process": entity.is_physics_processing(),
 	}
 	_sleeping_entities[entity_id] = entity
+	_stop_entity_muzzle_flashes(entity)
 	entity.call("set_interest_sleeping", true)
 	entity.process_mode = Node.PROCESS_MODE_DISABLED
+
+
+func _stop_entity_muzzle_flashes(entity: Node) -> void:
+	## A sleeping node stops its child Tween processing.  Explicitly close every
+	## held weapon flash first so no frozen flame/light remains after the last
+	## player in an area dies or leaves.
+	for flash_value in entity.find_children("*", "MuzzleFlashVisual", true, false):
+		var flash := flash_value as Node
+		if flash.has_method("stop"):
+			flash.call("stop")
+	for particle_value in entity.find_children("MuzzleFlash", "GPUParticles3D", true, false):
+		if particle_value is GPUParticles3D:
+			var particle := particle_value as GPUParticles3D
+			particle.emitting = false
+			particle.visible = false
 
 
 func _wake_entity(entity: Node) -> void:

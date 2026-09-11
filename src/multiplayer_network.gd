@@ -16,11 +16,13 @@ signal reliable_world_event_received(event: Dictionary)
 signal visual_world_event_received(event: Dictionary)
 signal inventory_state_received(state: Dictionary)
 signal player_correction_received(correction: Dictionary)
+signal controlled_remote_correction_received(correction: Dictionary)
 signal team_chat_message_received(message: Dictionary)
 
 const STATUS_DISCONNECTED := "disconnected"
 const STATUS_CONNECTING := "connecting"
 const STATUS_CONNECTED := "connected"
+const ENET_CHANNEL_COUNT := 8
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 
 var status := STATUS_DISCONNECTED
@@ -53,7 +55,7 @@ func connect_to_game_server(address: String, port: int) -> bool:
 	disconnect_from_game_server(false)
 
 	peer = ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
+	var err := peer.create_client(address, port, ENET_CHANNEL_COUNT)
 	if err != OK:
 		peer = null
 		multiplayer.multiplayer_peer = null
@@ -115,7 +117,23 @@ func submit_player_setup(setup_data: Dictionary) -> void:
 
 
 func submit_player_input(input_frame: Dictionary) -> void:
+	if CooperativeSession.is_client():
+		CooperativeSession.submit_realtime_player_input(input_frame)
+		return
 	NetworkSession.submit_action("player_input", input_frame)
+
+
+func submit_remote_control_input(input_frame: Dictionary) -> void:
+	if CooperativeSession.is_client():
+		CooperativeSession.submit_realtime_remote_input(input_frame)
+		return
+	NetworkSession.submit_action("remote_input", input_frame)
+
+
+func submit_vehicle_input(input_frame: Dictionary) -> bool:
+	if CooperativeSession.is_client():
+		return CooperativeSession.submit_realtime_vehicle_input(input_frame)
+	return NetworkSession.submit_action("vehicle_input", input_frame)
 
 
 func submit_player_jump(jump_request: Dictionary) -> void:
@@ -123,7 +141,13 @@ func submit_player_jump(jump_request: Dictionary) -> void:
 
 
 func submit_select_tool(tool_index: int, tool_id := "") -> void:
-	NetworkSession.submit_action("select_tool", {"tool_index": tool_index, "tool_id": tool_id})
+	if CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		submit_combat_select_tool(tool_index, tool_id)
+		return
+	NetworkSession.submit_action("select_tool", {
+		"tool_index": tool_index,
+		"tool_id": tool_id,
+	})
 
 
 func submit_use_tool(tool_request: Dictionary) -> void:
@@ -131,7 +155,28 @@ func submit_use_tool(tool_request: Dictionary) -> void:
 
 
 func submit_reload_weapon(tool_id: String) -> void:
+	if CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		submit_combat_reload_weapon(tool_id)
+		return
 	NetworkSession.submit_action("reload_weapon", {"tool_id": tool_id})
+
+
+func submit_combat_fire(tool_request: Dictionary) -> bool:
+	if CooperativeSession.is_client():
+		return CooperativeSession.submit_combat_fire(tool_request)
+	return submit_enet_combat_fire(tool_request)
+
+
+func submit_combat_reload_weapon(tool_id: String) -> bool:
+	if CooperativeSession.is_client():
+		return CooperativeSession.submit_combat_reload_weapon(tool_id)
+	return submit_enet_combat_reload_weapon(tool_id)
+
+
+func submit_combat_select_tool(tool_index: int, tool_id := "") -> bool:
+	if CooperativeSession.is_client():
+		return CooperativeSession.submit_combat_select_tool(tool_index, tool_id)
+	return submit_enet_combat_select_tool(tool_index, tool_id)
 
 
 func submit_shop_transaction(transaction: Dictionary) -> bool:
@@ -151,10 +196,6 @@ func submit_ingredient_pickup_action(action: Dictionary) -> void:
 	NetworkSession.submit_action("ingredient_action", action)
 
 
-func submit_remote_control_input(input_frame: Dictionary) -> void:
-	NetworkSession.submit_action("remote_input", input_frame)
-
-
 func submit_remote_control_session(device_id: String, connected: bool) -> void:
 	NetworkSession.submit_action("remote_session", {"device_id": device_id, "connected": connected})
 
@@ -163,12 +204,8 @@ func submit_remote_action(action: Dictionary) -> void:
 	NetworkSession.submit_action("remote_action", action)
 
 
-func submit_vehicle_input(input_frame: Dictionary) -> void:
-	NetworkSession.submit_action("vehicle_input", input_frame)
-
-
-func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1) -> void:
-	NetworkSession.submit_action("vehicle_session", {"vehicle_id": vehicle_id, "connected": connected, "seat_index": seat_index})
+func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1, request_id := 0) -> void:
+	NetworkSession.submit_action("vehicle_session", {"vehicle_id": vehicle_id, "connected": connected, "seat_index": seat_index, "request_id": request_id})
 
 
 func submit_vehicle_action(action: Dictionary) -> void:
@@ -200,6 +237,7 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> bool:
 		"select_tool": rpc_endpoint.submit_select_tool(int(payload.get("tool_index", 0)), str(payload.get("tool_id", "")))
 		"use_tool": rpc_endpoint.submit_use_tool(payload)
 		"reload_weapon": rpc_endpoint.submit_reload_weapon(str(payload.get("tool_id", "")))
+		"combat_fire": rpc_endpoint.submit_combat_fire(payload)
 		"shop_transaction": return rpc_endpoint.submit_shop_transaction(payload)
 		"farm_action": rpc_endpoint.submit_farm_action(payload)
 		"ingredient_action": rpc_endpoint.submit_ingredient_pickup_action(payload)
@@ -207,13 +245,34 @@ func submit_enet_action(action_type: String, payload: Dictionary = {}) -> bool:
 		"remote_session": rpc_endpoint.submit_remote_control_session(str(payload.get("device_id", "")), bool(payload.get("connected", false)))
 		"remote_action": rpc_endpoint.submit_remote_action(payload)
 		"vehicle_input": rpc_endpoint.submit_vehicle_input(payload)
-		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+		"vehicle_session": rpc_endpoint.submit_vehicle_session(str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)), int(payload.get("request_id", 0)))
 		"vehicle_action": rpc_endpoint.submit_vehicle_action(payload)
 		"tool_action": rpc_endpoint.submit_tool_action(payload)
 		"gate_action": rpc_endpoint.submit_gate_action(payload)
 		"ladder_action": rpc_endpoint.submit_ladder_action(payload)
 		"team_chat": rpc_endpoint.submit_team_chat(str(payload.get("message", "")), str(payload.get("scope", "team")))
 		_: return false
+	return true
+
+
+func submit_enet_combat_fire(tool_request: Dictionary) -> bool:
+	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint) or not is_connected_to_game_server():
+		return false
+	rpc_endpoint.submit_combat_fire(tool_request)
+	return true
+
+
+func submit_enet_combat_reload_weapon(tool_id: String) -> bool:
+	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint) or not is_connected_to_game_server():
+		return false
+	rpc_endpoint.submit_combat_reload_weapon(tool_id)
+	return true
+
+
+func submit_enet_combat_select_tool(tool_index: int, tool_id := "") -> bool:
+	if rpc_endpoint == null or not is_instance_valid(rpc_endpoint) or not is_connected_to_game_server():
+		return false
+	rpc_endpoint.submit_combat_select_tool(tool_index, tool_id)
 	return true
 
 

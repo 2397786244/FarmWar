@@ -21,11 +21,13 @@ enum OperationState {
 @export var spawn_point_id := ""
 ## 可选战略目标。设置后优先推进至此；为空时使用敌方出生点。
 @export var target: Node3D
-@export var max_hp := 200.0
+@export var max_hp := 100.0
 @export var respawn_seconds := 10.0
 @export var drone_respawn_time := 45.0
 @export_range(1.0, 120.0, 0.5) var vision_distance := 80.0
 @export var nailgun_cooldown := 0.45
+@export_range(0.0, 30.0, 0.1) var standing_aim_spread_degrees := 2.5
+@export_range(0.0, 30.0, 0.1) var moving_aim_spread_degrees := 4.0
 @export var defensive_patrol_radius := 6.0
 @export var defensive_patrol_speed := 2.5
 @export var advance_speed := 2.6
@@ -66,6 +68,7 @@ var nailgun: Node3D
 var target_player: CharacterBody3D
 var respawn_timer := 0.0
 var fire_timer := 0.0
+var rng := RandomNumberGenerator.new()
 var is_dead := false
 var head: Node3D
 var right_hand_socket: BoneAttachment3D
@@ -136,6 +139,7 @@ const TEAM_MARKER_HEIGHT := 3.15
 
 
 func _ready() -> void:
+	rng.randomize()
 	current_hp = max_hp
 	collision_layer = 8
 	# 519 + 工具层 128：已放置的 TallLogWall 等防御建筑必须阻挡 Assistant。
@@ -345,14 +349,41 @@ func _search_and_fire(delta: float) -> void:
 	target_player = _find_visible_enemy_player()
 	if not is_instance_valid(target_player) or fire_timer > 0.0 or nailgun == null:
 		return
-	look_at(target_player.global_position, Vector3.UP)
-	aim_marker.global_position = target_player.global_position + Vector3.UP
-	_update_weapon_alignment()
+	_aim_at_target_with_spread(target_player)
 	if _fire_nailgun_hitscan():
 		if appearance_player != null and appearance_player.has_animation(&"ShootOneHand"):
 			action_animation_locked = true
 			appearance_player.play(&"ShootOneHand", 0.05)
 		fire_timer = nailgun_cooldown
+
+
+func _aim_at_target_with_spread(target: Node3D) -> void:
+	if not is_instance_valid(target):
+		return
+	var origin := head.global_position if is_instance_valid(head) else global_position
+	var target_position := target.global_position + Vector3.UP
+	var to_target := target_position - origin
+	var target_distance := to_target.length()
+	if target_distance <= 0.001:
+		return
+	var spread_degrees := (
+		moving_aim_spread_degrees
+		if Vector2(velocity.x, velocity.z).length() > 0.4
+		else standing_aim_spread_degrees
+	)
+	var direction := to_target / target_distance
+	var reference_up := Vector3.UP
+	if absf(direction.dot(reference_up)) > 0.98:
+		reference_up = Vector3.RIGHT
+	var right := direction.cross(reference_up).normalized()
+	var up := right.cross(direction).normalized()
+	var angle := rng.randf_range(0.0, TAU)
+	var radius := tan(deg_to_rad(spread_degrees)) * sqrt(rng.randf())
+	var offset := (right * cos(angle) + up * sin(angle)) * radius
+	var final_target := origin + (direction + offset).normalized() * target_distance
+	look_at(final_target, Vector3.UP)
+	aim_marker.global_position = final_target
+	_update_weapon_alignment()
 
 
 func _defensive_patrol(delta: float) -> void:
@@ -1043,9 +1074,7 @@ func _fire_at_target(delta: float) -> void:
 	fire_timer = maxf(0.0, fire_timer - delta)
 	if not is_instance_valid(target_player) or fire_timer > 0.0 or nailgun == null:
 		return
-	look_at(target_player.global_position, Vector3.UP)
-	aim_marker.global_position = target_player.global_position + Vector3.UP
-	_update_weapon_alignment()
+	_aim_at_target_with_spread(target_player)
 	if _fire_nailgun_hitscan():
 		if appearance_player != null and appearance_player.has_animation(&"ShootOneHand"):
 			action_animation_locked = true

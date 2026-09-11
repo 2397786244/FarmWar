@@ -160,9 +160,9 @@ func _process(delta: float) -> void:
 	if not destroyed:
 		return
 	if network_proxy:
-		_death_remaining = maxf(0.0, _death_remaining - delta)
-		if _death_remaining <= 0.0:
-			queue_free()
+		## MultiplayerWorldReplicator owns remote corpse lifetime. A proxy must
+		## not free itself and then be recreated by a delayed death snapshot.
+		return
 
 
 func _physics_process(delta: float) -> void:
@@ -295,6 +295,7 @@ func get_network_state() -> Dictionary:
 		"freeze_remaining": freeze_remaining,
 		"stun_remaining": stun_remaining,
 		"death_remaining": _death_remaining,
+		"death_cleanup_left": _death_remaining,
 	}
 
 
@@ -325,7 +326,6 @@ func apply_network_state(data: Dictionary) -> void:
 		_begin_death(false)
 	if incoming_destroyed:
 		_death_remaining = maxf(0.0, float(data.get("death_remaining", _death_remaining)))
-		_play_death_animation()
 	else:
 		var incoming_state := str(data.get("state", "idle"))
 		_apply_proxy_animation(incoming_state, str(data.get("animation", "Idle")))

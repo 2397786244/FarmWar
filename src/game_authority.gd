@@ -2,6 +2,7 @@ extends Node
 class_name GameAuthorityService
 
 const CombatBalance = preload("res://src/combat_balance.gd")
+const REALTIME_INPUT_STREAM_SCRIPT := preload("res://src/realtime_input_stream.gd")
 const PlacementQueryScript = preload("res://src/placement_query.gd")
 const PlacedStorageState = preload("res://src/placed_storage_state.gd")
 const VehicleSpawnCatalogScript = preload("res://src/vehicle_spawn_catalog.gd")
@@ -19,6 +20,8 @@ signal reliable_world_event_ready(event: Dictionary)
 signal visual_world_event_ready(event: Dictionary)
 signal inventory_state_ready(state: Dictionary)
 signal player_correction_ready(peer_id: int, correction: Dictionary)
+signal controlled_remote_correction_ready(peer_id: int, correction: Dictionary)
+signal vehicle_driver_correction_ready(peer_id: int, correction: Dictionary)
 signal team_chat_message_ready(message: Dictionary)
 signal team_garage_state_changed(team: String)
 
@@ -35,10 +38,20 @@ const LOW_FREQ_SNAPSHOT_INTERVAL := 1.0
 const NATURE_RESOURCE_RECONCILE_INTERVAL := 10.0
 const FARM_RECONCILE_INTERVAL := 7.0
 const FARM_RECONCILE_CHUNK_SIZE := 32
-const PLAYER_CORRECTION_TICK_INTERVAL := 1
+const PLAYER_CORRECTION_TICK_INTERVAL := 2
+const REALTIME_INPUT_QUEUE_LIMIT := 120
+const REALTIME_INPUT_DIAGNOSTICS_DEFAULT_ENABLED := false
+const VEHICLE_INPUT_QUEUE_DIAGNOSTICS_DEFAULT_ENABLED := true
+const VEHICLE_INPUT_QUEUE_DIAGNOSTIC_INTERVAL_SECONDS := 5.0
+const VEHICLE_INPUT_QUEUE_WARNING_THRESHOLD := 10
+const VEHICLE_NET_DIAGNOSTICS_DEFAULT_ENABLED := true
+const VEHICLE_NET_DIAGNOSTIC_INTERVAL_SECONDS := 5.0
 const PLAYER_JUMP_GRACE_TICKS := 3
 const PLAYER_MAX_HP := 200.0
 const PLAYER_RESPAWN_SECONDS := 10.0
+const PLAYER_RESPAWN_DIAGNOSTICS_ENABLED := true
+const MAX_COOPERATIVE_SPAWN_INDEX := 3
+const AUTHORITY_DROPPED_ITEM_SPAWNS_PER_TICK := 4
 const PLAYER_VOID_DEATH_Y := -50.0
 const INTEREST_CHUNK_SIZE_METERS := 256.0
 const WIRE_MESH_GATE_LOCKPICK_DURATION_SECONDS := 10.0
@@ -262,6 +275,7 @@ var ai_interest_manager
 var local_player_id := LOCAL_PLAYER_ID
 var tick_accumulator := 0.0
 var server_tick := 0
+var _checkpoint_damage_event_serial := 0
 ## Persistent in-world time. This intentionally remains separate from
 ## server_tick: the latter is a runtime/network sequence and is reset whenever
 ## an authority mode starts, while this clock is restored from a world save.
@@ -279,6 +293,19 @@ var free_placement_debug_enabled := true
 # 高频状态：30Hz 快照同步，主要用于插值/校正。
 var player_states: Dictionary = {}
 var latest_inputs: Dictionary = {}
+var player_input_queues: Dictionary = {}
+var remote_input_queues: Dictionary = {}
+var vehicle_input_queues: Dictionary = {}
+var realtime_input_diagnostics_enabled := REALTIME_INPUT_DIAGNOSTICS_DEFAULT_ENABLED
+var realtime_input_diagnostics: Dictionary = {}
+var vehicle_input_queue_diagnostics_enabled := VEHICLE_INPUT_QUEUE_DIAGNOSTICS_DEFAULT_ENABLED
+var vehicle_input_queue_diagnostic_interval := VEHICLE_INPUT_QUEUE_DIAGNOSTIC_INTERVAL_SECONDS
+var vehicle_input_queue_diagnostic_elapsed := 0.0
+var vehicle_input_queue_diagnostics: Dictionary = {}
+var vehicle_net_diagnostics_enabled := VEHICLE_NET_DIAGNOSTICS_DEFAULT_ENABLED
+var vehicle_net_diagnostic_interval := VEHICLE_NET_DIAGNOSTIC_INTERVAL_SECONDS
+var vehicle_net_diagnostic_elapsed := 0.0
+var vehicle_net_host_diagnostics: Dictionary = {}
 var projectile_states: Dictionary = {}
 var local_projectile_visual_nodes: Dictionary = {}
 var local_transient_projectile_visual_nodes: Dictionary = {}
@@ -298,6 +325,8 @@ var placed_tool_states: Dictionary = {}
 var gate_lockpick_states: Dictionary = {}
 var rift_anchor_by_peer: Dictionary = {}
 var dropped_item_nodes: Dictionary = {}
+var pending_authoritative_dropped_item_spawns: Array[Dictionary] = []
+var pending_authoritative_dropped_item_spawn_ids: Dictionary = {}
 var chat_submission_times_msec: Dictionary = {}
 var vehicle_states: Dictionary = {}
 var team_garage_states: Dictionary = {"red": [], "blue": []}
@@ -515,6 +544,18 @@ func refresh_ai_interest(immediate := false) -> void:
 	ai_interest_manager.request_refresh(immediate)
 
 
+func _log_player_respawn(peer_id: int, phase: String, details := "") -> void:
+	if not PLAYER_RESPAWN_DIAGNOSTICS_ENABLED:
+		return
+	var suffix := "" if details.is_empty() else " " + details
+	print("[PlayerRespawn] phase=%s peer_id=%d tick=%d%s" % [
+		phase,
+		peer_id,
+		server_tick,
+		suffix,
+	])
+
+
 func is_ai_interest_sleeping(node: Node) -> bool:
 	return ai_interest_manager != null and ai_interest_manager.is_sleeping(node)
 
@@ -546,6 +587,291 @@ func enable_metrics_periodic_log(enabled: bool, seconds: float = 10.0) -> void:
 		set_metrics_print_interval(0.0)
 
 
+func set_realtime_input_diagnostics_enabled(enabled: bool) -> void:
+	realtime_input_diagnostics_enabled = enabled
+	if not enabled:
+		realtime_input_diagnostics.clear()
+
+
+func get_realtime_input_diagnostics() -> Dictionary:
+	return realtime_input_diagnostics.duplicate(true)
+
+
+## Low-frequency co-op host diagnostics for the driving path. This remains
+## separate from the general realtime diagnostics so it never records every
+## player/remote input frame or emits per-packet logs.
+func set_vehicle_input_queue_diagnostics_enabled(enabled: bool, interval_seconds := VEHICLE_INPUT_QUEUE_DIAGNOSTIC_INTERVAL_SECONDS) -> void:
+	vehicle_input_queue_diagnostics_enabled = enabled
+	vehicle_input_queue_diagnostic_interval = maxf(1.0, interval_seconds)
+	vehicle_input_queue_diagnostic_elapsed = 0.0
+	if not enabled:
+		vehicle_input_queue_diagnostics.clear()
+
+
+func get_vehicle_input_queue_diagnostics() -> Dictionary:
+	return vehicle_input_queue_diagnostics.duplicate(true)
+
+
+func set_vehicle_net_diagnostics_enabled(
+	enabled: bool,
+	interval_seconds := VEHICLE_NET_DIAGNOSTIC_INTERVAL_SECONDS
+) -> void:
+	vehicle_net_diagnostics_enabled = enabled
+	vehicle_net_diagnostic_interval = maxf(1.0, float(interval_seconds))
+	vehicle_net_diagnostic_elapsed = 0.0
+	if not enabled:
+		vehicle_net_host_diagnostics.clear()
+
+
+func get_vehicle_net_diagnostics() -> Dictionary:
+	return vehicle_net_host_diagnostics.duplicate(true)
+
+
+func _record_vehicle_net_host_receive(
+	vehicle_id: String,
+	packet_frames: Array[Dictionary],
+	last_received_before: int,
+	queue_before: int,
+	state: Dictionary
+) -> void:
+	if not vehicle_net_diagnostics_enabled or not NetworkSession.is_listen_server() or vehicle_id.is_empty():
+		return
+	var record_value: Variant = vehicle_net_host_diagnostics.get(vehicle_id, {})
+	var record: Dictionary = record_value as Dictionary if record_value is Dictionary else {}
+	var now_usec := Time.get_ticks_usec()
+	var previous_rx_usec := int(record.get("last_rx_usec", 0))
+	if previous_rx_usec > 0:
+		var interval_ms := float(now_usec - previous_rx_usec) / 1000.0
+		record["rx_interval_sum_ms"] = float(record.get("rx_interval_sum_ms", 0.0)) + interval_ms
+		record["rx_interval_count"] = int(record.get("rx_interval_count", 0)) + 1
+		record["rx_interval_min_ms"] = minf(
+			float(record.get("rx_interval_min_ms", INF)),
+			interval_ms
+		)
+		record["rx_interval_max_ms"] = maxf(
+			float(record.get("rx_interval_max_ms", 0.0)),
+			interval_ms
+		)
+	var last_rx_tick := int(record.get("last_rx_tick", -1))
+	var same_tick_count := 1
+	if last_rx_tick == server_tick:
+		same_tick_count = int(record.get("same_tick_count", 0)) + 1
+	record["last_rx_tick"] = server_tick
+	record["same_tick_count"] = same_tick_count
+	record["max_same_tick_count"] = maxi(
+		int(record.get("max_same_tick_count", 0)),
+		same_tick_count
+	)
+	var newest_seq := -1
+	if not packet_frames.is_empty():
+		newest_seq = int(packet_frames.back().get("input_seq", -1))
+	var accepted_packet := newest_seq > last_received_before
+	var rx_packet_count := int(record.get("rx_packets", 0)) + 1
+	record["rx_packets"] = rx_packet_count
+	record["rx_packet_frames"] = int(record.get("rx_packet_frames", 0)) + packet_frames.size()
+	record["rx_redundant_frames"] = int(record.get("rx_redundant_frames", 0)) + maxi(
+		0,
+		packet_frames.size() - (1 if accepted_packet else 0)
+	)
+	record["rx_accepted_packets"] = int(record.get("rx_accepted_packets", 0)) + (1 if accepted_packet else 0)
+	record["rx_seq_advance"] = int(record.get("rx_seq_advance", 0)) + maxi(
+		0,
+		int(state.get("last_received_input_seq", 0)) - last_received_before
+	)
+	record["last_rx_seq"] = int(state.get("last_received_input_seq", newest_seq))
+	record["queue_before_receive"] = queue_before
+	record["queue_after_receive"] = maxi(
+		0,
+		(vehicle_input_queues.get(vehicle_id, []) as Array).size()
+	)
+	record["last_rx_usec"] = now_usec
+	vehicle_net_host_diagnostics[vehicle_id] = record
+
+
+func _record_vehicle_net_host_consume(
+	vehicle_id: String,
+	state: Dictionary,
+	queue_before: int,
+	queue_after: int,
+	consumed: bool
+) -> void:
+	if not vehicle_net_diagnostics_enabled or not NetworkSession.is_listen_server() or vehicle_id.is_empty():
+		return
+	var record_value: Variant = vehicle_net_host_diagnostics.get(vehicle_id, {})
+	var record: Dictionary = record_value as Dictionary if record_value is Dictionary else {}
+	record["authority_ticks"] = int(record.get("authority_ticks", 0)) + 1
+	record["queue_before_consume"] = queue_before
+	record["queue_after_consume"] = queue_after
+	if consumed:
+		var now_usec := Time.get_ticks_usec()
+		var previous_consume_usec := int(record.get("last_consume_usec", 0))
+		if previous_consume_usec > 0:
+			var interval_ms := float(now_usec - previous_consume_usec) / 1000.0
+			record["consume_interval_sum_ms"] = float(record.get("consume_interval_sum_ms", 0.0)) + interval_ms
+			record["consume_interval_count"] = int(record.get("consume_interval_count", 0)) + 1
+			record["consume_interval_min_ms"] = minf(
+				float(record.get("consume_interval_min_ms", INF)),
+				interval_ms
+			)
+			record["consume_interval_max_ms"] = maxf(
+				float(record.get("consume_interval_max_ms", 0.0)),
+				interval_ms
+			)
+		record["consume_count"] = int(record.get("consume_count", 0)) + 1
+		record["last_consume_seq"] = int(state.get(
+			"last_processed_input_seq",
+			state.get("last_input_seq", 0)
+		))
+		record["last_consume_usec"] = now_usec
+	record["last_processed_seq"] = int(state.get(
+		"last_processed_input_seq",
+		state.get("last_input_seq", 0)
+	))
+	vehicle_net_host_diagnostics[vehicle_id] = record
+
+
+func _emit_vehicle_net_diagnostics(delta: float) -> void:
+	if not vehicle_net_diagnostics_enabled or not NetworkSession.is_listen_server():
+		vehicle_net_diagnostic_elapsed = 0.0
+		return
+	vehicle_net_diagnostic_elapsed += maxf(0.0, delta)
+	if vehicle_net_diagnostic_elapsed < vehicle_net_diagnostic_interval:
+		return
+	vehicle_net_diagnostic_elapsed = 0.0
+	for vehicle_id_value: Variant in vehicle_net_host_diagnostics.keys():
+		var vehicle_id := str(vehicle_id_value)
+		var state_value: Variant = vehicle_states.get(vehicle_id, {})
+		var state: Dictionary = state_value as Dictionary if state_value is Dictionary else {}
+		if state.is_empty() or int(state.get("driver_peer_id", 0)) <= 0:
+			vehicle_net_host_diagnostics.erase(vehicle_id)
+			continue
+		var record_value: Variant = vehicle_net_host_diagnostics.get(vehicle_id, {})
+		var record: Dictionary = record_value as Dictionary if record_value is Dictionary else {}
+		var queue_record_value: Variant = vehicle_input_queue_diagnostics.get(vehicle_id, {})
+		var queue_record: Dictionary = queue_record_value as Dictionary \
+			if queue_record_value is Dictionary else {}
+		var rx_packets := int(record.get("rx_packets", 0))
+		var rx_interval_count := int(record.get("rx_interval_count", 0))
+		var rx_interval_avg := float(record.get("rx_interval_sum_ms", 0.0)) \
+			/ float(rx_interval_count) if rx_interval_count > 0 else 0.0
+		var rx_interval_min := float(record.get("rx_interval_min_ms", 0.0)) \
+			if rx_interval_count > 0 else 0.0
+		var rx_interval_max := float(record.get("rx_interval_max_ms", 0.0))
+		var consume_count := int(record.get("consume_count", 0))
+		var consume_interval_count := int(record.get("consume_interval_count", 0))
+		var consume_interval_avg := float(record.get("consume_interval_sum_ms", 0.0)) \
+			/ float(consume_interval_count) if consume_interval_count > 0 else 0.0
+		print("[VehicleNet][host] id=%s driver=%d rx_packets=%d rx_hz=%.1f rx_gap_ms=%.1f/%.1f/%.1f rx_burst=%d rx_seq=%d processed_seq=%d packet_frames=%.1f accepted=%d redundant=%d seq_advance=%d consume=%d consume_hz=%.1f consume_gap_ms=%.1f queue=%d peak=%d ack_gap=%d peak_gap=%d resync=%s" % [
+			vehicle_id,
+			int(state.get("driver_peer_id", 0)),
+			rx_packets,
+			float(rx_packets) / maxf(vehicle_net_diagnostic_interval, 0.001),
+			rx_interval_avg,
+			rx_interval_min,
+			rx_interval_max,
+			int(record.get("max_same_tick_count", 0)),
+			int(record.get("last_rx_seq", 0)),
+			int(record.get("last_processed_seq", 0)),
+			float(record.get("rx_packet_frames", 0)) / float(maxi(rx_packets, 1)),
+			int(record.get("rx_accepted_packets", 0)),
+			int(record.get("rx_redundant_frames", 0)),
+			int(record.get("rx_seq_advance", 0)),
+			consume_count,
+			float(consume_count) / maxf(vehicle_net_diagnostic_interval, 0.001),
+			consume_interval_avg,
+			int(queue_record.get("queue_size", record.get("queue_after_consume", 0))),
+			int(queue_record.get("peak_queue_size", 0)),
+			int(queue_record.get("ack_gap", 0)),
+			int(queue_record.get("peak_ack_gap", 0)),
+			bool(queue_record.get("resync_seen", false)),
+		])
+		for key in [
+			"rx_packets", "rx_packet_frames", "rx_redundant_frames", "rx_accepted_packets",
+			"rx_seq_advance", "rx_interval_sum_ms", "rx_interval_count",
+			"rx_interval_min_ms", "rx_interval_max_ms", "max_same_tick_count",
+			"consume_count", "consume_interval_sum_ms", "consume_interval_count",
+			"consume_interval_min_ms", "consume_interval_max_ms", "authority_ticks",
+		]:
+			record.erase(key)
+		record["same_tick_count"] = 0
+		vehicle_net_host_diagnostics[vehicle_id] = record
+		queue_record["peak_queue_size"] = int(queue_record.get("queue_size", 0))
+		queue_record["peak_ack_gap"] = int(queue_record.get("ack_gap", 0))
+		queue_record["resync_seen"] = false
+		vehicle_input_queue_diagnostics[vehicle_id] = queue_record
+
+
+func _record_vehicle_input_queue_sample(vehicle_id: String, state: Dictionary, queue_size: int) -> void:
+	# This is deliberately listen-host only: single-player and ENet sessions
+	# should neither emit nor retain co-op vehicle queue diagnostics.
+	if not vehicle_input_queue_diagnostics_enabled or not NetworkSession.is_listen_server() or vehicle_id.is_empty():
+		return
+	var record_value: Variant = vehicle_input_queue_diagnostics.get(vehicle_id, {})
+	var record: Dictionary = record_value as Dictionary if record_value is Dictionary else {}
+	var ack_gap := maxi(
+		0,
+		int(state.get("last_received_input_seq", 0)) - int(state.get("last_processed_input_seq", 0))
+	)
+	record["queue_size"] = maxi(0, queue_size)
+	record["peak_queue_size"] = maxi(int(record.get("peak_queue_size", 0)), queue_size)
+	record["ack_gap"] = ack_gap
+	record["peak_ack_gap"] = maxi(int(record.get("peak_ack_gap", 0)), ack_gap)
+	record["received_seq"] = int(state.get("last_received_input_seq", 0))
+	record["processed_seq"] = int(state.get("last_processed_input_seq", 0))
+	record["resync_seen"] = bool(record.get("resync_seen", false)) \
+		or bool(state.get("realtime_input_resync", false))
+	vehicle_input_queue_diagnostics[vehicle_id] = record
+
+
+func _clear_vehicle_input_queue_diagnostics(vehicle_id: String) -> void:
+	if not vehicle_id.is_empty():
+		vehicle_input_queue_diagnostics.erase(vehicle_id)
+		vehicle_net_host_diagnostics.erase(vehicle_id)
+
+
+func _emit_vehicle_input_queue_diagnostics(_delta: float) -> void:
+	# Kept as a compatibility hook for older callers. The old [VehicleInput]
+	# output is intentionally disabled; VehicleNet owns the consolidated log.
+	return
+
+
+func _record_realtime_input_diagnostic(
+	stream_kind: String,
+	route_id: String,
+	state: Dictionary,
+	queue_size: int = -1,
+	rejected_reason: String = ""
+) -> void:
+	if not realtime_input_diagnostics_enabled:
+		return
+	var key := "%s:%s" % [stream_kind, route_id]
+	var record_value: Variant = realtime_input_diagnostics.get(key, {})
+	var record: Dictionary = record_value as Dictionary if record_value is Dictionary else {}
+	record["stream"] = stream_kind
+	record["route_id"] = route_id
+	record["received_seq"] = int(state.get("last_received_input_seq", record.get("received_seq", 0)))
+	record["processed_seq"] = int(state.get("last_processed_input_seq", record.get("processed_seq", 0)))
+	record["input_ack_gap"] = maxi(
+		0,
+		int(record.get("received_seq", 0)) - int(record.get("processed_seq", 0))
+	)
+	if queue_size >= 0:
+		record["queue_size"] = queue_size
+	if not rejected_reason.is_empty():
+		record["last_rejected_reason"] = rejected_reason
+		record["rejected_count"] = int(record.get("rejected_count", 0)) + 1
+	realtime_input_diagnostics[key] = record
+
+
+func _record_realtime_input_rejection(
+	stream_kind: String,
+	route_id: String,
+	reason: String,
+	state: Dictionary = {}
+) -> void:
+	_record_realtime_input_diagnostic(stream_kind, route_id, state, -1, reason)
+
+
 func _reset_runtime_state(clear_players := true) -> void:
 	if ai_interest_manager != null:
 		ai_interest_manager.reset()
@@ -559,6 +885,12 @@ func _reset_runtime_state(clear_players := true) -> void:
 	low_freq_snapshot_cache.clear()
 	_clear_player_physics_nodes()
 	latest_inputs.clear()
+	player_input_queues.clear()
+	remote_input_queues.clear()
+	vehicle_input_queues.clear()
+	realtime_input_diagnostics.clear()
+	vehicle_input_queue_diagnostics.clear()
+	vehicle_input_queue_diagnostic_elapsed = 0.0
 	for visual_value: Variant in local_projectile_visual_nodes.values():
 		if is_instance_valid(visual_value):
 			(visual_value as Node).queue_free()
@@ -632,6 +964,8 @@ func _reset_runtime_state(clear_players := true) -> void:
 	measured_bytes_received_per_second = 0
 	metrics_second_accumulator = 0.0
 	debug_print_metrics_left = debug_print_metrics_interval
+	vehicle_net_diagnostic_elapsed = 0.0
+	vehicle_net_host_diagnostics.clear()
 	var event_board := get_node_or_null("/root/EventBoard")
 	if event_board != null and event_board.has_method("reset"):
 		event_board.call("reset")
@@ -654,6 +988,7 @@ func _physics_process(delta: float) -> void:
 	if local_match_finished:
 		return
 	_run_authority_tick(delta)
+	_emit_vehicle_net_diagnostics(delta)
 	_simulate_local_transient_projectile_visuals(delta)
 	if metrics_second_accumulator >= 1.0:
 		_roll_metrics_second()
@@ -700,6 +1035,7 @@ func _run_authority_tick(delta: float) -> void:
 	_simulate_medicine_storms(simulation_delta)
 	_simulate_gate_interactions(simulation_delta)
 	_simulate_placed_tools(simulation_delta)
+	_flush_pending_authoritative_dropped_item_spawns()
 	_reserve_ready_ingredient_pickups()
 	_release_invalid_kitchen_users()
 	_release_invalid_industrial_workbench_users()
@@ -1219,8 +1555,16 @@ func _simulate_players(delta: float) -> void:
 		)
 		var respawn_left := float(state.get("respawn_left", 0.0))
 		if respawn_left > 0.0:
+			var previous_countdown_second := ceili(respawn_left)
 			respawn_left = maxf(0.0, respawn_left - delta)
 			state["respawn_left"] = respawn_left
+			var countdown_second := ceili(respawn_left)
+			if countdown_second != previous_countdown_second:
+				_log_player_respawn(
+					peer_id,
+					"countdown",
+					"remaining=%.3f display_second=%d" % [respawn_left, countdown_second]
+				)
 			if mode == MODE_SERVER:
 				var corpse_position := _vector3_from_value(state.get("position", Vector3.ZERO))
 				var corpse_proxy := _ensure_player_physics_node(peer_id, corpse_position)
@@ -1289,6 +1633,9 @@ func _simulate_players(delta: float) -> void:
 				):
 					continue
 				continue
+			# The vehicle disappeared or the seat assignment became invalid. Clear
+			# its input stream before returning the player to normal movement.
+			_reset_vehicle_input_stream(vehicle_id)
 			state["vehicle_id"] = ""
 			state["vehicle_seat_index"] = -1
 			_set_server_player_vehicle_collision(peer_id, false)
@@ -1338,7 +1685,18 @@ func _simulate_players(delta: float) -> void:
 				player_states[peer_id] = state
 				_begin_player_respawn(peer_id)
 				continue
-		var input: Dictionary = latest_inputs.get(peer_id, {})
+		var consumed_input := _consume_realtime_input_frame(
+			player_input_queues,
+			peer_id,
+			state.get("last_applied_input", {})
+		)
+		var input: Dictionary = consumed_input.get("input", {})
+		var input_was_consumed := bool(consumed_input.get("consumed", false))
+		var reliable_jump_seq := int(state.get("received_jump_seq", 0))
+		var reliable_jump_input_seq := int(state.get("received_jump_input_seq", -1))
+		if reliable_jump_seq > int(input.get("jump_seq", 0)) \
+				and reliable_jump_input_seq <= int(input.get("input_seq", -1)):
+			input["jump_seq"] = reliable_jump_seq
 		var move := _vector2_from_value(input.get("move", Vector2.ZERO))
 		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
 		var ladder_result := _simulate_authoritative_ladder(state, input, delta, position)
@@ -1346,7 +1704,17 @@ func _simulate_players(delta: float) -> void:
 			state = ladder_result.get("state", state)
 			position = _vector3_from_value(ladder_result.get("position", position))
 			_clear_player_fall_tracking(state, position)
-			state["last_input_seq"] = int(input.get("input_seq", state.get("last_input_seq", 0)))
+			if input_was_consumed:
+				state["last_processed_input_seq"] = int(input.get("input_seq", state.get("last_processed_input_seq", 0)))
+				state["last_input_seq"] = int(state.get("last_processed_input_seq", 0))
+				state["last_applied_input"] = input.duplicate(true)
+			if input_was_consumed and server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+				_record_realtime_input_diagnostic(
+					"player",
+					str(peer_id),
+					state,
+					(player_input_queues.get(peer_id, []) as Array).size()
+				)
 			if mode == MODE_SERVER:
 				var ladder_proxy := _ensure_player_physics_node(peer_id, position)
 				if ladder_proxy != null:
@@ -1517,7 +1885,17 @@ func _simulate_players(delta: float) -> void:
 		state["pitch"] = pitch
 		state["grounded"] = grounded
 		state["locomotion_state"] = _locomotion_state_for(state, move)
-		state["last_input_seq"] = int(input.get("input_seq", state.get("last_input_seq", 0)))
+		if input_was_consumed:
+			state["last_processed_input_seq"] = int(input.get("input_seq", state.get("last_processed_input_seq", 0)))
+			state["last_input_seq"] = int(state.get("last_processed_input_seq", 0))
+			state["last_applied_input"] = input.duplicate(true)
+		if input_was_consumed and server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+			_record_realtime_input_diagnostic(
+				"player",
+				str(peer_id),
+				state,
+				(player_input_queues.get(peer_id, []) as Array).size()
+			)
 		var fall_damage := 0.0
 		if mode == MODE_SERVER:
 			var final_surface_y := WaterBody3D.get_surface_level_at(position)
@@ -1936,6 +2314,11 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	existing["peer_id"] = peer_id
 	existing["display_name"] = selection.get("display_name", existing.get("display_name", "Player_%d" % peer_id))
 	existing["team"] = selection.get("team", existing.get("team", ""))
+	existing["spawn_index"] = clampi(
+		int(selection.get("spawn_index", existing.get("spawn_index", 0))),
+		0,
+		MAX_COOPERATIVE_SPAWN_INDEX
+	)
 	existing["hero_id"] = selection.get("hero_id", selection.get("character_id", existing.get("hero_id", "")))
 	existing["primary_weapon_ids"] = selection.get("primary_weapon_ids", existing.get("primary_weapon_ids", []))
 	existing["special_tool_ids"] = selection.get("special_tool_ids", existing.get("special_tool_ids", []))
@@ -2011,6 +2394,8 @@ func register_or_update_player(peer_id: int, selection: Dictionary) -> void:
 	_sync_weapon_ammo_states_to_backpack_slots(existing)
 	existing["last_input_seq"] = int(existing.get("last_input_seq", 0))
 	existing["last_received_input_seq"] = int(existing.get("last_received_input_seq", 0))
+	existing["last_processed_input_seq"] = int(existing.get("last_processed_input_seq", existing["last_input_seq"]))
+	existing["last_applied_input"] = existing.get("last_applied_input", {})
 	existing["last_jump_seq"] = int(existing.get("last_jump_seq", 0))
 	existing["speed"] = float(existing.get("speed", 5.0))
 	existing["spawn_position"] = selection.get(
@@ -2044,6 +2429,7 @@ func unregister_player(peer_id: int) -> void:
 	_remove_player_from_vehicle(peer_id, false)
 	player_states.erase(peer_id)
 	latest_inputs.erase(peer_id)
+	player_input_queues.erase(peer_id)
 	chat_submission_times_msec.erase(peer_id)
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy):
@@ -2794,6 +3180,9 @@ func _server_layout_items_match(first: Dictionary, second: Dictionary) -> bool:
 						or requested_drive_id == str(first.get("drive_instance_id", ""))
 			return true
 		"dish": return str(first.get("dish_id", "")) == str(second.get("dish_id", ""))
+		"key_item":
+			return str(first.get("item_id", first.get("card_id", ""))) \
+				== str(second.get("item_id", second.get("card_id", "")))
 		"cargo_crate": return str(first.get("crate_instance_id", "")) == str(second.get("crate_instance_id", ""))
 	return false
 
@@ -2872,7 +3261,76 @@ func _grant_test_backpack_entry(state: Dictionary, entry: Dictionary) -> Diction
 				_set_server_equipment_hp(state, equipment_id, float(entry.get("current_hp", EquipmentCatalog.get_max_hp(equipment_id))))
 				_server_layout_add_item(state, _server_equipment_item(state, equipment_id))
 			return _server_equipment_item(state, equipment_id)
+		"key_item":
+			var item_id := str(entry.get("item_id", entry.get("card_id", entry.get("id", "")))).strip_edges()
+			if item_id.is_empty():
+				return {}
+			var slots_value: Variant = state.get("backpack_slot_items", [])
+			if not slots_value is Array:
+				return {}
+			var has_empty_slot := false
+			for slot_value: Variant in slots_value:
+				if slot_value is Dictionary and (slot_value as Dictionary).is_empty():
+					has_empty_slot = true
+					break
+			if not has_empty_slot:
+				return {}
+			for slot_value: Variant in slots_value:
+				if not slot_value is Dictionary:
+					continue
+				var existing := slot_value as Dictionary
+				if str(existing.get("kind", "")) == "key_item" \
+					and str(existing.get("item_id", existing.get("card_id", ""))) == item_id:
+					return {"kind": "key_item", "item_id": item_id}
+			var key_item := {"kind": "key_item", "item_id": item_id}
+			_server_layout_add_item(state, key_item)
+			return key_item
 	return {}
+
+
+func player_has_access_card(peer_id: int, card_id := "road_access_card") -> bool:
+	## Authoritative, non-consuming personal-card query used by RoadCheckpoint.
+	if peer_id <= 0:
+		return false
+	var state_value: Variant = player_states.get(peer_id, player_states.get(str(peer_id), null))
+	if state_value is Dictionary and _state_has_access_card(state_value as Dictionary, card_id):
+		return true
+	# Local single-player/listen-server presentation can receive a test grant in
+	# the same frame as the authority state update.  Read the authoritative
+	# GamePlayer node as a compatibility fallback; ENet/dedicated clients never
+	# run this method as an authority and therefore cannot influence the result.
+	for node in get_tree().get_nodes_in_group("human_players"):
+		if not is_instance_valid(node) or not node is GamePlayer:
+			continue
+		var player := node as GamePlayer
+		if player.is_remote_proxy or int(player.authority_peer_id) != peer_id:
+			continue
+		if _state_has_access_card({"backpack_items": player.backpack_items}, card_id):
+			return true
+	return false
+
+
+func _state_has_access_card(state: Dictionary, card_id: String) -> bool:
+	for key in ["backpack_slot_items", "backpack_items", "inventory"]:
+		var slots_value: Variant = state.get(key, [])
+		if slots_value is Dictionary:
+			if float((slots_value as Dictionary).get(card_id, 0.0)) > 0.0:
+				return true
+			continue
+		if not slots_value is Array:
+			continue
+		for item_value: Variant in slots_value:
+			if item_value is String and str(item_value) == card_id:
+				return true
+			if not item_value is Dictionary:
+				continue
+			var item := item_value as Dictionary
+			var kind := str(item.get("kind", ""))
+			if kind != "key_item" and not item.has("item_id") and not item.has("card_id"):
+				continue
+			if str(item.get("item_id", item.get("card_id", item.get("tool_id", "")))) == card_id:
+				return true
+	return false
 
 
 func _apply_test_backpack_grant_to_local_player(
@@ -2976,51 +3434,199 @@ func local_receive_player_jump(peer_id: int, jump_request: Dictionary) -> void:
 	server_receive_player_jump(peer_id, jump_request)
 
 
+func _realtime_packet_frames(payload: Dictionary) -> Array[Dictionary]:
+	return REALTIME_INPUT_STREAM_SCRIPT.extract_frames(payload)
+
+
+func _realtime_packet_route_id(
+	payload: Dictionary,
+	frames: Array[Dictionary],
+	primary_key: String,
+	fallback_key := ""
+) -> String:
+	var route_id := str(payload.get(primary_key, ""))
+	if route_id.is_empty() and not fallback_key.is_empty():
+		route_id = str(payload.get(fallback_key, ""))
+	if route_id.is_empty():
+		for frame: Dictionary in frames:
+			var frame_route_id := str(frame.get(primary_key, ""))
+			if frame_route_id.is_empty() and not fallback_key.is_empty():
+				frame_route_id = str(frame.get(fallback_key, ""))
+			if not frame_route_id.is_empty():
+				route_id = frame_route_id
+				break
+	return route_id
+
+
+func _realtime_packet_routes_match(
+	frames: Array[Dictionary],
+	route_id: String,
+	primary_key: String,
+	fallback_key := ""
+) -> bool:
+	if route_id.is_empty():
+		return false
+	for frame: Dictionary in frames:
+		var primary_route_id := str(frame.get(primary_key, ""))
+		var fallback_route_id := str(frame.get(fallback_key, "")) if not fallback_key.is_empty() else ""
+		# A wrapped packet may use its outer routing field for legacy frames, but
+		# every route field that is present in a frame must agree with it. This
+		# rejects both mixed redundant frames and a forged device_id/device_path
+		# pair that points at two different targets.
+		if not primary_route_id.is_empty() and primary_route_id != route_id:
+			return false
+		if not fallback_route_id.is_empty() and fallback_route_id != route_id:
+			return false
+	return true
+
+
+func _realtime_packet_outer_routes_match(
+	payload: Dictionary,
+	route_id: String,
+	primary_key: String,
+	fallback_key := ""
+) -> bool:
+	if route_id.is_empty():
+		return false
+	var primary_route_id := str(payload.get(primary_key, ""))
+	var fallback_route_id := str(payload.get(fallback_key, "")) if not fallback_key.is_empty() else ""
+	if not primary_route_id.is_empty() and primary_route_id != route_id:
+		return false
+	if not fallback_route_id.is_empty() and fallback_route_id != route_id:
+		return false
+	return true
+
+
+func _enqueue_realtime_input_frames(
+	queues: Dictionary,
+	queue_key: Variant,
+	state: Dictionary,
+	payload: Dictionary,
+	stream_kind := ""
+) -> Dictionary:
+	var queue_value: Variant = queues.get(queue_key, [])
+	var queue: Array = queue_value as Array if queue_value is Array else []
+	var last_received := int(state.get("last_received_input_seq", 0))
+	for frame: Dictionary in _realtime_packet_frames(payload):
+		var sequence := int(frame.get("input_seq", -1))
+		if sequence <= last_received:
+			continue
+		queue.append(frame)
+		last_received = maxi(last_received, sequence)
+	if queue.size() > 1:
+		queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a.get("input_seq", -1)) < int(b.get("input_seq", -1))
+		)
+	if queue.size() > REALTIME_INPUT_QUEUE_LIMIT:
+		# A long suspension cannot be replayed at a faster-than-real-time rate.
+		# Keep only the newest command. The processed sequence is deliberately not
+		# advanced here; it changes only after the authority actually consumes it.
+		queue = [queue.back()]
+		state["realtime_input_resync"] = true
+	else:
+		state["realtime_input_resync"] = false
+	state["last_received_input_seq"] = last_received
+	queues[queue_key] = queue
+	if not stream_kind.is_empty():
+		_record_realtime_input_diagnostic(
+			stream_kind,
+			str(queue_key),
+			state,
+			queue.size()
+		)
+	return state
+
+
+func _consume_realtime_input_frame(
+	queues: Dictionary,
+	queue_key: Variant,
+	fallback_input: Dictionary
+) -> Dictionary:
+	var queue: Array = queues.get(queue_key, [])
+	if queue.is_empty():
+		return {"input": fallback_input.duplicate(true), "consumed": false}
+	var input: Dictionary = queue.pop_front()
+	queues[queue_key] = queue
+	return {"input": input, "consumed": true}
+
+
+func _reset_vehicle_input_stream(vehicle_id: String) -> void:
+	if vehicle_id.is_empty():
+		return
+	vehicle_input_queues.erase(vehicle_id)
+	_clear_vehicle_input_queue_diagnostics(vehicle_id)
+	if not vehicle_states.has(vehicle_id):
+		return
+	var state: Dictionary = vehicle_states[vehicle_id]
+	state["last_received_input_seq"] = 0
+	state["last_processed_input_seq"] = 0
+	state["last_input_seq"] = 0
+	state["last_applied_input"] = {}
+	state["input"] = {"throttle": 0.0, "steering": 0.0, "brake": 1.0}
+	state["realtime_input_resync"] = false
+	vehicle_states[vehicle_id] = state
+
+
+func _reset_remote_input_stream(device_id: String) -> void:
+	if device_id.is_empty():
+		return
+	remote_input_queues.erase(device_id)
+	if not remote_device_states.has(device_id):
+		return
+	var state: Dictionary = remote_device_states[device_id]
+	state["last_received_input_seq"] = 0
+	state["last_processed_input_seq"] = 0
+	state["last_input_seq"] = 0
+	state["last_applied_input"] = {}
+	state["input"] = {}
+	state["realtime_input_resync"] = false
+	remote_device_states[device_id] = state
+
+
 func server_receive_player_input(peer_id: int, input_frame: Dictionary) -> void:
 	if not player_states.has(peer_id):
 		register_or_update_player(peer_id, {"display_name": "Player_%d" % peer_id})
 	var state: Dictionary = player_states[peer_id]
 	if float(state.get("respawn_left", 0.0)) > 0.0:
 		return
-	var input_seq := int(input_frame.get("input_seq", -1))
-	if input_seq <= int(state.get("last_received_input_seq", 0)):
-		return
-	var move := _vector2_from_value(input_frame.get("move", Vector2.ZERO))
-	if float(state.get("big_mouth_capture_remaining", 0.0)) > 0.0:
-		move = Vector2.ZERO
-	if bool(state.get("cargo_delivery_modal", false)):
-		move = Vector2.ZERO
-	if move.length() > 1.0:
-		move = move.normalized()
-	var position := _vector3_from_value(state.get("position", Vector3.ZERO))
-	var water_surface_y := WaterBody3D.get_surface_level_at(position)
-	var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
-	var requested_prone := bool(input_frame.get("prone", state.get("prone", false))) and not swimming
-	var pitch_limit := PLAYER_PRONE_MAX_PITCH_DEGREES if requested_prone else 50.0
-	var sanitized_input := {
-		"input_seq": input_seq,
-		"client_time_msec": int(input_frame.get("client_time_msec", 0)),
-		"move": move,
-		# Network jump requests are transported separately and merged below. Keep
-		# this legacy field for older clients, but never clear a reliable request
-		# that arrived before the next movement packet.
-		"jump_seq": maxi(
-			maxi(0, int(input_frame.get("jump_seq", 0))),
-			int(latest_inputs.get(peer_id, {}).get("jump_seq", 0))
-		),
-		"yaw": wrapf(float(input_frame.get("yaw", state.get("yaw", 0.0))), -PI, PI),
-		"pitch": clampf(float(input_frame.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit)),
-		"prone": requested_prone,
-		"swim_up": swimming and bool(input_frame.get("swim_up", false)),
-		"dive": swimming and bool(input_frame.get("dive", false)),
-		"ladder_climbing": bool(input_frame.get("ladder_climbing", false)),
-		"ladder_tower_id": str(input_frame.get("ladder_tower_id", "")),
-		"ladder_climb_direction": 1.0 if float(input_frame.get("ladder_climb_direction", 1.0)) >= 0.0 else -1.0,
-		"ladder_move": clampf(float(input_frame.get("ladder_move", 0.0)), -1.0, 1.0),
-	}
-	state["last_received_input_seq"] = input_seq
+	var sanitized_packet := {"frames": []}
+	for frame in REALTIME_INPUT_STREAM_SCRIPT.extract_frames(input_frame):
+		var move := _vector2_from_value(frame.get("move", Vector2.ZERO))
+		if float(state.get("big_mouth_capture_remaining", 0.0)) > 0.0 or bool(state.get("cargo_delivery_modal", false)):
+			move = Vector2.ZERO
+		if move.length() > 1.0:
+			move = move.normalized()
+		var position := _vector3_from_value(state.get("position", Vector3.ZERO))
+		var water_surface_y := WaterBody3D.get_surface_level_at(position)
+		var swimming := water_surface_y < INF and position.y <= water_surface_y + PLAYER_SWIM_SURFACE_MARGIN
+		var requested_prone := bool(frame.get("prone", state.get("prone", false))) and not swimming
+		var pitch_limit := PLAYER_PRONE_MAX_PITCH_DEGREES if requested_prone else 50.0
+		(sanitized_packet["frames"] as Array).append({
+			"input_seq": int(frame.get("input_seq", -1)),
+			"client_time_msec": int(frame.get("client_time_msec", 0)),
+			"move": move,
+			"jump_seq": maxi(0, int(frame.get("jump_seq", 0))),
+			"yaw": wrapf(float(frame.get("yaw", state.get("yaw", 0.0))), -PI, PI),
+			"pitch": clampf(float(frame.get("pitch", state.get("pitch", 0.0))), deg_to_rad(-pitch_limit), deg_to_rad(pitch_limit)),
+			"prone": requested_prone,
+			"swim_up": swimming and bool(frame.get("swim_up", false)),
+			"dive": swimming and bool(frame.get("dive", false)),
+			"ladder_climbing": bool(frame.get("ladder_climbing", false)),
+			"ladder_tower_id": str(frame.get("ladder_tower_id", "")),
+			"ladder_climb_direction": 1.0 if float(frame.get("ladder_climb_direction", 1.0)) >= 0.0 else -1.0,
+			"ladder_move": clampf(float(frame.get("ladder_move", 0.0)), -1.0, 1.0),
+		})
+	state = _enqueue_realtime_input_frames(
+		player_input_queues,
+		peer_id,
+		state,
+		sanitized_packet,
+		"player"
+	)
+	var queue: Array = player_input_queues.get(peer_id, [])
+	if not queue.is_empty():
+		latest_inputs[peer_id] = queue.back().duplicate(true)
 	player_states[peer_id] = state
-	latest_inputs[peer_id] = sanitized_input
 	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
 
 
@@ -3056,26 +3662,27 @@ func server_receive_player_jump(peer_id: int, jump_request: Dictionary) -> void:
 		current_input["dive"] = swimming and bool(jump_request.get("dive", false))
 		if current_input["move"].length() > 1.0:
 			current_input["move"] = current_input["move"].normalized()
-		if event_input_seq > int(state.get("last_received_input_seq", 0)):
-			state["last_received_input_seq"] = event_input_seq
+	state["received_jump_seq"] = jump_seq
+	state["received_jump_input_seq"] = event_input_seq
 	current_input["jump_seq"] = maxi(jump_seq, int(current_input.get("jump_seq", 0)))
 	latest_inputs[peer_id] = current_input
 	player_states[peer_id] = state
 	bytes_received_this_second += len(JSON.stringify(jump_request).to_utf8_buffer())
 
 
-func local_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, seat_index := -1) -> Dictionary:
+func local_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, seat_index := -1, request_id := 0) -> Dictionary:
 	_sync_local_player_interaction_state(peer_id)
-	return server_vehicle_session(peer_id, vehicle_id, connected, seat_index)
+	return server_vehicle_session(peer_id, vehicle_id, connected, seat_index, request_id)
 
 
-func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, seat_index := -1) -> Dictionary:
+func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, seat_index := -1, request_id := 0) -> Dictionary:
 	var result := {
 		"ok": false,
 		"peer_id": peer_id,
 		"vehicle_id": vehicle_id,
 		"connected": connected,
 		"seat_index": seat_index,
+		"request_id": request_id,
 		"tick": server_tick,
 	}
 	if not player_states.has(peer_id):
@@ -3117,6 +3724,8 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 					state["vehicle_id"] = vehicle.get_vehicle_id()
 					state["vehicle_seat_index"] = requested_seat
 					player_states[peer_id] = state
+					if vehicle.driver_peer_id == peer_id:
+						_reset_vehicle_input_stream(vehicle.get_vehicle_id())
 					_sync_occupied_player_state(peer_id, state, vehicle)
 					result["ok"] = true
 					result["seat_index"] = requested_seat
@@ -3129,6 +3738,7 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 			if occupied_vehicle == null or occupied_vehicle_id != vehicle_id:
 				result["reason"] = "not_vehicle_occupant"
 			else:
+				var was_driver := occupied_vehicle.driver_peer_id == peer_id
 				var former_seat := occupied_vehicle.exit_seat(peer_id)
 				if former_seat < 0:
 					result["reason"] = "not_vehicle_occupant"
@@ -3141,10 +3751,16 @@ func server_vehicle_session(peer_id: int, vehicle_id: String, connected: bool, s
 					_clear_player_fall_tracking(state, exit_position)
 					player_states[peer_id] = state
 					_set_server_player_vehicle_collision(peer_id, false, exit_position)
+					if was_driver:
+						_reset_vehicle_input_stream(occupied_vehicle_id)
 					result["ok"] = true
 					result["seat_index"] = former_seat
 					result["exit_position"] = exit_position
 		if result["ok"]:
+			state = player_states[peer_id]
+			state["vehicle_session_revision"] = int(state.get("vehicle_session_revision", 0)) + 1
+			player_states[peer_id] = state
+			result["session_revision"] = int(state["vehicle_session_revision"])
 			_apply_local_player_vehicle_session(result)
 	reliable_world_event_ready.emit({"type": "vehicle_session", "data": result, "tick": server_tick})
 	return result
@@ -3157,28 +3773,63 @@ func local_vehicle_input(peer_id: int, input_frame: Dictionary) -> void:
 func server_vehicle_input(peer_id: int, input_frame: Dictionary) -> void:
 	if not player_states.has(peer_id):
 		return
-	if str(input_frame.get("control_mode", "")) == "mounted_machine_gun":
-		_server_mounted_machine_gun_input(peer_id, input_frame)
+	var packet_frames := _realtime_packet_frames(input_frame)
+	var control_mode := str(input_frame.get("control_mode", ""))
+	if control_mode.is_empty() and not packet_frames.is_empty():
+		control_mode = str(packet_frames.back().get("control_mode", ""))
+	if control_mode == "mounted_machine_gun":
+		var mounted_input := input_frame
+		if not input_frame.has("yaw") and not packet_frames.is_empty():
+			mounted_input = packet_frames.back().duplicate(true)
+		_server_mounted_machine_gun_input(peer_id, mounted_input)
 		return
 	var state: Dictionary = player_states[peer_id]
-	var vehicle_id := str(input_frame.get("vehicle_id", ""))
+	if packet_frames.is_empty():
+		_record_realtime_input_rejection("vehicle", "", "empty_packet", state)
+		return
+	var vehicle_id := _realtime_packet_route_id(input_frame, packet_frames, "vehicle_id")
 	if vehicle_id.is_empty() or vehicle_id != str(state.get("vehicle_id", "")):
+		_record_realtime_input_rejection("vehicle", vehicle_id, "not_current_vehicle", state)
+		return
+	if not _realtime_packet_outer_routes_match(input_frame, vehicle_id, "vehicle_id") \
+			or not _realtime_packet_routes_match(packet_frames, vehicle_id, "vehicle_id"):
+		_record_realtime_input_rejection("vehicle", vehicle_id, "mixed_vehicle_routes", state)
 		return
 	var vehicle := _find_vehicle(vehicle_id)
 	if vehicle == null or vehicle.driver_peer_id != peer_id:
+		_record_realtime_input_rejection("vehicle", vehicle_id, "not_driver", state)
 		return
-	var input_seq := int(input_frame.get("input_seq", -1))
 	var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
-	if input_seq <= int(vehicle_state.get("last_input_seq", 0)):
-		return
-	vehicle_state["last_input_seq"] = input_seq
-	vehicle_state["input"] = {"throttle": 0.0, "steering": 0.0, "brake": 1.0} \
-		if bool(state.get("cargo_delivery_modal", false)) else {
-			"throttle": clampf(float(input_frame.get("throttle", 0.0)), -1.0, 1.0),
-			"steering": clampf(float(input_frame.get("steering", 0.0)), -1.0, 1.0),
-			"brake": clampf(float(input_frame.get("brake", 0.0)), 0.0, 1.0),
-		}
+	var queue_before_receive := (vehicle_input_queues.get(vehicle_id, []) as Array).size()
+	var last_received_before := int(vehicle_state.get("last_received_input_seq", 0))
+	var sanitized_packet := {"frames": []}
+	for frame: Dictionary in packet_frames:
+		(sanitized_packet["frames"] as Array).append({
+			"input_seq": int(frame.get("input_seq", -1)),
+			"throttle": 0.0 if bool(state.get("cargo_delivery_modal", false)) else clampf(float(frame.get("throttle", 0.0)), -1.0, 1.0),
+			"steering": 0.0 if bool(state.get("cargo_delivery_modal", false)) else clampf(float(frame.get("steering", 0.0)), -1.0, 1.0),
+			"brake": 1.0 if bool(state.get("cargo_delivery_modal", false)) else clampf(float(frame.get("brake", 0.0)), 0.0, 1.0),
+		})
+	vehicle_state = _enqueue_realtime_input_frames(
+		vehicle_input_queues,
+		vehicle_id,
+		vehicle_state,
+		sanitized_packet,
+		"vehicle"
+	)
 	vehicle_states[vehicle_id] = vehicle_state
+	_record_vehicle_input_queue_sample(
+		vehicle_id,
+		vehicle_state,
+		(vehicle_input_queues.get(vehicle_id, []) as Array).size()
+	)
+	_record_vehicle_net_host_receive(
+		vehicle_id,
+		packet_frames,
+		last_received_before,
+		queue_before_receive,
+		vehicle_state
+	)
 	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
 
 
@@ -3226,11 +3877,24 @@ func server_vehicle_action(peer_id: int, action: Dictionary) -> void:
 		return
 	if vehicle.driver_peer_id != peer_id:
 		return
-	if action_name == "toggle_headlights" and vehicle.has_method("toggle_headlights"):
-		vehicle.call("toggle_headlights")
+	if action_name == "set_headlights" and vehicle.has_method("apply_authoritative_headlights_state"):
+		var enabled := bool(action.get("enabled", false))
+		var revision := int(vehicle.get("headlights_revision")) + 1
+		vehicle.call("apply_authoritative_headlights_state", enabled, revision)
 		var vehicle_state: Dictionary = vehicle_states.get(vehicle_id, {})
 		vehicle_state.merge(vehicle.get_network_state(), true)
 		vehicle_states[vehicle_id] = vehicle_state
+		reliable_world_event_ready.emit({
+			"type": "vehicle_headlights_state",
+			"data": {
+				"vehicle_id": vehicle_id,
+				"enabled": enabled,
+				"revision": revision,
+				"request_id": int(action.get("request_id", 0)),
+				"peer_id": peer_id,
+			},
+			"tick": server_tick,
+		})
 	bytes_received_this_second += len(JSON.stringify(action).to_utf8_buffer())
 
 
@@ -3282,10 +3946,15 @@ func _server_vehicle_seat_switch(
 		# the in-cabin numeric seat switching flow.
 		result["reason"] = "platform_seat_cannot_switch"
 		return result
+	var previous_driver_peer_id := vehicle.driver_peer_id
 	if not vehicle.can_switch_seat(peer_id, target_seat_index) \
 			or not vehicle.switch_seat(peer_id, target_seat_index):
 		result["reason"] = "seat_occupied_or_unavailable"
 		return result
+	if previous_driver_peer_id != vehicle.driver_peer_id:
+		# A seat switch can transfer the driver role. Do not let the old
+		# driver's Channel 6 frames drive the newly assigned driver.
+		_reset_vehicle_input_stream(vehicle_id)
 	state["vehicle_seat_index"] = target_seat_index
 	_sync_occupied_player_state(peer_id, state, vehicle)
 	player_states[peer_id] = state
@@ -3504,7 +4173,15 @@ func _register_world_vehicles() -> void:
 		state.merge(vehicle.get_network_state(), true)
 		state["vehicle_id"] = vehicle_id
 		state["last_input_seq"] = int(state.get("last_input_seq", 0))
-		state["input"] = state.get("input", {})
+		state["last_received_input_seq"] = int(state.get("last_received_input_seq", 0))
+		state["last_processed_input_seq"] = int(
+			state.get("last_processed_input_seq", state["last_input_seq"])
+		)
+		state["last_applied_input"] = state.get("last_applied_input", {})
+		state["input"] = state.get(
+			"input",
+			{"throttle": 0.0, "steering": 0.0, "brake": 1.0}
+		)
 		vehicle_states[vehicle_id] = state
 	for vehicle_id in vehicle_states.keys():
 		if not seen.has(str(vehicle_id)):
@@ -3513,6 +4190,8 @@ func _register_world_vehicles() -> void:
 			elif _is_pending_vehicle_purchase(str(vehicle_id)):
 				_settle_pending_vehicle_purchase_failure(str(vehicle_id), "vehicle_spawn_failed")
 			vehicle_states.erase(vehicle_id)
+			vehicle_input_queues.erase(vehicle_id)
+			_clear_vehicle_input_queue_diagnostics(str(vehicle_id))
 
 
 func _simulate_vehicles(delta: float) -> void:
@@ -3526,6 +4205,8 @@ func _simulate_vehicles(delta: float) -> void:
 			elif _is_pending_vehicle_purchase(vehicle_id):
 				_settle_pending_vehicle_purchase_failure(vehicle_id, "vehicle_spawn_failed")
 			vehicle_states.erase(vehicle_id)
+			vehicle_input_queues.erase(vehicle_id)
+			_clear_vehicle_input_queue_diagnostics(vehicle_id)
 			continue
 		var state: Dictionary = vehicle_states[vehicle_id]
 		if vehicle.cargo_user_peer_id > 0:
@@ -3533,7 +4214,39 @@ func _simulate_vehicles(delta: float) -> void:
 			if cargo_user_state.is_empty() or not bool(cargo_user_state.get("cargo_storage_open", false)) \
 					or not vehicle.is_cargo_storage_interaction_available_to(_vector3_from_value(cargo_user_state.get("position", Vector3.ZERO))):
 				vehicle.cargo_user_peer_id = 0
-		var input: Dictionary = state.get("input", {})
+		var queue_before_consume := (vehicle_input_queues.get(vehicle_id, []) as Array).size()
+		var consumed_input := _consume_realtime_input_frame(
+			vehicle_input_queues,
+			vehicle_id,
+			state.get("last_applied_input", state.get("input", {}))
+		)
+		var input: Dictionary = consumed_input.get("input", {})
+		if bool(consumed_input.get("consumed", false)):
+			state["input"] = input.duplicate(true)
+			state["last_processed_input_seq"] = int(input.get("input_seq", state.get("last_processed_input_seq", 0)))
+			state["last_input_seq"] = int(state.get("last_processed_input_seq", 0))
+			state["last_applied_input"] = input.duplicate(true)
+		if bool(consumed_input.get("consumed", false)) and server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+			_record_realtime_input_diagnostic(
+				"vehicle",
+				vehicle_id,
+				state,
+				(vehicle_input_queues.get(vehicle_id, []) as Array).size()
+			)
+		if vehicle.driver_peer_id > 0:
+			var queue_after_consume := (vehicle_input_queues.get(vehicle_id, []) as Array).size()
+			_record_vehicle_input_queue_sample(
+				vehicle_id,
+				state,
+				queue_after_consume
+			)
+			_record_vehicle_net_host_consume(
+				vehicle_id,
+				state,
+				queue_before_consume,
+				queue_after_consume,
+				bool(consumed_input.get("consumed", false))
+			)
 		if vehicle.driver_peer_id == 0:
 			input = {}
 		vehicle.set_drive_input(
@@ -3565,6 +4278,18 @@ func _simulate_vehicles(delta: float) -> void:
 						(proxy as Node3D).global_position = machine_gun.get_stand_transform().origin
 		state.merge(vehicle.get_network_state(), true)
 		vehicle_states[vehicle_id] = state
+		# A driving Steam client predicts its own vehicle locally.  Send the
+		# acknowledgement on the same realtime channel as the input stream so a
+		# delayed world snapshot cannot repeatedly pull its camera backwards.
+		if vehicle.driver_peer_id > 0 and server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+			var correction := vehicle.get_network_state()
+			correction["vehicle_id"] = vehicle_id
+			correction["tick"] = server_tick
+			correction["last_input_seq"] = int(state.get(
+				"last_processed_input_seq", state.get("last_input_seq", 0)
+			))
+			correction["last_processed_input_seq"] = int(correction["last_input_seq"])
+			vehicle_driver_correction_ready.emit(vehicle.driver_peer_id, correction)
 
 
 ## Vehicles are authoritative hazards: an occupied vehicle's destruction is an
@@ -3601,6 +4326,8 @@ func _destroy_vehicle_internal(vehicle: VehicleBase, reason: String) -> void:
 	if not pending_settled:
 		_mark_team_garage_vehicle_destroyed(vehicle_id, vehicle)
 	vehicle_states.erase(vehicle_id)
+	vehicle_input_queues.erase(vehicle_id)
+	_clear_vehicle_input_queue_diagnostics(vehicle_id)
 	for terminal_value in get_tree().get_nodes_in_group("vehicle_service_terminals"):
 		if terminal_value is VehicleServiceTerminal and is_instance_valid(terminal_value):
 			(terminal_value as VehicleServiceTerminal).on_vehicle_destroyed(vehicle_id)
@@ -4035,11 +4762,13 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 	if tool_id.begins_with("animal_") and not resolved_request.has("inventory_item"):
 		return {"ok": false, "reason": "invalid_livestock_inventory_slot"}
 	var result := _execute_tool(peer_id, tool_id, resolved_request)
+	var is_channel7_weapon := CombatBalance.is_channel7_combat_fire_weapon(tool_id)
 	if bool(result.get("ok", false)):
 		if _uses_finite_ammo(tool_id):
 			var ammo_states: Dictionary = state.get("weapon_ammo_states", {})
 			var ammo_state: Dictionary = ammo_states.get(tool_id, _default_weapon_ammo_state(tool_id))
 			ammo_state["ammo_in_mag"] = maxi(0, int(ammo_state.get("ammo_in_mag", 0)) - 1)
+			ammo_state["ammo_revision"] = int(ammo_state.get("ammo_revision", 0)) + 1
 			ammo_states[tool_id] = ammo_state
 			state["weapon_ammo_states"] = ammo_states
 			_sync_weapon_ammo_states_to_backpack_slots(state)
@@ -4068,11 +4797,14 @@ func server_try_use_tool(peer_id: int, tool_request: Dictionary) -> Dictionary:
 		result["action_sequence"] = state["action_sequence"]
 		player_states[peer_id] = state
 		_emit_handheld_projectile_visual(peer_id, tool_id, result)
-	reliable_world_event_ready.emit({
-		"type": "tool_used",
-		"data": result,
-		"tick": server_tick,
-	})
+		if is_channel7_weapon:
+			_emit_combat_weapon_fired_event(peer_id, tool_id, result)
+	if not is_channel7_weapon:
+		reliable_world_event_ready.emit({
+			"type": "tool_used",
+			"data": result,
+			"tick": server_tick,
+		})
 	return result
 
 
@@ -4515,6 +5247,7 @@ func server_reload_weapon(peer_id: int, tool_id: String) -> Dictionary:
 	ammo_state["reload_duration"] = reload_time
 	ammo_state["reload_ammo_amount"] = capacity - int(ammo_state.get("ammo_in_mag", 0))
 	ammo_state["reserve_ammo"] = 0
+	ammo_state["ammo_revision"] = int(ammo_state.get("ammo_revision", 0)) + 1
 	ammo_states[tool_id] = ammo_state
 	state["weapon_ammo_states"] = ammo_states
 	_sync_weapon_ammo_states_to_backpack_slots(state)
@@ -4613,6 +5346,18 @@ func _animation_action_for_tool(tool_id: String) -> String:
 			return "melee"
 		_:
 			return "utility"
+
+
+func _emit_combat_weapon_fired_event(peer_id: int, tool_id: String, result: Dictionary) -> void:
+	visual_world_event_ready.emit({
+		"type": "combat_weapon_fired",
+		"peer_id": peer_id,
+		"tool_id": tool_id,
+		"tool_index": int(result.get("tool_index", -1)),
+		"animation_action": str(result.get("animation_action", "shooting")),
+		"action_sequence": int(result.get("action_sequence", 0)),
+		"tick": server_tick,
+	})
 
 
 func _emit_handheld_projectile_visual(peer_id: int, tool_id: String, result: Dictionary) -> void:
@@ -5433,6 +6178,40 @@ func spawn_cash_drop(
 		"item_state": state,
 		"tick": server_tick,
 	})
+	return true
+
+
+## RoadBlockers drop a fresh inventory tool, never their runtime weapon node.
+## This public authority helper keeps the pickup replication contract identical
+## to player drops while deliberately omitting any consumed-ammo state.
+func spawn_road_blocker_weapon_drop(position: Vector3, tool_id: String) -> bool:
+	if not (is_server_authority() or is_local_authority()):
+		return false
+	var definition: Dictionary = authoritative_tool_definitions.get(tool_id, {}) as Dictionary
+	var model_path := str(definition.get("path", ""))
+	if model_path.is_empty():
+		return false
+	var direction := Vector3(randf_range(-1.0, 1.0), 0.35, randf_range(-1.0, 1.0)).normalized()
+	var state := {
+		"item_id": _allocate_dropped_item_id("road_blocker_weapon"),
+		"item": {
+			"kind": "tool",
+			"tool_id": tool_id,
+			"tool_bucket": "primary_weapon_ids",
+			"display_name": str(definition.get("name", definition.get("short", tool_id))),
+			# Omit the runtime magazine deliberately: pickup restores the weapon's
+			# normal default magazine instead of copying the guard's spent shells.
+		},
+		"model_path": model_path,
+		"position": position + Vector3.UP * 1.1 + direction * 0.45,
+		"velocity": direction * 3.0 + Vector3.UP * 2.2,
+		"angular_velocity": Vector3(1.5, 3.0, 0.8),
+		"landed": false,
+		"lifetime_remaining": PickupItem.LIFETIME_SECONDS,
+	}
+	if not _spawn_authoritative_dropped_item(state):
+		return false
+	reliable_world_event_ready.emit({"type": "dropped_item_spawned", "item_state": state, "tick": server_tick})
 	return true
 
 
@@ -10991,6 +11770,7 @@ func _consume_dropped_item_from_player(state: Dictionary, requested: Dictionary)
 						ammo_state["reload_duration"] = 0.0
 						dropped_tool["ammo_in_mag"] = int(ammo_state.get("ammo_in_mag", 0))
 						dropped_tool["reserve_ammo"] = int(ammo_state.get("reserve_ammo", 0))
+						dropped_tool["ammo_revision"] = int(ammo_state.get("ammo_revision", 0))
 						ammo_states.erase(tool_id)
 						state["weapon_ammo_states"] = ammo_states
 					if not requested_slot_item.is_empty():
@@ -11131,6 +11911,7 @@ func _restore_dropped_item_to_player(state: Dictionary, item: Dictionary) -> voi
 						"reload_remaining": 0.0,
 						"reload_duration": 0.0,
 						"reload_ammo_amount": 0,
+						"ammo_revision": maxi(0, int(item.get("ammo_revision", 0))),
 					}
 					state["weapon_ammo_states"] = ammo_states
 		"ingredient":
@@ -11263,6 +12044,64 @@ func _spawn_authoritative_dropped_item(state: Dictionary) -> bool:
 	return true
 
 
+func _queue_authoritative_dropped_item_spawns(states: Array) -> void:
+	for state_value: Variant in states:
+		if not state_value is Dictionary:
+			continue
+		var source_state := state_value as Dictionary
+		var item_id := str(source_state.get("item_id", ""))
+		if item_id.is_empty() or dropped_item_nodes.has(item_id) \
+				or pending_authoritative_dropped_item_spawn_ids.has(item_id):
+			continue
+		pending_authoritative_dropped_item_spawns.append(source_state.duplicate(true))
+		pending_authoritative_dropped_item_spawn_ids[item_id] = true
+
+
+## Instantiate only a bounded number of authoritative pickups per simulation
+## tick. Failed entries stay queued: once player_died has removed an inventory
+## item, silently restoring it later would desynchronize that player's client.
+func _flush_pending_authoritative_dropped_item_spawns() -> void:
+	if pending_authoritative_dropped_item_spawns.is_empty():
+		return
+	var flush_started_usec := Time.get_ticks_usec()
+	var queue_before := pending_authoritative_dropped_item_spawns.size()
+	var spawned_states: Array[Dictionary] = []
+	var failed_attempts := 0
+	var attempts := mini(
+		AUTHORITY_DROPPED_ITEM_SPAWNS_PER_TICK,
+		pending_authoritative_dropped_item_spawns.size()
+	)
+	for _attempt in range(attempts):
+		var state: Dictionary = pending_authoritative_dropped_item_spawns.pop_front()
+		var item_id := str(state.get("item_id", ""))
+		if item_id.is_empty():
+			continue
+		if dropped_item_nodes.has(item_id):
+			pending_authoritative_dropped_item_spawn_ids.erase(item_id)
+			continue
+		if not _spawn_authoritative_dropped_item(state):
+			pending_authoritative_dropped_item_spawns.append(state)
+			failed_attempts += 1
+			continue
+		pending_authoritative_dropped_item_spawn_ids.erase(item_id)
+		spawned_states.append(state.duplicate(true))
+	if not spawned_states.is_empty():
+		reliable_world_event_ready.emit({
+			"type": "dropped_items_spawned",
+			"items": spawned_states,
+			"tick": server_tick,
+		})
+	print("[DeathDropBatch] tick=%d queued_before=%d attempted=%d spawned=%d failed=%d remaining=%d duration_ms=%.3f" % [
+		server_tick,
+		queue_before,
+		attempts,
+		spawned_states.size(),
+		failed_attempts,
+		pending_authoritative_dropped_item_spawns.size(),
+		float(Time.get_ticks_usec() - flush_started_usec) / 1000.0,
+	])
+
+
 func _allocate_dropped_item_id(prefix: String) -> String:
 	var item_id := "%s_%d" % [prefix, next_dropped_item_id]
 	next_dropped_item_id += 1
@@ -11300,6 +12139,8 @@ func consume_dropped_item_for_bandit(pickup: PickupItem, collector: Node3D) -> b
 
 
 func _clear_dropped_items() -> void:
+	pending_authoritative_dropped_item_spawns.clear()
+	pending_authoritative_dropped_item_spawn_ids.clear()
 	for pickup in dropped_item_nodes.values():
 		if is_instance_valid(pickup):
 			(pickup as Node).queue_free()
@@ -11432,6 +12273,9 @@ func server_remote_control_session(peer_id: int, device_id: String, connected: b
 					result["ok"] = true
 				else:
 					result["reason"] = "not_active_controller"
+			if bool(result.get("ok", false)):
+				_reset_remote_input_stream(device_id)
+				state = remote_device_states.get(device_id, state)
 			remote_device_states[device_id] = state
 			result["device_type"] = state.get("device_type", "")
 			result["team"] = state.get("team", "")
@@ -11447,39 +12291,63 @@ func server_remote_control_session(peer_id: int, device_id: String, connected: b
 func server_remote_control_input(peer_id: int, input_frame: Dictionary) -> void:
 	if not player_states.has(peer_id):
 		return
-	var device_id := str(input_frame.get("device_id", input_frame.get("device_path", "")))
+	var player_state: Dictionary = player_states[peer_id]
+	var packet_frames := _realtime_packet_frames(input_frame)
+	if packet_frames.is_empty():
+		_record_realtime_input_rejection("remote", "", "empty_packet", player_state)
+		return
+	var device_id := _realtime_packet_route_id(
+		input_frame,
+		packet_frames,
+		"device_id",
+		"device_path"
+	)
 	if device_id.is_empty():
+		_record_realtime_input_rejection("remote", "", "missing_device_id", player_state)
 		return
 	if not remote_device_states.has(device_id):
+		_record_realtime_input_rejection("remote", device_id, "unknown_device", player_state)
 		return
 	var state: Dictionary = remote_device_states[device_id]
 	if int(state.get("owner_peer_id", 0)) != peer_id:
+		_record_realtime_input_rejection("remote", device_id, "not_device_owner", state)
 		return
 	if int(state.get("controller_peer_id", 0)) != peer_id:
+		_record_realtime_input_rejection("remote", device_id, "not_active_controller", state)
+		return
+	if not _realtime_packet_outer_routes_match(input_frame, device_id, "device_id", "device_path") \
+			or not _realtime_packet_routes_match(packet_frames, device_id, "device_id", "device_path"):
+		_record_realtime_input_rejection("remote", device_id, "mixed_device_routes", state)
 		return
 	var device_type := str(state.get("device_type", ""))
 	if device_type == "normal_drone" or device_type == "action_drone" or device_type == "tech_drone" or device_type == "small_mouse" or device_type == "boom_buggy":
-		var input_seq := int(input_frame.get("input_seq", -1))
-		if input_seq <= int(state.get("last_input_seq", 0)):
-			return
-		var move_value: Variant = input_frame.get("move", Vector2.ZERO)
-		var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
-		if move.length_squared() > 1.0:
-			move = move.normalized()
-		state["input"] = {
-			"input_seq": input_seq,
-			"move": move,
-			"vertical": clampf(float(input_frame.get("vertical", 0.0)), -1.0, 1.0),
-			"jump_seq": int(input_frame.get("jump_seq", 0)),
-			"yaw": float(input_frame.get("yaw", state.get("yaw", 0.0))),
-		}
-		state["last_input_seq"] = input_seq
+		var sanitized_packet := {"frames": []}
+		for frame: Dictionary in packet_frames:
+			var move_value: Variant = frame.get("move", Vector2.ZERO)
+			var move := move_value as Vector2 if move_value is Vector2 else Vector2.ZERO
+			if move.length_squared() > 1.0:
+				move = move.normalized()
+			(sanitized_packet["frames"] as Array).append({
+				"input_seq": int(frame.get("input_seq", -1)),
+				"move": move,
+				"vertical": clampf(float(frame.get("vertical", 0.0)), -1.0, 1.0),
+				"jump_seq": int(frame.get("jump_seq", 0)),
+				"yaw": float(frame.get("yaw", state.get("yaw", 0.0))),
+			})
+		state = _enqueue_realtime_input_frames(
+			remote_input_queues,
+			device_id,
+			state,
+			sanitized_packet,
+			"remote"
+		)
 	else:
 		# Legacy remote devices still use their existing client-side simulation.
-		state["position"] = input_frame.get("position", state.get("position", Vector3.ZERO))
-		state["velocity"] = input_frame.get("velocity", state.get("velocity", Vector3.ZERO))
-		state["yaw"] = float(input_frame.get("yaw", state.get("yaw", 0.0)))
-		state["input"] = input_frame.duplicate(true)
+		var latest_frame: Dictionary = packet_frames.back()
+		state["position"] = latest_frame.get("position", input_frame.get("position", state.get("position", Vector3.ZERO)))
+		state["velocity"] = latest_frame.get("velocity", input_frame.get("velocity", state.get("velocity", Vector3.ZERO)))
+		state["yaw"] = float(latest_frame.get("yaw", input_frame.get("yaw", state.get("yaw", 0.0))))
+		state["input"] = latest_frame.duplicate(true)
 	state["last_tick"] = server_tick
 	remote_device_states[device_id] = state
 	bytes_received_this_second += len(JSON.stringify(input_frame).to_utf8_buffer())
@@ -11503,7 +12371,24 @@ func _simulate_remote_devices(delta: float) -> void:
 			continue
 		if node.has_method("set_server_authority_simulation"):
 			node.call("set_server_authority_simulation", true)
-		node.call("simulate_authoritative_remote_input", state.get("input", {}), delta)
+		var consumed_input := _consume_realtime_input_frame(
+			remote_input_queues,
+			device_id,
+			state.get("last_applied_input", {})
+		)
+		var input: Dictionary = consumed_input.get("input", {})
+		node.call("simulate_authoritative_remote_input", input, delta)
+		if bool(consumed_input.get("consumed", false)):
+			state["last_processed_input_seq"] = int(input.get("input_seq", state.get("last_processed_input_seq", 0)))
+			state["last_input_seq"] = int(state.get("last_processed_input_seq", 0))
+			state["last_applied_input"] = input.duplicate(true)
+		if bool(consumed_input.get("consumed", false)) and server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+			_record_realtime_input_diagnostic(
+				"remote",
+				device_id,
+				state,
+				(remote_input_queues.get(device_id, []) as Array).size()
+			)
 		var body := node as CharacterBody3D
 		if body == null:
 			continue
@@ -11512,6 +12397,27 @@ func _simulate_remote_devices(delta: float) -> void:
 		state["yaw"] = body.rotation.y
 		state["hp"] = _node_float_property(body, "current_hp", float(state.get("hp", 0.0)))
 		remote_device_states[device_id] = state
+		if server_tick % PLAYER_CORRECTION_TICK_INTERVAL == 0:
+			controlled_remote_correction_ready.emit(int(state.get("controller_peer_id", 0)), {
+				"device_id": device_id,
+				"device_type": device_type,
+				"tick": server_tick,
+				# Keep last_input_seq for older clients; both fields mean the last
+				# frame actually simulated by the authority.
+				"last_input_seq": int(state.get("last_processed_input_seq", state.get("last_input_seq", 0))),
+				"last_processed_input_seq": int(state.get("last_processed_input_seq", state.get("last_input_seq", 0))),
+				"position": state.get("position", Vector3.ZERO),
+				"velocity": state.get("velocity", Vector3.ZERO),
+				"yaw": float(state.get("yaw", 0.0)),
+				"hp": float(state.get("hp", 0.0)),
+				"signal_strength": float(state.get("signal_strength", 0.0)),
+				"jam_ratio": float(state.get("jam_ratio", 1.0)),
+				"aug_ratio": float(state.get("aug_ratio", 1.0)),
+				"effective_signal": float(state.get("effective_signal", 0.0)),
+				"primary_action_cooldown": float(state.get("primary_action_cooldown", 0.0)),
+				"primary_action_cooldown_left": maxf(0.0, float(int(state.get("primary_action_ready_at_msec", 0)) - Time.get_ticks_msec()) / 1000.0),
+				"electronics_disabled_remaining": float(node.call("get_electronics_disabled_remaining")) if node.has_method("get_electronics_disabled_remaining") else 0.0,
+			})
 
 
 func _update_remote_device_link_quality() -> void:
@@ -11539,11 +12445,13 @@ func _update_remote_device_link_quality() -> void:
 			device.set_meta("network_effective_signal", float(state.get("effective_signal", 0.0)))
 			device.set_meta("network_jam_ratio", float(state.get("jam_ratio", 1.0)))
 			device.set_meta("network_aug_ratio", float(state.get("aug_ratio", 1.0)))
-		var controller_peer_id := int(state.get("controller_peer_id", 0))
-		if controller_peer_id != 0 and float(state.get("effective_signal", 0.0)) < REMOTE_CONTROL_LOST_EFFECTIVE_SIGNAL:
-			state["controller_peer_id"] = 0
-			state["input"] = {}
-			_emit_remote_control_session_event(state, controller_peer_id, false, true, "signal_too_weak")
+			var controller_peer_id := int(state.get("controller_peer_id", 0))
+			if controller_peer_id != 0 and float(state.get("effective_signal", 0.0)) < REMOTE_CONTROL_LOST_EFFECTIVE_SIGNAL:
+				state["controller_peer_id"] = 0
+				state["input"] = {}
+				_reset_remote_input_stream(device_id)
+				state = remote_device_states.get(device_id, state)
+				_emit_remote_control_session_event(state, controller_peer_id, false, true, "signal_too_weak")
 		remote_device_states[device_id] = state
 
 
@@ -11795,6 +12703,7 @@ func _default_weapon_ammo_state(tool_id: String) -> Dictionary:
 		"reload_remaining": 0.0,
 		"reload_duration": 0.0,
 		"reload_ammo_amount": 0,
+		"ammo_revision": 0,
 	}
 
 
@@ -11805,6 +12714,7 @@ func _get_or_create_weapon_ammo_state(state: Dictionary, tool_id: String) -> Dic
 		state["weapon_ammo_states"] = ammo_states
 	var ammo_state := ammo_states[tool_id] as Dictionary
 	ammo_state["reserve_ammo"] = 0
+	ammo_state["ammo_revision"] = maxi(0, int(ammo_state.get("ammo_revision", 0)))
 	return ammo_state
 
 
@@ -11829,6 +12739,7 @@ func _initialize_weapon_ammo_states(existing_value: Variant, primary_value: Vari
 					normalized["reload_remaining"] = maxf(0.0, float(source.get("reload_remaining", 0.0)))
 					normalized["reload_duration"] = maxf(0.0, float(source.get("reload_duration", 0.0)))
 					normalized["reload_ammo_amount"] = maxi(0, int(source.get("reload_ammo_amount", 0)))
+					normalized["ammo_revision"] = maxi(0, int(source.get("ammo_revision", 0)))
 				result[tool_id] = normalized
 	return result
 
@@ -11861,6 +12772,7 @@ func _sync_weapon_ammo_states_to_backpack_slots(state: Dictionary) -> void:
 		item["reload_remaining"] = maxf(0.0, float(ammo_state.get("reload_remaining", 0.0)))
 		item["reload_duration"] = maxf(0.0, float(ammo_state.get("reload_duration", 0.0)))
 		item["reload_ammo_amount"] = maxi(0, int(ammo_state.get("reload_ammo_amount", 0)))
+		item["ammo_revision"] = maxi(0, int(ammo_state.get("ammo_revision", 0)))
 		slots[index] = item
 	state["backpack_slot_items"] = slots
 
@@ -11886,6 +12798,7 @@ func _tick_weapon_reloads(peer_id: int, state: Dictionary, delta: float) -> void
 			ammo_state["reserve_ammo"] = 0
 			ammo_state["reload_ammo_amount"] = 0
 			ammo_state["reload_duration"] = 0.0
+			ammo_state["ammo_revision"] = int(ammo_state.get("ammo_revision", 0)) + 1
 			if transferred <= 0:
 				_emit_gameplay_notice(peer_id, NO_AMMO_SUPPLY_BOX_NOTICE)
 			ammo_states[tool_id] = ammo_state
@@ -11904,6 +12817,7 @@ func _emit_weapon_ammo_state(peer_id: int, tool_id: String, ammo_state: Dictiona
 		"peer_id": peer_id,
 		"tool_id": tool_id,
 		"ammo_state": ammo_state.duplicate(true),
+		"ammo_revision": int(ammo_state.get("ammo_revision", 0)),
 		"tick": server_tick,
 	})
 
@@ -12564,6 +13478,68 @@ func _server_shotgun(peer_id: int, tool_request: Dictionary) -> Dictionary:
 	return _server_pellet_shotgun(peer_id, tool_request, "shotgun")
 
 
+func _sample_circular_pellet_directions(
+	center_direction: Vector3,
+	bullet_count: int,
+	full_spread_degrees: float
+) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	var direction := center_direction.normalized()
+	if direction.length_squared() <= 0.001:
+		direction = Vector3.FORWARD
+	var reference_up := Vector3.UP if absf(direction.dot(Vector3.UP)) <= 0.98 else Vector3.RIGHT
+	var spread_right := direction.cross(reference_up).normalized()
+	var spread_up := spread_right.cross(direction).normalized()
+	var max_spread_radius := tan(deg_to_rad(maxf(0.0, full_spread_degrees) * 0.5))
+	for _pellet_index in range(maxi(1, bullet_count)):
+		var polar_angle := randf_range(0.0, TAU)
+		var radial_offset := max_spread_radius * sqrt(randf())
+		result.append((
+			direction
+			+ (spread_right * cos(polar_angle) + spread_up * sin(polar_angle)) * radial_offset
+		).normalized())
+	return result
+
+
+func server_ai_pellet_hitscan(
+	shooter: Node3D,
+	attacker_team: String,
+	tool_id: String,
+	origin: Vector3,
+	center_direction: Vector3
+) -> Dictionary:
+	var profile_id := CombatBalance.resolve_profile_id(tool_id)
+	if profile_id not in ["shotgun", "remington870"]:
+		return server_ai_hitscan(shooter, attacker_team, tool_id, origin, center_direction)
+	var pellet_results: Array[Dictionary] = []
+	var total_damage := 0.0
+	var summary_hit_kind := "none"
+	var summary_hit_position := origin
+	var directions := _sample_circular_pellet_directions(
+		center_direction,
+		CombatBalance.get_int(profile_id, "bullet_count", 1),
+		CombatBalance.get_float(profile_id, "spread_degrees", 0.0)
+	)
+	for pellet_direction in directions:
+		var pellet := server_ai_hitscan(
+			shooter, attacker_team, tool_id, origin, pellet_direction
+		)
+		pellet_results.append(pellet)
+		total_damage += float(pellet.get("damage", 0.0))
+		if summary_hit_kind == "none" and str(pellet.get("hit_kind", "none")) != "none":
+			summary_hit_kind = str(pellet.get("hit_kind", "none"))
+			summary_hit_position = _vector3_from_value(pellet.get("hit_position", origin))
+	return {
+		"ok": true,
+		"hit_kind": summary_hit_kind,
+		"hit_position": summary_hit_position,
+		"direction": center_direction.normalized(),
+		"damage": total_damage,
+		"knockback": CombatBalance.get_float(profile_id, "knockback"),
+		"pellet_results": pellet_results,
+	}
+
+
 func _server_pellet_shotgun(
 	peer_id: int,
 	tool_request: Dictionary,
@@ -12581,10 +13557,6 @@ func _server_pellet_shotgun(
 	var spread_degrees := CombatBalance.get_float(
 		profile_id, "spread_degrees", 2.0
 	)
-	var screen_right := center_direction.cross(Vector3.UP).normalized()
-	var spread_axis := screen_right.cross(center_direction).normalized()
-	if spread_axis.length_squared() <= 0.001:
-		spread_axis = Vector3.UP
 	var pellet_results: Array[Dictionary] = []
 	var confirmed_hits := 0
 	var total_damage := 0.0
@@ -12593,18 +13565,11 @@ func _server_pellet_shotgun(
 		tool_request.get("origin", Vector3.ZERO)
 	)
 
-	for index in range(bullet_count):
-		var angle_degrees := 0.0
-		if bullet_count > 1:
-			angle_degrees = lerpf(
-				-spread_degrees * 0.5,
-				spread_degrees * 0.5,
-				float(index) / float(bullet_count - 1)
-			)
-		var pellet_direction := center_direction.rotated(
-			spread_axis,
-			deg_to_rad(angle_degrees)
-		).normalized()
+	for pellet_direction in _sample_circular_pellet_directions(
+		center_direction,
+		bullet_count,
+		spread_degrees
+	):
 		var pellet_request := tool_request.duplicate(true)
 		pellet_request["direction"] = pellet_direction
 		var pellet := _server_hitscan(
@@ -13160,6 +14125,9 @@ func _server_place_free_scene(peer_id: int, tool_request: Dictionary, scene_path
 			"hp": device_max_hp,
 			"max_hp": device_max_hp,
 			"last_input_seq": 0,
+			"last_received_input_seq": 0,
+			"last_processed_input_seq": 0,
+			"last_applied_input": {},
 			"last_tick": server_tick,
 			"controller_peer_id": peer_id if _is_remote_controllable_device(device_type) else 0,
 			"signal_range": float(node.get("use_distance")) if _is_remote_controllable_device(device_type) else 0.0,
@@ -13800,6 +14768,7 @@ func capture_player_with_big_mouth(
 	state["knockback_velocity"] = Vector3.ZERO
 	player_states[peer_id] = state
 	latest_inputs.erase(peer_id)
+	player_input_queues.erase(peer_id)
 	var device_id := str(big_mouth.get_meta("network_device_id", str(big_mouth.get_path())))
 	var event := {
 		"type": "big_mouth_triggered",
@@ -13891,6 +14860,7 @@ func expire_trap(trap: TrapTool) -> void:
 		return
 	var device_id := str(trap.get_meta("network_device_id", str(trap.get_path())))
 	remote_device_states.erase(device_id)
+	remote_input_queues.erase(device_id)
 	placed_tool_states.erase(device_id)
 	reliable_world_event_ready.emit({
 		"type": "trap_expired",
@@ -15179,7 +16149,9 @@ func apply_local_boom_explosion(
 	effect := "Explosion",
 	knockback := 20.0,
 	server_authority := false,
-	show_owner_hit_marker := true
+	show_owner_hit_marker := true,
+	attacker_peer_id_override := -1,
+	attacker_node: Node3D = null
 ) -> void:
 	if (not is_local_authority() and not (server_authority and is_server_authority())) \
 			or radius <= 0.0 or damage <= 0.0:
@@ -15187,7 +16159,8 @@ func apply_local_boom_explosion(
 	# Match server projectile resolution: the shield zone weakens an enemy Boom
 	# at the actual detonation point, before its radius damage is distributed.
 	damage *= AreaProtectorTool.get_damage_multiplier_at(self, position, team)
-	var attacker_peer_id := resolve_attacker_peer_id(team)
+	var attacker_peer_id := attacker_peer_id_override \
+		if attacker_peer_id_override >= 0 else resolve_attacker_peer_id(team)
 	for peer_id_value in player_states.keys():
 		var peer_id := int(peer_id_value)
 		var target: Dictionary = player_states[peer_id]
@@ -15237,7 +16210,19 @@ func apply_local_boom_explosion(
 	_damage_ai_normal_drones_in_radius(position, radius, damage, team, effect, false, false)
 	_damage_vehicles_in_radius(position, radius, damage, team, effect)
 	_damage_mounted_machine_guns_in_radius(position, radius, damage, team, effect)
-	var damaged_tools := _damage_tools_in_radius(position, radius, damage, team, effect)
+	var damaged_tools := _damage_tools_in_radius(
+		position,
+		radius,
+		damage,
+		team,
+		effect,
+		false,
+		"",
+		false,
+		"",
+		attacker_peer_id,
+		attacker_node
+	)
 	if show_owner_hit_marker and damaged_tools > 0:
 		notify_player_hit_confirmation(
 			attacker_peer_id,
@@ -15257,13 +16242,25 @@ func apply_authoritative_vehicle_explosion(
 	damage: float,
 	radius: float,
 	effect := "VehicleExplosion",
-	knockback := 30.0
+	knockback := 30.0,
+	source_vehicle: VehicleBase = null
 ) -> void:
 	# A vehicle destruction explosion is not a player weapon hit and must not
 	# create a local weapon hit marker, even when the vehicle belongs to a player
 	# team.  The local BoomBullet path keeps the default enabled for player-fired
 	# cannonballs.
-	apply_local_boom_explosion(position, team, damage, radius, effect, knockback, true, false)
+	apply_local_boom_explosion(
+		position,
+		team,
+		damage,
+		radius,
+		effect,
+		knockback,
+		true,
+		false,
+		-1,
+		source_vehicle
+	)
 
 
 func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_peer_id := 0, hit_world := true) -> void:
@@ -15406,7 +16403,8 @@ func _explode_projectile(projectile_id: int, hit_position: Vector3, direct_hit_p
 			linear_falloff,
 			team,
 			friendly_fire,
-			team
+			team,
+			int(projectile.get("owner_peer_id", 0))
 		)
 		confirmed_target_count += damaged_tools
 		if damaged_tools > 0:
@@ -15970,6 +16968,13 @@ func award_future_warrior_defeat(attacker_team: String, defender_team: String) -
 	award_team_ai_defeat(attacker_team, defender_team, "Future Warrior")
 
 
+func award_road_blocker_defeat(attacker_team: String) -> void:
+	# RoadBlocker is neutral rather than a red/blue defender, but uses the same
+	# 200-point combat reward. Keep its presentation label independent from the
+	# FutureWarrior reward path.
+	award_team_ai_defeat(attacker_team, "", "RoadBlocker")
+
+
 func award_team_ai_defeat(attacker_team: String, defender_team: String, display_name: String) -> void:
 	if attacker_team.is_empty() or attacker_team == defender_team \
 			or (not is_server_authority() and not is_local_authority()):
@@ -16131,7 +17136,16 @@ func _begin_player_respawn(peer_id: int) -> void:
 	_destroy_rift_anchor_for_peer(peer_id)
 	if float(state.get("respawn_left", 0.0)) > 0.0:
 		return
-		release_big_mouth_capture(peer_id, "player_died")
+	var death_started_usec := Time.get_ticks_usec()
+	_log_player_respawn(
+		peer_id,
+		"death_begin",
+		"hp=%.2f position=%s" % [
+			float(state.get("hp", 0.0)),
+			str(state.get("position", Vector3.ZERO)),
+		]
+	)
+	release_big_mouth_capture(peer_id, "player_died")
 	state = player_states.get(peer_id, state)
 	state["ladder_climbing"] = false
 	state["ladder_tower_id"] = ""
@@ -16140,9 +17154,15 @@ func _begin_player_respawn(peer_id: int) -> void:
 	state = player_states.get(peer_id, {})
 	_destroy_owned_remote_devices_for_player(peer_id)
 	# Do not carry a pre-death movement frame into the first live authority tick.
+	player_input_queues.erase(peer_id)
+	state["last_received_input_seq"] = 0
+	state["last_processed_input_seq"] = 0
+	state["last_input_seq"] = 0
+	state["last_applied_input"] = {}
 	latest_inputs.erase(peer_id)
-	var death_drop_mode := _get_death_drop_mode()
-	var dropped_inventory_items := _drop_player_inventory_on_death(peer_id, state, death_drop_mode)
+	# Commit the authoritative life-state transition before touching inventory or
+	# creating any PickupItem nodes. Even if drop preparation encounters bad item
+	# data, subsequent authority ticks can now advance and complete the respawn.
 	state["hp"] = 0.0
 	state["velocity"] = Vector3.ZERO
 	state["knockback_velocity"] = Vector3.ZERO
@@ -16153,6 +17173,11 @@ func _begin_player_respawn(peer_id: int) -> void:
 	state["m17_flashlight_on"] = false
 	state["respawn_left"] = PLAYER_RESPAWN_SECONDS
 	player_states[peer_id] = state
+	_log_player_respawn(
+		peer_id,
+		"death_state_committed",
+		"remaining=%.3f" % PLAYER_RESPAWN_SECONDS
+	)
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CollisionObject3D:
 		(proxy as CollisionObject3D).collision_layer = 0
@@ -16160,13 +17185,34 @@ func _begin_player_respawn(peer_id: int) -> void:
 		var corpse_shape := (proxy as Node).get_node_or_null("CollisionShape3D") as CollisionShape3D
 		if corpse_shape != null:
 			corpse_shape.set_deferred("disabled", false)
+	# Apply the death camera/UI immediately. Inventory bookkeeping below is kept
+	# synchronous so player_died can still describe exactly which items vanished,
+	# while all expensive scene/model creation is deferred to the tick queue.
+	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
+		_apply_local_player_respawn_state(peer_id, PLAYER_RESPAWN_SECONDS)
+	var death_drop_mode := _get_death_drop_mode()
+	var drop_result := _drop_player_inventory_on_death(peer_id, state, death_drop_mode)
+	var dropped_inventory_items: Array[Dictionary] = _typed_dictionary_array(
+		drop_result.get("items", [])
+	)
+	var pending_item_states: Array[Dictionary] = _typed_dictionary_array(
+		drop_result.get("item_states", [])
+	)
+	player_states[peer_id] = state
+	_log_player_respawn(
+		peer_id,
+		"death_inventory_prepared",
+		"drop_mode=%s removed_items=%d queued_pickups=%d" % [
+			death_drop_mode,
+			dropped_inventory_items.size(),
+			pending_item_states.size(),
+		]
+	)
 	# A cooperative listen-server is both the server authority and the local
 	# player's visual client. Apply the presentation state immediately on that
 	# process; remote clients still receive the reliable event below.
 	if mode == MODE_LOCAL:
 		_apply_local_player_death_inventory(peer_id, dropped_inventory_items)
-	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
-		_apply_local_player_respawn_state(peer_id, PLAYER_RESPAWN_SECONDS)
 	reliable_world_event_ready.emit({
 		"type": "player_died",
 		"peer_id": peer_id,
@@ -16175,6 +17221,14 @@ func _begin_player_respawn(peer_id: int) -> void:
 		"dropped_inventory_items": dropped_inventory_items,
 		"tick": server_tick,
 	})
+	_log_player_respawn(
+		peer_id,
+		"death_event_emitted",
+		"duration_ms=%.3f" % (
+			float(Time.get_ticks_usec() - death_started_usec) / 1000.0
+		)
+	)
+	_queue_authoritative_dropped_item_spawns(pending_item_states)
 
 
 func _get_death_drop_mode() -> String:
@@ -16188,13 +17242,14 @@ func _get_death_drop_mode() -> String:
 	return "save"
 
 
-func _drop_player_inventory_on_death(peer_id: int, state: Dictionary, drop_mode: String) -> Array[Dictionary]:
+func _drop_player_inventory_on_death(peer_id: int, state: Dictionary, drop_mode: String) -> Dictionary:
 	if drop_mode == "save":
-		return []
+		return {"items": [], "item_states": []}
 	var candidates := _select_death_drop_candidates(state, drop_mode)
 	if candidates.is_empty():
-		return []
+		return {"items": [], "item_states": []}
 	var dropped: Array[Dictionary] = []
+	var item_states: Array[Dictionary] = []
 	var layout_value: Variant = state.get("backpack_slot_items", [])
 	var layout: Array = (layout_value as Array).duplicate(true) if layout_value is Array else []
 	for candidate: Dictionary in candidates:
@@ -16214,7 +17269,7 @@ func _drop_player_inventory_on_death(peer_id: int, state: Dictionary, drop_mode:
 		var angle := randf_range(0.0, TAU)
 		var direction := Vector3(cos(angle), randf_range(0.08, 0.28), sin(angle)).normalized()
 		var item_state := _make_dropped_item_state(peer_id, item, state, direction)
-		if item_state.is_empty() or not _spawn_authoritative_dropped_item(item_state):
+		if item_state.is_empty():
 			_restore_dropped_item_to_player(state, item)
 			if not equipment_state_key.is_empty():
 				state[equipment_state_key] = equipped_id
@@ -16223,18 +17278,14 @@ func _drop_player_inventory_on_death(peer_id: int, state: Dictionary, drop_mode:
 		if slot_index >= 0 and slot_index < layout.size():
 			layout[slot_index] = {}
 		dropped.append(item.duplicate(true))
-		reliable_world_event_ready.emit({
-			"type": "dropped_item_spawned",
-			"item_state": item_state,
-			"tick": server_tick,
-		})
+		item_states.append(item_state.duplicate(true))
 	var next_capacity := _server_bag_capacity(state)
 	if layout.size() > next_capacity:
 		layout.resize(next_capacity)
 	state["backpack_slot_items"] = layout
 	state["backpack_layout_valid"] = true
-	_clear_invalid_current_selection(state, layout)
-	return dropped
+	_clear_invalid_current_selection(state, _typed_dictionary_array(layout))
+	return {"items": dropped, "item_states": item_states}
 
 
 func _select_death_drop_candidates(state: Dictionary, drop_mode: String) -> Array[Dictionary]:
@@ -16358,6 +17409,7 @@ func _remove_player_from_vehicle(peer_id: int, notify_player: bool) -> void:
 	var vehicle := _find_vehicle(vehicle_id)
 	var seat_index := int(state.get("vehicle_seat_index", -1))
 	var exit_position := _vector3_from_value(state.get("position", Vector3.ZERO))
+	var was_driver := vehicle != null and vehicle.driver_peer_id == peer_id
 	if vehicle != null:
 		seat_index = vehicle.exit_seat(peer_id)
 		exit_position = vehicle.get_exit_position(seat_index)
@@ -16370,6 +17422,8 @@ func _remove_player_from_vehicle(peer_id: int, notify_player: bool) -> void:
 	_clear_player_fall_tracking(state, exit_position)
 	player_states[peer_id] = state
 	_set_server_player_vehicle_collision(peer_id, false, exit_position)
+	if was_driver:
+		_reset_vehicle_input_stream(vehicle_id)
 	if notify_player:
 		var session_result := {
 			"ok": true,
@@ -16411,6 +17465,17 @@ func _respawn_player(peer_id: int) -> void:
 	if not player_states.has(peer_id):
 		return
 	var state: Dictionary = player_states[peer_id]
+	var respawn_started_usec := Time.get_ticks_usec()
+	_log_player_respawn(
+		peer_id,
+		"respawn_begin",
+		"stored_spawn_index=%d" % int(state.get("spawn_index", 0))
+	)
+	player_input_queues.erase(peer_id)
+	state["last_received_input_seq"] = 0
+	state["last_processed_input_seq"] = 0
+	state["last_input_seq"] = 0
+	state["last_applied_input"] = {}
 	var spawn_position := _get_random_team_spawn_position(
 		str(state.get("team", "red")), peer_id
 	)
@@ -16428,6 +17493,11 @@ func _respawn_player(peer_id: int) -> void:
 	state["ladder_climb_direction"] = 1.0
 	state["m17_flashlight_on"] = false
 	player_states[peer_id] = state
+	_log_player_respawn(
+		peer_id,
+		"respawn_state_committed",
+		"position=%s hp=%.2f" % [str(spawn_position), float(state.get("hp", 0.0))]
+	)
 	var proxy: Node = player_physics_nodes.get(peer_id, null)
 	if is_instance_valid(proxy) and proxy is CharacterBody3D:
 		var body := proxy as CharacterBody3D
@@ -16443,21 +17513,68 @@ func _respawn_player(peer_id: int) -> void:
 	# the authoritative respawn, including collision and interaction detectors.
 	if mode == MODE_LOCAL or NetworkSession.is_listen_server():
 		_apply_local_player_respawn_state(peer_id, 0.0, spawn_position)
-	refresh_ai_interest(true)
 	reliable_world_event_ready.emit({
 		"type": "player_respawned",
 		"peer_id": peer_id,
 		"position": spawn_position,
 		"tick": server_tick,
 	})
+	_log_player_respawn(
+		peer_id,
+		"respawn_event_emitted",
+		"duration_ms=%.3f" % (
+			float(Time.get_ticks_usec() - respawn_started_usec) / 1000.0
+		)
+	)
+	# Signal delivery is synchronous: cooperative transport queues/sends the
+	# lifecycle event before an immediate AI-interest rebuild can do heavy work.
+	var ai_refresh_started_usec := Time.get_ticks_usec()
+	_log_player_respawn(peer_id, "ai_interest_refresh_begin")
+	refresh_ai_interest(true)
+	_log_player_respawn(
+		peer_id,
+		"ai_interest_refresh_end",
+		"duration_ms=%.3f sleeping=%d" % [
+			float(Time.get_ticks_usec() - ai_refresh_started_usec) / 1000.0,
+			get_ai_interest_sleeping_count(),
+		]
+	)
 
 
 func _get_random_team_spawn_position(team: String, peer_id: int) -> Vector3:
 	var world := GlobalVar.gameworld
 	if is_instance_valid(world) and world.has_method("get_team_spawn_position"):
-		# The authoritative tick changes each respawn, while the peer id keeps the
-		# choice deterministic for every client that receives this authoritative event.
-		return world.call("get_team_spawn_position", team, peer_id, server_tick) as Vector3
+		# The map API's second argument is a small player slot index. Passing a
+		# Steam/network peer id here made TeamSpawnPoint loop peer_id + 1 times and
+		# froze the listen-server before player_respawned could be sent.
+		var state: Dictionary = player_states.get(peer_id, {})
+		var spawn_index := clampi(
+			int(state.get("spawn_index", 0)),
+			0,
+			MAX_COOPERATIVE_SPAWN_INDEX
+		)
+		var random_seed := hash("%d:%d" % [peer_id, server_tick])
+		var lookup_started_usec := Time.get_ticks_usec()
+		_log_player_respawn(
+			peer_id,
+			"spawn_lookup_begin",
+			"team=%s spawn_index=%d random_seed=%d" % [team, spawn_index, random_seed]
+		)
+		var spawn_position := world.call(
+			"get_team_spawn_position",
+			team,
+			spawn_index,
+			random_seed
+		) as Vector3
+		_log_player_respawn(
+			peer_id,
+			"spawn_lookup_end",
+			"position=%s duration_ms=%.3f" % [
+				str(spawn_position),
+				float(Time.get_ticks_usec() - lookup_started_usec) / 1000.0,
+			]
+		)
+		return spawn_position
 	push_warning("当前地图缺少独立队伍出生点；复活回退到记录的位置。")
 	var state: Dictionary = player_states.get(peer_id, {}) as Dictionary
 	return _vector3_from_value(state.get("spawn_position", state.get("position", Vector3.ZERO)))
@@ -16509,6 +17626,8 @@ func _apply_hit_to_collider(
 	attacker_peer_id := 0,
 	attacker_node: Node3D = null
 ) -> bool:
+	# RoadBlocker player hits notify their owning RoadCheckpoint separately from
+	# ordinary facility damage accounting, so they alarm immediately.
 	if collider == null or not is_instance_valid(collider):
 		return false
 	var manager := get_node_or_null("/root/Farmlandmanager")
@@ -16521,6 +17640,16 @@ func _apply_hit_to_collider(
 		wake_ai_interest_entity(collider as Node)
 	var node = collider
 	while node != null:
+		if node is RoadBlockerAI:
+			var blocker_applied := bool((node as RoadBlockerAI).impact_from_source(
+				effect, damage, attacker_team, attacker_peer_id, attacker_node
+			))
+			if blocker_applied:
+				_notify_road_checkpoint_blocker_attack(
+					node as Node,
+					_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+				)
+			return blocker_applied
 		if node is FutureWarriorAI:
 			if attacker_peer_id > 0 and (node as FutureWarriorAI).has_method("impact_from_peer"):
 				return bool((node as FutureWarriorAI).impact_from_peer(
@@ -16573,6 +17702,7 @@ func _apply_hit_to_collider(
 					attacker_peer_id,
 					attacker_node
 				))
+			var checkpoint_before := _checkpoint_member_health(component_node)
 			var component_applied := bool(component_node.call(
 				"impact_from_collider",
 				collider,
@@ -16584,15 +17714,60 @@ func _apply_hit_to_collider(
 				attacker_node
 			))
 			if component_applied:
+				var checkpoint_after := _checkpoint_member_health(component_node)
+				var applied_damage := _checkpoint_applied_damage(
+					checkpoint_before,
+					checkpoint_after,
+					damage
+				)
+				_notify_road_checkpoint_damage(
+					component_node,
+					applied_damage,
+					_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+				)
+				if component_node.is_in_group("road_blockers"):
+					_notify_road_checkpoint_blocker_attack(
+						component_node,
+						_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+					)
 				_sync_component_damageable_node(component_node)
 			return component_applied
 		var tool_ref := _registered_tool_ref_for_node(node)
 		if not tool_ref.is_empty():
-			return _damage_registered_tool_ref(tool_ref, damage, effect, attacker_team)
+			return _damage_registered_tool_ref(
+				tool_ref,
+				damage,
+				effect,
+				attacker_team,
+				false,
+				"",
+				attacker_peer_id,
+				attacker_node
+			)
 		if attacker_peer_id > 0 and node.has_method("impact_from_peer"):
-			return bool(node.call("impact_from_peer", effect, damage, attacker_team, attacker_peer_id))
+			var peer_applied := bool(node.call("impact_from_peer", effect, damage, attacker_team, attacker_peer_id))
+			if peer_applied and node.is_in_group("road_blockers"):
+				_notify_road_checkpoint_blocker_attack(
+					node as Node,
+					_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+				)
+			return peer_applied
 		if node.has_method("impact"):
-			return bool(node.call("impact", effect, damage, attacker_team))
+			var generic_before := _checkpoint_member_health(node as Node)
+			var generic_applied := bool(node.call("impact", effect, damage, attacker_team))
+			if generic_applied:
+				var generic_after := _checkpoint_member_health(node as Node)
+				_notify_road_checkpoint_damage(
+					node as Node,
+					_checkpoint_applied_damage(generic_before, generic_after, damage),
+					_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+				)
+				if node.is_in_group("road_blockers"):
+					_notify_road_checkpoint_blocker_attack(
+						node as Node,
+						_checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+					)
+			return generic_applied
 		node = node.get_parent() if node is Node else null
 	return false
 
@@ -16654,7 +17829,7 @@ func _damage_ai_players_in_radius(
 ) -> Dictionary:
 	var result := {"count": 0, "total_damage": 0.0}
 	var seen_instance_ids := {}
-	for group_name: String in ["ai_players", "farmer_ai"]:
+	for group_name: String in ["ai_players", "farmer_ai", "road_blockers"]:
 		for node in get_tree().get_nodes_in_group(group_name):
 			if not node is Node3D or not is_instance_valid(node):
 				continue
@@ -16691,7 +17866,11 @@ func _damage_ai_players_in_radius(
 			var impact_team := _explosion_impact_team(attacker_team, target_team, friendly_fire)
 			var previous_health := _explosion_target_health(target)
 			var impact_result: Variant = null
-			if attacker_peer_id > 0 and target.has_method("impact_from_peer"):
+			if target is RoadBlockerAI:
+				impact_result = (target as RoadBlockerAI).impact_from_source(
+					effect, applied_damage, impact_team, attacker_peer_id
+				)
+			elif attacker_peer_id > 0 and target.has_method("impact_from_peer"):
 				impact_result = target.call(
 					"impact_from_peer", effect, applied_damage, impact_team, attacker_peer_id
 				)
@@ -16971,7 +18150,10 @@ func _damage_registered_tool_ref(
 	effect: String,
 	attacker_team: String,
 	allow_friendly_fire := false,
-	hit_confirmation_team := ""
+	hit_confirmation_team := "",
+	attacker_peer_id := 0,
+	attacker_node: Node3D = null,
+	source_context_override: Dictionary = {}
 ) -> bool:
 	if damage <= 0.0:
 		return false
@@ -17000,6 +18182,7 @@ func _damage_registered_tool_ref(
 	if not allow_friendly_fire and not attacker_team.is_empty() and team == attacker_team:
 		return false
 	var before_hp := float(state.get("hp", _tool_max_hp(str(state.get("tool_name", state.get("device_type", ""))))))
+	var checkpoint_before: float = _checkpoint_member_health(node) if node != null and is_instance_valid(node) else before_hp
 	if node != null and is_instance_valid(node):
 		if allow_friendly_fire and node.has_method("impact_with_friendly_fire"):
 			node.call("impact_with_friendly_fire", effect, damage, attacker_team)
@@ -17018,6 +18201,25 @@ func _damage_registered_tool_ref(
 	else:
 		after_hp = 0.0
 	state["hp"] = maxf(0.0, after_hp)
+	var checkpoint_after: float = _checkpoint_member_health(node) if node != null and is_instance_valid(node) else float(state["hp"])
+	var applied_checkpoint_damage := _checkpoint_applied_damage(
+		checkpoint_before,
+		checkpoint_after,
+		damage
+	)
+	if node != null and is_instance_valid(node):
+		_notify_road_checkpoint_damage(
+			node as Node,
+			applied_checkpoint_damage,
+			source_context_override if not source_context_override.is_empty() \
+				else _checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+		)
+		if node.is_in_group("road_blockers"):
+			_notify_road_checkpoint_blocker_attack(
+				node as Node,
+				source_context_override if not source_context_override.is_empty() \
+					else _checkpoint_source_context(attacker_peer_id, attacker_node, attacker_team, "weapon")
+			)
 	if _is_road_barrier_node(node):
 		_merge_road_barrier_state_into_tool_state(state, node)
 	if kind == "remote" and float(state["hp"]) < before_hp:
@@ -17056,6 +18258,89 @@ func _is_road_barrier_tool_name(tool_name: String) -> bool:
 		"roadbarrier",
 		"roadbarrierleft",
 	]
+
+
+func _checkpoint_member_health(node: Variant) -> float:
+	if not node is Node or not is_instance_valid(node):
+		return -1.0
+	var target := _checkpoint_damageable_node(node as Node)
+	if target == null or not is_instance_valid(target):
+		return -1.0
+	# RoadBarrier's control box and arm are one logical checkpoint member.
+	if _is_road_barrier_node(target):
+		var control_hp := _node_float_property(target, "current_hp", 0.0)
+		var arm_hp := _node_float_property(target, "arm_current_hp", 0.0)
+		return maxf(0.0, control_hp) + maxf(0.0, arm_hp)
+	if _node_has_property(target, "current_hp"):
+		return maxf(0.0, _node_float_property(target, "current_hp", 0.0))
+	if _node_has_property(target, "hp"):
+		return maxf(0.0, _node_float_property(target, "hp", 0.0))
+	return -1.0
+
+
+func _checkpoint_damageable_node(node: Node) -> Node:
+	if node == null or not is_instance_valid(node):
+		return null
+	# Checkpoint defenses are standalone map/free-placement facilities. Keep
+	# the registered facility node as the damage-accounting target.
+	return node
+
+
+func _checkpoint_applied_damage(before: float, after: float, requested: float) -> float:
+	if before < 0.0 or after < 0.0:
+		return maxf(0.0, requested)
+	return clampf(before - after, 0.0, maxf(0.0, requested))
+
+
+func _checkpoint_source_context(
+	attacker_peer_id: int,
+	attacker_node: Node3D,
+	attacker_team: String,
+	source_kind: String
+) -> Dictionary:
+	_checkpoint_damage_event_serial += 1
+	var player_owned := attacker_peer_id > 0
+	# A player-owned vehicle can still damage a checkpoint while nobody is in
+	# the driver seat (for example, its authoritative destruction explosion).
+	# Map vehicles use owner_team for this ownership contract; neutral/AI
+	# vehicles leave it empty and remain excluded from checkpoint alarms.
+	if not player_owned and attacker_node is VehicleBase and _node_has_property(attacker_node, "owner_team"):
+		player_owned = str(attacker_node.get("owner_team")).to_lower() in ["red", "blue"]
+	return {
+		"attacker_peer_id": attacker_peer_id,
+		"attacker_node": attacker_node,
+		"attacker_team": attacker_team,
+		"source_kind": source_kind,
+		"player_owned": player_owned,
+		"damage_event_id": "damage:%d:%d" % [server_tick, _checkpoint_damage_event_serial],
+	}
+
+
+func _notify_road_checkpoint_damage(
+	target: Node,
+	applied_damage: float,
+	source_context: Dictionary
+) -> void:
+	if target == null or not is_instance_valid(target) or applied_damage <= 0.0:
+		return
+	var checkpoint_target := _checkpoint_damageable_node(target)
+	if checkpoint_target == null or not is_instance_valid(checkpoint_target):
+		return
+	for checkpoint_value in get_tree().get_nodes_in_group("road_checkpoints"):
+		if checkpoint_value == null or not is_instance_valid(checkpoint_value):
+			continue
+		if checkpoint_value.has_method("notify_member_damage"):
+			checkpoint_value.call("notify_member_damage", checkpoint_target, applied_damage, source_context)
+
+
+func _notify_road_checkpoint_blocker_attack(blocker: Node, source_context: Dictionary) -> void:
+	if blocker == null or not is_instance_valid(blocker) or not blocker.is_in_group("road_blockers"):
+		return
+	for checkpoint_value in get_tree().get_nodes_in_group("road_checkpoints"):
+		if checkpoint_value == null or not is_instance_valid(checkpoint_value):
+			continue
+		if checkpoint_value.has_method("notify_blocker_attacked"):
+			checkpoint_value.call("notify_blocker_attacked", blocker, source_context)
 
 
 func _find_component_damageable_ancestor(node: Node) -> Node:
@@ -17145,6 +18430,15 @@ func apply_chain_link_fence_vehicle_crush_damage(
 	if not fence.has_method("impact"):
 		return false
 	var vehicle_team := _vehicle_team(vehicle)
+	var vehicle_peer_id := int(vehicle.driver_peer_id) if _node_has_property(vehicle, "driver_peer_id") else 0
+	var vehicle_source := _checkpoint_source_context(
+		vehicle_peer_id,
+		vehicle,
+		vehicle_team,
+		"vehicle_crush"
+	)
+	var vehicle_owner_team := str(vehicle.owner_team).to_lower() if _node_has_property(vehicle, "owner_team") else ""
+	vehicle_source["player_owned"] = vehicle_peer_id > 0 or vehicle_owner_team in ["red", "blue"]
 	var fence_ref := _registered_tool_ref_for_node(fence)
 	if not fence_ref.is_empty():
 		# Keep the normal ownership rule: neutral/enemy fences can be crushed,
@@ -17154,11 +18448,25 @@ func apply_chain_link_fence_vehicle_crush_damage(
 			fence_ref,
 			damage,
 			"vehicle_crush",
-			vehicle_team
+			vehicle_team,
+			false,
+			"",
+			vehicle_peer_id,
+			vehicle,
+			vehicle_source
 		)
 	# Unregistered local test/map nodes still receive the gameplay damage, but
 	# cannot be persisted until the normal tool registration has occurred.
-	return bool(fence.call("impact", "vehicle_crush", damage, vehicle_team))
+	var before_hp := _checkpoint_member_health(fence)
+	var applied := bool(fence.call("impact", "vehicle_crush", damage, vehicle_team))
+	if applied:
+		var after_hp := _checkpoint_member_health(fence)
+		_notify_road_checkpoint_damage(
+			fence,
+			_checkpoint_applied_damage(before_hp, after_hp, damage),
+			vehicle_source
+		)
+	return applied
 
 
 func apply_chain_link_fence_effect(
@@ -17328,6 +18636,7 @@ func _destroy_registered_tool_ref(tool_ref: Dictionary) -> void:
 		remote_device_states.erase(id)
 	elif kind == "remote":
 		remote_device_states.erase(id)
+		remote_input_queues.erase(id)
 		placed_tool_states.erase(id)
 	var event_device_id := str(state.get("device_id", ""))
 	if event_device_id.is_empty():
@@ -17352,7 +18661,9 @@ func _damage_tools_in_radius(
 	linear_falloff := false,
 	structure_attacker_team := "",
 	allow_friendly_fire := false,
-	hit_confirmation_team := ""
+	hit_confirmation_team := "",
+	attacker_peer_id := 0,
+	attacker_node: Node3D = null
 ) -> int:
 	if radius <= 0.0 or damage <= 0.0:
 		return 0
@@ -17386,7 +18697,9 @@ func _damage_tools_in_radius(
 			effect,
 			damage_team,
 			target_allows_friendly_fire,
-			hit_confirmation_team
+			hit_confirmation_team,
+			attacker_peer_id,
+			attacker_node
 		):
 			damaged_count += 1
 		touched_paths[str(state.get("path", id))] = true
@@ -17421,7 +18734,9 @@ func _damage_tools_in_radius(
 			effect,
 			damage_team,
 			target_allows_friendly_fire,
-			hit_confirmation_team
+			hit_confirmation_team,
+			attacker_peer_id,
+			attacker_node
 		):
 			damaged_count += 1
 	return damaged_count
@@ -18963,6 +20278,10 @@ func apply_player_correction(correction: Dictionary) -> void:
 	player_correction_ready.emit(int(correction.get("peer_id", 0)), correction)
 
 
+func apply_vehicle_driver_correction(correction: Dictionary) -> void:
+	vehicle_driver_correction_ready.emit(int(correction.get("peer_id", 0)), correction)
+
+
 func _build_world_snapshot() -> Dictionary:
 	# 高频快照：目标 30Hz / unreliable。
 	# 这里只放需要频繁校正或插值的数据：玩家、移动投射物、遥控设备。
@@ -18992,6 +20311,7 @@ func _build_world_snapshot() -> Dictionary:
 					"ammo_in_mag": int(ammo_state.get("ammo_in_mag", 0)),
 					"reload_remaining": float(ammo_state.get("reload_remaining", 0.0)),
 					"reload_duration": float(ammo_state.get("reload_duration", 0.0)),
+					"ammo_revision": int(ammo_state.get("ammo_revision", 0)),
 				}
 		if selected_tool_id == "medieval_shield":
 			var shield_slot := _current_shield_slot(state)
@@ -19005,6 +20325,9 @@ func _build_world_snapshot() -> Dictionary:
 						"current_hp": float(shield_item.get("current_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0))),
 						"max_hp": float(shield_item.get("max_hp", CombatBalance.get_float("medieval_shield", "max_hp", 1000.0))),
 					}
+		var player_processed_input_seq := int(
+			state.get("last_processed_input_seq", state.get("last_input_seq", 0))
+		)
 		public_players.append({
 			"peer_id": peer_id,
 			"display_name": state.get("display_name", "Player_%d" % peer_id),
@@ -19039,9 +20362,11 @@ func _build_world_snapshot() -> Dictionary:
 			"m17_flashlight_on": bool(state.get("m17_flashlight_on", false)),
 			"selected_weapon_ammo": selected_weapon_ammo,
 			"selected_shield_hp": selected_shield_hp,
-			"last_input_seq": int(state.get("last_input_seq", 0)),
+			"last_input_seq": player_processed_input_seq,
+			"last_processed_input_seq": player_processed_input_seq,
 			"vehicle_id": state.get("vehicle_id", ""),
 			"vehicle_seat_index": int(state.get("vehicle_seat_index", -1)),
+			"vehicle_session_revision": int(state.get("vehicle_session_revision", 0)),
 			"mounted_machine_gun_vehicle_id": str(state.get("mounted_machine_gun_vehicle_id", "")),
 		})
 	var public_vehicles: Array[Dictionary] = []
@@ -19066,6 +20391,7 @@ func _build_world_snapshot() -> Dictionary:
 			"driver_peer_id": int(vehicle.get("driver_peer_id", 0)),
 			"seat_occupants": vehicle.get("seat_occupants", []),
 			"headlights_on": bool(vehicle.get("headlights_on", false)),
+			"headlights_revision": int(vehicle.get("headlights_revision", 0)),
 			"brake_lights_on": bool(vehicle.get("brake_lights_on", false)),
 			"police_light_blue_on": bool(vehicle.get("police_light_blue_on", false)),
 			"body_color": vehicle.get("body_color", null),
@@ -19120,6 +20446,9 @@ func _build_world_snapshot() -> Dictionary:
 			var cooldown_profile := "normal_drone" if device_type == "normal_drone" else "tech_drone" if device_type == "tech_drone" else "small_mouse"
 			var cooldown_key := "bomb_cooldown" if device_type == "normal_drone" else "primary_cooldown"
 			primary_cooldown = maxf(0.0, _configured_tool_float(device_node, cooldown_property, CombatBalance.get_float(cooldown_profile, cooldown_key)))
+		var remote_processed_input_seq := int(
+			device.get("last_processed_input_seq", device.get("last_input_seq", 0))
+		)
 		public_remote_devices.append({
 			"device_id": device_id,
 			"device_type": device.get("device_type", ""),
@@ -19128,7 +20457,8 @@ func _build_world_snapshot() -> Dictionary:
 			"velocity": device.get("velocity", Vector3.ZERO),
 			"yaw": float(device.get("yaw", 0.0)),
 			"hp": float(device.get("hp", 0.0)),
-			"last_input_seq": int(device.get("last_input_seq", 0)),
+			"last_input_seq": remote_processed_input_seq,
+			"last_processed_input_seq": remote_processed_input_seq,
 			"signal_strength": float(device.get("signal_strength", 0.0)),
 			"jam_ratio": float(device.get("jam_ratio", 1.0)),
 			"aug_ratio": float(device.get("aug_ratio", 1.0)),
@@ -19203,7 +20533,7 @@ func _build_world_snapshot() -> Dictionary:
 		if is_instance_valid(animal) and animal.has_method("get_network_state"):
 			public_wild_animals.append(animal.call("get_network_state") as Dictionary)
 	var public_ai_players: Array[Dictionary] = []
-	for ai_group in [&"farmer_ai", &"future_warrior_ai", &"assistant_ai"]:
+	for ai_group in [&"farmer_ai", &"future_warrior_ai", &"assistant_ai", &"road_blockers"]:
 		for ai_value in get_tree().get_nodes_in_group(ai_group):
 			if not is_instance_valid(ai_value) or not ai_value.has_method("get_network_state"):
 				continue
@@ -19217,6 +20547,13 @@ func _build_world_snapshot() -> Dictionary:
 		var drone_state := drone_value.call("get_network_state") as Dictionary
 		if not drone_state.is_empty():
 			public_ai_drones.append(drone_state)
+	var public_road_checkpoints: Array[Dictionary] = []
+	for checkpoint_value in get_tree().get_nodes_in_group("road_checkpoints"):
+		if not is_instance_valid(checkpoint_value) or not checkpoint_value.has_method("get_network_state"):
+			continue
+		var checkpoint_state: Variant = checkpoint_value.call("get_network_state")
+		if checkpoint_state is Dictionary:
+			public_road_checkpoints.append(checkpoint_state as Dictionary)
 	var weather_state: Dictionary = {}
 	var weather_system := get_tree().get_first_node_in_group("weather_systems")
 	if weather_system != null and weather_system.has_method("get_authoritative_weather_state"):
@@ -19236,6 +20573,7 @@ func _build_world_snapshot() -> Dictionary:
 		"wild_animals": public_wild_animals,
 		"ai_players": public_ai_players,
 		"ai_drones": public_ai_drones,
+		"road_checkpoints": public_road_checkpoints,
 	}
 
 
@@ -19403,10 +20741,14 @@ func _build_low_frequency_snapshot(include_nature_resources := false) -> Diction
 
 func _make_player_correction(peer_id: int) -> Dictionary:
 	var state: Dictionary = player_states.get(peer_id, {})
+	var processed_seq := int(state.get("last_processed_input_seq", state.get("last_input_seq", 0)))
 	return {
 		"peer_id": peer_id,
 		"tick": server_tick,
-		"input_seq": int(state.get("last_input_seq", 0)),
+		# Keep input_seq as a compatibility alias for existing clients, while the
+		# explicit name makes it impossible to confuse received and processed data.
+		"input_seq": processed_seq,
+		"last_processed_input_seq": processed_seq,
 		"position": state.get("position", Vector3.ZERO),
 		"velocity": state.get("velocity", Vector3.ZERO),
 		"grounded": bool(state.get("grounded", true)),

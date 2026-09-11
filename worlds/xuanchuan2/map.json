@@ -42,7 +42,7 @@
     "xyz_gizmo_enabled": true,
     "zombie_generators_enabled": true
   },
-  "format_version": 5,
+  "format_version": 6,
   "icon": "map_icon.png",
   "map_id": "xuanchuan2",
   "scene": "xuanchuan2.tscn",
@@ -84,13 +84,16 @@
       513,
       513
     ],
-    "surface_mask": "surface_mask.png",
+    "surface_blend_noise_seed": 72451,
+    "surface_ids": "surface_ids.png",
+    "surface_render": "surface_render.png",
     "surface_mask_resolution": [
       1024,
       1024
     ],
     "surface_palette": "surface_palette.png",
     "surface_palette_resource": "surface_palette.tres",
+    "surface_weights": "surface_weights.png",
     "vertex_spacing": 1.0
   },
   "time": {

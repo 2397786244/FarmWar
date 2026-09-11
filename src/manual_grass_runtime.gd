@@ -7,14 +7,21 @@ const DRY_GRASS_SCENE := preload("res://assets/nature/GrassDry.glb")
 const BLACK_EYED_SUSAN_SCENE := preload("res://assets/nature/Wildflower_BlackEyedSusan.glb")
 const CONEFLOWER_SCENE := preload("res://assets/nature/Wildflower_Coneflower.glb")
 const FERN_SCENE := preload("res://assets/nature/Fern_Clump.glb")
+const SHRUB_GREEN_SCENE := preload("res://assets/nature/Shrub_Green.glb")
+const SHRUB_GREEN_PINK_FLOWERS_SCENE := preload("res://assets/nature/Shrub_GreenPinkFlowers.glb")
+const SHRUB_DRY_YELLOW_SCENE := preload("res://assets/nature/Shrub_DryYellow.glb")
+const MANUAL_GRASS_SCALE_MULTIPLIER := 2.0
 
 const SPECIES := {
-	"small": {"scene": LOW_GRASS_SCENE, "visibility": 100.0},
-	"tall": {"scene": TALL_GRASS_SCENE, "visibility": 120.0},
-	"dry": {"scene": DRY_GRASS_SCENE, "visibility": 100.0},
+	"small": {"scene": LOW_GRASS_SCENE, "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 100.0},
+	"tall": {"scene": TALL_GRASS_SCENE, "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 120.0},
+	"dry": {"scene": DRY_GRASS_SCENE, "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 100.0},
 	"black_eyed_susan": {"scene": BLACK_EYED_SUSAN_SCENE, "visibility": 90.0},
 	"coneflower": {"scene": CONEFLOWER_SCENE, "visibility": 90.0},
 	"fern": {"scene": FERN_SCENE, "visibility": 100.0},
+	"shrub_green": {"scene": SHRUB_GREEN_SCENE, "visibility": 120.0},
+	"shrub_green_pink_flowers": {"scene": SHRUB_GREEN_PINK_FLOWERS_SCENE, "visibility": 120.0},
+	"shrub_dry_yellow": {"scene": SHRUB_DRY_YELLOW_SCENE, "visibility": 120.0},
 }
 
 
@@ -85,7 +92,11 @@ static func _rebuild_chunk(
 		multimesh.mesh = mesh
 		multimesh.instance_count = transforms.size()
 		for index in range(transforms.size()):
-			multimesh.set_instance_transform(index, transforms[index] * source_transform)
+			var transform := transforms[index]
+			transform.basis = transform.basis.scaled(
+				Vector3.ONE * float(definition.get("scale_multiplier", 1.0))
+			)
+			multimesh.set_instance_transform(index, transform * source_transform)
 
 		var instance := MultiMeshInstance3D.new()
 		instance.name = "Mesh_%d" % component_index

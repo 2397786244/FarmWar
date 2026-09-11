@@ -63,6 +63,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await _initialize_farm_fields()
 	_register_static_map_facilities()
+	_register_road_checkpoints()
 	_set_loading_progress(0.96, "正在完成地图初始化")
 	await get_tree().process_frame
 	var player := _create_pending_player()
@@ -77,6 +78,7 @@ func _ready() -> void:
 	## AI 节点必须由本地单机或权威服务器生成；ENet/Steam 客户端只接收快照。
 	if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
 		configured_ai = _spawn_configured_ai()
+		_activate_road_blocker_spawns()
 		_configured_squad_spawners = _activate_map_squad_spawners()
 	_configured_ai_nodes = configured_ai
 	var persistent_loading := CooperativeSession.is_active() or SinglePlayerSession.is_active()
@@ -160,6 +162,33 @@ func _register_static_map_facilities() -> void:
 		var team := str(facility.get("tool_owner")) if facility is MapDefenseFacility or facility is ChainLinkFence else ""
 		if GameAuthority.is_server_authority() or GameAuthority.is_local_authority():
 			GameAuthority.register_map_placed_tool(facility, tool_name, runtime_id, team)
+
+
+func _register_road_checkpoints() -> void:
+	var map_id := str(get_meta("farmwar_map_id", loading_map_name)).strip_edges()
+	if map_id.is_empty():
+		map_id = loading_map_name.to_snake_case()
+	var seen_ids: Dictionary = {}
+	for node in get_tree().get_nodes_in_group("road_checkpoints"):
+		if not is_instance_valid(node) or not is_ancestor_of(node):
+			continue
+		if not node is RoadCheckpoint:
+			continue
+		var checkpoint := node as RoadCheckpoint
+		var checkpoint_id := str(checkpoint.checkpoint_id).strip_edges()
+		if checkpoint_id.is_empty():
+			var editor_uuid := str(checkpoint.get_meta("map_editor_uuid", checkpoint.name))
+			checkpoint_id = "map:%s:checkpoint:%s" % [map_id, editor_uuid]
+			checkpoint.checkpoint_id = checkpoint_id
+		if seen_ids.has(checkpoint_id):
+			push_error("Duplicate road checkpoint_id in map: %s" % checkpoint_id)
+		else:
+			seen_ids[checkpoint_id] = checkpoint
+		checkpoint.set_meta("network_checkpoint_id", checkpoint_id)
+		# The deferred scan runs again after all map facilities have registered
+		# their stable network ids.
+		if checkpoint.has_method("_reconcile_membership"):
+			checkpoint.call_deferred("_reconcile_membership")
 
 
 func _collect_static_facilities(node: Node, result: Array[Node]) -> void:
@@ -455,6 +484,12 @@ func _spawn_configured_ai() -> Array[Node]:
 			)
 		result.append(ai)
 	return result
+
+
+func _activate_road_blocker_spawns() -> void:
+	for marker in get_tree().get_nodes_in_group("road_blocker_spawns"):
+		if marker != null and is_instance_valid(marker) and marker.has_method("activate"):
+			marker.call("activate")
 
 
 func _normalize_ai_type(value: String) -> String:

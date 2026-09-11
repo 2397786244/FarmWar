@@ -1,0 +1,17 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/road_checkpoint.gd" id="1_checkpoint"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_checkpoint"]
+size = Vector3(24, 5, 24)
+
+[node name="RoadCheckpoint" type="Area3D"]
+collision_layer = 1024
+collision_mask = 8840
+monitoring = true
+monitorable = true
+script = ExtResource("1_checkpoint")
+checkpoint_id = "road_checkpoint_001"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_checkpoint")

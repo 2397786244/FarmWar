@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://bxcc7n47i6ynd"]
+
+[ext_resource type="PackedScene" uid="uid://6yyfjahjns05" path="res://assets/buildings/CanadaLakeCabin.glb" id="1_3tvbh"]
+
+[node name="CanadaLakeCabin" unique_id=1167972144 instance=ExtResource("1_3tvbh")]
+
+[node name="DoorFront_Mesh" parent="FTF_Building_LakeDistrictCabin_Enterable_16x16m/DoorFront_Hinge" parent_id_path=PackedInt32Array(260877021) index="0" unique_id=58401237]
+transform = Transform3D(-0.024065718, 0, -0.9997104, 0, 1, 0, 0.9997104, 0, -0.024065718, 0.0877772, 1.225, 0.5500498)

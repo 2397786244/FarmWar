@@ -3,6 +3,7 @@ class_name GrassScatter3D
 extends Node3D
 
 const GrassScatterBakeDataScript = preload("res://src/terrain/grass_scatter_bake_data.gd")
+const SurfaceBlend = preload("res://src/terrain/terrain_surface_blend.gd")
 const VALUES_PER_INSTANCE := 4
 const SMALL_SPECIES_SALT := 1103515245
 const TALL_SPECIES_SALT := 214013
@@ -20,7 +21,8 @@ const FERN_SPECIES_SALT := 9753186
 @export var fern_scene: PackedScene
 
 @export_group("Terrain")
-@export var surface_mask: Texture2D
+@export var surface_id_map: Texture2D
+@export var surface_weight_map: Texture2D
 @export var grass_surface_id := 0
 @export var terrain_center := Vector2.ZERO
 @export var terrain_size := Vector2(256.0, 256.0)
@@ -112,15 +114,20 @@ func randomize_seed() -> void:
 
 
 func _generate_bake_data() -> GrassScatterBakeData:
-	if surface_mask == null:
-		push_error("GrassScatter3D: surface_mask is not assigned.")
+	if surface_id_map == null or surface_weight_map == null:
+		push_error("GrassScatter3D: surface ID and weight maps must both be assigned.")
 		return null
 	if terrain_size.x <= 0.0 or terrain_size.y <= 0.0 or chunk_size <= 0.0:
 		push_error("GrassScatter3D: terrain and chunk sizes must be positive.")
 		return null
-	var mask_image := surface_mask.get_image()
-	if mask_image == null or mask_image.is_empty():
-		push_error("GrassScatter3D: surface_mask has no readable image data.")
+	var id_image := surface_id_map.get_image()
+	var weight_image := surface_weight_map.get_image()
+	if (
+		id_image == null or id_image.is_empty()
+		or weight_image == null or weight_image.is_empty()
+		or id_image.get_size() != weight_image.get_size()
+	):
+		push_error("GrassScatter3D: surface blend maps are unreadable or have different sizes.")
 		return null
 
 	var data := GrassScatterBakeDataScript.new() as GrassScatterBakeData
@@ -136,27 +143,27 @@ func _generate_bake_data() -> GrassScatterBakeData:
 			var coordinate := Vector2i(chunk_x, chunk_z)
 			var small_values := _scatter_chunk(
 				coordinate, chunk_counts, small_density, small_scale_range,
-				SMALL_SPECIES_SALT, mask_image
+				SMALL_SPECIES_SALT, id_image, weight_image
 			)
 			var tall_values := _scatter_chunk(
 				coordinate, chunk_counts, tall_density, tall_scale_range,
-				TALL_SPECIES_SALT, mask_image
+				TALL_SPECIES_SALT, id_image, weight_image
 			)
 			var dry_values := _scatter_chunk(
 				coordinate, chunk_counts, dry_density, dry_scale_range,
-				DRY_SPECIES_SALT, mask_image
+				DRY_SPECIES_SALT, id_image, weight_image
 			)
 			var black_eyed_susan_values := _scatter_chunk(
 				coordinate, chunk_counts, black_eyed_susan_density, black_eyed_susan_scale_range,
-				BLACK_EYED_SUSAN_SPECIES_SALT, mask_image
+				BLACK_EYED_SUSAN_SPECIES_SALT, id_image, weight_image
 			)
 			var coneflower_values := _scatter_chunk(
 				coordinate, chunk_counts, coneflower_density, coneflower_scale_range,
-				CONEFLOWER_SPECIES_SALT, mask_image
+				CONEFLOWER_SPECIES_SALT, id_image, weight_image
 			)
 			var fern_values := _scatter_chunk(
 				coordinate, chunk_counts, fern_density, fern_scale_range,
-				FERN_SPECIES_SALT, mask_image
+				FERN_SPECIES_SALT, id_image, weight_image
 			)
 			var key := _chunk_key(coordinate)
 			if not small_values.is_empty():
@@ -180,7 +187,8 @@ func _scatter_chunk(
 	density: float,
 	scale_range: Vector2,
 	species_salt: int,
-	mask_image: Image
+	id_image: Image,
+	weight_image: Image
 ) -> PackedFloat32Array:
 	var values := PackedFloat32Array()
 	if density <= 0.0:
@@ -200,7 +208,7 @@ func _scatter_chunk(
 			rng.randf_range(chunk_min.x, chunk_max.x),
 			rng.randf_range(chunk_min.y, chunk_max.y)
 		)
-		if not _is_grass_surface(world_xz, mask_image):
+		if not _is_grass_surface(world_xz, id_image, weight_image):
 			continue
 		var chunk_center := (chunk_min + chunk_max) * 0.5
 		values.append(world_xz.x - chunk_center.x)
@@ -210,21 +218,23 @@ func _scatter_chunk(
 	return values
 
 
-func _is_grass_surface(world_xz: Vector2, mask_image: Image) -> bool:
+func _is_grass_surface(world_xz: Vector2, id_image: Image, weight_image: Image) -> bool:
 	var terrain_origin := terrain_center - terrain_size * 0.5
 	var uv := (world_xz - terrain_origin) / terrain_size
 	if uv.x < 0.0 or uv.x > 1.0 or uv.y < 0.0 or uv.y > 1.0:
 		return false
 	var pixel := Vector2i(
-		clampi(int(floor(uv.x * float(mask_image.get_width()))), 0, mask_image.get_width() - 1),
-		clampi(int(floor(uv.y * float(mask_image.get_height()))), 0, mask_image.get_height() - 1)
+		clampi(int(floor(uv.x * float(id_image.get_width()))), 0, id_image.get_width() - 1),
+		clampi(int(floor(uv.y * float(id_image.get_height()))), 0, id_image.get_height() - 1)
 	)
-	var mask_value := mask_image.get_pixelv(pixel)
-	var base_id := int(round(mask_value.r * 255.0))
-	var overlay_id := int(round(mask_value.g * 255.0))
-	if base_id != grass_surface_id:
-		return false
-	return overlay_id == grass_surface_id or mask_value.b <= maximum_non_grass_blend
+	var grass_weight := SurfaceBlend.get_surface_weight(
+		id_image.get_pixelv(pixel),
+		weight_image.get_pixelv(pixel),
+		grass_surface_id
+	)
+	# RGBA8 authoring weights have a one-byte quantization step. One step of
+	# tolerance keeps an authored threshold such as 0.98 stable after save/load.
+	return grass_weight + (1.0 / 255.0) >= 1.0 - maximum_non_grass_blend
 
 
 func _build_multimeshes(data: GrassScatterBakeData) -> void:

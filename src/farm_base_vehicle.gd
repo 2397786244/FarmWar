@@ -949,7 +949,7 @@ func apply_network_state(state: Dictionary) -> void:
 		set_platform_passenger_seat_count(next_passenger_seat_count)
 	var normalized_state := _normalize_legacy_hp_state(state)
 	super(normalized_state)
-	_set_headlights(bool(state.get("headlights_on", headlights_on)))
+	apply_replicated_headlights_state(bool(state.get("headlights_on", headlights_on)), int(state.get("headlights_revision", headlights_revision)))
 	_set_brake_lights(bool(state.get("brake_lights_on", brake_lights_on)))
 	var next_body_color: Variant = state.get("body_color", null)
 	if next_body_color is Color:

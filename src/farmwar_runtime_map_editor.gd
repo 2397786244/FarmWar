@@ -10,7 +10,7 @@
 ##   - Create a new map with a configurable size.
 ##   - Free-fly editor camera.
 ##   - Terrain raise/lower, smooth, flatten and slope/ramp brushes.
-##   - Surface-mask paint compatible with terrain_surface.gdshader.
+##   - Four-layer indexed surface painting with a derived linear render map.
 ##   - Explicit Ground StaticBody3D with chunked height collisions.
 
 ##   - Renderer-compatible terrain triangle winding with upward vertex normals,
@@ -95,6 +95,7 @@ enum TemplateMode {
 
 const TERRAIN_SHADER_PATH = "res://src/terrain/terrain_surface.gdshader"
 const TERRAIN_BAKER_PATH = "res://src/terrain/terrain_surface_baker.gd"
+const TERRAIN_SURFACE_BLEND = preload("res://src/terrain/terrain_surface_blend.gd")
 const SURFACE_PALETTE_SCRIPT_PATH = "res://src/terrain/terrain_surface_palette.gd"
 const SURFACE_DEFINITION_SCRIPT_PATH = "res://src/terrain/terrain_surface_definition.gd"
 const ROAD_SCRIPT_PATH = "res://src/terrain/road_path_3d.gd"
@@ -110,6 +111,7 @@ const FARM_INITIALIZER_PATH = "res://src/farm_init.gd"
 const MAP_FACILITY_CATALOG = preload("res://src/map_facility_catalog.gd")
 const PLACEMENT_QUERY_SCRIPT = preload("res://src/placement_query.gd")
 const VEHICLE_SPAWN_CATALOG = preload("res://src/vehicle_spawn_catalog.gd")
+const MAP_INDOOR_FLOOR_Y_META := "map_indoor_floor_y"
 const VEHICLE_COLOR_CATALOG = preload("res://src/vehicle_color_catalog.gd")
 # Kept as a public compatibility view for validation scripts and editor
 # extensions that used the old constant.  Runtime/editor code reads the same
@@ -137,6 +139,7 @@ const ENEMY_SQUAD_SPAWNER_PATH = "res://character/EnemySquadSpawner.tscn"
 const SQUAD_TARGET_POINT_PATH = "res://buildings/auxiliary/SquadTargetPoint.tscn"
 const ZOMBIE_GENERATOR_PATH = "res://buildings/auxiliary/ZombieGenerator.tscn"
 const MESSAGE_AREA_PATH = "res://buildings/auxiliary/MessageArea.tscn"
+const ROAD_CHECKPOINT_PATH = "res://buildings/auxiliary/RoadCheckpoint.tscn"
 const NEUTRAL_CROP_GENERATOR_PATH = "res://buildings/auxiliary/NeutralCropGenerator.tscn"
 const PROMOTIONAL_DUMMY_SPAWN_KIND := "promotional_dummy"
 const PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND := "promotional_vehicle_driver_dummy"
@@ -221,6 +224,10 @@ const EDITOR_OBJECTS_FILE_NAME = "editor_objects.dat"
 const ROADS_FILE_NAME = "roads.dat"
 const WATER_BODIES_FILE_NAME = "water_bodies.dat"
 const SURFACE_PALETTE_FILE_NAME = "surface_palette.png"
+const SURFACE_IDS_FILE_NAME = "surface_ids.png"
+const SURFACE_WEIGHTS_FILE_NAME = "surface_weights.png"
+const SURFACE_RENDER_FILE_NAME = "surface_render.png"
+const MAP_FORMAT_VERSION := 6
 const MAP_ICON_SIZE = 128
 const FAR_SCENERY_GROUND_MARGIN = 768.0
 const EDITOR_FAR_GROUND_ROOT_NAME = "_EditorGuaranteedFarGround"
@@ -232,15 +239,22 @@ const DRY_GRASS_PATH = "res://assets/nature/GrassDry.glb"
 const BLACK_EYED_SUSAN_PATH = "res://assets/nature/Wildflower_BlackEyedSusan.glb"
 const CONEFLOWER_PATH = "res://assets/nature/Wildflower_Coneflower.glb"
 const FERN_CLUMP_PATH = "res://assets/nature/Fern_Clump.glb"
+const SHRUB_GREEN_PATH = "res://assets/nature/Shrub_Green.glb"
+const SHRUB_GREEN_PINK_FLOWERS_PATH = "res://assets/nature/Shrub_GreenPinkFlowers.glb"
+const SHRUB_DRY_YELLOW_PATH = "res://assets/nature/Shrub_DryYellow.glb"
+const MANUAL_GRASS_SCALE_MULTIPLIER := 2.0
 const MANUAL_GRASS_SPECIES := {
 	# Keep the legacy "small" key so existing map packages continue to load;
 	# its source model is now the new low grass asset.
-	"small": {"label": "Low Grass", "path": LOW_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
-	"tall": {"label": "Tall Grass", "path": TALL_GRASS_PATH, "scale": Vector2(0.85, 1.20), "visibility": 120.0},
-	"dry": {"label": "Dry Grass", "path": DRY_GRASS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 100.0},
+	"small": {"label": "Low Grass", "path": LOW_GRASS_PATH, "scale": Vector2(0.85, 1.15), "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 100.0},
+	"tall": {"label": "Tall Grass", "path": TALL_GRASS_PATH, "scale": Vector2(0.85, 1.20), "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 120.0},
+	"dry": {"label": "Dry Grass", "path": DRY_GRASS_PATH, "scale": Vector2(0.85, 1.15), "scale_multiplier": MANUAL_GRASS_SCALE_MULTIPLIER, "visibility": 100.0},
 	"black_eyed_susan": {"label": "Black-Eyed Susan", "path": BLACK_EYED_SUSAN_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
 	"coneflower": {"label": "Coneflower", "path": CONEFLOWER_PATH, "scale": Vector2(0.85, 1.15), "visibility": 90.0},
 	"fern": {"label": "Fern Clump", "path": FERN_CLUMP_PATH, "scale": Vector2(0.80, 1.20), "visibility": 100.0},
+	"shrub_green": {"label": "Green Shrub", "path": SHRUB_GREEN_PATH, "scale": Vector2(0.85, 1.15), "visibility": 120.0},
+	"shrub_green_pink_flowers": {"label": "Green Shrub (Pink Flowers)", "path": SHRUB_GREEN_PINK_FLOWERS_PATH, "scale": Vector2(0.85, 1.15), "visibility": 120.0},
+	"shrub_dry_yellow": {"label": "Dry Yellow Shrub", "path": SHRUB_DRY_YELLOW_PATH, "scale": Vector2(0.85, 1.15), "visibility": 120.0},
 }
 const BUILDINGS_RESOURCE_ROOT = "res://buildings"
 const BUILDINGS_EXCLUDED_ROOT = "res://buildings/nature"
@@ -250,6 +264,10 @@ const ENTERABLE_BUILDING_SCENE_PATHS = [
 	"res://buildings/bar.tscn",
 	"res://buildings/canadahouse_alberta.tscn",
 	"res://buildings/canadahouse_prairiebungalow.tscn",
+	"res://buildings/canadalakecabin.tscn",
+	"res://buildings/canadaruralhouse.tscn",
+	"res://buildings/canadaruralstore.tscn",
+	"res://buildings/canadawoodfirehall.tscn",
 	"res://buildings/twostoryhouse.tscn"
 ]
 
@@ -327,6 +345,9 @@ const AI_TYPES := [
 	{"id": "assistant", "label": "AssistantAI", "scene": "res://character/AssistantAI.tscn"},
 	{"id": "bandit", "label": "BanditAI", "scene": "res://character/BanditAI.tscn"},
 ]
+# TODO(RoadBlockerAI):
+# Add a future AI-mode direct placement workflow for RoadBlocker markers.
+# Do not add RoadBlocker to the current generic red/blue spawn-point AI list.
 
 const SQUAD_MEMBER_TYPES := [
 	{"id": "future_warrior", "label": "FutureWarrior"},
@@ -405,7 +426,7 @@ const FALLBACK_SURFACES = [
 @export var map_save_root = "user://maps"
 
 
-# Current map data. Height and surface-mask data are authoritative; generated
+# Current map data. Height and indexed surface blend data are authoritative; generated
 # meshes and collision shapes are derived from them.
 var _map_root: Node3D
 # _map_name is kept as the internal folder/scene identifier for compatibility.
@@ -419,8 +440,12 @@ var _terrain_origin = Vector2.ZERO
 var _sample_width = 0
 var _sample_depth = 0
 var _height_samples = PackedFloat32Array()
-var _surface_mask_image: Image
-var _surface_mask_texture: ImageTexture
+var _surface_id_image: Image
+var _surface_weight_image: Image
+var _surface_render_image: Image
+var _surface_id_texture: ImageTexture
+var _surface_weight_texture: ImageTexture
+var _surface_render_texture: ImageTexture
 var _surface_palette_resource: Resource
 var _surface_palette_lookup: Texture2D
 # Editable runtime copy. Array order matters: entry 0 is the default map surface.
@@ -477,6 +502,9 @@ var _manual_grass = {
 	"black_eyed_susan": {},
 	"coneflower": {},
 	"fern": {},
+	"shrub_green": {},
+	"shrub_green_pink_flowers": {},
+	"shrub_dry_yellow": {},
 }
 var _grass_generated_nodes: Dictionary = {}
 var _grass_mesh_cache: Dictionary = {}
@@ -515,6 +543,10 @@ var _selected_zombie_generator_index := -1
 var _ai_placement_mode := ""
 var _brush_radius = 8.0
 var _brush_strength = 2.5
+var _surface_edge_variation := 0.12
+var _surface_blend_noise_seed := 72451
+var _surface_blend_noise_frequency := 0.18
+var _surface_edge_noise: FastNoiseLite
 var _grass_density = 0.15
 var _placement_interval = 0.18
 var _placement_timer = 0.0
@@ -723,6 +755,8 @@ var _status_label: Label
 var _tool_title_label: Label
 var _radius_label: Label
 var _strength_label: Label
+var _surface_edge_label: Label
+var _surface_edge_slider: HSlider
 var _map_name_edit: LineEdit
 var _map_width_spin: SpinBox
 var _map_depth_spin: SpinBox
@@ -1023,7 +1057,7 @@ func _build_left_toolbar() -> void:
 	_add_tool_button(column, group, ToolMode.ROAD, "Roads", "Draw and edit continuous curve roads")
 	_add_tool_button(column, group, ToolMode.WATER, "Water", "Draw irregular lakes and river centerlines")
 	_add_tool_button(column, group, ToolMode.WEATHER, "Time & Weather", "Configure the map start time and weather probabilities")
-	_add_tool_button(column, group, ToolMode.GRASS, "Grass", "Manual MultiMesh grass brush")
+	_add_tool_button(column, group, ToolMode.GRASS, "Grass & Shrubs", "Manual MultiMesh grass, wildflower, fern and shrub brush")
 	_add_tool_button(column, group, ToolMode.TREE, "Trees", "Place complete harvestable tree scenes")
 	_add_tool_button(column, group, ToolMode.ORE, "Ores & Mushrooms", "Place complete harvestable ore or mushroom scenes")
 	_add_tool_button(column, group, ToolMode.GROUND_ROCK, "Ground Rocks", "Place collision-free roadside rock decoration")
@@ -1131,6 +1165,21 @@ func _build_right_dock() -> void:
 	strength_slider.value_changed.connect(_on_strength_changed)
 	_brush_settings_grid.add_child(strength_slider)
 
+	_surface_edge_label = Label.new()
+	_surface_edge_label.text = "Edge variation: %.2f" % _surface_edge_variation
+	_surface_edge_label.custom_minimum_size.x = 88.0
+	_brush_settings_grid.add_child(_surface_edge_label)
+	_surface_edge_slider = HSlider.new()
+	_surface_edge_slider.min_value = 0.0
+	_surface_edge_slider.max_value = 0.35
+	_surface_edge_slider.step = 0.01
+	_surface_edge_slider.value = _surface_edge_variation
+	_surface_edge_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_surface_edge_slider.custom_minimum_size = Vector2(158.0, 26.0)
+	_surface_edge_slider.tooltip_text = "Deterministic world-space variation applied only to soft surface edges"
+	_surface_edge_slider.value_changed.connect(_on_surface_edge_variation_changed)
+	_brush_settings_grid.add_child(_surface_edge_slider)
+
 	var separator = HSeparator.new()
 	layout.add_child(separator)
 
@@ -1197,7 +1246,7 @@ func _refresh_bottom_dock() -> void:
 			_tool_title_label.text = "Surface Colors"
 			_add_surface_buttons()
 		ToolMode.GRASS:
-			_tool_title_label.text = "Manual Grass"
+			_tool_title_label.text = "Manual Vegetation"
 			_add_grass_buttons()
 		ToolMode.TREE:
 			_tool_title_label.text = "Trees"
@@ -1254,6 +1303,10 @@ func _configure_bottom_dock_for_tool() -> void:
 	var building_mode = _tool_mode in [ToolMode.BUILDING, ToolMode.VEHICLE, ToolMode.FACILITY]
 	if _brush_settings_grid != null:
 		_brush_settings_grid.visible = _tool_mode in [ToolMode.TERRAIN, ToolMode.SURFACE, ToolMode.GRASS, ToolMode.TREE, ToolMode.ORE, ToolMode.GROUND_ROCK, ToolMode.SPAWN, ToolMode.AUXILIARY]
+	if _surface_edge_label != null:
+		_surface_edge_label.visible = _tool_mode == ToolMode.SURFACE
+	if _surface_edge_slider != null:
+		_surface_edge_slider.visible = _tool_mode == ToolMode.SURFACE
 	if _bottom_dock_panel != null:
 		_bottom_dock_panel.visible = building_mode
 	if _left_toolbar_panel != null:
@@ -1394,7 +1447,7 @@ func _add_grass_buttons() -> void:
 	_bottom_content.add_child(density)
 
 	var hint = Label.new()
-	hint.text = "Vegetation is stored as manually painted points and rebuilt into 32 m MultiMesh chunks. Shift+LMB erases the selected species."
+	hint.text = "Grass, flowers, ferns and shrubs are stored as painted points and rebuilt into 32 m MultiMesh chunks. Shift+LMB erases the selected species."
 	_bottom_content.add_child(hint)
 
 
@@ -1455,6 +1508,7 @@ func _add_auxiliary_buttons() -> void:
 	var group := ButtonGroup.new()
 	for entry in [
 		{"label": "Message Area", "kind": "message_area"},
+		{"label": "Road Checkpoint", "kind": "road_checkpoint"},
 		{"label": "Power Pole", "kind": "power_pole"},
 		{"label": "Neutral Crop Generator", "kind": "neutral_crop_generator"},
 		{"label": "Promotional Dummy", "kind": PROMOTIONAL_DUMMY_SPAWN_KIND},
@@ -1471,6 +1525,8 @@ func _add_auxiliary_buttons() -> void:
 		_bottom_content.add_child(button)
 	if _selected_auxiliary_kind == "neutral_crop_generator":
 		_add_neutral_crop_generator_controls()
+	elif _selected_auxiliary_kind == "road_checkpoint":
+		_add_road_checkpoint_controls()
 	elif _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND:
 		_add_promotional_dummy_controls()
 	var hint := Label.new()
@@ -1912,6 +1968,23 @@ func _add_ai_configuration_controls() -> void:
 	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(explanation)
 
+	var blocker_row := HBoxContainer.new()
+	blocker_row.add_child(_make_label("RoadBlocker"))
+	var blocker_button := Button.new()
+	blocker_button.text = "放置 RoadBlocker"
+	blocker_button.button_pressed = _ai_placement_mode == "road_blocker"
+	blocker_button.toggle_mode = true
+	blocker_button.pressed.connect(func() -> void:
+		_ai_placement_mode = "road_blocker" if blocker_button.button_pressed else ""
+		_set_status("左键放置 RoadBlocker 标记；Shift+左键删除。该守卫不使用红蓝出生点。")
+	)
+	blocker_row.add_child(blocker_button)
+	_bottom_content.add_child(blocker_row)
+	var blocker_hint := Label.new()
+	blocker_hint.text = "RoadBlocker 由运行时权威端从标记生成；选择对象后可在属性面板调整 respawn_seconds。"
+	blocker_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(blocker_hint)
+
 	var list_row := HBoxContainer.new()
 	list_row.add_child(_make_label("AI 列表"))
 	var list_option := OptionButton.new()
@@ -2293,7 +2366,7 @@ func _add_zombie_generator_controls() -> void:
 		generator, "结束时间 (小时)", "time_end_hour", 0.0, 24.0, 0.25
 	)
 	_add_zombie_generator_spin(
-		generator, "生成间隔 (秒)", "spawn_interval_seconds", 1.0, 86400.0, 1.0
+		generator, "摧毁后重生等待 (秒)", "spawn_interval_seconds", 1.0, 86400.0, 1.0
 	)
 	_add_zombie_generator_spin(
 		generator, "首次延迟 (秒)", "initial_spawn_delay", 0.0, 86400.0, 1.0
@@ -2306,7 +2379,7 @@ func _add_zombie_generator_controls() -> void:
 	_bottom_content.add_child(delete_button)
 
 	var hint := Label.new()
-	hint.text = "时间使用 0–24 小时；开始时间大于结束时间时表示跨午夜。生成器由地图场景保存，合作客户端不自行生成。"
+	hint.text = "时间使用 0–24 小时；开始时间大于结束时间时表示跨午夜。僵尸被摧毁后才会按重生等待时间生成新的僵尸。生成器由地图场景保存，合作客户端不自行生成。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_bottom_content.add_child(hint)
 
@@ -2955,7 +3028,7 @@ func _add_facility_browser() -> void:
 	toolbar.add_child(_building_count_label)
 
 	var hint := Label.new()
-	hint.text = "选择设施后，鼠标左键放置；室内设施自动读取 res://facilities/interior/，工业工作台来自 res://facilities/industrial/。地图加载时恢复设施的运行时脚本。"
+	hint.text = "选择设施后，鼠标左键放置；厨具和工业工作台允许放入可进入建筑，也可放在室外。室内设施自动读取 res://facilities/interior/，工业工作台来自 res://facilities/industrial/。地图加载时恢复设施的运行时脚本。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	browser.add_child(hint)
 
@@ -3070,9 +3143,13 @@ func _add_object_edit_controls() -> void:
 		)
 		spawn_team_row.add_child(spawn_team_option)
 		_bottom_content.add_child(spawn_team_row)
+	if is_instance_valid(_selected_map_object) and _is_road_blocker_spawn(_selected_map_object):
+		_add_road_blocker_spawn_inspector_controls()
 
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_message_area(_selected_map_object):
 		_add_message_area_inspector_controls()
+	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_road_checkpoint(_selected_map_object):
+		_add_road_checkpoint_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_neutral_crop_generator(_selected_map_object):
 		_add_neutral_crop_generator_inspector_controls()
 	if is_instance_valid(_selected_map_object) and str(_selected_map_object.get_meta("map_editor_category", "")) == "auxiliary" and _is_promotional_dummy(_selected_map_object):
@@ -3115,6 +3192,53 @@ func _add_object_edit_controls() -> void:
 	_sync_object_numeric_controls()
 
 
+func _is_road_blocker_spawn(node: Node3D) -> bool:
+	return node is RoadBlockerSpawn \
+		or str(node.get_meta("map_editor_spawn_kind", "")) == "road_blocker" \
+		or node.is_in_group("road_blocker_spawns")
+
+
+func _add_road_blocker_spawn_inspector_controls() -> void:
+	var marker := _selected_map_object
+	var heading := Label.new()
+	heading.text = "RoadBlocker Inspector"
+	_bottom_content.add_child(heading)
+	var id_label := Label.new()
+	id_label.text = "ID: %s" % str(_get_property_or(marker, "road_blocker_id", ""))
+	id_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(id_label)
+	var respawn_row := HBoxContainer.new()
+	respawn_row.add_child(_make_label("复活时间 (秒)"))
+	var respawn_spin := SpinBox.new()
+	respawn_spin.min_value = 1.0
+	respawn_spin.max_value = 600.0
+	respawn_spin.step = 1.0
+	respawn_spin.value = clampf(float(_get_property_or(marker, "respawn_seconds", 10.0)), 1.0, 600.0)
+	respawn_spin.value_changed.connect(func(value: float) -> void:
+		_set_road_blocker_spawn_property("respawn_seconds", clampf(value, 1.0, 600.0))
+	)
+	respawn_row.add_child(respawn_spin)
+	_bottom_content.add_child(respawn_row)
+
+
+func _set_road_blocker_spawn_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_road_blocker_spawn(_selected_map_object):
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit RoadBlocker Spawn")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
 func _add_facility_object_inspector_controls() -> void:
 	var facility := _selected_map_object
 	var facility_category := str(facility.get_meta("map_editor_facility_category", ""))
@@ -3138,7 +3262,7 @@ func _add_facility_object_inspector_controls() -> void:
 		return
 	if facility_category == "industrial":
 		var industrial_info := Label.new()
-		industrial_info.text = "工业工作台；制作配方、加工进度和成品领取由权威端管理。"
+		industrial_info.text = "工业工作台可放入可进入建筑，也可放在室外；制作配方、加工进度和成品领取由权威端管理。"
 		industrial_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bottom_content.add_child(industrial_info)
 
@@ -3388,6 +3512,133 @@ func _set_message_area_property(property_name: String, value: Variant) -> void:
 	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
 	_undo_redo.commit_action(false)
 	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _add_road_checkpoint_controls() -> void:
+	var hint := Label.new()
+	hint.text = "检查站 Area 会自动登记区域内的防御设施、RoadBarrier 和未来的 road_blockers。区域重叠会拒绝放置；没有 Blocker 只提示，不阻止保存。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_content.add_child(hint)
+
+
+func _add_road_checkpoint_inspector_controls() -> void:
+	var checkpoint := _selected_map_object
+	var heading := Label.new()
+	heading.text = "Road Checkpoint Inspector"
+	_bottom_content.add_child(heading)
+
+	var id_row := HBoxContainer.new()
+	id_row.add_child(_make_label("Checkpoint ID"))
+	var id_edit := LineEdit.new()
+	id_edit.text = str(_get_property_or(checkpoint, "checkpoint_id", ""))
+	id_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	id_edit.text_submitted.connect(func(value: String) -> void:
+		if value.strip_edges().is_empty() or _road_checkpoint_id_exists(value.strip_edges(), checkpoint):
+			_set_status("Duplicate or empty checkpoint_id")
+			id_edit.text = str(_get_property_or(checkpoint, "checkpoint_id", ""))
+			return
+		_set_road_checkpoint_property("checkpoint_id", value.strip_edges())
+	)
+	id_row.add_child(id_edit)
+	_bottom_content.add_child(id_row)
+
+	var team_row := HBoxContainer.new()
+	team_row.add_child(_make_label("Allowed Teams"))
+	var allowed: PackedStringArray = _get_property_or(checkpoint, "allowed_team_ids", PackedStringArray()) as PackedStringArray
+	for team in ["red", "blue"]:
+		var check := CheckBox.new()
+		check.text = "红队" if team == "red" else "蓝队"
+		check.button_pressed = allowed.has(team)
+		check.toggled.connect(_set_road_checkpoint_allowed_team.bind(team))
+		team_row.add_child(check)
+	_bottom_content.add_child(team_row)
+
+	var card_row := HBoxContainer.new()
+	card_row.add_child(_make_label("Access Card ID"))
+	var card_edit := LineEdit.new()
+	card_edit.text = str(_get_property_or(checkpoint, "access_card_id", "road_access_card"))
+	card_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card_edit.text_submitted.connect(func(value: String) -> void:
+		_set_road_checkpoint_property("access_card_id", value.strip_edges())
+	)
+	card_row.add_child(card_edit)
+	_bottom_content.add_child(card_row)
+
+	for entry in [
+		{"label": "Damage Alarm Threshold", "property": "damage_alarm_threshold", "min": 0.0, "max": 100000.0, "step": 1.0},
+		{"label": "Alarm Timeout (s)", "property": "alarm_timeout_seconds", "min": 1.0, "max": 3600.0, "step": 1.0},
+		{"label": "Lower Delay (s)", "property": "barrier_lower_delay_seconds", "min": 0.0, "max": 600.0, "step": 0.5},
+	]:
+		var row := HBoxContainer.new()
+		row.add_child(_make_label(str(entry["label"])))
+		var spin := SpinBox.new()
+		spin.min_value = float(entry["min"])
+		spin.max_value = float(entry["max"])
+		spin.step = float(entry["step"])
+		spin.value = float(_get_property_or(checkpoint, str(entry["property"]), 0.0))
+		spin.value_changed.connect(_set_road_checkpoint_property.bind(str(entry["property"])))
+		row.add_child(spin)
+		_bottom_content.add_child(row)
+
+	var size_row := HBoxContainer.new()
+	size_row.add_child(_make_label("Area Size X/Y/Z"))
+	var current_size := _get_property_or(checkpoint, "area_size", Vector3(24.0, 5.0, 24.0)) as Vector3
+	for axis_index in range(3):
+		var spin := SpinBox.new()
+		spin.min_value = 1.0
+		spin.max_value = 512.0
+		spin.step = 1.0
+		spin.value = current_size[axis_index]
+		spin.value_changed.connect(func(value: float) -> void:
+			var next := _get_property_or(checkpoint, "area_size", Vector3(24.0, 5.0, 24.0)) as Vector3
+			next[axis_index] = maxf(1.0, value)
+			_set_road_checkpoint_property("area_size", next)
+		)
+		size_row.add_child(spin)
+	_bottom_content.add_child(size_row)
+
+	var boundary_check := CheckBox.new()
+	boundary_check.text = "Show Area Boundary"
+	boundary_check.button_pressed = bool(_get_property_or(checkpoint, "show_boundary", true))
+	boundary_check.toggled.connect(_set_road_checkpoint_property.bind("show_boundary"))
+	_bottom_content.add_child(boundary_check)
+
+
+func _set_road_checkpoint_property(property_name: String, value: Variant) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_road_checkpoint(_selected_map_object):
+		return
+	if not _has_property(_selected_map_object, property_name):
+		return
+	var before: Variant = _selected_map_object.get(property_name)
+	if before == value:
+		return
+	var uuid := str(_selected_map_object.get_meta("map_editor_uuid", ""))
+	if uuid.is_empty():
+		return
+	_undo_redo.create_action("Edit Road Checkpoint")
+	_undo_redo.add_do_method(_apply_object_property_by_uuid.bind(uuid, property_name, value))
+	_undo_redo.add_undo_method(_apply_object_property_by_uuid.bind(uuid, property_name, before))
+	_undo_redo.commit_action(false)
+	_apply_object_property_by_uuid(uuid, property_name, value)
+
+
+func _set_road_checkpoint_allowed_team(enabled: bool, team: String) -> void:
+	if not is_instance_valid(_selected_map_object) or not _is_road_checkpoint(_selected_map_object):
+		return
+	var next: PackedStringArray = _get_property_or(
+		_selected_map_object,
+		"allowed_team_ids",
+		PackedStringArray()
+	) as PackedStringArray
+	if enabled and not next.has(team):
+		next.append(team)
+	elif not enabled:
+		var filtered := PackedStringArray()
+		for entry: String in next:
+			if entry != team:
+				filtered.append(entry)
+		next = filtered
+	_set_road_checkpoint_property("allowed_team_ids", next)
 
 
 func _add_neutral_crop_generator_inspector_controls() -> void:
@@ -4648,6 +4899,12 @@ func _on_strength_changed(value: float) -> void:
 	_strength_label.text = "Strength: %.2f" % value
 
 
+func _on_surface_edge_variation_changed(value: float) -> void:
+	_surface_edge_variation = clampf(value, 0.0, 0.35)
+	if _surface_edge_label != null:
+		_surface_edge_label.text = "Edge variation: %.2f" % _surface_edge_variation
+
+
 func _format_time_of_day(hour_value: float) -> String:
 	var total_minutes := posmod(roundi(fposmod(hour_value, 24.0) * 60.0), 24 * 60)
 	return "%02d:%02d" % [total_minutes / 60, total_minutes % 60]
@@ -4838,7 +5095,7 @@ func _select_surface(surface_id: int) -> void:
 
 func _add_surface_entry() -> void:
 	var before_entries = _surface_entries.duplicate(true)
-	var before_mask: Image = null
+	var before_blend: Dictionary = {}
 	var used_ids: Dictionary = {}
 	for entry_value in _surface_entries:
 		var entry = entry_value as Dictionary
@@ -4867,16 +5124,16 @@ func _add_surface_entry() -> void:
 	_commit_palette_change(
 		"Add Surface Color",
 		before_entries,
-		before_mask,
+		before_blend,
 		_surface_entries.duplicate(true),
-		null
+		{}
 	)
 	_set_status("Added terrain surface ID %d." % new_id)
 
 
 func _remove_surface_entry(surface_id: int) -> void:
 	var before_entries = _surface_entries.duplicate(true)
-	var before_mask = _duplicate_surface_mask_image()
+	var before_blend = _duplicate_surface_blend_images()
 	var remove_index = _find_surface_entry_index(surface_id)
 	if remove_index < 0:
 		return
@@ -4886,19 +5143,18 @@ func _remove_surface_entry(surface_id: int) -> void:
 
 	var default_id = _get_default_surface_id()
 	_surface_entries.remove_at(remove_index)
-	_remap_surface_mask_id(surface_id, default_id)
+	_remap_surface_blend_id(surface_id, default_id)
 	if _selected_surface_id == surface_id:
 		_selected_surface_id = default_id
 	_rebuild_surface_palette_lookup()
-	if _surface_mask_texture != null and _surface_mask_image != null:
-		_surface_mask_texture.update(_surface_mask_image)
+	_update_surface_authoring_textures()
 	_refresh_bottom_dock()
 	_commit_palette_change(
 		"Remove Surface Color",
 		before_entries,
-		before_mask,
+		before_blend,
 		_surface_entries.duplicate(true),
-		_duplicate_surface_mask_image()
+		_duplicate_surface_blend_images()
 	)
 	_set_status(
 		"Removed surface ID %d; painted pixels were restored to base ID %d."
@@ -4918,16 +5174,16 @@ func _on_surface_color_changed(color: Color, surface_id: int) -> void:
 	if old_color.is_equal_approx(new_color):
 		return
 	var before_entries = _surface_entries.duplicate(true)
-	var before_mask: Image = null
+	var before_blend: Dictionary = {}
 	entry["color"] = new_color
 	_surface_entries[entry_index] = entry
 	_rebuild_surface_palette_lookup()
 	_commit_palette_change(
 		"Change Surface Color %d" % surface_id,
 		before_entries,
-		before_mask,
+		before_blend,
 		_surface_entries.duplicate(true),
-		null,
+		{},
 		true
 	)
 	_set_status("Updated surface ID %d color." % surface_id)
@@ -4944,7 +5200,7 @@ func _on_surface_name_focus_exited(surface_id: int, name_edit: LineEdit) -> void
 
 func _set_surface_name(surface_id: int, requested_name: String) -> void:
 	var before_entries = _surface_entries.duplicate(true)
-	var before_mask: Image = null
+	var before_blend: Dictionary = {}
 	var entry_index = _find_surface_entry_index(surface_id)
 	if entry_index < 0:
 		return
@@ -4960,25 +5216,28 @@ func _set_surface_name(surface_id: int, requested_name: String) -> void:
 	_commit_palette_change(
 		"Rename Surface %d" % surface_id,
 		before_entries,
-		before_mask,
+		before_blend,
 		_surface_entries.duplicate(true),
-		null
+		{}
 	)
 	_set_status("Renamed surface ID %d." % surface_id)
 
 
-func _duplicate_surface_mask_image() -> Image:
-	if _surface_mask_image == null:
-		return null
-	return _surface_mask_image.duplicate()
+func _duplicate_surface_blend_images() -> Dictionary:
+	if _surface_id_image == null or _surface_weight_image == null:
+		return {}
+	return {
+		"ids": _surface_id_image.duplicate(),
+		"weights": _surface_weight_image.duplicate(),
+	}
 
 
 func _commit_palette_change(
 	action_name: String,
 	before_entries: Array,
-	before_mask: Image,
+	before_blend: Dictionary,
 	after_entries: Array,
-	after_mask: Image,
+	after_blend: Dictionary,
 	merge_continuous: bool = false
 ) -> void:
 	if _palette_history_guard:
@@ -4992,34 +5251,41 @@ func _commit_palette_change(
 	_undo_redo.add_do_method(
 		_apply_palette_state.bind(
 			after_entries.duplicate(true),
-			after_mask.duplicate() if after_mask != null else null
+			_duplicate_surface_blend_state(after_blend)
 		)
 	)
 	_undo_redo.add_undo_method(
 		_apply_palette_state.bind(
 			before_entries.duplicate(true),
-			before_mask.duplicate() if before_mask != null else null
+			_duplicate_surface_blend_state(before_blend)
 		)
 	)
 	_undo_redo.commit_action(false)
 
 
-func _apply_palette_state(entries: Array, mask_image: Image) -> void:
+func _duplicate_surface_blend_state(state: Dictionary) -> Dictionary:
+	if state.is_empty():
+		return {}
+	var id_image := state.get("ids", null) as Image
+	var weight_image := state.get("weights", null) as Image
+	if id_image == null or weight_image == null:
+		return {}
+	return {
+		"ids": id_image.duplicate(),
+		"weights": weight_image.duplicate(),
+	}
+
+
+func _apply_palette_state(entries: Array, blend_state: Dictionary) -> void:
 	_palette_history_guard = true
 	_surface_entries = entries.duplicate(true)
-	if mask_image != null:
-		_surface_mask_image = mask_image.duplicate()
-		if _surface_mask_texture == null:
-			_surface_mask_texture = ImageTexture.create_from_image(
-				_surface_mask_image
-			)
-			if _terrain_material != null:
-				_terrain_material.set_shader_parameter(
-					"surface_mask",
-					_surface_mask_texture
-				)
-		else:
-			_surface_mask_texture.update(_surface_mask_image)
+	if not blend_state.is_empty():
+		var id_image := blend_state.get("ids", null) as Image
+		var weight_image := blend_state.get("weights", null) as Image
+		if id_image != null and weight_image != null:
+			_surface_id_image = id_image.duplicate()
+			_surface_weight_image = weight_image.duplicate()
+			_update_surface_authoring_textures()
 	if _find_surface_entry_index(_selected_surface_id) < 0:
 		_selected_surface_id = _get_default_surface_id()
 	_rebuild_surface_palette_lookup()
@@ -5035,31 +5301,21 @@ func _find_surface_entry_index(surface_id: int) -> int:
 	return -1
 
 
-func _remap_surface_mask_id(old_id: int, replacement_id: int) -> void:
-	if _surface_mask_image == null:
+func _remap_surface_blend_id(old_id: int, replacement_id: int) -> void:
+	if _surface_id_image == null or _surface_weight_image == null:
 		return
-	for y in range(_surface_mask_image.get_height()):
-		for x in range(_surface_mask_image.get_width()):
-			var pixel = _surface_mask_image.get_pixel(x, y)
-			var base_id = clampi(roundi(pixel.r * 255.0), 0, 255)
-			var overlay_id = clampi(roundi(pixel.g * 255.0), 0, 255)
-			var blend = clampf(pixel.b, 0.0, 1.0)
-			if base_id == old_id:
-				base_id = replacement_id
-			if overlay_id == old_id:
-				overlay_id = replacement_id
-			if base_id == overlay_id:
-				blend = 0.0
-			_surface_mask_image.set_pixel(
-				x,
-				y,
-				Color(
-					float(base_id) / 255.0,
-					float(overlay_id) / 255.0,
-					blend,
-					1.0
-				)
+	var default_id := _get_default_surface_id()
+	for y in range(_surface_id_image.get_height()):
+		for x in range(_surface_id_image.get_width()):
+			var remapped := TERRAIN_SURFACE_BLEND.remap_encoded(
+				_surface_id_image.get_pixel(x, y),
+				_surface_weight_image.get_pixel(x, y),
+				old_id,
+				replacement_id,
+				default_id
 			)
+			_surface_id_image.set_pixel(x, y, remapped["ids"] as Color)
+			_surface_weight_image.set_pixel(x, y, remapped["weights"] as Color)
 
 
 func _select_grass_species(species: String) -> void:
@@ -5078,7 +5334,7 @@ func _tool_name(mode: ToolMode) -> String:
 	match mode:
 		ToolMode.TERRAIN: return "Terrain Height"
 		ToolMode.SURFACE: return "Surface Paint"
-		ToolMode.GRASS: return "Manual Grass"
+		ToolMode.GRASS: return "Manual Vegetation"
 		ToolMode.TREE: return "Trees"
 		ToolMode.ORE: return "Ores"
 		ToolMode.GROUND_ROCK: return "Ground Rocks"
@@ -6385,19 +6641,34 @@ func create_new_map(
 	# assumed hard-coded color/ID.
 	_load_template_surface_resources()
 	var default_surface_id = _get_default_surface_id()
-	var default_encoded = float(default_surface_id) / 255.0
 	_selected_surface_id = default_surface_id
 
-	_surface_mask_image = Image.create(
+	_surface_id_image = Image.create(
 		surface_mask_resolution,
 		surface_mask_resolution,
 		false,
 		Image.FORMAT_RGBA8
 	)
-	# Harvest Operation mask encoding: R=base ID, G=overlay ID, B=blend. A is unused
-	# by the terrain shader, but keep it opaque for exported PNG inspection.
-	_surface_mask_image.fill(Color(default_encoded, default_encoded, 0.0, 1.0))
-	_surface_mask_texture = ImageTexture.create_from_image(_surface_mask_image)
+	_surface_weight_image = Image.create(
+		surface_mask_resolution,
+		surface_mask_resolution,
+		false,
+		Image.FORMAT_RGBA8
+	)
+	_surface_render_image = Image.create(
+		surface_mask_resolution,
+		surface_mask_resolution,
+		false,
+		Image.FORMAT_RGBA8
+	)
+	_surface_id_image.fill(TERRAIN_SURFACE_BLEND.make_default_ids(default_surface_id))
+	_surface_weight_image.fill(TERRAIN_SURFACE_BLEND.make_default_weights())
+	var palette_image := _build_surface_palette_image()
+	_surface_render_image.fill(palette_image.get_pixel(default_surface_id, 0))
+	_surface_id_texture = ImageTexture.create_from_image(_surface_id_image)
+	_surface_weight_texture = ImageTexture.create_from_image(_surface_weight_image)
+	_surface_render_texture = ImageTexture.create_from_image(_surface_render_image)
+	_configure_surface_edge_noise()
 
 	_manual_grass = _new_manual_grass_data()
 	_grass_generated_nodes.clear()
@@ -6418,7 +6689,7 @@ func create_new_map(
 
 	_map_root = Node3D.new()
 	_map_root.name = _map_id.validate_node_name()
-	_map_root.set_meta("farmwar_map_format_version", 5)
+	_map_root.set_meta("farmwar_map_format_version", MAP_FORMAT_VERSION)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
@@ -6591,8 +6862,7 @@ func _create_terrain_material() -> void:
 	# Use the same single-sided receiver as Creston. The generated index order
 	# follows Godot's renderer front-face convention; vertex normals remain +Y.
 	_terrain_material.shader = source_shader
-	_terrain_material.set_shader_parameter("surface_mask", _surface_mask_texture)
-	_terrain_material.set_shader_parameter("surface_palette", _surface_palette_lookup)
+	_terrain_material.set_shader_parameter("surface_render", _surface_render_texture)
 	_terrain_material.set_shader_parameter("terrain_origin", _terrain_origin)
 	_terrain_material.set_shader_parameter("terrain_size", _map_size)
 
@@ -6754,8 +7024,12 @@ func _configure_integrated_systems() -> void:
 		_set_property_if_present(_terrain_baker, "area_root", NodePath("../SurfaceAreas"))
 		_set_property_if_present(_terrain_baker, "terrain_size", _map_size)
 		_set_property_if_present(_terrain_baker, "mask_resolution", surface_mask_resolution)
-		_set_property_if_present(_terrain_baker, "mask_output_path", "user://maps/%s/%s_surface_mask.res" % [_map_name, _map_name])
+		_set_property_if_present(_terrain_baker, "id_map_output_path", "user://maps/%s/%s_surface_ids.res" % [_map_name, _map_name])
+		_set_property_if_present(_terrain_baker, "weight_map_output_path", "user://maps/%s/%s_surface_weights.res" % [_map_name, _map_name])
+		_set_property_if_present(_terrain_baker, "render_output_path", "user://maps/%s/%s_surface_render.res" % [_map_name, _map_name])
 		_set_property_if_present(_terrain_baker, "palette_output_path", "user://maps/%s/%s_surface_palette_lookup.res" % [_map_name, _map_name])
+		_set_property_if_present(_terrain_baker, "surface_blend_noise_seed", _surface_blend_noise_seed)
+		_set_property_if_present(_terrain_baker, "surface_blend_noise_frequency", _surface_blend_noise_frequency)
 
 
 func _create_boundary_walls() -> void:
@@ -7507,25 +7781,31 @@ func _smooth_falloff(distance: float, radius: float) -> float:
 
 
 # -----------------------------------------------------------------------------
-# Harvest Operation surface-mask paint
+# Harvest Operation four-layer surface paint
 # -----------------------------------------------------------------------------
 
 func _apply_surface_brush(center: Vector3, delta: float) -> void:
-	if _surface_mask_image == null or _surface_mask_texture == null:
+	if (
+		_surface_id_image == null
+		or _surface_weight_image == null
+		or _surface_render_image == null
+	):
 		return
 
 	var target_id = _get_default_surface_id() if Input.is_key_pressed(KEY_SHIFT) else _selected_surface_id
-	var image_width = _surface_mask_image.get_width()
-	var image_height = _surface_mask_image.get_height()
+	var image_width = _surface_id_image.get_width()
+	var image_height = _surface_id_image.get_height()
 	var center_uv = (Vector2(center.x, center.z) - _terrain_origin) / _map_size
 	var center_pixel = Vector2(center_uv.x * float(image_width - 1), center_uv.y * float(image_height - 1))
-	var radius_px_x = _brush_radius / _map_size.x * float(image_width)
-	var radius_px_y = _brush_radius / _map_size.y * float(image_height)
+	var brush_extent: float = float(_brush_radius) * (1.0 + _surface_edge_variation)
+	var radius_px_x = brush_extent / _map_size.x * float(image_width)
+	var radius_px_y = brush_extent / _map_size.y * float(image_height)
 	var min_x = clampi(floori(center_pixel.x - radius_px_x), 0, image_width - 1)
 	var max_x = clampi(ceili(center_pixel.x + radius_px_x), 0, image_width - 1)
 	var min_y = clampi(floori(center_pixel.y - radius_px_y), 0, image_height - 1)
 	var max_y = clampi(ceili(center_pixel.y + radius_px_y), 0, image_height - 1)
 	var changed = false
+	var palette_image := _build_surface_palette_image()
 
 	for pixel_y in range(min_y, max_y + 1):
 		for pixel_x in range(min_x, max_x + 1):
@@ -7534,39 +7814,72 @@ func _apply_surface_brush(center: Vector3, delta: float) -> void:
 				float(pixel_y) / float(maxi(1, image_height - 1))
 			)
 			var world_xz = _terrain_origin + uv * _map_size
-			var distance = world_xz.distance_to(Vector2(center.x, center.z))
-			if distance > _brush_radius:
+			var falloff := _surface_brush_falloff(
+				world_xz,
+				Vector2(center.x, center.z)
+			)
+			if falloff <= 0.0:
 				continue
-			var falloff = _smooth_falloff(distance, _brush_radius)
 			var amount = clampf(_brush_strength * 0.45 * delta * falloff, 0.0, 1.0)
 			var pixel = Vector2i(pixel_x, pixel_y)
 			var pixel_index = pixel_y * image_width + pixel_x
 			if not _stroke_surface_before.has(pixel_index):
-				_stroke_surface_before[pixel_index] = _surface_mask_image.get_pixelv(pixel)
-			_paint_surface_pixel(pixel, target_id, amount)
+				_stroke_surface_before[pixel_index] = {
+					"ids": _surface_id_image.get_pixelv(pixel),
+					"weights": _surface_weight_image.get_pixelv(pixel),
+				}
+			_paint_surface_pixel(pixel, target_id, amount, palette_image)
 			changed = true
 
 	if changed:
-		_surface_mask_texture.update(_surface_mask_image)
+		_update_surface_textures()
+
+
+func _surface_brush_falloff(world_xz: Vector2, center_xz: Vector2) -> float:
+	if _brush_radius <= 0.0001:
+		return 1.0
+	var normalized_distance: float = world_xz.distance_to(center_xz) / float(_brush_radius)
+	if _surface_edge_variation > 0.0 and normalized_distance > 0.5:
+		if _surface_edge_noise == null:
+			_configure_surface_edge_noise()
+		var edge_factor := smoothstep(0.5, 1.0, normalized_distance)
+		var noise_value := _surface_edge_noise.get_noise_2d(world_xz.x, world_xz.y)
+		normalized_distance += noise_value * _surface_edge_variation * edge_factor
+	if normalized_distance >= 1.0:
+		return 0.0
+	return _smooth_falloff(normalized_distance, 1.0)
+
+
+func _configure_surface_edge_noise() -> void:
+	_surface_edge_noise = FastNoiseLite.new()
+	_surface_edge_noise.seed = _surface_blend_noise_seed
+	_surface_edge_noise.frequency = _surface_blend_noise_frequency
+	_surface_edge_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 
 
 func _commit_surface_stroke() -> void:
-	if _stroke_surface_before.is_empty() or _surface_mask_image == null:
+	if _stroke_surface_before.is_empty() or _surface_id_image == null:
 		return
 
 	var before_patch: Dictionary = {}
 	var after_patch: Dictionary = {}
-	var image_width = _surface_mask_image.get_width()
+	var image_width = _surface_id_image.get_width()
 
 	for index_value in _stroke_surface_before.keys():
 		var index = int(index_value)
 		var pixel = Vector2i(index % image_width, int(index / image_width))
-		var old_color = _stroke_surface_before[index] as Color
-		var new_color = _surface_mask_image.get_pixelv(pixel)
-		if old_color.is_equal_approx(new_color):
+		var old_state := _stroke_surface_before[index] as Dictionary
+		var new_state := {
+			"ids": _surface_id_image.get_pixelv(pixel),
+			"weights": _surface_weight_image.get_pixelv(pixel),
+		}
+		if (
+			(old_state.get("ids", Color()) as Color).is_equal_approx(new_state["ids"] as Color)
+			and (old_state.get("weights", Color()) as Color).is_equal_approx(new_state["weights"] as Color)
+		):
 			continue
-		before_patch[index] = old_color
-		after_patch[index] = new_color
+		before_patch[index] = old_state.duplicate(true)
+		after_patch[index] = new_state
 
 	if before_patch.is_empty():
 		return
@@ -7582,46 +7895,36 @@ func _commit_surface_stroke() -> void:
 
 
 func _apply_surface_patch(patch: Dictionary) -> void:
-	if patch.is_empty() or _surface_mask_image == null:
+	if patch.is_empty() or _surface_id_image == null or _surface_weight_image == null:
 		return
-	var image_width = _surface_mask_image.get_width()
+	var image_width = _surface_id_image.get_width()
+	var palette_image := _build_surface_palette_image()
 	for index_value in patch.keys():
 		var index = int(index_value)
 		var pixel = Vector2i(index % image_width, int(index / image_width))
-		_surface_mask_image.set_pixelv(pixel, patch[index] as Color)
-	if _surface_mask_texture != null:
-		_surface_mask_texture.update(_surface_mask_image)
+		var state := patch[index] as Dictionary
+		_surface_id_image.set_pixelv(pixel, state.get("ids", Color()) as Color)
+		_surface_weight_image.set_pixelv(pixel, state.get("weights", Color(1.0, 0.0, 0.0, 0.0)) as Color)
+		_update_surface_render_pixel(pixel, palette_image)
+	_update_surface_textures()
 
 
-func _paint_surface_pixel(pixel: Vector2i, target_id: int, amount: float) -> void:
-	var mask = _surface_mask_image.get_pixelv(pixel)
-	var base_id = clampi(roundi(mask.r * 255.0), 0, 255)
-	var overlay_id = clampi(roundi(mask.g * 255.0), 0, 255)
-	var blend = clampf(mask.b, 0.0, 1.0)
-
-	if target_id == base_id:
-		blend = lerpf(blend, 0.0, amount)
-	elif target_id == overlay_id:
-		blend = lerpf(blend, 1.0, amount)
-	else:
-		# Preserve whichever surface is currently dominant, then blend toward
-		# the newly selected overlay. This matches the existing shader's
-		# base/overlay/blend model instead of treating the mask as RGBA weights.
-		if blend >= 0.5:
-			base_id = overlay_id
-		overlay_id = target_id
-		blend = lerpf(0.0, 1.0, amount)
-
-	if blend >= 0.995:
-		base_id = overlay_id
-		blend = 0.0
-
-	_surface_mask_image.set_pixelv(pixel, Color(
-		float(base_id) / 255.0,
-		float(overlay_id) / 255.0,
-		blend,
-		1.0
-	))
+func _paint_surface_pixel(
+	pixel: Vector2i,
+	target_id: int,
+	amount: float,
+	palette_image: Image
+) -> void:
+	var painted := TERRAIN_SURFACE_BLEND.paint_encoded(
+		_surface_id_image.get_pixelv(pixel),
+		_surface_weight_image.get_pixelv(pixel),
+		target_id,
+		amount,
+		_get_default_surface_id()
+	)
+	_surface_id_image.set_pixelv(pixel, painted["ids"] as Color)
+	_surface_weight_image.set_pixelv(pixel, painted["weights"] as Color)
+	_update_surface_render_pixel(pixel, palette_image)
 
 
 func _read_surface_entries() -> Array:
@@ -7670,18 +7973,79 @@ func _rebuild_surface_palette_lookup() -> void:
 	else:
 		_surface_palette_lookup = ImageTexture.create_from_image(palette_image)
 
-	if _terrain_material != null:
-		_terrain_material.set_shader_parameter(
-			"surface_palette",
-			_surface_palette_lookup
-		)
 	if _far_scenery_ring != null:
 		_set_property_if_present(
 			_far_scenery_ring,
 			"surface_palette_lookup",
 			_surface_palette_lookup
 		)
+	_rebuild_surface_render_image(palette_image)
 	_update_ground_safety_color()
+
+
+func _rebuild_surface_render_image(palette_image: Image = null) -> void:
+	if _surface_id_image == null or _surface_weight_image == null:
+		return
+	var lookup := palette_image
+	if lookup == null:
+		lookup = _build_surface_palette_image()
+	if (
+		_surface_render_image == null
+		or _surface_render_image.get_size() != _surface_id_image.get_size()
+	):
+		_surface_render_image = Image.create(
+			_surface_id_image.get_width(),
+			_surface_id_image.get_height(),
+			false,
+			Image.FORMAT_RGBA8
+		)
+	for y in range(_surface_id_image.get_height()):
+		for x in range(_surface_id_image.get_width()):
+			_update_surface_render_pixel(Vector2i(x, y), lookup)
+	_update_surface_render_texture()
+
+
+func _update_surface_render_pixel(pixel: Vector2i, palette_image: Image) -> void:
+	if _surface_render_image == null:
+		return
+	_surface_render_image.set_pixelv(
+		pixel,
+		TERRAIN_SURFACE_BLEND.resolve_color(
+			_surface_id_image.get_pixelv(pixel),
+			_surface_weight_image.get_pixelv(pixel),
+			palette_image,
+			_get_default_surface_id()
+		)
+	)
+
+
+func _update_surface_authoring_textures() -> void:
+	if _surface_id_image != null:
+		if _surface_id_texture == null:
+			_surface_id_texture = ImageTexture.create_from_image(_surface_id_image)
+		else:
+			_surface_id_texture.update(_surface_id_image)
+	if _surface_weight_image != null:
+		if _surface_weight_texture == null:
+			_surface_weight_texture = ImageTexture.create_from_image(_surface_weight_image)
+		else:
+			_surface_weight_texture.update(_surface_weight_image)
+
+
+func _update_surface_render_texture() -> void:
+	if _surface_render_image == null:
+		return
+	if _surface_render_texture == null:
+		_surface_render_texture = ImageTexture.create_from_image(_surface_render_image)
+		if _terrain_material != null:
+			_terrain_material.set_shader_parameter("surface_render", _surface_render_texture)
+	else:
+		_surface_render_texture.update(_surface_render_image)
+
+
+func _update_surface_textures() -> void:
+	_update_surface_authoring_textures()
+	_update_surface_render_texture()
 
 
 func _make_fallback_palette_lookup() -> ImageTexture:
@@ -7811,7 +8175,7 @@ func _commit_grass_stroke() -> void:
 		else:
 			after_patch[history_key] = null
 
-	_undo_redo.create_action("Paint Manual Grass")
+	_undo_redo.create_action("Paint Manual Vegetation")
 	_undo_redo.add_do_method(
 		_apply_grass_patch.bind(after_patch.duplicate(true))
 	)
@@ -7895,6 +8259,9 @@ func _rebuild_manual_grass_chunk(species: String, key: String) -> void:
 			var world_transform = transforms[instance_index] as Transform3D
 			var local_transform = world_transform
 			local_transform.origin -= Vector3(center_xz.x, 0.0, center_xz.y)
+			local_transform.basis = local_transform.basis.scaled(
+				Vector3.ONE * float(species_definition.get("scale_multiplier", 1.0))
+			)
 			multi.set_instance_transform(instance_index, local_transform * source_transform)
 
 		var instance = MultiMeshInstance3D.new()
@@ -8125,6 +8492,14 @@ func _apply_spawn_brush(center: Vector3) -> void:
 
 
 func _apply_ai_squad_brush(center: Vector3) -> void:
+	if _ai_placement_mode == "road_blocker":
+		if Input.is_key_pressed(KEY_SHIFT):
+			_erase_nodes_in_radius(_spawns_root, center, _brush_radius)
+			return
+		if not _stroke_placed_once:
+			_place_road_blocker_spawn(center)
+			_stroke_placed_once = true
+		return
 	if _stroke_placed_once or _ai_placement_mode.is_empty():
 		return
 	if _is_point_in_water(Vector2(center.x, center.z), center.y):
@@ -8137,6 +8512,32 @@ func _apply_ai_squad_brush(center: Vector3) -> void:
 			_place_selected_squad_target(center)
 		"zombie_generator":
 			_place_zombie_generator(center)
+
+
+func _place_road_blocker_spawn(center: Vector3) -> void:
+	var packed := _load_resource_or_null("res://character/RoadBlockerSpawn.tscn") as PackedScene
+	if packed == null or _spawns_root == null:
+		_set_status("Missing RoadBlockerSpawn scene")
+		return
+	var marker := packed.instantiate() as Node3D
+	if marker == null:
+		return
+	var sequence: int = int(_next_spawn_id)
+	marker.name = "RoadBlockerSpawn_%03d" % sequence
+	marker.set_meta("map_editor_category", "spawn")
+	marker.set_meta("map_editor_spawn_kind", "road_blocker")
+	marker.set_meta("map_editor_asset_path", "res://character/RoadBlockerSpawn.tscn")
+	marker.set_meta("map_editor_uuid", _new_editor_uuid("road_blocker"))
+	marker.set_meta("map_editor_align_mode", "upright")
+	marker.set_meta("map_editor_ground_offset", 0.05)
+	_set_property_if_present(marker, "road_blocker_id", "%s_road_blocker_%03d" % [_map_id.to_snake_case(), sequence])
+	_set_property_if_present(marker, "respawn_seconds", 10.0)
+	_spawns_root.add_child(marker)
+	_place_node_on_terrain(marker, Vector2(center.x, center.z), 0.0, 1.0, 0.05)
+	_add_spawn_editor_marker(marker, Color(1.0, 0.25, 0.15, 1.0))
+	_stroke_added_objects.append(_serialize_editor_object(marker))
+	_next_spawn_id += 1
+	_set_status("Placed RoadBlocker spawn")
 
 
 func _place_enemy_squad_spawner(center: Vector3) -> void:
@@ -8462,6 +8863,8 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		_set_status("Auxiliary placement blocked: point is inside water")
 		return
 	var asset_path := MESSAGE_AREA_PATH
+	if _selected_auxiliary_kind == "road_checkpoint":
+		asset_path = ROAD_CHECKPOINT_PATH
 	if _selected_auxiliary_kind == "power_pole":
 		asset_path = POWER_POLE_PATH
 	elif _selected_auxiliary_kind == "neutral_crop_generator":
@@ -8487,8 +8890,9 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		return
 	var is_power_pole := _selected_auxiliary_kind == "power_pole"
 	var is_neutral_crop_generator := _selected_auxiliary_kind == "neutral_crop_generator"
+	var is_road_checkpoint := _selected_auxiliary_kind == "road_checkpoint"
 	var is_promotional_dummy := _selected_auxiliary_kind == PROMOTIONAL_DUMMY_SPAWN_KIND
-	instance.name = ("PowerPole" if is_power_pole else "MessageArea") + "_%04d" % _next_object_id
+	instance.name = ("PowerPole" if is_power_pole else "RoadCheckpoint" if is_road_checkpoint else "MessageArea") + "_%04d" % _next_object_id
 	if is_neutral_crop_generator:
 		instance.name = "NeutralCropGenerator_%04d" % _next_object_id
 	if is_promotional_dummy:
@@ -8515,6 +8919,20 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		_set_property_if_present(instance, "initial_spawn_delay", _neutral_crop_initial_delay)
 		_set_property_if_present(instance, "show_boundary", _neutral_crop_show_boundary)
 		_set_property_if_present(instance, "boundary_color", _neutral_crop_boundary_color)
+	if is_road_checkpoint:
+		var checkpoint_id := "checkpoint_%04d" % _next_object_id
+		if _road_checkpoint_id_exists(checkpoint_id):
+			_set_status("Road Checkpoint placement blocked: duplicate checkpoint_id %s" % checkpoint_id)
+			instance.queue_free()
+			return
+		_set_property_if_present(instance, "checkpoint_id", checkpoint_id)
+		_set_property_if_present(instance, "allowed_team_ids", PackedStringArray(["red", "blue"]))
+		_set_property_if_present(instance, "access_card_id", "road_access_card")
+		_set_property_if_present(instance, "damage_alarm_threshold", 100.0)
+		_set_property_if_present(instance, "alarm_timeout_seconds", 300.0)
+		_set_property_if_present(instance, "barrier_lower_delay_seconds", 10.0)
+		_set_property_if_present(instance, "area_size", Vector3(24.0, 5.0, 24.0))
+		_set_property_if_present(instance, "show_boundary", true)
 	_buildings_root.add_child(instance)
 	var placement_yaw := _rng.randf_range(-PI, PI) if is_power_pole else 0.0
 	if is_power_pole:
@@ -8523,6 +8941,13 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		_place_node_on_terrain(instance, Vector2(center.x, center.z), 0.0, 1.0, 0.0)
 	else:
 		_place_node_on_terrain(instance, Vector2(center.x, center.z), placement_yaw, 1.0, 0.02)
+	if is_road_checkpoint:
+		_place_node_on_terrain(instance, Vector2(center.x, center.z), 0.0, 1.0, 0.0)
+		if _road_checkpoint_overlaps_existing(instance):
+			_buildings_root.remove_child(instance)
+			instance.queue_free()
+			_set_status("Road Checkpoint placement blocked: Area overlaps another checkpoint")
+			return
 	if is_neutral_crop_generator and instance.has_method("refresh_visuals"):
 		instance.call("refresh_visuals")
 	_stroke_added_objects.append(_serialize_editor_object(instance))
@@ -8535,6 +8960,8 @@ func _apply_auxiliary_brush(center: Vector3) -> void:
 		_set_status("Placed Neutral Crop Generator; crops will be generated when the map loads")
 	elif is_promotional_dummy:
 		_set_status("Placed Promotional Dummy; edit its animation and weapon in Object Transform")
+	elif is_road_checkpoint:
+		_set_status("Placed Road Checkpoint; configure access and alarm settings in Transform Objects")
 	else:
 		_set_status("Placed MessageArea; use Transform Objects to edit its Inspector")
 
@@ -8544,6 +8971,60 @@ func _is_message_area(node: Node3D) -> bool:
 		return false
 	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
 	return asset_path == MESSAGE_AREA_PATH or node.scene_file_path == MESSAGE_AREA_PATH
+
+
+func _is_road_checkpoint(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var asset_path := str(node.get_meta("map_editor_asset_path", node.scene_file_path))
+	return asset_path == ROAD_CHECKPOINT_PATH or node.scene_file_path == ROAD_CHECKPOINT_PATH \
+		or node is RoadCheckpoint
+
+
+func _road_checkpoint_id_exists(checkpoint_id: String, ignored: Node3D = null) -> bool:
+	if _buildings_root == null or checkpoint_id.is_empty():
+		return false
+	for child in _buildings_root.get_children():
+		if not child is Node3D or child == ignored or not _is_road_checkpoint(child as Node3D):
+			continue
+		if str(_get_property_or(child as Node3D, "checkpoint_id", "")) == checkpoint_id:
+			return true
+	return false
+
+
+func _road_checkpoint_overlaps_existing(candidate: Node3D) -> bool:
+	if _buildings_root == null or candidate == null or not _has_property(candidate, "area_size"):
+		return false
+	var candidate_size := candidate.get("area_size") as Vector3
+	var candidate_half := _road_checkpoint_xz_half_extents(candidate, candidate_size)
+	for child in _buildings_root.get_children():
+		if not child is Node3D or child == candidate or not _is_road_checkpoint(child as Node3D):
+			continue
+		var other := child as Node3D
+		var other_size := _get_property_or(other, "area_size", Vector3(24.0, 5.0, 24.0)) as Vector3
+		var other_half := _road_checkpoint_xz_half_extents(other, other_size)
+		var dx := absf(candidate.global_position.x - other.global_position.x)
+		var dz := absf(candidate.global_position.z - other.global_position.z)
+		if dx < candidate_half.x + other_half.x \
+			and dz < candidate_half.y + other_half.y:
+			return true
+	return false
+
+
+func _road_checkpoint_xz_half_extents(node: Node3D, size: Vector3) -> Vector2:
+	var half_size := Vector3(maxf(1.0, absf(size.x)), 0.0, maxf(1.0, absf(size.z))) * 0.5
+	var raw_x_axis := node.global_basis.x
+	var raw_z_axis := node.global_basis.z
+	var scale_x := maxf(0.0001, raw_x_axis.length())
+	var scale_z := maxf(0.0001, raw_z_axis.length())
+	half_size.x *= scale_x
+	half_size.z *= scale_z
+	var x_axis := raw_x_axis / scale_x
+	var z_axis := raw_z_axis / scale_z
+	return Vector2(
+		absf(x_axis.x) * half_size.x + absf(z_axis.x) * half_size.z,
+		absf(x_axis.z) * half_size.x + absf(z_axis.z) * half_size.z
+	)
 
 
 func _is_neutral_crop_generator(node: Node3D) -> bool:
@@ -9526,6 +10007,13 @@ func _serialize_editor_object(node: Node3D) -> Dictionary:
 		"time_end_hour",
 		"spawn_interval_seconds",
 		"enabled",
+		"checkpoint_id",
+		"road_blocker_id",
+		"allowed_team_ids",
+		"access_card_id",
+		"damage_alarm_threshold",
+		"alarm_timeout_seconds",
+		"barrier_lower_delay_seconds",
 	]:
 		if _has_property(node, property_name):
 			properties[property_name] = node.get(property_name)
@@ -9766,6 +10254,16 @@ func _restore_object_records(records: Array) -> void:
 		elif spawn_kind == PROMOTIONAL_VEHICLE_DRIVER_DUMMY_SPAWN_KIND:
 			_configure_promotional_vehicle_driver_visual(node)
 			_update_promotional_vehicle_driver_dummy(node)
+	# Facility records can be restored before their containing building depending
+	# on map/undo record order. Snap them in a second pass after all records are
+	# present so an indoor floor is resolved deterministically.
+	for record_value in records:
+		var facility_record := record_value as Dictionary
+		if str(facility_record.get("category", "")) != "facility":
+			continue
+		var facility_node := _find_editor_object_by_uuid(str(facility_record.get("uuid", "")))
+		if facility_node != null:
+			_snap_facility_to_indoor_floor(facility_node)
 	_rebuild_power_wires()
 
 
@@ -10198,7 +10696,10 @@ func _validate_building_node(
 		return {"valid": false, "reason": "slope %.1f° exceeds %.1f°" % [slope_degrees, building_max_slope_degrees]}
 	if skips_building_overlap:
 		return {"valid": true, "reason": ""}
-	var allow_kitchen_inside_buildings := _is_kitchen_facility_node(node)
+	# Kitchen appliances and industrial workbenches are usable both outdoors and
+	# inside enterable buildings. Only the dedicated interior-facility category
+	# requires an enterable building; it is not the rule for production stations.
+	var allow_production_facility_inside_buildings := _is_production_facility_node(node)
 	var require_enterable_building := _is_interior_facility_node(node)
 	var allow_support_object_overlap := bool(node.get_meta(MAP_CAN_OVERLAP_SUPPORT_OBJECTS_META, false))
 	var overlaps_enterable_building := false
@@ -10219,7 +10720,7 @@ func _validate_building_node(
 		if overlaps_candidate:
 			if allow_support_object_overlap:
 				continue
-			if allow_kitchen_inside_buildings and _is_enterable_building_node(candidate):
+			if allow_production_facility_inside_buildings and _is_enterable_building_node(candidate):
 				continue
 			return {"valid": false, "reason": "overlaps %s" % candidate.name}
 	if require_enterable_building and not overlaps_enterable_building:
@@ -10227,7 +10728,7 @@ func _validate_building_node(
 	return {"valid": true, "reason": ""}
 
 
-func _is_kitchen_facility_node(node: Node3D) -> bool:
+func _is_production_facility_node(node: Node3D) -> bool:
 	if node == null or not is_instance_valid(node):
 		return false
 	var category := str(node.get_meta("map_editor_category", ""))
@@ -10241,7 +10742,7 @@ func _is_kitchen_facility_node(node: Node3D) -> bool:
 		facility_category = str(MAP_FACILITY_CATALOG.get_asset_by_path(
 			str(node.get_meta("map_editor_asset_path", node.scene_file_path))
 		).get("category", ""))
-	return facility_category == "kitchen"
+	return facility_category in ["kitchen", "industrial"]
 
 
 func _is_ground_decoration_node(node: Node3D) -> bool:
@@ -10308,6 +10809,100 @@ func _get_building_overlap_candidates() -> Array[Node3D]:
 			if child is Node3D and not bool(child.get_meta(EDITOR_MARKER_META, false)):
 				result.append(child as Node3D)
 	return result
+
+
+func _is_indoor_facility_placement_node(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	return _is_production_facility_node(node) or _is_interior_facility_node(node)
+
+
+func _get_indoor_building_for_facility(node: Node3D) -> Node3D:
+	if not _is_indoor_facility_placement_node(node):
+		return null
+	var facility_polygon := _get_node_footprint_polygon(node)
+	if facility_polygon.size() < 3:
+		return null
+	var best_building: Node3D = null
+	var best_floor_y := -INF
+	for candidate in _get_building_overlap_candidates():
+		if candidate == node or not is_instance_valid(candidate):
+			continue
+		if not _is_enterable_building_node(candidate):
+			continue
+		var building_polygon := _get_node_footprint_polygon(candidate)
+		if building_polygon.size() < 3:
+			continue
+		if not _footprint_polygons_overlap(facility_polygon, building_polygon, building_overlap_margin):
+			continue
+		var floor_y := _get_indoor_floor_height(candidate)
+		if is_nan(floor_y):
+			continue
+		if best_building == null or floor_y > best_floor_y:
+			best_building = candidate
+			best_floor_y = floor_y
+	return best_building
+
+
+func _get_indoor_floor_height(building: Node3D) -> float:
+	if building == null or not is_instance_valid(building):
+		return NAN
+	# An enterable building must author its finished first-floor height. Imported
+	# models use different foundations and slab thicknesses, so the building root
+	# (and even the lowest mesh vertex) is not a reliable support surface.
+	if not building.has_meta(MAP_INDOOR_FLOOR_Y_META):
+		return NAN
+	var local_floor_y := float(building.get_meta(MAP_INDOOR_FLOOR_Y_META))
+	if is_nan(local_floor_y) or is_inf(local_floor_y):
+		return NAN
+	return (building.global_transform * Vector3(0.0, local_floor_y, 0.0)).y
+
+
+func _get_node_placement_support_offset_world(node: Node3D) -> float:
+	if node == null or not is_instance_valid(node):
+		return 0.0
+	var footprint := PLACEMENT_QUERY_SCRIPT.placement_footprint_for_node(node)
+	if footprint.is_empty():
+		return 0.0
+	var shape := footprint.get("shape", null) as Shape3D
+	var local_transform := footprint.get("transform", Transform3D.IDENTITY) as Transform3D
+	if shape is BoxShape3D:
+		var half_size := (shape as BoxShape3D).size * 0.5
+		var shape_basis := node.global_basis * local_transform.basis
+		var shape_origin := node.global_basis * local_transform.origin
+		var y_extent := (
+			absf(shape_basis.x.y) * half_size.x
+			+ absf(shape_basis.y.y) * half_size.y
+			+ absf(shape_basis.z.y) * half_size.z
+		)
+		# The returned value is the root Y offset that puts the footprint's
+		# lowest point on a horizontal support plane.
+		return y_extent - shape_origin.y
+	# PlacementFootprints are authored as boxes today; retain the shared helper
+	# for a future footprint that uses another Shape3D type.
+	var local_support := PLACEMENT_QUERY_SCRIPT.support_offset_for_shape(shape, local_transform)
+	return local_support * absf(node.global_basis.y.y)
+
+
+func _snap_facility_to_indoor_floor(node: Node3D) -> bool:
+	if not _is_indoor_facility_placement_node(node):
+		return false
+	var building := _get_indoor_building_for_facility(node)
+	if building == null:
+		return false
+	var xz := Vector2(node.global_position.x, node.global_position.z)
+	var yaw := _extract_world_yaw(node.global_basis)
+	var scale_value := node.global_basis.get_scale()
+	var basis := Basis(Vector3.UP, yaw).scaled(scale_value)
+	var floor_y := _get_indoor_floor_height(building)
+	if is_nan(floor_y):
+		return false
+	# Rebuild the transform before calculating the support offset so root scale
+	# and heading are accounted for consistently with normal placement.
+	node.global_transform = Transform3D(basis, Vector3(xz.x, floor_y, xz.y))
+	var support_offset := _get_node_placement_support_offset_world(node)
+	node.global_position.y = floor_y + support_offset
+	return true
 
 
 func _get_node_footprint_polygon(node: Node3D) -> PackedVector2Array:
@@ -10446,10 +11041,23 @@ func _place_map_object_at_terrain(
 	var surface_normal = get_terrain_normal_world(world_xz) if align_to_normal else Vector3.UP
 	var scale_value = node.global_basis.get_scale()
 	var basis = _basis_from_surface_normal_explicit(surface_normal, yaw_radians, scale_value, align_to_normal)
+	var terrain_y := get_terrain_height_world(world_xz) + ground_offset
 	node.global_transform = Transform3D(
 		basis,
-		Vector3(world_xz.x, get_terrain_height_world(world_xz) + ground_offset, world_xz.y)
+		Vector3(world_xz.x, terrain_y, world_xz.y)
 	)
+	# Facilities that overlap an enterable building use the building's interior
+	# floor as their support plane. We first place them at terrain height so the
+	# desired X/Z footprint is available to the overlap query, then correct only
+	# the root Y; outdoor facilities retain the existing terrain behavior.
+	if _is_indoor_facility_placement_node(node):
+		var indoor_building := _get_indoor_building_for_facility(node)
+		if indoor_building != null:
+			var floor_y := _get_indoor_floor_height(indoor_building)
+			if is_nan(floor_y):
+				return
+			var support_offset := _get_node_placement_support_offset_world(node)
+			node.global_position.y = floor_y + support_offset
 
 
 func _basis_from_surface_normal_explicit(
@@ -10761,6 +11369,8 @@ func _update_selected_object_transform_validity() -> void:
 		var validation = _validate_building_node(_selected_map_object, _selected_map_object)
 		_object_transform_valid = bool(validation.get("valid", false))
 		_draw_building_footprint(_get_node_footprint_polygon(_selected_map_object), _object_transform_valid)
+	elif _is_road_checkpoint(_selected_map_object):
+		_object_transform_valid = not _road_checkpoint_overlaps_existing(_selected_map_object)
 	else:
 		_hide_building_footprint_preview()
 
@@ -11123,6 +11733,13 @@ func _duplicate_selected_object() -> void:
 			str(properties.get("spawner_id", "squad_spawner")),
 			str(record["uuid"]).right(6),
 		]
+	if _is_road_checkpoint(_selected_map_object):
+		var checkpoint_properties := record.get("properties", {}) as Dictionary
+		var duplicate_checkpoint_id := "checkpoint_%04d" % _next_object_id
+		while _road_checkpoint_id_exists(duplicate_checkpoint_id):
+			_next_object_id += 1
+			duplicate_checkpoint_id = "checkpoint_%04d" % _next_object_id
+		checkpoint_properties["checkpoint_id"] = duplicate_checkpoint_id
 	var transform_value = record.get("transform", Transform3D.IDENTITY) as Transform3D
 	var footprint := _get_node_footprint_polygon(_selected_map_object)
 	var footprint_width := 0.0
@@ -11149,6 +11766,10 @@ func _duplicate_selected_object() -> void:
 			_remove_object_records(records)
 			_set_status("Duplicate blocked: %s" % str(validation.get("reason", "overlap")))
 			return
+	if _is_road_checkpoint(duplicated) and _road_checkpoint_overlaps_existing(duplicated):
+		_remove_object_records(records)
+		_set_status("Duplicate blocked: Road Checkpoint Area overlaps another checkpoint")
+		return
 	_undo_redo.create_action("Duplicate Map Object")
 	_undo_redo.add_do_method(_restore_object_records.bind(records))
 	_undo_redo.add_undo_method(_remove_object_records.bind(records))
@@ -11388,6 +12009,14 @@ func _save_current_map_impl(
 	if directory_error != OK:
 		_set_status("Could not create save directory (error %d)" % directory_error)
 		return
+	var surface_validation_error := _get_surface_blend_validation_error()
+	if not surface_validation_error.is_empty():
+		_set_status(surface_validation_error)
+		return
+	var checkpoint_validation_error := _validate_road_checkpoints()
+	if not checkpoint_validation_error.is_empty():
+		_set_status(checkpoint_validation_error)
+		return
 
 	_update_map_metadata_before_save()
 	_rebuild_power_wires()
@@ -11534,7 +12163,7 @@ func _capture_generated_map_icon() -> void:
 
 
 func _update_map_metadata_before_save() -> void:
-	_map_root.set_meta("farmwar_map_format_version", 5)
+	_map_root.set_meta("farmwar_map_format_version", MAP_FORMAT_VERSION)
 	_map_root.set_meta("farmwar_map_id", _map_id)
 	_map_root.set_meta("farmwar_display_name", _display_name)
 	_map_root.set_meta("farmwar_map_version", _map_version)
@@ -11546,7 +12175,10 @@ func _update_map_metadata_before_save() -> void:
 	_map_root.set_meta("terrain_sample_width", _sample_width)
 	_map_root.set_meta("terrain_sample_depth", _sample_depth)
 	_map_root.set_meta("terrain_height_samples", _height_samples)
-	_map_root.set_meta("surface_mask_image", _surface_mask_image)
+	_map_root.set_meta("surface_id_image", _surface_id_image)
+	_map_root.set_meta("surface_weight_image", _surface_weight_image)
+	_map_root.set_meta("surface_render_image", _surface_render_image)
+	_map_root.set_meta("surface_blend_noise_seed", _surface_blend_noise_seed)
 	_map_root.set_meta("surface_palette_entries", _surface_entries.duplicate(true))
 	_map_root.set_meta("surface_default_id", _get_default_surface_id())
 	_map_root.set_meta("manual_grass", _manual_grass)
@@ -11558,7 +12190,7 @@ func _update_map_metadata_before_save() -> void:
 		"dynamic_navigation_chunk_grid_64m",
 		"dynamic_height_terrain",
 		"terrain_foundation_and_skirt",
-		"surface_mask",
+		"four_layer_surface_blend",
 		"manual_grass_multimesh",
 		"continuous_curve_roads",
 		"water_bodies",
@@ -11581,10 +12213,52 @@ func _update_map_metadata_before_save() -> void:
 		"static_kitchen_facilities",
 		"industrial_workbench_placement",
 		"static_defense_facilities",
+		"road_checkpoints",
 		"enemy_squad_generators",
 		"persistent_squad_target_points",
 		"zombie_generators",
 	])
+
+
+func _validate_road_checkpoints() -> String:
+	if _buildings_root == null:
+		return ""
+	var seen_ids: Dictionary = {}
+	var checkpoints: Array[Node3D] = []
+	for child in _buildings_root.get_children():
+		if not child is Node3D or not _is_road_checkpoint(child as Node3D):
+			continue
+		var checkpoint := child as Node3D
+		var checkpoint_id := str(_get_property_or(checkpoint, "checkpoint_id", "")).strip_edges()
+		if checkpoint_id.is_empty():
+			return "Cannot save map: Road Checkpoint has an empty checkpoint_id."
+		if seen_ids.has(checkpoint_id):
+			return "Cannot save map: duplicate Road Checkpoint ID %s." % checkpoint_id
+		seen_ids[checkpoint_id] = checkpoint
+		checkpoints.append(checkpoint)
+	for index in range(checkpoints.size()):
+		if _road_checkpoint_overlaps_existing(checkpoints[index]):
+			# The helper ignores the candidate itself and therefore also catches
+			# overlap with any other checkpoint in this list.
+			return "Cannot save map: Road Checkpoint Areas overlap."
+	for checkpoint in checkpoints:
+		var has_blocker := false
+		var area_size := _get_property_or(checkpoint, "area_size", Vector3(24.0, 5.0, 24.0)) as Vector3
+		var area_half := _road_checkpoint_xz_half_extents(checkpoint, area_size)
+		for blocker_value in get_tree().get_nodes_in_group("road_blockers") + get_tree().get_nodes_in_group("road_blocker_spawns"):
+			if not blocker_value is Node3D or _map_root == null \
+				or not _map_root.is_ancestor_of(blocker_value):
+				continue
+			var blocker := blocker_value as Node3D
+			var delta := blocker.global_position - checkpoint.global_position
+			if absf(delta.x) <= area_half.x and absf(delta.z) <= area_half.y:
+				has_blocker = true
+				break
+		if not has_blocker:
+			push_warning("Road Checkpoint %s has no RoadBlockerAI member; saving anyway." % str(
+				_get_property_or(checkpoint, "checkpoint_id", "")
+			))
+	return ""
 
 
 func _get_playable_map_validation_error() -> String:
@@ -11603,6 +12277,17 @@ func _get_playable_map_validation_error() -> String:
 	return ""
 
 
+func _get_surface_blend_validation_error() -> String:
+	if _surface_id_image == null or _surface_weight_image == null or _surface_render_image == null:
+		return "Cannot save map: four-layer terrain surface data is incomplete."
+	var expected_size := _surface_id_image.get_size()
+	if expected_size.x <= 0 or expected_size.y <= 0:
+		return "Cannot save map: terrain surface images are empty."
+	if _surface_weight_image.get_size() != expected_size or _surface_render_image.get_size() != expected_size:
+		return "Cannot save map: terrain surface image dimensions do not match."
+	return ""
+
+
 func _save_editor_sidecar_data(folder: String) -> void:
 	var height_file = FileAccess.open("%s/heightmap.bin" % folder, FileAccess.WRITE)
 	if height_file != null:
@@ -11612,8 +12297,12 @@ func _save_editor_sidecar_data(folder: String) -> void:
 		height_file.store_buffer(_height_samples.to_byte_array())
 		height_file.close()
 
-	if _surface_mask_image != null:
-		_surface_mask_image.save_png("%s/surface_mask.png" % folder)
+	if _surface_id_image != null:
+		_surface_id_image.save_png("%s/%s" % [folder, SURFACE_IDS_FILE_NAME])
+	if _surface_weight_image != null:
+		_surface_weight_image.save_png("%s/%s" % [folder, SURFACE_WEIGHTS_FILE_NAME])
+	if _surface_render_image != null:
+		_surface_render_image.save_png("%s/%s" % [folder, SURFACE_RENDER_FILE_NAME])
 
 	var palette_image = _build_surface_palette_image()
 	palette_image.save_png("%s/%s" % [folder, SURFACE_PALETTE_FILE_NAME])
@@ -11635,7 +12324,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 	var icon_saved = _save_map_icon(folder)
 	var template_name = "creston_town"
 	var manifest = {
-		"format_version": 5,
+		"format_version": MAP_FORMAT_VERSION,
 		"map_id": _map_id,
 		"display_name": _display_name,
 		"icon": MAP_ICON_FILE_NAME if icon_saved else "",
@@ -11652,14 +12341,17 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"vertex_spacing": vertex_spacing,
 			"samples": [_sample_width, _sample_depth],
 			"heightmap": "heightmap.bin",
-			"surface_mask": "surface_mask.png",
+			"surface_ids": SURFACE_IDS_FILE_NAME,
+			"surface_weights": SURFACE_WEIGHTS_FILE_NAME,
+			"surface_render": SURFACE_RENDER_FILE_NAME,
 			"surface_palette": SURFACE_PALETTE_FILE_NAME,
 			"surface_palette_resource": "surface_palette.tres",
 			"default_surface_id": _get_default_surface_id(),
 			"surface_mask_resolution": [
-				_surface_mask_image.get_width(),
-				_surface_mask_image.get_height(),
+				_surface_id_image.get_width(),
+				_surface_id_image.get_height(),
 			],
+			"surface_blend_noise_seed": _surface_blend_noise_seed,
 		},
 		"surface_colors": _surface_entries_for_json(),
 		"content": {
@@ -11678,6 +12370,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"kitchen_facility_count": _count_map_facilities("kitchen"),
 			"industrial_facility_count": _count_map_facilities("industrial"),
 			"defense_facility_count": _count_map_facilities("defense"),
+			"road_checkpoint_count": _count_road_checkpoints(),
 			"farmland_count": _farmlands_root.get_child_count(),
 			"neutral_crop_generator_count": _count_neutral_crop_generators(),
 			"promotional_dummy_count": _count_promotional_dummies(),
@@ -11704,6 +12397,7 @@ func _save_editor_sidecar_data(folder: String) -> void:
 			"water_bodies_enabled": true,
 			"enemy_squad_generators_enabled": true,
 			"zombie_generators_enabled": true,
+			"road_checkpoints_enabled": true,
 		},
 	}
 
@@ -11950,6 +12644,13 @@ func open_map_package(manifest_path: String) -> void:
 		_set_status("Invalid map.json")
 		return
 	var manifest = parsed as Dictionary
+	var format_version := int(manifest.get("format_version", 0))
+	if format_version != MAP_FORMAT_VERSION:
+		_set_status(
+			"Unsupported map format %d; this editor requires format %d four-layer terrain data."
+			% [format_version, MAP_FORMAT_VERSION]
+		)
+		return
 	var configured_ai_value: Variant = manifest.get(
 		"ai_configuration",
 		(manifest.get("content", {}) as Dictionary).get("ai_configuration", [])
@@ -11964,9 +12665,16 @@ func open_map_package(manifest_path: String) -> void:
 	var map_id_value = str(manifest.get("map_id", display_name_value))
 	var version_value = str(manifest.get("version", default_map_version))
 	var terrain_data = manifest.get("terrain", {}) as Dictionary
+	for required_key in ["surface_ids", "surface_weights", "surface_render"]:
+		var file_name := str(terrain_data.get(required_key, ""))
+		var required_path := manifest_path.get_base_dir().path_join(file_name)
+		if file_name.is_empty() or not FileAccess.file_exists(required_path):
+			_set_status("Invalid format 6 map: missing terrain file '%s'." % required_key)
+			return
 	var time_config := manifest.get("time", {}) as Dictionary
 	var weather_config := manifest.get("weather", {}) as Dictionary
 	vertex_spacing = maxf(0.25, float(terrain_data.get("vertex_spacing", vertex_spacing)))
+	_surface_blend_noise_seed = int(terrain_data.get("surface_blend_noise_seed", 72451))
 
 	create_new_map(display_name_value, map_size_value, template_value, map_id_value, version_value)
 	_apply_time_editor_config(time_config)
@@ -11978,7 +12686,13 @@ func open_map_package(manifest_path: String) -> void:
 	_current_map_folder = manifest_path.get_base_dir()
 	_load_surface_entries_from_manifest(manifest)
 	_load_heightmap_sidecar(_current_map_folder.path_join(str(terrain_data.get("heightmap", "heightmap.bin"))))
-	_load_surface_mask_sidecar(_current_map_folder.path_join(str(terrain_data.get("surface_mask", "surface_mask.png"))))
+	if not _load_surface_blend_sidecars(
+		_current_map_folder.path_join(str(terrain_data.get("surface_ids", SURFACE_IDS_FILE_NAME))),
+		_current_map_folder.path_join(str(terrain_data.get("surface_weights", SURFACE_WEIGHTS_FILE_NAME))),
+		_current_map_folder.path_join(str(terrain_data.get("surface_render", SURFACE_RENDER_FILE_NAME)))
+	):
+		_set_status("Invalid format 6 map: terrain blend images have incompatible dimensions or data.")
+		return
 	_load_manual_grass_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("manual_grass", "manual_grass.dat"))))
 	_load_editor_objects_sidecar(_current_map_folder.path_join(str((manifest.get("content", {}) as Dictionary).get("editor_objects", EDITOR_OBJECTS_FILE_NAME))))
 	_selected_squad_spawner_index = 0 if not _get_editor_squad_spawners().is_empty() else -1
@@ -12035,17 +12749,39 @@ func _load_heightmap_sidecar(path: String) -> void:
 	_height_samples = values
 
 
-func _load_surface_mask_sidecar(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		return
-	var image = Image.load_from_file(path)
-	if image == null or image.is_empty():
-		return
-	image.convert(Image.FORMAT_RGBA8)
-	_surface_mask_image = image
-	_surface_mask_texture = ImageTexture.create_from_image(_surface_mask_image)
+func _load_surface_blend_sidecars(id_path: String, weight_path: String, render_path: String) -> bool:
+	var id_image := _load_png_image(id_path)
+	var weight_image := _load_png_image(weight_path)
+	var render_image := _load_png_image(render_path)
+	if (
+		id_image == null or id_image.is_empty()
+		or weight_image == null or weight_image.is_empty()
+		or render_image == null or render_image.is_empty()
+	):
+		return false
+	id_image.convert(Image.FORMAT_RGBA8)
+	weight_image.convert(Image.FORMAT_RGBA8)
+	render_image.convert(Image.FORMAT_RGBA8)
+	if id_image.get_size() != weight_image.get_size() or id_image.get_size() != render_image.get_size():
+		return false
+	_surface_id_image = id_image
+	_surface_weight_image = weight_image
+	_surface_render_image = render_image
+	_surface_id_texture = ImageTexture.create_from_image(_surface_id_image)
+	_surface_weight_texture = ImageTexture.create_from_image(_surface_weight_image)
+	_surface_render_texture = ImageTexture.create_from_image(_surface_render_image)
+	_configure_surface_edge_noise()
 	if _terrain_material != null:
-		_terrain_material.set_shader_parameter("surface_mask", _surface_mask_texture)
+		_terrain_material.set_shader_parameter("surface_render", _surface_render_texture)
+	return true
+
+
+func _load_png_image(path: String) -> Image:
+	if not FileAccess.file_exists(path):
+		return null
+	var image := Image.new()
+	var error := image.load_png_from_buffer(FileAccess.get_file_as_bytes(path))
+	return image if error == OK and not image.is_empty() else null
 
 
 func _load_manual_grass_sidecar(path: String) -> void:
@@ -12550,6 +13286,16 @@ func _count_neutral_crop_generators() -> int:
 	var count := 0
 	for child in _buildings_root.get_children():
 		if child is Node3D and _is_neutral_crop_generator(child as Node3D):
+			count += 1
+	return count
+
+
+func _count_road_checkpoints() -> int:
+	if _buildings_root == null:
+		return 0
+	var count := 0
+	for child in _buildings_root.get_children():
+		if child is Node3D and _is_road_checkpoint(child as Node3D):
 			count += 1
 	return count
 

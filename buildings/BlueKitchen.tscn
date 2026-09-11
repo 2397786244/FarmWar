@@ -21,6 +21,7 @@ size = Vector3(8.29, 3.7069, 8.4402)
 [node name="BlueKitchen" type="StaticBody3D" unique_id=1169413927]
 metadata/map_can_overlap_water = false
 metadata/map_enterable = true
+metadata/map_indoor_floor_y = 0.0
 
 [node name="BlueKitchen" parent="." unique_id=1569291560 instance=ExtResource("1_bidnh")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, 8)

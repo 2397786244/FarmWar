@@ -21,6 +21,15 @@ const WORLD_SAVE_INTERVAL_SECONDS := 10.0
 const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const DROPPED_ITEM_RECONCILE_INTERVAL_SECONDS := 3.0
 const CLIENT_CONNECTION_TIMEOUT_SECONDS := 30.0
+const CLIENT_JOIN_NEGOTIATION_TIMEOUT_SECONDS := 30.0
+const HOST_TRANSPORT_READY_RETRY_SECONDS := 0.5
+const CLIENT_JOIN_REQUEST_RETRY_SECONDS := 1.0
+const STEAM_MULTIPLAYER_LANE_COUNT := 9
+const COOP_TRANSPORT_PROTOCOL_VERSION := 2
+const HOST_TRANSPORT_DIAGNOSTIC_INTERVAL_SECONDS := 2.0
+const STEAM_PEER_DEBUG_LEVEL_PEER := 1
+const HOST_TRANSPORT_LOGGING_ENABLED := false
+const RTT_PROBING_ENABLED := false
 const RTT_PROBE_INTERVAL_SECONDS := 2.0
 const RTT_LOG_INTERVAL_SECONDS := 5.0
 const UNRELIABLE_ACTION_TYPES := {
@@ -55,6 +64,14 @@ var client_world_ready_sent := false
 var client_bootstrap_completing := false
 var client_connection_elapsed := 0.0
 var client_transport_ready := false
+var client_transport_handshake_confirmed := false
+var client_world_manifest_received := false
+var client_join_negotiation_elapsed := 0.0
+var client_join_request_accumulator := 0.0
+var client_join_request_attempts := 0
+var client_last_connection_status := -1
+var host_transport_ready_peers: Dictionary = {}
+var host_transport_diagnostic_accumulator := 0.0
 var rtt_probe_accumulator := 0.0
 var rtt_probe_sequence := 0
 var rtt_probe_sent_msec: Dictionary = {}
@@ -103,7 +120,10 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_process_client_transport(delta)
+	_process_client_join_negotiation(delta)
 	_process_rtt_probes(delta)
+	_process_host_transport_ready(delta)
+	_process_host_transport_diagnostics(delta)
 	if not is_host() or world_loading or not authority_ready:
 		return
 	world_save_accumulator += delta
@@ -141,6 +161,10 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	if world.is_empty() or selection.is_empty():
 		session_failed.emit("合作世界或房主角色档案无效。")
 		return false
+	var channel_configuration_error := _get_steam_channel_configuration_error()
+	if not channel_configuration_error.is_empty():
+		session_failed.emit(channel_configuration_error)
+		return false
 	# Steam Lobby 只承载地图和房间元数据。准备室从 Lobby 读取的 world
 	# 不包含 world_state/team_storage；房主必须按 world_id 从本地存档重新
 	# 读取完整权威世界，不能把 Lobby 元数据当成存档本体。
@@ -164,13 +188,24 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	# makes the extension call add_peer() for every LobbyChatUpdate member,
 	# including stale or already-closed Steam connections. A plain host accepts
 	# incoming SteamNet connections without that race.
+	_configure_host_transport_diagnostics(steam_peer)
 	var error := steam_peer.create_host(0)
 	if error != OK:
+		if HOST_TRANSPORT_LOGGING_ENABLED:
+			print("[CoopTransport][host] create_host failed: error=%d" % error)
 		session_failed.emit("创建 Steam P2P 房主失败，错误码：%d。" % error)
 		return false
 	peer = steam_peer
 	multiplayer.multiplayer_peer = peer
 	mode = MODE_HOST
+	host_transport_diagnostic_accumulator = 0.0
+	if HOST_TRANSPORT_LOGGING_ENABLED:
+		print("[CoopTransport][host] create_host succeeded: status=%s local_peer=%d configured_lanes=%d lobby=%d" % [
+			_connection_status_name(peer.get_connection_status()),
+			multiplayer.get_unique_id(),
+			int(ProjectSettings.get_setting("steam/multiplayer_peer/max_channels", 0)),
+			SteamService.cooperative_lobby_id,
+		])
 	_set_pve_event_system_enabled(false)
 	active_world = world.duplicate(true)
 	var host_lock := CooperativeWorldStorage.get_host_loadout_lock(
@@ -211,6 +246,8 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 	authority_ready = false
 	pending_join_requests.clear()
 	pending_join_sessions.clear()
+	host_transport_ready_peers.clear()
+	host_transport_diagnostic_accumulator = 0.0
 	pending_join_token = ""
 	client_scene_ready_sent = false
 	client_world_state_received = false
@@ -235,19 +272,51 @@ func start_host(world: Dictionary, selection: Dictionary) -> bool:
 
 
 func join_hosted_world() -> bool:
+	print("[CoopJoin][client] join_hosted_world requested: lobby=%d initialized=%s running=%s" % [
+		SteamService.cooperative_lobby_id,
+		SteamService.initialized,
+		SteamService.is_cooperative_world_running(),
+	])
 	if not SteamService.initialized or SteamService.cooperative_lobby_id <= 0:
+		print("[CoopJoin][client] rejected before transport: Steam or Lobby is unavailable")
 		session_failed.emit("请先加入一个 Steam 合作 Lobby。")
 		return false
 	if SteamService.is_current_lobby_host():
 		session_failed.emit("房主应使用“启动世界”，而不是加入客户端会话。")
 		return false
 	if not SteamService.is_cooperative_world_running():
+		print("[CoopJoin][client] rejected before transport: host world is not running")
 		session_failed.emit("房主还在准备合作世界，请稍候再加入。")
 		return false
 	if is_active() or peer != null:
 		session_failed.emit("合作世界连接正在建立，请勿重复加入。")
 		return false
+	var channel_configuration_error := _get_steam_channel_configuration_error()
+	if not channel_configuration_error.is_empty():
+		print("[CoopJoin][client] rejected before transport: %s" % channel_configuration_error)
+		session_failed.emit(channel_configuration_error)
+		return false
 	var world := SteamService.get_current_lobby_data()
+	var lobby_protocol := int(world.get("transport_protocol_version", 0))
+	var lobby_lane_count := int(world.get("steam_lane_count", 0))
+	print("[CoopJoin][client] Lobby metadata: world=%s map=%s protocol=%d lanes=%d" % [
+		str(world.get("world_id", "")),
+		str(world.get("map_id", "")),
+		lobby_protocol,
+		lobby_lane_count,
+	])
+	if lobby_protocol != COOP_TRANSPORT_PROTOCOL_VERSION \
+			or lobby_lane_count != STEAM_MULTIPLAYER_LANE_COUNT:
+		session_failed.emit(
+			"Steam 合作协议不兼容：房主协议=%d、通道数=%d，本地要求协议=%d、通道数=%d。"
+			% [
+				lobby_protocol,
+				lobby_lane_count,
+				COOP_TRANSPORT_PROTOCOL_VERSION,
+				STEAM_MULTIPLAYER_LANE_COUNT,
+			]
+		)
+		return false
 	var map_validation := GameMapRegistry.validate_world_map(world)
 	if not bool(map_validation.get("valid", false)):
 		session_failed.emit(str(map_validation.get("error", "本地没有房主选择的地图，无法加入合作世界。")))
@@ -264,6 +333,7 @@ func join_hosted_world() -> bool:
 	stop_session()
 	var host_steam_id := SteamService.cooperative_lobby_host_steam_id
 	if host_steam_id <= 0:
+		print("[CoopJoin][client] rejected before transport: Lobby owner Steam ID is unavailable")
 		host_steam_id = Steam.getLobbyOwner(SteamService.cooperative_lobby_id)
 	if host_steam_id <= 0:
 		session_failed.emit("无法读取 Steam 合作房主身份。")
@@ -271,8 +341,12 @@ func join_hosted_world() -> bool:
 	var steam_peer := SteamMultiplayerPeer.new()
 	# Connect directly to the Lobby owner. Lobby membership has already been
 	# validated above; the transport itself should not auto-add Lobby members.
+	print("[CoopJoin][client] creating Steam peer: host_steam_id=%d virtual_port=0 lanes=%d" % [
+		host_steam_id, STEAM_MULTIPLAYER_LANE_COUNT
+	])
 	var error := steam_peer.create_client(host_steam_id, 0)
 	if error != OK:
+		print("[CoopJoin][client] Steam peer creation failed: error=%d" % error)
 		session_failed.emit("连接 Steam P2P 房主失败，错误码：%d。" % error)
 		return false
 	peer = steam_peer
@@ -285,6 +359,7 @@ func join_hosted_world() -> bool:
 	authority_ready = false
 	pending_join_requests.clear()
 	pending_join_sessions.clear()
+	host_transport_ready_peers.clear()
 	pending_join_token = _make_join_token()
 	client_scene_ready_sent = false
 	client_world_state_received = false
@@ -296,6 +371,7 @@ func join_hosted_world() -> bool:
 	GameAuthority.start_client_mode()
 	WorldPersistence.apply_world_clock_state(active_world)
 	GameAuthority.set_physics_process(false)
+	_log_join_stage("Steam peer created; waiting for CONNECTION_CONNECTED")
 	session_started.emit(false)
 	return true
 
@@ -320,6 +396,8 @@ func stop_session(save_host := true) -> void:
 	local_selection.clear()
 	pending_join_requests.clear()
 	pending_join_sessions.clear()
+	host_transport_ready_peers.clear()
+	host_transport_diagnostic_accumulator = 0.0
 	pending_join_token = ""
 	mode = MODE_NONE
 	world_loading = false
@@ -402,6 +480,10 @@ func _connect_authority_signals() -> void:
 		GameAuthority.visual_world_event_ready.connect(_broadcast_visual_event)
 	if not GameAuthority.player_correction_ready.is_connected(_broadcast_player_correction):
 		GameAuthority.player_correction_ready.connect(_broadcast_player_correction)
+	if not GameAuthority.controlled_remote_correction_ready.is_connected(_broadcast_controlled_remote_correction):
+		GameAuthority.controlled_remote_correction_ready.connect(_broadcast_controlled_remote_correction)
+	if not GameAuthority.vehicle_driver_correction_ready.is_connected(_broadcast_vehicle_driver_correction):
+		GameAuthority.vehicle_driver_correction_ready.connect(_broadcast_vehicle_driver_correction)
 	if not GameAuthority.team_chat_message_ready.is_connected(_broadcast_team_chat_message):
 		GameAuthority.team_chat_message_ready.connect(_broadcast_team_chat_message)
 
@@ -409,6 +491,12 @@ func _connect_authority_signals() -> void:
 func _begin_client_connection_tracking() -> void:
 	client_connection_elapsed = 0.0
 	client_transport_ready = false
+	client_transport_handshake_confirmed = false
+	client_world_manifest_received = false
+	client_join_negotiation_elapsed = 0.0
+	client_join_request_accumulator = 0.0
+	client_join_request_attempts = 0
+	client_last_connection_status = -1
 	rtt_probe_accumulator = 0.0
 	rtt_probe_sequence = 0
 	rtt_probe_sent_msec.clear()
@@ -420,6 +508,12 @@ func _begin_client_connection_tracking() -> void:
 func _reset_client_connection_tracking() -> void:
 	client_connection_elapsed = 0.0
 	client_transport_ready = false
+	client_transport_handshake_confirmed = false
+	client_world_manifest_received = false
+	client_join_negotiation_elapsed = 0.0
+	client_join_request_accumulator = 0.0
+	client_join_request_attempts = 0
+	client_last_connection_status = -1
 	rtt_probe_accumulator = 0.0
 	rtt_probe_sent_msec.clear()
 	peer_rtt_ms.clear()
@@ -431,6 +525,9 @@ func _process_client_transport(delta: float) -> void:
 	if not is_client() or peer == null or client_transport_ready:
 		return
 	var connection_status := peer.get_connection_status()
+	if connection_status != client_last_connection_status:
+		client_last_connection_status = connection_status
+		_log_join_stage("Steam peer status changed to %s" % _connection_status_name(connection_status))
 	if connection_status == MultiplayerPeer.CONNECTION_CONNECTED:
 		# The normal connected_to_server signal should call this path, but the
 		# status check also covers Steam callbacks that arrive one frame later.
@@ -443,8 +540,112 @@ func _process_client_transport(delta: float) -> void:
 		)
 
 
+func _process_client_join_negotiation(delta: float) -> void:
+	if not is_client() or not client_transport_ready or client_world_manifest_received:
+		return
+	client_join_negotiation_elapsed += delta
+	if client_join_negotiation_elapsed >= CLIENT_JOIN_NEGOTIATION_TIMEOUT_SECONDS:
+		_fail_client_connection(
+			"Steam 已连接，但加入世界握手超时；本次连接已释放，仍在当前 Lobby，可重新点击“进入合作世界”。"
+		)
+		return
+	if not client_transport_handshake_confirmed:
+		return
+	client_join_request_accumulator += delta
+	if client_join_request_accumulator >= CLIENT_JOIN_REQUEST_RETRY_SECONDS:
+		_send_join_world_request()
+
+
+func _process_host_transport_ready(delta: float) -> void:
+	if not is_host() or host_transport_ready_peers.is_empty():
+		return
+	for peer_id_value: Variant in host_transport_ready_peers.keys():
+		var peer_id := int(peer_id_value)
+		if not _is_connected_remote_peer(peer_id):
+			host_transport_ready_peers.erase(peer_id)
+			continue
+		var state_value: Variant = host_transport_ready_peers.get(peer_id, {})
+		var state := state_value as Dictionary if state_value is Dictionary else {}
+		state["elapsed"] = float(state.get("elapsed", 0.0)) + delta
+		host_transport_ready_peers[peer_id] = state
+		if float(state["elapsed"]) >= HOST_TRANSPORT_READY_RETRY_SECONDS:
+			_send_transport_ready(peer_id)
+
+
+func _process_host_transport_diagnostics(delta: float) -> void:
+	if not HOST_TRANSPORT_LOGGING_ENABLED or not is_host() or peer == null:
+		host_transport_diagnostic_accumulator = 0.0
+		return
+	host_transport_diagnostic_accumulator += delta
+	if host_transport_diagnostic_accumulator < HOST_TRANSPORT_DIAGNOSTIC_INTERVAL_SECONDS:
+		return
+	host_transport_diagnostic_accumulator = 0.0
+	var lobby_members := SteamService.get_cooperative_lobby_members()
+	var lobby_non_host_members := maxi(0, lobby_members.size() - 1)
+	var connected_peer_ids := multiplayer.get_peers()
+	# Keep the monitor quiet while the host is alone. Once another Lobby member
+	# exists, print a low-frequency snapshot that distinguishes Lobby presence
+	# from an actual SteamMultiplayerPeer connection.
+	if lobby_non_host_members <= 0 and connected_peer_ids.is_empty():
+		return
+	print("[CoopTransport][host] monitor: peer_status=%s local_peer=%d connected_peer_ids=%s lobby_non_host_members=%d authority_ready=%s world_loading=%s" % [
+		_connection_status_name(peer.get_connection_status()),
+		multiplayer.get_unique_id(),
+		connected_peer_ids,
+		lobby_non_host_members,
+		authority_ready,
+		world_loading,
+	])
+
+
+func _configure_host_transport_diagnostics(steam_peer: MultiplayerPeer) -> void:
+	if not HOST_TRANSPORT_LOGGING_ENABLED or steam_peer == null or not steam_peer.has_method("set_debug_level"):
+		return
+	# GodotSteam DEBUG_LEVEL_PEER logs the native connection attempt, accept,
+	# Peer ID ping and close transitions without enabling the noisier Steam SDK
+	# warning hook.
+	steam_peer.call("set_debug_level", STEAM_PEER_DEBUG_LEVEL_PEER)
+
+
+func _send_transport_ready(peer_id: int) -> void:
+	if not is_host() or not host_transport_ready_peers.has(peer_id) \
+			or not _is_connected_remote_peer(peer_id):
+		return
+	var state_value: Variant = host_transport_ready_peers.get(peer_id, {})
+	var state := state_value as Dictionary if state_value is Dictionary else {}
+	var attempts := int(state.get("attempts", 0)) + 1
+	state["attempts"] = attempts
+	state["elapsed"] = 0.0
+	host_transport_ready_peers[peer_id] = state
+	if attempts <= 3 or attempts % 10 == 0:
+		print("[CooperativeSession] transport-ready -> peer %d (attempt %d)" % [
+			peer_id, attempts
+		])
+	receive_join_transport_ready.rpc_id(
+		peer_id,
+		str(active_world.get("world_id", "")),
+		COOP_TRANSPORT_PROTOCOL_VERSION,
+		STEAM_MULTIPLAYER_LANE_COUNT,
+	)
+
+
+func _send_join_world_request() -> void:
+	if not is_client() or not client_transport_handshake_confirmed \
+			or client_world_manifest_received or pending_join_token.is_empty() \
+			or not _is_client_transport_connected():
+		return
+	client_join_request_accumulator = 0.0
+	client_join_request_attempts += 1
+	if client_join_request_attempts <= 3 or client_join_request_attempts % 5 == 0:
+		print("[CooperativeSession] join request -> host (attempt %d)" % client_join_request_attempts)
+	request_join_world.rpc_id(1, _make_join_request())
+
+
 func _process_rtt_probes(delta: float) -> void:
-	if not is_client() or not client_transport_ready or not _is_client_transport_connected():
+	if not RTT_PROBING_ENABLED:
+		return
+	if not is_client() or not client_transport_handshake_confirmed \
+			or not _is_client_transport_connected():
 		return
 	rtt_probe_accumulator += delta
 	if rtt_probe_accumulator < RTT_PROBE_INTERVAL_SECONDS:
@@ -454,7 +655,7 @@ func _process_rtt_probes(delta: float) -> void:
 
 
 func _send_rtt_probe() -> void:
-	if not _is_client_transport_connected():
+	if not RTT_PROBING_ENABLED or not _is_client_transport_connected():
 		return
 	rtt_probe_sequence += 1
 	var probe_id := rtt_probe_sequence
@@ -472,6 +673,7 @@ func _is_client_transport_connected() -> bool:
 func _fail_client_connection(message: String) -> void:
 	if not is_client():
 		return
+	_log_join_stage("connection failed: %s" % message)
 	stop_session()
 	session_failed.emit(message)
 
@@ -481,31 +683,54 @@ func _on_connected_to_host() -> void:
 		return
 	client_transport_ready = true
 	client_connection_elapsed = 0.0
-	print("[CooperativeSession] Steam P2P connected to host")
+	client_join_negotiation_elapsed = 0.0
+	_log_join_stage("Steam P2P connected; waiting for Channel 0 transport-ready")
 	var local_peer_id := multiplayer.get_unique_id()
 	if local_peer_id > 0:
 		local_selection["peer_id"] = local_peer_id
-	request_join_world.rpc_id(1, _make_join_request())
 
 
 func _on_peer_connected(peer_id: int) -> void:
 	if is_host():
-		print("[CooperativeSession] Steam peer connected: %d" % peer_id)
+		if HOST_TRANSPORT_LOGGING_ENABLED:
+			print("[CoopTransport][host] peer_connected: peer=%d steam_id=%d connected_peer_ids=%s" % [
+				peer_id,
+				_get_steam_id_for_peer(peer_id),
+				multiplayer.get_peers(),
+			])
+		print("[CoopJoin][host] Steam peer ID handshake completed: peer=%d" % peer_id)
+		host_transport_ready_peers[peer_id] = {
+			"elapsed": HOST_TRANSPORT_READY_RETRY_SECONDS,
+			"attempts": 0,
+		}
+		_send_transport_ready(peer_id)
 
 
 func _on_peer_disconnected(peer_id: int) -> void:
 	if not is_host():
 		return
+	if HOST_TRANSPORT_LOGGING_ENABLED:
+		print("[CoopTransport][host] peer_disconnected: peer=%d connected_peer_ids=%s" % [
+			peer_id,
+			multiplayer.get_peers(),
+		])
 	var leaving_selection: Dictionary = joined_players.get(peer_id, {})
 	if not leaving_selection.is_empty():
 		_store_player_runtime_state(peer_id, leaving_selection)
 	joined_players.erase(peer_id)
 	pending_join_sessions.erase(peer_id)
 	pending_join_requests.erase(peer_id)
+	host_transport_ready_peers.erase(peer_id)
 	peer_chunk_subscriptions.erase(peer_id)
 	GameAuthority.unregister_player(peer_id)
 	peer_left.emit(peer_id)
 	_save_authoritative_world_state()
+
+
+func _get_steam_id_for_peer(peer_id: int) -> int:
+	if peer == null or not peer.has_method("get_steam_id_for_peer_id"):
+		return 0
+	return int(peer.call("get_steam_id_for_peer_id", peer_id))
 
 
 func _on_connection_failed() -> void:
@@ -524,6 +749,8 @@ func _make_join_token() -> String:
 
 func _make_join_request() -> Dictionary:
 	return {
+		"transport_protocol_version": COOP_TRANSPORT_PROTOCOL_VERSION,
+		"steam_lane_count": STEAM_MULTIPLAYER_LANE_COUNT,
 		"world_id": str(active_world.get("world_id", "")),
 		"map_id": str(active_world.get("map_id", "")),
 		"map_version": str(active_world.get("map_version", "")),
@@ -534,6 +761,48 @@ func _make_join_request() -> Dictionary:
 		"join_token": pending_join_token,
 		"profile": local_selection.duplicate(true),
 	}
+
+
+func _get_steam_channel_configuration_error() -> String:
+	var configured_lane_count := int(ProjectSettings.get_setting(
+		"steam/multiplayer_peer/max_channels", 0
+	))
+	if configured_lane_count == STEAM_MULTIPLAYER_LANE_COUNT:
+		return ""
+	return (
+		"Steam 联机通道配置错误：当前为 %d，必须为 %d，无法启动合作连接。"
+		% [configured_lane_count, STEAM_MULTIPLAYER_LANE_COUNT]
+	)
+
+
+func _connection_status_name(status: int) -> String:
+	match status:
+		MultiplayerPeer.CONNECTION_DISCONNECTED:
+			return "DISCONNECTED"
+		MultiplayerPeer.CONNECTION_CONNECTING:
+			return "CONNECTING"
+		MultiplayerPeer.CONNECTION_CONNECTED:
+			return "CONNECTED"
+	return "UNKNOWN(%d)" % status
+
+
+func _log_join_stage(message: String) -> void:
+	var local_peer_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer != null else 0
+	var peer_status := peer.get_connection_status() if peer != null else MultiplayerPeer.CONNECTION_DISCONNECTED
+	print(
+		"[CoopJoin][%s] %s | local_peer=%d status=%s lobby=%d world=%s transport=%s handshake=%s manifest=%s"
+		% [
+			mode,
+			message,
+			local_peer_id,
+			_connection_status_name(peer_status),
+			SteamService.cooperative_lobby_id,
+			str(active_world.get("world_id", "")),
+			client_transport_ready,
+			client_transport_handshake_confirmed,
+			client_world_manifest_received,
+		]
+	)
 
 
 func _make_host_role_identity() -> Dictionary:
@@ -561,6 +830,19 @@ func _make_world_manifest(join_token: String) -> Dictionary:
 
 
 func _validate_join_request_metadata(request: Dictionary) -> String:
+	var received_protocol := int(request.get("transport_protocol_version", 0))
+	var received_lane_count := int(request.get("steam_lane_count", 0))
+	if received_protocol != COOP_TRANSPORT_PROTOCOL_VERSION \
+			or received_lane_count != STEAM_MULTIPLAYER_LANE_COUNT:
+		return (
+			"客户端 Steam 合作协议不兼容：客户端协议=%d、通道数=%d，房主要求协议=%d、通道数=%d。"
+			% [
+				received_protocol,
+				received_lane_count,
+				COOP_TRANSPORT_PROTOCOL_VERSION,
+				STEAM_MULTIPLAYER_LANE_COUNT,
+			]
+		)
 	var expected_world_id := str(active_world.get("world_id", ""))
 	if str(request.get("world_id", "")) != expected_world_id:
 		return "合作世界存档不匹配，无法加入。"
@@ -590,6 +872,43 @@ func _on_cooperative_lobby_closed(reason: String) -> void:
 		get_tree().call_deferred("change_scene_to_file", "res://ui/MainMenuRoot.tscn")
 
 
+@rpc("authority", "call_remote", "reliable", 0)
+func receive_join_transport_ready(
+		world_id: String, protocol_version: int, max_channels: int
+) -> void:
+	if not is_client():
+		return
+	if not client_transport_ready:
+		_log_join_stage("transport-ready arrived before connected callback; waiting for host retry")
+		return
+	if client_world_manifest_received:
+		_log_join_stage("ignored transport-ready after manifest")
+		return
+	_log_join_stage("transport-ready received: world=%s protocol=%d lanes=%d" % [
+		world_id, protocol_version, max_channels
+	])
+	if protocol_version != COOP_TRANSPORT_PROTOCOL_VERSION \
+			or max_channels != STEAM_MULTIPLAYER_LANE_COUNT:
+		_fail_client_connection(
+			"Steam 合作握手不兼容：房主协议=%d、通道数=%d，本地要求协议=%d、通道数=%d。"
+			% [
+				protocol_version,
+				max_channels,
+				COOP_TRANSPORT_PROTOCOL_VERSION,
+				STEAM_MULTIPLAYER_LANE_COUNT,
+			]
+		)
+		return
+	if world_id != str(active_world.get("world_id", "")):
+		_fail_client_connection("Steam 房主确认的合作世界与当前 Lobby 不一致。")
+		return
+	if client_transport_handshake_confirmed:
+		return
+	client_transport_handshake_confirmed = true
+	_log_join_stage("transport-ready verified; Channel 1 join may begin")
+	_send_join_world_request()
+
+
 @rpc("any_peer", "call_remote", "reliable", 1)
 func request_join_world(request: Dictionary) -> void:
 	if not is_host():
@@ -597,7 +916,18 @@ func request_join_world(request: Dictionary) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if sender_id <= 0:
 		return
+	# Receiving this request acknowledges at least one transport-ready packet.
+	# The join request itself is retried with the same token, so the host no
+	# longer needs to keep sending the Channel 0 readiness announcement.
+	host_transport_ready_peers.erase(sender_id)
+	print("[CoopJoin][host] join request received: peer=%d token=%s authority_ready=%s world_loading=%s" % [
+		sender_id,
+		str(request.get("join_token", "")).right(12),
+		authority_ready,
+		world_loading,
+	])
 	if world_loading or not authority_ready:
+		print("[CoopJoin][host] join request queued until authority is ready: peer=%d" % sender_id)
 		pending_join_requests[sender_id] = request.duplicate(true)
 		return
 	_begin_join_request(sender_id, request)
@@ -623,6 +953,7 @@ func _begin_join_request(sender_id: int, request: Dictionary) -> void:
 		var previous_manifest: Variant = (previous_session as Dictionary).get("manifest", {})
 		var previous_selection: Variant = (previous_session as Dictionary).get("selection", {})
 		if previous_manifest is Dictionary and previous_selection is Dictionary:
+			print("[CoopJoin][host] duplicate join request; resending manifest: peer=%d" % sender_id)
 			receive_world_manifest.rpc_id(sender_id, previous_manifest as Dictionary, previous_selection as Dictionary)
 		return
 	var profile_value: Variant = join_request.get("profile", {})
@@ -663,6 +994,7 @@ func _begin_join_request(sender_id: int, request: Dictionary) -> void:
 		"world_state_sent": false,
 		"created_msec": Time.get_ticks_msec(),
 	}
+	print("[CoopJoin][host] join session created; sending manifest: peer=%d" % sender_id)
 	# Only the metadata manifest is sent at this point. The authoritative player
 	# registration is deferred until the client has restored the world and sends
 	# world_ready.
@@ -673,6 +1005,8 @@ func _accept_join_request(sender_id: int, profile: Dictionary) -> void:
 	# Compatibility wrapper for older callers; the new protocol always starts
 	# with a metadata request and waits for scene_ready/world_ready.
 	_begin_join_request(sender_id, {
+		"transport_protocol_version": COOP_TRANSPORT_PROTOCOL_VERSION,
+		"steam_lane_count": STEAM_MULTIPLAYER_LANE_COUNT,
 		"world_id": active_world.get("world_id", ""),
 		"map_id": active_world.get("map_id", ""),
 		"map_version": active_world.get("map_version", ""),
@@ -720,6 +1054,7 @@ func scene_ready(join_token: String, world_id: String, map_id: String, map_versi
 		return
 	session["scene_ready"] = true
 	pending_join_sessions[sender_id] = session
+	print("[CooperativeSession] scene_ready received from peer %d" % sender_id)
 	_send_world_state_to_peer(sender_id, join_token)
 
 
@@ -736,6 +1071,7 @@ func world_ready(join_token: String) -> void:
 			or not bool(session.get("scene_ready", false)) \
 			or not bool(session.get("world_state_sent", false)):
 		return
+	print("[CooperativeSession] world_ready received from peer %d" % sender_id)
 	_finalize_join_request(sender_id, session)
 
 
@@ -842,9 +1178,51 @@ func submit_action(action_type: String, payload: Dictionary = {}) -> bool:
 	return true
 
 
+func submit_realtime_player_input(packet: Dictionary) -> bool:
+	if not _is_client_transport_connected():
+		return false
+	request_realtime_player_input.rpc_id(1, packet)
+	return true
+
+
+func submit_realtime_remote_input(packet: Dictionary) -> bool:
+	if not _is_client_transport_connected():
+		return false
+	request_realtime_remote_input.rpc_id(1, packet)
+	return true
+
+
+func submit_realtime_vehicle_input(packet: Dictionary) -> bool:
+	if not _is_client_transport_connected():
+		return false
+	request_realtime_vehicle_input.rpc_id(1, packet)
+	return true
+
+
+func submit_combat_fire(tool_request: Dictionary) -> bool:
+	if not _is_client_transport_connected():
+		return false
+	request_combat_fire.rpc_id(1, tool_request)
+	return true
+
+
+func submit_combat_reload_weapon(tool_id: String) -> bool:
+	if not _is_client_transport_connected() or tool_id.is_empty():
+		return false
+	request_combat_reload_weapon.rpc_id(1, tool_id)
+	return true
+
+
+func submit_combat_select_tool(tool_index: int, tool_id := "") -> bool:
+	if not _is_client_transport_connected():
+		return false
+	request_combat_select_tool.rpc_id(1, tool_index, tool_id)
+	return true
+
+
 @rpc("any_peer", "call_remote", "unreliable", 6)
 func request_rtt_probe(probe_id: int) -> void:
-	if not is_host():
+	if not RTT_PROBING_ENABLED or not is_host():
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if not _is_connected_remote_peer(sender_id):
@@ -854,7 +1232,7 @@ func request_rtt_probe(probe_id: int) -> void:
 
 @rpc("authority", "call_remote", "unreliable", 6)
 func receive_rtt_probe_response(probe_id: int) -> void:
-	if not is_client():
+	if not RTT_PROBING_ENABLED or not is_client():
 		return
 	var sent_value: Variant = rtt_probe_sent_msec.get(probe_id, null)
 	if sent_value == null:
@@ -872,7 +1250,7 @@ func receive_rtt_probe_response(probe_id: int) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable", 6)
 func report_rtt_probe(probe_id: int, rtt_ms: float) -> void:
-	if not is_host():
+	if not RTT_PROBING_ENABLED or not is_host():
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if not _is_connected_remote_peer(sender_id):
@@ -895,11 +1273,77 @@ func request_unreliable_game_action(action_type: String, payload: Dictionary) ->
 	_handle_game_action(multiplayer.get_remote_sender_id(), action_type, payload)
 
 
+@rpc("any_peer", "call_remote", "unreliable_ordered", 6)
+func request_realtime_player_input(packet: Dictionary) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if _is_connected_remote_peer(sender_id):
+		GameAuthority.server_receive_player_input(sender_id, packet)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered", 6)
+func request_realtime_remote_input(packet: Dictionary) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if _is_connected_remote_peer(sender_id):
+		GameAuthority.server_remote_control_input(sender_id, packet)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered", 6)
+func request_realtime_vehicle_input(packet: Dictionary) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if _is_connected_remote_peer(sender_id):
+		GameAuthority.server_vehicle_input(sender_id, packet)
+
+
 @rpc("any_peer", "call_remote", "reliable", 1)
 func request_reliable_game_action(action_type: String, payload: Dictionary) -> void:
 	if UNRELIABLE_ACTION_TYPES.has(action_type):
 		return
 	_handle_game_action(multiplayer.get_remote_sender_id(), action_type, payload)
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_fire(tool_request: Dictionary) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not _is_connected_remote_peer(sender_id):
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(str(tool_request.get("tool_id", ""))):
+		return
+	_handle_game_action(sender_id, "use_tool", tool_request)
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_reload_weapon(tool_id: String) -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not _is_connected_remote_peer(sender_id) or tool_id.is_empty():
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		return
+	_handle_game_action(sender_id, "reload_weapon", {"tool_id": tool_id})
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_select_tool(tool_index: int, tool_id := "") -> void:
+	if not is_host():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not _is_connected_remote_peer(sender_id):
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		return
+	_handle_game_action(sender_id, "select_tool", {
+		"tool_index": tool_index,
+		"tool_id": tool_id,
+	})
 
 
 func _handle_game_action(sender_id: int, action_type: String, payload: Dictionary) -> void:
@@ -942,7 +1386,7 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 		"vehicle_input":
 			GameAuthority.server_vehicle_input(sender_id, payload)
 		"vehicle_session":
-			GameAuthority.server_vehicle_session(sender_id, str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)))
+			GameAuthority.server_vehicle_session(sender_id, str(payload.get("vehicle_id", "")), bool(payload.get("connected", false)), int(payload.get("seat_index", -1)), int(payload.get("request_id", 0)))
 		"vehicle_action":
 			GameAuthority.server_vehicle_action(sender_id, payload)
 		"tool_action":
@@ -959,14 +1403,21 @@ func _handle_game_action(sender_id: int, action_type: String, payload: Dictionar
 func receive_world_manifest(manifest: Dictionary, selection: Dictionary) -> void:
 	if not is_client():
 		return
+	if client_world_manifest_received:
+		_log_join_stage("duplicate world manifest ignored")
+		return
 	var join_token := str(manifest.get("join_token", "")).strip_edges()
 	if join_token.is_empty() or join_token != pending_join_token:
+		_log_join_stage("world manifest ignored because join token does not match")
 		return
 	var map_validation := GameMapRegistry.validate_world_map(manifest)
 	if not bool(map_validation.get("valid", false)):
 		session_failed.emit(str(map_validation.get("error", "本地地图校验失败，无法加入合作世界。")))
 		stop_session()
 		return
+	client_world_manifest_received = true
+	client_join_request_accumulator = 0.0
+	_log_join_stage("world manifest accepted; loading map")
 	var local_map: Dictionary = map_validation.get("map", {}) as Dictionary
 	var merged_world := active_world.duplicate(true)
 	for key: String in ["world_id", "map_id", "map_version", "map_hash", "death_drop_mode"]:
@@ -987,6 +1438,7 @@ func receive_world_manifest(manifest: Dictionary, selection: Dictionary) -> void
 func receive_join_rejected(reason: String, join_token: String) -> void:
 	if not is_client() or (not join_token.is_empty() and join_token != pending_join_token):
 		return
+	_log_join_stage("join rejected by host: %s" % reason)
 	session_failed.emit(reason)
 	stop_session()
 
@@ -1036,6 +1488,7 @@ func receive_world_state(payload: Dictionary) -> void:
 	active_world["state_revision"] = int(payload.get("state_revision", 0))
 	WorldPersistence.apply_world_clock_state(active_world)
 	client_world_state_received = true
+	_log_join_stage("authoritative world state received")
 	call_deferred("_complete_client_world_bootstrap", get_tree().current_scene, world_bootstrap_generation)
 
 
@@ -1071,18 +1524,46 @@ func receive_reliable_event(event: Dictionary) -> void:
 	MultiplayerNetwork.reliable_world_event_received.emit(event)
 
 
+@rpc("authority", "call_remote", "reliable", 7)
+func receive_combat_event(event: Dictionary) -> void:
+	if not is_client():
+		return
+	var combat_event := event.duplicate(true)
+	combat_event["_transport_channel"] = 7
+	GameAuthority.apply_reliable_world_event(combat_event)
+	MultiplayerNetwork.reliable_world_event_received.emit(combat_event)
+
+
 @rpc("authority", "call_remote", "unreliable", 5)
 func receive_visual_event(event: Dictionary) -> void:
 	if is_client():
 		MultiplayerNetwork.visual_world_event_received.emit(event)
 
 
-@rpc("authority", "call_remote", "unreliable", 0)
+@rpc("authority", "call_remote", "unreliable_ordered", 5)
+func receive_combat_visual_event(event: Dictionary) -> void:
+	if is_client():
+		MultiplayerNetwork.visual_world_event_received.emit(event)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 6)
 func receive_player_correction(correction: Dictionary) -> void:
 	if not is_client():
 		return
 	GameAuthority.apply_player_correction(correction)
 	MultiplayerNetwork.player_correction_received.emit(correction)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 6)
+func receive_controlled_remote_correction(correction: Dictionary) -> void:
+	if is_client():
+		MultiplayerNetwork.controlled_remote_correction_received.emit(correction)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 6)
+func receive_vehicle_driver_correction(correction: Dictionary) -> void:
+	if is_client():
+		GameAuthority.apply_vehicle_driver_correction(correction)
 
 
 @rpc("authority", "call_remote", "reliable", 4)
@@ -1121,8 +1602,16 @@ func _broadcast_inventory_state(state: Dictionary) -> void:
 func _broadcast_reliable_event(event: Dictionary) -> void:
 	if not is_host():
 		return
-	MultiplayerNetwork.reliable_world_event_received.emit(event)
 	var event_type := str(event.get("type", ""))
+	# The listen-server host already receives the authoritative event through
+	# GameAuthority.reliable_world_event_ready. Mark the local transport copy so
+	# the legacy replicator does not apply Channel 7 damage/ammo a second time.
+	var local_event := event
+	if event_type == "player_damaged" or event_type == "weapon_ammo_state" \
+			or event_type == "tool_selected":
+		local_event = event.duplicate(true)
+		local_event["_transport_channel"] = 7
+	MultiplayerNetwork.reliable_world_event_received.emit(local_event)
 	if event_type == "dropped_item_spawned":
 		_queue_dropped_item_spawn(event)
 		return
@@ -1135,7 +1624,13 @@ func _broadcast_reliable_event(event: Dictionary) -> void:
 	if event_type == "hit_confirmed":
 		_send_hit_confirmation_to_peer(int(event.get("attacker_peer_id", 0)), event)
 		return
-	if event_type == "weapon_ammo_state" or event_type == "action_reward" \
+	if event_type == "player_damaged" or event_type == "tool_selected":
+		receive_combat_event.rpc(event)
+		return
+	if event_type == "weapon_ammo_state":
+		_send_combat_event_to_peer(int(event.get("peer_id", 0)), event)
+		return
+	if event_type == "action_reward" \
 			or event_type == "shield_state":
 		_send_reliable_event_to_peer(int(event.get("peer_id", 0)), event)
 		return
@@ -1221,6 +1716,12 @@ func _send_reliable_event_to_peer(peer_id: int, event: Dictionary) -> void:
 	receive_reliable_event.rpc_id(peer_id, event)
 
 
+func _send_combat_event_to_peer(peer_id: int, event: Dictionary) -> void:
+	if not _is_connected_remote_peer(peer_id):
+		return
+	receive_combat_event.rpc_id(peer_id, event)
+
+
 func _send_hit_confirmation_to_peer(peer_id: int, event: Dictionary) -> void:
 	if not _is_connected_remote_peer(peer_id):
 		return
@@ -1233,13 +1734,29 @@ func _broadcast_visual_event(event: Dictionary) -> void:
 	# call_remote does not execute on the listen-server host. Feed the same
 	# event into the local visual path so the host sees tracers/effects too.
 	MultiplayerNetwork.visual_world_event_received.emit(event)
-	receive_visual_event.rpc(event)
+	if str(event.get("type", "")) == "combat_weapon_fired":
+		receive_combat_visual_event.rpc(event)
+	else:
+		receive_visual_event.rpc(event)
 
 
 func _broadcast_player_correction(peer_id: int, correction: Dictionary) -> void:
 	if not is_host() or not _is_connected_remote_peer(peer_id):
 		return
 	receive_player_correction.rpc_id(peer_id, correction)
+
+
+func _broadcast_controlled_remote_correction(peer_id: int, correction: Dictionary) -> void:
+	if not is_host() or not _is_connected_remote_peer(peer_id):
+		return
+	receive_controlled_remote_correction.rpc_id(peer_id, correction)
+
+
+func _broadcast_vehicle_driver_correction(peer_id: int, correction: Dictionary) -> void:
+	if not is_host() or not _is_connected_remote_peer(peer_id):
+		return
+	correction["peer_id"] = peer_id
+	receive_vehicle_driver_correction.rpc_id(peer_id, correction)
 
 
 func _broadcast_team_chat_message(message: Dictionary) -> void:
@@ -1529,6 +2046,7 @@ func _send_scene_ready(scene: Node3D) -> void:
 	if not is_instance_valid(scene) or scene != get_tree().current_scene:
 		return
 	client_scene_ready_sent = true
+	_log_join_stage("scene_ready -> host")
 	scene_ready.rpc_id(
 		1,
 		pending_join_token,
@@ -1593,6 +2111,7 @@ func _complete_client_world_bootstrap(scene_value: Variant, generation: int) -> 
 	client_bootstrap_completing = false
 	if not client_world_ready_sent:
 		client_world_ready_sent = true
+		_log_join_stage("world_ready -> host")
 		world_ready.rpc_id(1, pending_join_token)
 
 

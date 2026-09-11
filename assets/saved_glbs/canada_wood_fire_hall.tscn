@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://c4lo0ph8xt287"]
+
+[ext_resource type="PackedScene" uid="uid://d3in786fihy65" path="res://assets/buildings/CanadaWoodFireHall.glb" id="1_o8q05"]
+
+[node name="CanadaWoodFireHall" unique_id=1547615212 instance=ExtResource("1_o8q05")]

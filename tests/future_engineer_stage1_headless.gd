@@ -111,12 +111,12 @@ func _run_stage1_test() -> void:
 		push_error("[FutureEngineerStage1Test] FAIL engineer did not equip FutureMPX")
 
 	checks_total += 1
-	if is_equal_approx(engineer.max_hp, 250.0):
+	if is_equal_approx(engineer.max_hp, 125.0):
 		checks_passed += 1
-		print("[FutureEngineerStage1Test] PASS FutureEngineer HP=250")
+		print("[FutureEngineerStage1Test] PASS FutureEngineer HP=125")
 	else:
 		push_error(
-			"[FutureEngineerStage1Test] FAIL FutureEngineer HP=%.1f expected=250"
+			"[FutureEngineerStage1Test] FAIL FutureEngineer HP=%.1f expected=125"
 			% engineer.max_hp
 		)
 
@@ -392,7 +392,7 @@ func _build_engineer() -> void:
 	engineer.name = "FutureEngineer_Stage1_Test"
 	engineer.team_id = "blue"
 	engineer.target = target
-	engineer.max_hp = 250.0
+	engineer.max_hp = 125.0
 	engineer.use_navigation_agent = true
 	engineer.console_debug_enabled = true
 	engineer.console_debug_interval = 0.5

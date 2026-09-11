@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://r11hj7phurob"]
+
+[ext_resource type="PackedScene" uid="uid://bg0wwpb005xhk" path="res://assets/buildings/CanadaRuralHouse.glb" id="1_yk5he"]
+
+[node name="CanadaRuralHouse" unique_id=202760162 instance=ExtResource("1_yk5he")]
+
+[node name="DoorFront_Mesh" parent="FTF_Building_RuralRanchHouse_Enterable_18x16m/DoorFront_Hinge" parent_id_path=PackedInt32Array(215288839) index="0" unique_id=164494946]
+transform = Transform3D(0.13550803, 0, -0.99077624, 0, 1, 0, 0.99077624, 0, 0.13550803, 0.09587771, 1.225, 0.6443367)

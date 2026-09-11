@@ -11,6 +11,7 @@ const AI_SCENES := {
 	"futureengineer": "res://character/FutureEngineerAI.tscn",
 	"assistant": "res://character/AssistantAI.tscn",
 	"bandit": "res://character/BanditAI.tscn",
+	"road_blocker": "res://character/RoadBlockerAI.tscn",
 }
 const AI_NORMAL_DRONE_SCENE := preload("res://character/AIDevices/AINormalDrone.tscn")
 const BOOM_EFFECT_SCENE := preload("res://character/weapons/BoomEffect.tscn")
@@ -120,6 +121,11 @@ var pending_dropped_item_spawns: Dictionary = {}
 var pending_dropped_item_spawn_ids: Array[String] = []
 var dropped_item_missing_snapshot_counts: Dictionary = {}
 var wild_animal_visuals: Dictionary = {}
+## Wild-animal snapshots are a complete collection. Keep their ordering and
+## death presentation here instead of letting delayed snapshots recreate them.
+var wild_animal_last_snapshot_ticks: Dictionary = {}
+var wild_animal_death_cleanup_deadlines: Dictionary = {}
+var last_wild_animals_snapshot_tick := -1
 var rare_resource_visual: Node3D = null
 var world_root: Node3D
 var nature_resource_visuals_by_id: Dictionary = {}
@@ -142,6 +148,7 @@ func _process(delta: float) -> void:
 	_update_projectile_visuals(delta)
 	_update_transient_projectile_visuals(delta)
 	_update_absorption_visuals(delta)
+	_update_wild_animal_death_cleanup()
 	_flush_pending_dropped_item_spawns()
 
 
@@ -154,6 +161,8 @@ func _connect_network_signals() -> void:
 		NetworkSession.visual_world_event_received.connect(_on_visual_world_event_received)
 	if not NetworkSession.inventory_state_received.is_connected(_on_inventory_state_received):
 		NetworkSession.inventory_state_received.connect(_on_inventory_state_received)
+	if not NetworkSession.controlled_remote_correction_received.is_connected(_on_controlled_remote_correction_received):
+		NetworkSession.controlled_remote_correction_received.connect(_on_controlled_remote_correction_received)
 	if not NetworkSession.disconnected.is_connected(_on_disconnected):
 		NetworkSession.disconnected.connect(_on_disconnected)
 
@@ -166,7 +175,12 @@ func _resolve_world_root() -> Node3D:
 		var scene := get_tree().current_scene
 		if scene is Node3D:
 			candidate = scene as Node3D
-	if candidate != null and is_instance_valid(world_root) and world_root != candidate:
+	# A scene transition can free the previous root before this autoload gets
+	# another frame. In that case world_root is an invalid Object reference, so
+	# checking only `is_instance_valid(world_root) and world_root != candidate`
+	# leaves all proxy dictionaries holding freed nodes. Clear those caches as
+	# soon as a new world candidate is available, even when the old root is gone.
+	if candidate != null and (not is_instance_valid(world_root) or world_root != candidate):
 		_clear_all()
 	if is_instance_valid(world_root):
 		return world_root
@@ -232,7 +246,8 @@ func _on_world_snapshot_received(snapshot: Dictionary) -> void:
 	_sync_projectiles(snapshot.get("projectiles", []), int(snapshot.get("tick", -1)))
 	_sync_remote_devices(snapshot.get("remote_devices", []))
 	_sync_placed_tool_health(snapshot.get("placed_tools", []), int(snapshot.get("tick", -1)))
-	_sync_wild_animals(snapshot.get("wild_animals", []))
+	_sync_road_checkpoints(snapshot.get("road_checkpoints", []))
+	_sync_wild_animals(snapshot.get("wild_animals", []), int(snapshot.get("tick", -1)))
 
 
 func _apply_authoritative_environment(snapshot: Dictionary) -> void:
@@ -250,6 +265,9 @@ func _on_visual_world_event_received(event: Dictionary) -> void:
 	if not GameAuthority.is_client_proxy() and not NetworkSession.is_listen_server():
 		return
 	var event_type := str(event.get("type", ""))
+	if event_type == "combat_weapon_fired":
+		_apply_combat_weapon_fired_event(event)
+		return
 	if event_type == "visual_projectile_fired":
 		if NetworkSession.is_listen_server() and bool(event.get("skip_listen_server_local", false)):
 			return
@@ -269,6 +287,19 @@ func _on_visual_world_event_received(event: Dictionary) -> void:
 		resource.call("play_hit_effect")
 
 
+func _apply_combat_weapon_fired_event(event: Dictionary) -> void:
+	var peer_id := int(event.get("peer_id", 0))
+	var player: Node = remote_players.get(peer_id, null)
+	if not player is GamePlayer:
+		return
+	var remote_player := player as GamePlayer
+	remote_player.play_remote_tool_action(str(event.get("animation_action", "shooting")))
+	remote_player.play_remote_tool_visual(
+		str(event.get("tool_id", "")),
+		int(event.get("tool_index", -1))
+	)
+
+
 func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_local_snapshot := true) -> void:
 	if not players_value is Array:
 		return
@@ -286,7 +317,7 @@ func _sync_players(players_value: Variant, world_snapshot: Dictionary, apply_loc
 		if peer_id == local_peer_id or local_peer_ids.has(peer_id):
 			_remove_remote_player(peer_id)
 			if apply_local_snapshot:
-				_apply_local_player_snapshot(data)
+				_apply_local_player_snapshot(data, int(world_snapshot.get("tick", -1)))
 			continue
 		var player := _get_or_create_remote_player(peer_id, data)
 		if player != null and player.has_method("apply_remote_snapshot"):
@@ -445,9 +476,38 @@ func _remove_remote_player(peer_id: int) -> void:
 	remote_players.erase(peer_id)
 
 
-func _sync_wild_animals(animals_value: Variant) -> void:
+func _get_wild_animal_visual(animal_id: String) -> Node3D:
+	if animal_id.is_empty():
+		return null
+	var raw_visual: Variant = wild_animal_visuals.get(animal_id, null)
+	if raw_visual == null:
+		return null
+	# Never cast an Object before validating it. A queue_free()d node can remain
+	# in a dictionary until the next snapshot/event, and `as Node3D` itself is
+	# what emits "Trying to cast a freed object".
+	if not is_instance_valid(raw_visual):
+		wild_animal_visuals.erase(animal_id)
+		return null
+	if not raw_visual is Node3D:
+		wild_animal_visuals.erase(animal_id)
+		return null
+	var visual := raw_visual as Node3D
+	if visual == null or visual.is_queued_for_deletion():
+		wild_animal_visuals.erase(animal_id)
+		return null
+	return visual
+
+
+func _sync_wild_animals(animals_value: Variant, snapshot_tick := -1) -> void:
 	if not animals_value is Array:
 		return
+	## The collection is authoritative as a whole: an older complete snapshot
+	## must not remove a newer proxy or restore a cleaned-up corpse.
+	if snapshot_tick >= 0 and last_wild_animals_snapshot_tick >= 0 \
+			and snapshot_tick < last_wild_animals_snapshot_tick:
+		return
+	if snapshot_tick >= 0:
+		last_wild_animals_snapshot_tick = snapshot_tick
 	var seen := {}
 	for item: Variant in animals_value:
 		if not item is Dictionary:
@@ -457,12 +517,37 @@ func _sync_wild_animals(animals_value: Variant) -> void:
 		if animal_id.is_empty():
 			continue
 		seen[animal_id] = true
-		var animal := wild_animal_visuals.get(animal_id, null) as Node3D
-		if not is_instance_valid(animal):
+		var last_tick := int(wild_animal_last_snapshot_ticks.get(animal_id, -1))
+		if snapshot_tick >= 0 and last_tick >= 0 and snapshot_tick < last_tick:
+			continue
+		if snapshot_tick >= 0:
+			wild_animal_last_snapshot_ticks[animal_id] = snapshot_tick
+		var incoming_dead := _wild_animal_state_is_dead(data)
+		var cleanup_deadline := int(wild_animal_death_cleanup_deadlines.get(animal_id, -1))
+		var death_transition := incoming_dead and cleanup_deadline < 0
+		if incoming_dead:
+			if death_transition:
+				var cleanup_left := maxf(
+					0.0,
+					float(data.get("death_cleanup_left", data.get(
+						"death_remaining", REMOTE_AI_DEATH_CLEANUP_FALLBACK_SECONDS
+					)))
+				)
+				cleanup_deadline = Time.get_ticks_msec() + roundi(cleanup_left * 1000.0)
+				wild_animal_death_cleanup_deadlines[animal_id] = cleanup_deadline
+			## Once expired locally, retain the deadline as a tombstone until an
+			## alive snapshot arrives. Delayed dead snapshots cannot recreate it.
+			if Time.get_ticks_msec() >= cleanup_deadline:
+				_remove_wild_animal_visual(animal_id)
+				continue
+		else:
+			wild_animal_death_cleanup_deadlines.erase(animal_id)
+		var animal := _get_wild_animal_visual(animal_id)
+		if animal == null:
 			var scene_path := str(data.get("scene_path", "res://items/BlackBear.tscn"))
 			var packed := load(scene_path) as PackedScene
 			animal = packed.instantiate() as Node3D if packed != null else null
-			if animal == null or world_root == null:
+			if animal == null or not is_instance_valid(world_root):
 				continue
 			animal.set("animal_id", animal_id)
 			animal.set("network_proxy", true)
@@ -471,16 +556,37 @@ func _sync_wild_animals(animals_value: Variant) -> void:
 			if spawn_position is Vector3:
 				animal.global_position = spawn_position
 			wild_animal_visuals[animal_id] = animal
-		if animal.has_method("apply_network_state"):
+		## Death is edge-triggered presentation. Reapplying a dead snapshot would
+		## restart a non-looping Death clip after it finishes.
+		if animal.has_method("apply_network_state") and (not incoming_dead or death_transition):
 			animal.call("apply_network_state", data)
 	for animal_id_value: Variant in wild_animal_visuals.keys():
 		var animal_id := str(animal_id_value)
 		if seen.has(animal_id):
 			continue
-		var animal: Node = wild_animal_visuals[animal_id]
-		if is_instance_valid(animal):
-			animal.queue_free()
-		wild_animal_visuals.erase(animal_id)
+		_remove_wild_animal_visual(animal_id)
+		wild_animal_last_snapshot_ticks.erase(animal_id)
+		wild_animal_death_cleanup_deadlines.erase(animal_id)
+
+
+func _wild_animal_state_is_dead(data: Dictionary) -> bool:
+	return bool(data.get("destroyed", false)) \
+		or str(data.get("state", "")).to_lower() == "dead"
+
+
+func _remove_wild_animal_visual(animal_id: String) -> void:
+	var animal := _get_wild_animal_visual(animal_id)
+	wild_animal_visuals.erase(animal_id)
+	if animal != null and not animal.is_queued_for_deletion():
+		animal.queue_free()
+
+
+func _update_wild_animal_death_cleanup() -> void:
+	var now := Time.get_ticks_msec()
+	for animal_id_value: Variant in wild_animal_death_cleanup_deadlines.keys():
+		var animal_id := str(animal_id_value)
+		if now >= int(wild_animal_death_cleanup_deadlines[animal_id]):
+			_remove_wild_animal_visual(animal_id)
 
 
 func _get_or_create_remote_player(peer_id: int, data: Dictionary) -> GamePlayer:
@@ -509,7 +615,7 @@ func _get_or_create_remote_player(peer_id: int, data: Dictionary) -> GamePlayer:
 	return player
 
 
-func _apply_local_player_snapshot(data: Dictionary) -> void:
+func _apply_local_player_snapshot(data: Dictionary, snapshot_tick := -1) -> void:
 	for node in get_tree().get_nodes_in_group("human_players"):
 		if node is GamePlayer and int(node.authority_peer_id) == int(data.get("peer_id", 0)):
 			var equipped_value: Variant = data.get("equipped_items", {})
@@ -538,10 +644,11 @@ func _apply_local_player_snapshot(data: Dictionary) -> void:
 					float(data.get("big_mouth_capture_remaining", 0.0)),
 					capture_anchor
 				)
-			node.call("apply_respawn_state", respawn_left, respawn_position)
+			node.call("apply_network_respawn_state", respawn_left, respawn_position, snapshot_tick)
 			node.call(
 				"apply_vehicle_snapshot", str(data.get("vehicle_id", "")),
-				int(data.get("vehicle_seat_index", -1))
+				int(data.get("vehicle_seat_index", -1)),
+				int(data.get("vehicle_session_revision", 0))
 			)
 			if node.has_method("apply_m17_flashlight_state"):
 				node.call(
@@ -878,11 +985,12 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 		# to the proxy yaw path.
 		var local_controller_active := local_controller != null \
 			and visual == local_controller
-		if visual != null and local_controller_active and visual.has_method("apply_authoritative_snapshot"):
-			# The controlled node applies the snapshot in its own prediction/
-			# reconciliation loop.  In particular, do not write rotation.y here:
-			# this is the same local-first rule that already protects CameraPivot.x.
-			visual.call("apply_authoritative_snapshot", data)
+		if visual != null and local_controller_active:
+			# Steam clients receive their controlling device's correction on Channel 6.
+			# Do not let the unrelated Channel 0 world snapshot pull the local camera
+			# body between those acknowledged prediction states.
+			if not CooperativeSession.is_client() and visual.has_method("apply_authoritative_snapshot"):
+				visual.call("apply_authoritative_snapshot", data)
 		elif visual != null and pos is Vector3:
 			visual.global_position = visual.global_position.lerp(pos, 0.55)
 			visual.rotation.y = float(data.get("yaw", visual.rotation.y))
@@ -894,6 +1002,17 @@ func _sync_remote_devices(devices_value: Variant) -> void:
 			if is_instance_valid(node):
 				node.queue_free()
 			remote_device_visuals.erase(device_id)
+
+
+func _on_controlled_remote_correction_received(correction: Dictionary) -> void:
+	if not CooperativeSession.is_client():
+		return
+	var device_id := str(correction.get("device_id", ""))
+	if device_id.is_empty():
+		return
+	var device := _get_local_remote_control_node(device_id)
+	if device != null and device.has_method("apply_authoritative_snapshot"):
+		device.call("apply_authoritative_snapshot", correction)
 
 
 func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void:
@@ -985,6 +1104,52 @@ func _sync_placed_tool_health(tools_value: Variant, snapshot_tick := -1) -> void
 		if is_instance_valid(stale_node) and bool(stale_node.get_meta("cooperative_network_spawned", false)):
 			stale_node.queue_free()
 		placed_tool_visuals.erase(stale_tool_id)
+
+
+func _sync_road_checkpoints(checkpoints_value: Variant) -> void:
+	if not checkpoints_value is Array:
+		return
+	for checkpoint_value in checkpoints_value:
+		if not checkpoint_value is Dictionary:
+			continue
+		var entry := checkpoint_value as Dictionary
+		var state_value: Variant = entry.get("state", entry)
+		if state_value is Dictionary:
+			var state := (state_value as Dictionary).duplicate(true)
+			if str(state.get("checkpoint_id", "")).is_empty():
+				state["checkpoint_id"] = str(entry.get("checkpoint_id", ""))
+			_apply_road_checkpoint_state(state)
+
+
+func _find_road_checkpoint(checkpoint_id: String) -> Node:
+	if checkpoint_id.is_empty():
+		return null
+	for checkpoint_value in get_tree().get_nodes_in_group("road_checkpoints"):
+		if not is_instance_valid(checkpoint_value):
+			continue
+		var candidate := checkpoint_value as Node
+		var candidate_id := str(candidate.get("checkpoint_id")) if _replicator_has_property(candidate, "checkpoint_id") else str(candidate.get_meta("network_checkpoint_id", ""))
+		if candidate_id == checkpoint_id:
+			return candidate
+	return null
+
+
+func _apply_road_checkpoint_state_event(event: Dictionary) -> void:
+	var state_value: Variant = event.get("state", event)
+	if not state_value is Dictionary:
+		return
+	var state := (state_value as Dictionary).duplicate(true)
+	if str(state.get("checkpoint_id", "")).is_empty():
+		state["checkpoint_id"] = str(event.get("checkpoint_id", ""))
+	_apply_road_checkpoint_state(state)
+
+
+func _apply_road_checkpoint_state(state: Dictionary) -> void:
+	var checkpoint_id := str(state.get("checkpoint_id", ""))
+	var checkpoint := _find_road_checkpoint(checkpoint_id)
+	if checkpoint == null or not checkpoint.has_method("apply_network_state"):
+		return
+	checkpoint.call("apply_network_state", state)
 
 
 func _get_or_create_remote_device_visual(device_id: String, data: Dictionary, keep_runtime := false) -> Node3D:
@@ -1240,7 +1405,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 	var authority_player_event := NetworkSession.is_listen_server() \
 		and event_type in [
 			"tool_selected", "tool_used", "tool_destroyed", "shield_broken",
-			"dropped_item_action_result", "m17_flashlight_state", "road_barrier_state"
+			"dropped_item_action_result", "m17_flashlight_state", "road_barrier_state",
+			"road_checkpoint_state"
 		]
 	if not GameAuthority.is_client_proxy() and not authority_player_event:
 		return
@@ -1265,6 +1431,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_remote_control_session_event(event.get("data", {}))
 		"vehicle_session":
 			_apply_vehicle_session_event(event.get("data", {}))
+		"vehicle_headlights_state":
+			_apply_vehicle_headlights_state_event(event.get("data", {}))
 		"mounted_machine_gun_session":
 			_apply_mounted_machine_gun_session_event(event.get("data", {}))
 		"cargo_car_action_result":
@@ -1409,6 +1577,8 @@ func _on_reliable_world_event_received(event: Dictionary) -> void:
 			_apply_gate_state_event(event)
 		"road_barrier_state":
 			_apply_road_barrier_state_event(event)
+		"road_checkpoint_state":
+			_apply_road_checkpoint_state_event(event)
 		"remote_device_spawned":
 			_apply_remote_device_spawned(event.get("state", {}))
 		"chopping_action_result":
@@ -1484,8 +1654,8 @@ func _apply_livestock_spawned(state_value: Variant) -> void:
 	var animal_id := str(state.get("animal_id", ""))
 	if animal_id.is_empty():
 		return
-	var visual := wild_animal_visuals.get(animal_id, null) as Node3D
-	if not is_instance_valid(visual):
+	var visual := _get_wild_animal_visual(animal_id)
+	if visual == null:
 		var packed := load(str(state.get("scene_path", ""))) as PackedScene
 		if packed == null or _resolve_world_root() == null:
 			return
@@ -1619,6 +1789,11 @@ func _apply_remote_device_spawned(state_value: Variant) -> void:
 
 
 func _apply_weapon_ammo_state_event(event: Dictionary) -> void:
+	# Channel 7 events already pass through GameAuthority.reliable_world_event_ready
+	# on the receiving client. Keep this legacy Channel 1 path for older peers,
+	# but do not apply a Channel 7 owner update a second time.
+	if int(event.get("_transport_channel", -1)) == 7:
+		return
 	var peer_id := int(event.get("peer_id", 0))
 	if peer_id != MultiplayerNetwork.get_unique_peer_id():
 		return
@@ -2351,6 +2526,17 @@ func _apply_vehicle_session_event(data_value: Variant) -> void:
 			return
 
 
+func _apply_vehicle_headlights_state_event(data_value: Variant) -> void:
+	if not data_value is Dictionary:
+		return
+	var data := data_value as Dictionary
+	var vehicle := _find_vehicle_visual(str(data.get("vehicle_id", "")))
+	if vehicle != null:
+		vehicle.apply_authoritative_headlights_state(
+			bool(data.get("enabled", false)), int(data.get("revision", 0))
+		)
+
+
 func _apply_mounted_machine_gun_session_event(data_value: Variant) -> void:
 	if not data_value is Dictionary:
 		return
@@ -3038,6 +3224,11 @@ func _spawn_impact_flash(position: Vector3, effect: String) -> void:
 
 
 func _apply_player_damage_event(event: Dictionary) -> void:
+	# Channel 7 events already pass through GameAuthority.reliable_world_event_ready
+	# on the receiving client. Keep this legacy Channel 1 path for older peers,
+	# but do not apply a Channel 7 damage update a second time.
+	if int(event.get("_transport_channel", -1)) == 7:
+		return
 	var peer_id := int(event.get("peer_id", 0))
 	if peer_id == MultiplayerNetwork.get_unique_peer_id():
 		for node in get_tree().get_nodes_in_group("human_players"):
@@ -3085,7 +3276,12 @@ func _apply_player_respawn_state_event(event: Dictionary) -> void:
 			# inventory removal and duplicate respawn-camera transitions.
 			if not (node as GamePlayer).is_remote_proxy:
 				continue
-			node.call("apply_respawn_state", respawn_left, spawn_position)
+			node.call(
+				"apply_network_respawn_state",
+				respawn_left,
+				spawn_position,
+				int(event.get("tick", -1))
+			)
 			break
 
 
@@ -3188,8 +3384,8 @@ func _apply_low_frequency_snapshot(snapshot: Dictionary) -> void:
 				continue
 			var growth_state := growth_value as Dictionary
 			var animal_id := str(growth_state.get("animal_id", ""))
-			var animal: Node = wild_animal_visuals.get(animal_id, null)
-			if is_instance_valid(animal) and animal.has_method("apply_network_growth_state"):
+			var animal := _get_wild_animal_visual(animal_id)
+			if animal != null and animal.has_method("apply_network_growth_state"):
 				animal.call("apply_network_growth_state", growth_state)
 	var computers: Variant = snapshot.get("computers", [])
 	if computers is Array:
@@ -3412,6 +3608,9 @@ func _clear_all() -> void:
 	projectile_visual_states.clear()
 	last_projectile_snapshot_tick = -1
 	remote_ai_death_cleanup_deadlines.clear()
+	wild_animal_last_snapshot_ticks.clear()
+	wild_animal_death_cleanup_deadlines.clear()
+	last_wild_animals_snapshot_tick = -1
 	pending_dropped_item_spawns.clear()
 	pending_dropped_item_spawn_ids.clear()
 	dropped_item_missing_snapshot_counts.clear()

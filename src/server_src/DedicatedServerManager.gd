@@ -19,6 +19,7 @@ signal match_started(info: Dictionary)
 const DEFAULT_PORT := 2002
 const DEFAULT_QUERY_PORT := 2003
 const DEFAULT_MAX_CLIENTS := 10 # 最大 5v5
+const ENET_CHANNEL_COUNT := 8
 
 const DEFAULT_SERVER_NAME := "Farm Battle Server"
 const DEFAULT_MAP_ID := "creston_town"
@@ -361,6 +362,9 @@ func start_server(server_port: int, server_max_clients: int) -> bool:
 		multiplayer.multiplayer_peer = null
 		server_failed.emit("创建 ENet 服务端失败，错误码：%d。" % err)
 		return false
+	var enet_host := peer.get_host()
+	if enet_host != null:
+		enet_host.channel_limit(ENET_CHANNEL_COUNT)
 
 	multiplayer.multiplayer_peer = peer
 
@@ -980,10 +984,13 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 		if attacker_peer_id > 0 and _is_peer_connected(attacker_peer_id):
 			receive_hit_confirmation.rpc_id(attacker_peer_id, event)
 		return
+	if event_type == "player_damaged" or event_type == "tool_selected":
+		receive_combat_event.rpc(event)
+		return
 	if event_type == "weapon_ammo_state":
 		var owner_peer_id := int(event.get("peer_id", 0))
 		if owner_peer_id > 0 and _is_peer_connected(owner_peer_id):
-			receive_reliable_world_event.rpc_id(owner_peer_id, event)
+			receive_combat_event.rpc_id(owner_peer_id, event)
 		return
 	if event_type == "shield_state":
 		var shield_owner_peer_id := int(event.get("peer_id", 0))
@@ -1116,7 +1123,10 @@ func _on_reliable_world_event_ready(event: Dictionary) -> void:
 func _on_visual_world_event_ready(event: Dictionary) -> void:
 	if multiplayer.multiplayer_peer == null or match_state != MatchState.IN_GAME:
 		return
-	receive_visual_world_event.rpc(event)
+	if str(event.get("type", "")) == "combat_weapon_fired":
+		receive_combat_visual_event.rpc(event)
+	else:
+		receive_visual_world_event.rpc(event)
 
 
 func _on_inventory_state_ready(state: Dictionary) -> void:
@@ -1280,6 +1290,36 @@ func request_reload_weapon(tool_id: String) -> void:
 	GameAuthority.server_reload_weapon(sender_id, tool_id)
 
 
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_fire(tool_request: Dictionary) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(str(tool_request.get("tool_id", ""))):
+		return
+	GameAuthority.server_try_use_tool(sender_id, tool_request)
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_reload_weapon(tool_id: String) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		return
+	GameAuthority.server_reload_weapon(sender_id, tool_id)
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_select_tool(tool_index: int, tool_id := "") -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
+		return
+	if not CombatBalance.is_channel7_combat_fire_weapon(tool_id):
+		return
+	GameAuthority.server_select_tool(sender_id, tool_index, tool_id)
+
+
 @rpc("any_peer", "reliable")
 func request_shop_transaction(transaction: Dictionary) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
@@ -1337,11 +1377,11 @@ func request_vehicle_input(input_frame: Dictionary) -> void:
 
 
 @rpc("any_peer", "reliable")
-func request_vehicle_session(vehicle_id: String, connected: bool, seat_index: int = -1) -> void:
+func request_vehicle_session(vehicle_id: String, connected: bool, seat_index: int = -1, request_id: int = 0) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if not players.has(sender_id) or match_state != MatchState.IN_GAME:
 		return
-	GameAuthority.server_vehicle_session(sender_id, vehicle_id, connected, seat_index)
+	GameAuthority.server_vehicle_session(sender_id, vehicle_id, connected, seat_index, request_id)
 
 
 @rpc("any_peer", "reliable")
@@ -1394,8 +1434,18 @@ func receive_reliable_world_event(event: Dictionary) -> void:
 	pass
 
 
+@rpc("authority", "call_remote", "reliable", 7)
+func receive_combat_event(event: Dictionary) -> void:
+	pass
+
+
 @rpc("authority", "call_remote", "unreliable", 5)
 func receive_visual_world_event(event: Dictionary) -> void:
+	pass
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 5)
+func receive_combat_visual_event(event: Dictionary) -> void:
 	pass
 
 

@@ -66,6 +66,7 @@ metadata/map_can_overlap_water = false
 collision_layer = 4096
 collision_mask = 45739
 metadata/map_enterable = true
+metadata/map_indoor_floor_y = 0.0
 
 [node name="MainWall_1" type="CollisionShape3D" parent="." unique_id=206643253]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8223124, 1.4116584, 4.5645766)

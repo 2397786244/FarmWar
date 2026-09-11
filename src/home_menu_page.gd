@@ -104,7 +104,7 @@ func _build_interface() -> void:
 
 	var version_label := Label.new()
 	version_label.text = "v%s-%s" % [
-		str(ProjectSettings.get_setting("application/config/version", "0.3.5")),
+		str(ProjectSettings.get_setting("application/config/version", "0.3.7")),
 		RELEASE_CHANNEL,
 	]
 	version_label.anchor_left = 0.0

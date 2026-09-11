@@ -13,10 +13,12 @@ const BULLET_SCENE := preload("res://character/weapons/NailBullet.tscn")
 
 var is_aiming := false
 var model_rest_position := Vector3.ZERO
+var spread_rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	model_rest_position = model.position
+	spread_rng.randomize()
 
 
 func emit() -> void:
@@ -36,6 +38,34 @@ func emit_visual_only_tracer(
 	travel_distance: float = -1.0
 ) -> void:
 	_emit_bullets(true, direction, travel_distance)
+
+
+## Draw an authoritative shotgun pattern without generating a second random
+## local pattern. Used by local authority and AI pellet hitscan results.
+func emit_visual_only_pellets(pellet_results: Array) -> void:
+	play_muzzle_visual()
+	if tool_owner.is_empty() or profile_id.is_empty() \
+			or not is_instance_valid(GlobalVar.gameworld):
+		return
+	var shooter := _get_shooter()
+	for pellet_value: Variant in pellet_results:
+		if not pellet_value is Dictionary:
+			continue
+		var pellet := pellet_value as Dictionary
+		var direction_value: Variant = pellet.get("direction", Vector3.ZERO)
+		if not direction_value is Vector3 or (direction_value as Vector3).length_squared() <= 0.001:
+			continue
+		var travel_distance := float(pellet.get("visual_distance", -1.0))
+		if travel_distance < 0.0 and str(pellet.get("hit_kind", "none")) != "none":
+			var hit_position_value: Variant = pellet.get("hit_position", null)
+			if hit_position_value is Vector3:
+				travel_distance = muzzle.global_position.distance_to(hit_position_value as Vector3)
+		_spawn_bullet(
+			(direction_value as Vector3).normalized(),
+			true,
+			shooter,
+			travel_distance
+		)
 
 
 func get_fire_origin() -> Vector3:
@@ -66,21 +96,42 @@ func _emit_bullets(
 		center_direction = direction_override.normalized()
 	var bullet_count := maxi(1, CombatBalance.get_int(profile_id, "bullet_count", 1))
 	var spread_degrees := CombatBalance.get_float(profile_id, "spread_degrees")
-	var spread_axis := _get_spread_axis(shooter, center_direction)
-	for index in range(bullet_count):
-		var angle_degrees := 0.0
-		if bullet_count > 1:
-			angle_degrees = lerpf(
-				-spread_degrees * 0.5,
-				spread_degrees * 0.5,
-				float(index) / float(bullet_count - 1)
-			)
+	for pellet_direction in _sample_circular_spread(
+		center_direction,
+		bullet_count,
+		spread_degrees
+	):
 		_spawn_bullet(
-			center_direction.rotated(spread_axis, deg_to_rad(angle_degrees)),
+			pellet_direction,
 			visual_only,
 			shooter,
 			travel_distance
 		)
+
+
+func _sample_circular_spread(
+	center_direction: Vector3,
+	bullet_count: int,
+	full_spread_degrees: float
+) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	var direction := center_direction.normalized()
+	if direction.length_squared() <= 0.001:
+		direction = Vector3.FORWARD
+	var reference_up := Vector3.UP if absf(direction.dot(Vector3.UP)) <= 0.98 else Vector3.RIGHT
+	var spread_right := direction.cross(reference_up).normalized()
+	var spread_up := spread_right.cross(direction).normalized()
+	# Existing profile values are the full fan width, so the circular cone radius
+	# remains spread/2: Shotgun 1 degree, Remington870 1.5 degrees.
+	var max_radius := tan(deg_to_rad(maxf(0.0, full_spread_degrees) * 0.5))
+	for _pellet_index in range(maxi(1, bullet_count)):
+		var polar_angle := spread_rng.randf_range(0.0, TAU)
+		var radial_offset := max_radius * sqrt(spread_rng.randf())
+		result.append((
+			direction
+			+ (spread_right * cos(polar_angle) + spread_up * sin(polar_angle)) * radial_offset
+		).normalized())
+	return result
 
 
 func set_aiming(value: bool) -> void:
@@ -164,19 +215,6 @@ func _get_center_screen_direction(shooter: CollisionObject3D) -> Vector3:
 	if not hit.is_empty():
 		aim_point = hit["position"]
 	return (aim_point - muzzle.global_position).normalized()
-
-
-func _get_spread_axis(shooter: CollisionObject3D, center_direction := Vector3.ZERO) -> Vector3:
-	if center_direction.length_squared() > 0.001:
-		var screen_right := center_direction.cross(Vector3.UP).normalized()
-		var spread_axis := screen_right.cross(center_direction).normalized()
-		if spread_axis.length_squared() > 0.001:
-			return spread_axis
-	if is_instance_valid(shooter):
-		var camera := shooter.get_node_or_null("Head/Camera3D") as Camera3D
-		if camera != null:
-			return camera.global_transform.basis.y.normalized()
-	return Vector3.UP
 
 
 func _play_recoil() -> void:

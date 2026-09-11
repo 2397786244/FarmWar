@@ -54,12 +54,12 @@ const NAVIGATION_FALLBACK_RAY_MASK := GameAuthority.COLLISION_LAYER_WALL \
 
 @export var animal_id := ""
 @export var display_name := "黑熊"
-@export var max_hp := 1000.0
+@export var max_hp := 500.0
 @export var network_proxy := false
 @export_category("Navigation")
 @export var navigation_debug_enabled := false
 
-var current_hp := 1000.0
+var current_hp := 500.0
 var home_position := Vector3.ZERO
 var home_generator: Node = null
 var state: State = State.IDLE
@@ -285,6 +285,10 @@ func get_network_state() -> Dictionary:
 		"tranquilizer_remaining": tranquilizer_remaining,
 		"trap_remaining": trap_remaining,
 		"labeled_remaining": labeled_remaining,
+		"death_cleanup_left": maxf(
+			0.0,
+			CombatBalance.get_float("black_bear", "death_visible_seconds", 4.0) - _state_elapsed
+		) if state == State.DEAD else 0.0,
 	}
 
 

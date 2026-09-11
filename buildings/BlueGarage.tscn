@@ -32,6 +32,7 @@ metadata/map_can_overlap_water = false
 script = ExtResource("2_garage")
 owner_team = "blue"
 metadata/map_enterable = true
+metadata/map_indoor_floor_y = 0.0
 
 [node name="BlueGarage" parent="." unique_id=1278690716 instance=ExtResource("1_4vvga")]
 

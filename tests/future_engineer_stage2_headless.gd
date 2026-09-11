@@ -666,7 +666,7 @@ func _build_blue_squad() -> void:
 				squad_bandits.append(member as BanditAI)
 			elif member is FutureEngineerAI:
 				var engineer_member := member as FutureEngineerAI
-				engineer_member.max_hp = 250.0
+				engineer_member.max_hp = 125.0
 				engineer_member.console_debug_enabled = true
 				engineer_member.console_debug_interval = 0.5
 				squad_engineers.append(engineer_member)

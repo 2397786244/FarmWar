@@ -16,6 +16,13 @@ const CARGO_CAR_DEBUG := preload("res://src/cargo_car_debug.gd")
 const VEHICLE_COLOR_CATALOG := preload("res://src/vehicle_color_catalog.gd")
 const NETWORK_INTERPOLATION_RATE := 18.0
 const NETWORK_SNAP_DISTANCE := 6.0
+const NETWORK_SIMULATION_DELTA := 1.0 / 60.0
+const DRIVER_PREDICTION_HARD_DISTANCE := 2.5
+const DRIVER_PREDICTION_HARD_YAW := deg_to_rad(25.0)
+const DRIVER_PREDICTION_BUFFER_LIMIT := 120
+## The chassis always snaps to the replayed authority state. Only the local
+## driver's presentation is allowed to briefly retain the pre-correction view.
+const DRIVER_PRESENTATION_RECONCILIATION_SECONDS := 0.12
 const CARGO_SLOT_COUNT := 12
 const WILD_ANIMAL_COLLISION_LAYER := 32768
 const TOOL_COLLISION_LAYER := 128
@@ -115,6 +122,9 @@ var tip_angle := 0.0
 ## vehicle can be reconstructed without relying on unstable Euler angles.
 var upright_yaw := 0.0
 var topple_current_angle := 0.0
+## Monotonic authority version for the headlight state.  This keeps an older
+## unordered world snapshot from undoing a locally predicted light command.
+var headlights_revision := 0
 
 var _wheel_rest_bases: Dictionary = {}
 var _steering_wheel_rest_basis := Basis.IDENTITY
@@ -150,6 +160,17 @@ var _topple_transition_active := false
 var _root_scale := Vector3.ONE
 var _last_navigation_topple_angle := -INF
 var _last_navigation_obstacle_origin := Vector3(INF, INF, INF)
+var _local_driver_prediction_active := false
+var _last_driver_correction_seq := 0
+var _pending_local_driver_inputs: Array[Dictionary] = []
+var _driver_camera_orbit_rest_position := Vector3.ZERO
+var _driver_body_visual_rest_position := Vector3.ZERO
+var _driver_body_visual_rest_rotation := Vector3.ZERO
+var _driver_visual_yaw_offset := 0.0
+var _driver_presentation_rest_transforms_cached := false
+var _confirmed_headlights_revision := 0
+var _pending_headlights_base_revision := -1
+var _pending_headlights_request_id := 0
 
 
 func _ready() -> void:
@@ -168,6 +189,7 @@ func _ready() -> void:
 	add_to_group("ai_combat_targets")
 	_configure_physics_nodes()
 	_apply_vehicle_config()
+	_cache_driver_presentation_rest_transforms()
 	# Vehicle scenes may use one chassis collider or multiple body colliders.
 	# Build their combined navigation footprint after the config has applied its
 	# final dimensions, so every drivable vehicle follows the same rule.
@@ -182,7 +204,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if GameAuthority.is_client_proxy():
 		_tick_vehicle_shield(delta)
-		_interpolate_network_state(delta)
+		if _local_driver_prediction_active:
+			_update_local_driver_presentation_reconciliation(delta)
+		else:
+			_interpolate_network_state(delta)
 		return
 	if GameAuthority.is_local_authority() or GameAuthority.is_server_authority():
 		return
@@ -199,6 +224,272 @@ func set_drive_input(throttle: float, steering: float, brake: float = 0.0) -> vo
 	drive_throttle = clampf(throttle, -1.0, 1.0)
 	drive_steering = clampf(steering, -1.0, 1.0)
 	drive_brake = clampf(brake, 0.0, 1.0)
+
+
+## The locally controlled co-op driver is the only client allowed to simulate
+## this body.  All other clients remain snapshot-interpolated presentation
+## proxies.
+func set_local_driver_prediction_active(active: bool) -> void:
+	_reset_local_driver_presentation_reconciliation()
+	_local_driver_prediction_active = active and GameAuthority.is_client_proxy()
+	_pending_local_driver_inputs.clear()
+	_last_driver_correction_seq = 0
+	if _local_driver_prediction_active:
+		_cache_driver_presentation_rest_transforms()
+	if not _local_driver_prediction_active:
+		_network_has_target = false
+
+
+func is_local_driver_prediction_active() -> bool:
+	return _local_driver_prediction_active
+
+
+func submit_local_driver_prediction_frame(frame: Dictionary) -> void:
+	if not _local_driver_prediction_active or str(frame.get("vehicle_id", "")) != get_vehicle_id():
+		return
+	var input_seq := int(frame.get("input_seq", 0))
+	if input_seq <= 0:
+		return
+	_pending_local_driver_inputs.append(frame.duplicate(true))
+	if _pending_local_driver_inputs.size() > DRIVER_PREDICTION_BUFFER_LIMIT:
+		_pending_local_driver_inputs.pop_front()
+	set_drive_input(
+		float(frame.get("throttle", 0.0)),
+		float(frame.get("steering", 0.0)),
+		float(frame.get("brake", 0.0))
+	)
+	_simulate_drive(NETWORK_SIMULATION_DELTA, false)
+
+
+func apply_local_driver_correction(correction: Dictionary) -> void:
+	if not _local_driver_prediction_active or str(correction.get("vehicle_id", "")) != get_vehicle_id():
+		return
+	var acknowledged_seq := int(correction.get(
+		"last_processed_input_seq", correction.get("last_input_seq", 0)
+	))
+	if acknowledged_seq < _last_driver_correction_seq:
+		return
+	_last_driver_correction_seq = acknowledged_seq
+	while not _pending_local_driver_inputs.is_empty() \
+			and int(_pending_local_driver_inputs.front().get("input_seq", 0)) <= acknowledged_seq:
+		_pending_local_driver_inputs.pop_front()
+	var rendered := _capture_driver_motion_state()
+	var presentation_before := _capture_local_driver_presentation_state()
+	var topple_changed := bool(correction.get("toppled", toppled)) != toppled
+	_apply_authoritative_driver_motion_state(correction)
+	for frame in _pending_local_driver_inputs:
+		set_drive_input(
+			float(frame.get("throttle", 0.0)),
+			float(frame.get("steering", 0.0)),
+			float(frame.get("brake", 0.0))
+		)
+		_simulate_drive(NETWORK_SIMULATION_DELTA, false)
+	var reconciled := _capture_driver_motion_state()
+	var correction_distance := (rendered.get("position", global_position) as Vector3).distance_to(
+		reconciled.get("position", global_position) as Vector3
+	)
+	var correction_yaw := absf(wrapf(
+		float(reconciled.get("yaw", upright_yaw)) - float(rendered.get("yaw", upright_yaw)), -PI, PI
+	))
+	var hard_correction := topple_changed \
+		or correction_distance >= DRIVER_PREDICTION_HARD_DISTANCE \
+		or correction_yaw >= DRIVER_PREDICTION_HARD_YAW
+	if hard_correction:
+		_reset_local_driver_presentation_reconciliation()
+		return
+	# The CharacterBody is intentionally left at `reconciled`: it is the
+	# authority baseline plus all still-unacknowledged inputs. Keeping the old
+	# motion state here used to make the visual smooth, but also left local
+	# collision and the next prediction step out of agreement with the host.
+	_apply_local_driver_presentation_compensation(presentation_before, rendered, reconciled)
+
+
+func _capture_driver_motion_state() -> Dictionary:
+	return {
+		"position": global_position,
+		"velocity": velocity,
+		"yaw": upright_yaw,
+		"speed": current_speed,
+		"steering": current_steering,
+		"toppled": toppled,
+		"tip_axis": tip_axis,
+		"tip_angle": tip_angle,
+		"topple_current_angle": topple_current_angle,
+		"headlights_revision": headlights_revision,
+	}
+
+
+func _apply_driver_motion_state(state: Dictionary) -> void:
+	var position_value: Variant = state.get("position", global_position)
+	var velocity_value: Variant = state.get("velocity", velocity)
+	if position_value is Vector3:
+		global_position = position_value as Vector3
+	if velocity_value is Vector3:
+		velocity = velocity_value as Vector3
+	upright_yaw = float(state.get("yaw", upright_yaw))
+	current_speed = float(state.get("speed", current_speed))
+	current_steering = float(state.get("steering", current_steering))
+	var next_tip_axis_value: Variant = state.get("tip_axis", tip_axis)
+	var next_tip_axis := next_tip_axis_value as Vector3 if next_tip_axis_value is Vector3 else tip_axis
+	tip_axis = next_tip_axis
+	tip_angle = float(state.get("tip_angle", tip_angle))
+	topple_current_angle = clampf(float(state.get("topple_current_angle", topple_current_angle)), 0.0, TAU)
+	set_toppled(bool(state.get("toppled", toppled)), tip_axis, tip_angle, false)
+	_apply_root_topple_transform()
+	_update_vehicle_visuals(0.0)
+	_update_topple_pose(0.0)
+
+
+func _apply_authoritative_driver_motion_state(correction: Dictionary) -> void:
+	_apply_driver_motion_state(correction)
+	current_hp = clampf(float(correction.get("hp", current_hp)), 0.0, get_max_hp())
+	shield_hp = maxf(0.0, float(correction.get("shield_hp", shield_hp)))
+	shield_max_hp = maxf(0.0, float(correction.get("shield_max_hp", shield_max_hp)))
+	shield_remaining = maxf(0.0, float(correction.get("shield_remaining", shield_remaining)))
+	_update_vehicle_shield_visual()
+	_apply_predicted_headlights_state(bool(correction.get("headlights_on", _get_headlights_enabled())))
+
+
+func _cache_driver_presentation_rest_transforms() -> void:
+	_driver_presentation_rest_transforms_cached = false
+	if is_instance_valid(camera_orbit_yaw):
+		_driver_camera_orbit_rest_position = camera_orbit_yaw.position
+		_driver_presentation_rest_transforms_cached = true
+	if is_instance_valid(body_visual):
+		_driver_body_visual_rest_position = body_visual.position
+		_driver_body_visual_rest_rotation = body_visual.rotation
+
+
+func _capture_local_driver_presentation_state() -> Dictionary:
+	var result := {}
+	if is_instance_valid(camera_orbit_yaw):
+		result["camera_orbit_global_position"] = camera_orbit_yaw.global_position
+	if is_instance_valid(body_visual):
+		result["body_visual_global_position"] = body_visual.global_position
+	return result
+
+
+func _apply_local_driver_presentation_compensation(
+	presentation_before: Dictionary,
+	rendered: Dictionary,
+	reconciled: Dictionary
+) -> void:
+	# Keep the driver camera and chassis model at their pre-correction world
+	# positions for this frame. The physics root has already moved to its exact
+	# replayed state, so this cannot affect collisions or future prediction.
+	var camera_position: Variant = presentation_before.get("camera_orbit_global_position", null)
+	if is_instance_valid(camera_orbit_yaw) and camera_position is Vector3:
+		camera_orbit_yaw.global_position = camera_position as Vector3
+	var body_position: Variant = presentation_before.get("body_visual_global_position", null)
+	if is_instance_valid(body_visual) and body_position is Vector3:
+		body_visual.global_position = body_position as Vector3
+	_driver_visual_yaw_offset = wrapf(
+		_driver_visual_yaw_offset + float(rendered.get("yaw", upright_yaw)) \
+			- float(reconciled.get("yaw", upright_yaw)),
+		-PI,
+		PI
+	)
+	if is_instance_valid(body_visual):
+		body_visual.rotation.y = _driver_body_visual_rest_rotation.y + _driver_visual_yaw_offset
+	_apply_driving_camera_orbit()
+
+
+func _update_local_driver_presentation_reconciliation(delta: float) -> void:
+	if not _local_driver_prediction_active:
+		return
+	var interpolation := 1.0 - exp(-maxf(delta, 0.0) / DRIVER_PRESENTATION_RECONCILIATION_SECONDS)
+	if is_instance_valid(camera_orbit_yaw):
+		camera_orbit_yaw.position = camera_orbit_yaw.position.lerp(
+			_driver_camera_orbit_rest_position,
+			interpolation
+		)
+	if is_instance_valid(body_visual):
+		body_visual.position = body_visual.position.lerp(
+			_driver_body_visual_rest_position,
+			interpolation
+		)
+		body_visual.rotation.y = lerp_angle(
+			body_visual.rotation.y,
+			_driver_body_visual_rest_rotation.y,
+			interpolation
+		)
+	_driver_visual_yaw_offset = lerp_angle(
+		_driver_visual_yaw_offset,
+		0.0,
+		interpolation
+	)
+	_apply_driving_camera_orbit()
+
+
+func _reset_local_driver_presentation_reconciliation() -> void:
+	_driver_visual_yaw_offset = 0.0
+	if not _driver_presentation_rest_transforms_cached:
+		return
+	if is_instance_valid(camera_orbit_yaw):
+		camera_orbit_yaw.position = _driver_camera_orbit_rest_position
+	if is_instance_valid(body_visual):
+		body_visual.position = _driver_body_visual_rest_position
+		body_visual.rotation = _driver_body_visual_rest_rotation
+	_apply_driving_camera_orbit()
+
+
+func _get_headlights_enabled() -> bool:
+	return bool(get("headlights_on")) if _has_property("headlights_on") else false
+
+
+func _apply_predicted_headlights_state(enabled: bool) -> void:
+	if has_method("_set_headlights"):
+		call("_set_headlights", enabled)
+
+
+func predict_headlights_state(enabled: bool, request_id: int) -> bool:
+	if not _has_property("headlights_on"):
+		return false
+	_pending_headlights_base_revision = headlights_revision
+	_pending_headlights_request_id = request_id
+	_apply_predicted_headlights_state(enabled)
+	return true
+
+
+func predict_headlights_toggle() -> bool:
+	# Compatibility helper for offline callers and validation scenes.  Networked
+	# gameplay uses the idempotent target-state request above.
+	return predict_headlights_state(
+		not _get_headlights_enabled(), maxi(1, _pending_headlights_request_id + 1)
+	)
+
+
+func apply_authoritative_headlights_state(enabled: bool, revision: int) -> void:
+	if revision < _confirmed_headlights_revision:
+		return
+	headlights_revision = maxi(headlights_revision, revision)
+	_confirmed_headlights_revision = maxi(_confirmed_headlights_revision, revision)
+	_pending_headlights_base_revision = -1
+	_pending_headlights_request_id = 0
+	_apply_predicted_headlights_state(enabled)
+
+
+func apply_replicated_headlights_state(enabled: bool, revision: int) -> void:
+	# Snapshots are unreliable and unordered.  While a local request is in
+	# flight, only a state newer than the one it started from may replace it.
+	if revision < _confirmed_headlights_revision:
+		return
+	if _pending_headlights_request_id > 0 and revision <= _pending_headlights_base_revision:
+		return
+	headlights_revision = maxi(headlights_revision, revision)
+	_confirmed_headlights_revision = maxi(_confirmed_headlights_revision, revision)
+	_apply_predicted_headlights_state(enabled)
+
+
+func get_pending_headlights_request_id() -> int:
+	return _pending_headlights_request_id
+
+
+func _has_property(property_name: String) -> bool:
+	for property_info in get_property_list():
+		if str(property_info.get("name", "")) == property_name:
+			return true
+	return false
 
 
 func set_upright_yaw(yaw: float) -> void:
@@ -397,17 +688,24 @@ func get_camera_fov_for_speed(speed: float) -> float:
 
 
 func simulate_authority(delta: float) -> void:
+	_simulate_drive(delta, true)
+
+
+func _simulate_drive(delta: float, apply_authority_effects: bool) -> void:
 	if not vehicle_deployed or vehicle_config == null or not is_inside_tree() \
 			or is_queued_for_deletion() or get_world_3d() == null:
 		return
 	if _spawn_drop_active:
-		_simulate_spawn_drop(delta)
-		_refresh_vehicle_navigation_obstacle()
+		if apply_authority_effects:
+			_simulate_spawn_drop(delta)
+			_refresh_vehicle_navigation_obstacle()
 		return
-	_tick_vehicle_shield(delta)
-	_tick_external_push(delta)
+	if apply_authority_effects:
+		_tick_vehicle_shield(delta)
+		_tick_external_push(delta)
 	if _is_topple_pose_active():
-		_simulate_topple_pose(delta)
+		if apply_authority_effects:
+			_simulate_topple_pose(delta)
 		return
 	var target_speed := get_max_forward_speed() * maxf(drive_throttle, 0.0)
 	if drive_throttle < 0.0:
@@ -455,10 +753,12 @@ func simulate_authority(delta: float) -> void:
 		var gravity_direction := gravity_direction_value as Vector3 if gravity_direction_value is Vector3 else Vector3.DOWN
 		velocity += gravity_direction.normalized() * gravity_strength * delta
 	move_and_slide()
-	_process_vehicle_slide_impacts(drive_velocity)
+	if apply_authority_effects:
+		_process_vehicle_slide_impacts(drive_velocity)
 	_update_vehicle_visuals(delta)
 	_update_topple_pose(delta)
-	_refresh_vehicle_navigation_obstacle()
+	if apply_authority_effects:
+		_refresh_vehicle_navigation_obstacle()
 
 
 func _is_topple_pose_active() -> bool:
@@ -1293,7 +1593,8 @@ func apply_network_state(state: Dictionary) -> void:
 			_spawn_drop_collision_mask_before = 0
 		_spawn_drop_elapsed = 0.0
 		_spawn_drop_timeout = DEFAULT_SPAWN_DROP_TIMEOUT
-	if GameAuthority.is_client_proxy() and position is Vector3:
+	var locally_predicted_driver := GameAuthority.is_client_proxy() and _local_driver_prediction_active
+	if GameAuthority.is_client_proxy() and position is Vector3 and not locally_predicted_driver:
 		_network_target_position = position as Vector3
 		_network_target_yaw = next_yaw
 		_network_target_speed = next_speed
@@ -1310,7 +1611,7 @@ func apply_network_state(state: Dictionary) -> void:
 			current_steering = _network_target_steering
 			_apply_root_topple_transform()
 		_network_has_target = true
-	else:
+	elif not locally_predicted_driver:
 		if position is Vector3:
 			global_position = position
 		upright_yaw = next_yaw
@@ -1366,14 +1667,20 @@ func apply_network_state(state: Dictionary) -> void:
 			var peer_id := int((occupants_value as Array)[seat_index])
 			if peer_id > 0:
 				seat_occupants[seat_index] = peer_id
-	set_toppled(next_toppled, next_tip_axis, next_tip_angle, false)
+	# A normal world snapshot must not overwrite the local driver's predicted
+	# chassis pose.  Topple state is the exception: it is a discrete authority
+	# event and must immediately stop local driving until its Channel 6
+	# correction arrives.
+	if not locally_predicted_driver or next_toppled != toppled:
+		set_toppled(next_toppled, next_tip_axis, next_tip_angle, false)
 	if not GameAuthority.is_client_proxy():
 		topple_current_angle = next_topple_current_angle
 		_apply_root_topple_transform()
 		if next_toppled:
 			_correct_topple_ground_penetration()
 	_refresh_driver_peer_id()
-	_refresh_vehicle_navigation_obstacle()
+	if not locally_predicted_driver:
+		_refresh_vehicle_navigation_obstacle()
 	_update_topple_pose(0.0)
 
 
@@ -1848,10 +2155,15 @@ func _apply_driving_camera_orbit() -> void:
 	if not is_instance_valid(camera_orbit_yaw) or not is_instance_valid(camera_orbit_pitch) \
 			or not is_instance_valid(vehicle_camera):
 		return
-	camera_orbit_yaw.rotation.y = _camera_orbit_yaw
+	camera_orbit_yaw.rotation.y = _camera_orbit_yaw + _driver_visual_yaw_offset
 	camera_orbit_pitch.rotation.x = _camera_orbit_pitch
+	var target_position := global_position + Vector3.UP * vehicle_config.camera_orbit_target_height
+	if _local_driver_prediction_active:
+		# Offset the look target by the same temporary camera-rig compensation,
+		# otherwise the root correction would still visibly jerk the view direction.
+		target_position += camera_orbit_yaw.global_position - to_global(_driver_camera_orbit_rest_position)
 	vehicle_camera.look_at(
-		global_position + Vector3.UP * vehicle_config.camera_orbit_target_height,
+		target_position,
 		Vector3.UP
 	)
 
@@ -1965,10 +2277,11 @@ func _apply_destruction_explosion_damage() -> void:
 		global_position,
 		owner_team,
 		get_destruction_effect_damage(),
-		get_destruction_effect_radius(),
-		"VehicleExplosion",
-		get_destruction_effect_knockback()
-	)
+			get_destruction_effect_radius(),
+			"VehicleExplosion",
+			get_destruction_effect_knockback(),
+			self
+		)
 
 
 func _spawn_destruction_effect() -> void:

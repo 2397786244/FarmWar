@@ -43,7 +43,7 @@ func get_network_state() -> Dictionary:
 
 func apply_network_state(state: Dictionary) -> void:
 	super(state)
-	_set_headlights(bool(state.get("headlights_on", headlights_on)))
+	apply_replicated_headlights_state(bool(state.get("headlights_on", headlights_on)), int(state.get("headlights_revision", headlights_revision)))
 	_set_brake_lights(bool(state.get("brake_lights_on", brake_lights_on)))
 
 

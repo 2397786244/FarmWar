@@ -6,6 +6,9 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_pickup"]
 size = Vector3(1.74, 1.395, 1.1025)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
+size = Vector3(1.74, 1.395, 1.1025)
+
 [node name="IngredientPickup" type="StaticBody3D" unique_id=872027429]
 metadata/map_can_overlap_water = false
 collision_layer = 512
@@ -25,3 +28,11 @@ billboard = 1
 text = "按E 打开库存存取台"
 font_size = 40
 outline_size = 8
+
+[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6975, -0.00875)
+shape = SubResource("BoxShape3D_placement_footprint")

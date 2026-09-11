@@ -51,6 +51,24 @@ func submit_reload_weapon(tool_id: String) -> void:
 	request_reload_weapon.rpc_id(1, tool_id)
 
 
+func submit_combat_fire(tool_request: Dictionary) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_combat_fire.rpc_id(1, tool_request)
+
+
+func submit_combat_reload_weapon(tool_id: String) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_combat_reload_weapon.rpc_id(1, tool_id)
+
+
+func submit_combat_select_tool(tool_index: int, tool_id := "") -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	request_combat_select_tool.rpc_id(1, tool_index, tool_id)
+
+
 func submit_shop_transaction(transaction: Dictionary) -> bool:
 	if multiplayer.multiplayer_peer == null \
 			or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
@@ -95,10 +113,10 @@ func submit_vehicle_input(input_frame: Dictionary) -> void:
 	request_vehicle_input.rpc_id(1, input_frame)
 
 
-func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1) -> void:
+func submit_vehicle_session(vehicle_id: String, connected: bool, seat_index := -1, request_id := 0) -> void:
 	if multiplayer.multiplayer_peer == null or vehicle_id.is_empty():
 		return
-	request_vehicle_session.rpc_id(1, vehicle_id, connected, seat_index)
+	request_vehicle_session.rpc_id(1, vehicle_id, connected, seat_index, request_id)
 
 
 func submit_vehicle_action(action: Dictionary) -> void:
@@ -163,6 +181,21 @@ func request_reload_weapon(_tool_id: String) -> void:
 	pass
 
 
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_fire(_tool_request: Dictionary) -> void:
+	pass
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_reload_weapon(_tool_id: String) -> void:
+	pass
+
+
+@rpc("any_peer", "call_remote", "reliable", 7)
+func request_combat_select_tool(_tool_index: int, _tool_id := "") -> void:
+	pass
+
+
 @rpc("any_peer", "reliable")
 func request_shop_transaction(_transaction: Dictionary) -> void:
 	pass
@@ -199,7 +232,7 @@ func request_vehicle_input(_input_frame: Dictionary) -> void:
 
 
 @rpc("any_peer", "reliable")
-func request_vehicle_session(_vehicle_id: String, _connected: bool, _seat_index: int = -1) -> void:
+func request_vehicle_session(_vehicle_id: String, _connected: bool, _seat_index: int = -1, _request_id: int = 0) -> void:
 	pass
 
 
@@ -263,8 +296,20 @@ func receive_reliable_world_event(event: Dictionary) -> void:
 	reliable_world_event_received.emit(event)
 
 
+@rpc("authority", "call_remote", "reliable", 7)
+func receive_combat_event(event: Dictionary) -> void:
+	var combat_event := event.duplicate(true)
+	combat_event["_transport_channel"] = 7
+	reliable_world_event_received.emit(combat_event)
+
+
 @rpc("authority", "call_remote", "unreliable", 5)
 func receive_visual_world_event(event: Dictionary) -> void:
+	visual_world_event_received.emit(event)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 5)
+func receive_combat_visual_event(event: Dictionary) -> void:
 	visual_world_event_received.emit(event)
 
 

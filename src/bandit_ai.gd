@@ -5,7 +5,7 @@ class_name BanditAI
 ## 死亡、手雷危险规避、爆破警告撤退和 Squad target/导航刷新消息。
 ## Bandit 自身不投掷手雷、不发出爆破/支援请求，也不响应支援请求。
 
-const BANDIT_MAX_HP := 160.0
+const BANDIT_MAX_HP := 100.0
 const BANDIT_WEAPON_ID := "suppressed_pistol"
 const BANDIT_WEAPON_SCENE := "res://character/weapons/SuppressedPistol.tscn"
 const BANDIT_SPEED_MULTIPLIER := 1.30

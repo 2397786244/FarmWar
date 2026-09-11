@@ -1,15 +1,19 @@
 [gd_scene format=3 uid="uid://cc51tve86ws3w"]
 
 [ext_resource type="PackedScene" uid="uid://dbht0so7jldsy" path="res://assets/facilities/interior/TableCandle.glb" id="1_rlhpm"]
+[ext_resource type="Script" uid="uid://63sk61iveco0" path="res://src/environment/street_lamp.gd" id="2_street_lamp"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_rlhpm"]
 size = Vector3(0.28, 0.48, 0.28)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_placement_footprint"]
 size = Vector3(0.28, 0.48, 0.28)
 
 [node name="TableCandle" type="StaticBody3D" unique_id=1754351925]
 collision_layer = 128
 collision_mask = 0
+script = ExtResource("2_street_lamp")
+night_light_energy = 2.0
 metadata/map_can_overlap_water = false
 
 [node name="Mesh" parent="." unique_id=93867040 instance=ExtResource("1_rlhpm")]
@@ -17,14 +21,22 @@ metadata/map_can_overlap_water = false
 [node name="Glow" type="Marker3D" parent="." unique_id=2124464448]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3280111, 0)
 
+[node name="NightLight" type="OmniLight3D" parent="." unique_id=792240315]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.319456, 0)
+light_color = Color(1, 0.6, 0.25, 1)
+light_energy = 0.0
+light_indirect_energy = 0.2
+omni_range = 2.2
+omni_attenuation = 1.45
+
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=591179447]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.24, 0)
 shape = SubResource("BoxShape3D_rlhpm")
 
-[node name="PlacementFootprint" type="StaticBody3D" parent="."]
+[node name="PlacementFootprint" type="StaticBody3D" parent="." unique_id=651593477]
 collision_layer = 16
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlacementFootprint" unique_id=1923596007]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.24, 0)
 shape = SubResource("BoxShape3D_placement_footprint")

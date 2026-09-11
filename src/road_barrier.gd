@@ -9,6 +9,10 @@ class_name RoadBarrier
 ## collision behaviour of the rest of the map-defense system.
 
 signal barrier_state_changed(raised: bool)
+## Emitted by TestEnterArea. A RoadCheckpoint subscribes to these signals and
+## owns the final access decision when checkpoint management is enabled.
+signal test_entered(entrant: Node)
+signal test_exited(entrant: Node)
 
 const CONTROL_COMPONENT := "control"
 const ARM_COMPONENT := "arm"
@@ -24,6 +28,7 @@ const BARRIER_MOTION_DURATION := 2.5
 
 @export var arm_max_hp := 100.0
 @export var starts_raised := false
+@export var auto_raise_on_enter := true
 @export_range(-180.0, 180.0, 1.0) var arm_rotation_degrees := 90.0
 
 var arm_current_hp := 0.0
@@ -41,6 +46,7 @@ var _test_enter_occupants: Dictionary = {}
 var _test_enter_empty_elapsed := 0.0
 var _test_enter_reconcile_elapsed := 0.0
 var _test_enter_outline_root: Node3D
+var _checkpoint_managed := false
 
 var _initial_arm_visual_transform := Transform3D.IDENTITY
 var _initial_arm_shape_transform := Transform3D.IDENTITY
@@ -81,6 +87,13 @@ func _process(delta: float) -> void:
 	if _test_enter_reconcile_elapsed >= TEST_ENTER_AREA_RECONCILE_INTERVAL:
 		_test_enter_reconcile_elapsed = 0.0
 		_reconcile_test_enter_occupants()
+	if _checkpoint_managed:
+		# A RoadCheckpoint owns all barriers in its Area. Keep tracking the
+		# TestEnterArea occupants and emitting signals, but never make a local
+		# raise/lower decision here.
+		return
+	if not auto_raise_on_enter:
+		return
 	if _test_enter_occupants.is_empty():
 		if is_raised:
 			_test_enter_empty_elapsed += delta
@@ -164,7 +177,8 @@ func _resolve_test_enter_entrant(body: Node) -> Node:
 	while cursor != null and hops < 16:
 		if cursor is GamePlayer or cursor is VehicleBase \
 			or cursor.is_in_group("human_players") \
-			or cursor.is_in_group("server_human_players"):
+			or cursor.is_in_group("server_human_players") \
+			or cursor.is_in_group("vehicles"):
 			return cursor
 		cursor = cursor.get_parent()
 		hops += 1
@@ -174,12 +188,32 @@ func _resolve_test_enter_entrant(body: Node) -> Node:
 func _reconcile_test_enter_occupants() -> void:
 	if not _is_test_enter_authority() or not is_instance_valid(_test_enter_area):
 		return
+	# _set_defense_active() switches monitoring off (deferred) while a barrier
+	# is destroyed, sleeping, or becomes a network-only visual.  Area3D does not
+	# permit overlap queries in that state.
+	if not _test_enter_area.monitoring:
+		_test_enter_occupants.clear()
+		_test_enter_empty_elapsed = 0.0
+		return
+	var previous_occupants := _test_enter_occupants.duplicate()
 	var current_occupants: Dictionary = {}
 	for body in _test_enter_area.get_overlapping_bodies():
 		var entrant := _resolve_test_enter_entrant(body)
 		if is_instance_valid(entrant):
 			current_occupants[entrant.get_instance_id()] = entrant
 	_test_enter_occupants = current_occupants
+	for occupant_id in current_occupants.keys():
+		if previous_occupants.has(occupant_id):
+			continue
+		var entrant: Node = current_occupants[occupant_id]
+		if is_instance_valid(entrant):
+			test_entered.emit(entrant)
+	for occupant_id in previous_occupants.keys():
+		if current_occupants.has(occupant_id):
+			continue
+		var entrant: Node = previous_occupants[occupant_id]
+		if is_instance_valid(entrant):
+			test_exited.emit(entrant)
 
 
 func _on_test_enter_body_entered(body: Node3D) -> void:
@@ -190,7 +224,8 @@ func _on_test_enter_body_entered(body: Node3D) -> void:
 		return
 	_test_enter_occupants[entrant.get_instance_id()] = entrant
 	_test_enter_empty_elapsed = 0.0
-	if not is_raised:
+	test_entered.emit(entrant)
+	if not _checkpoint_managed and auto_raise_on_enter and not is_raised:
 		raise_barrier()
 
 
@@ -202,6 +237,25 @@ func _on_test_body_exited(body: Node3D) -> void:
 		return
 	_test_enter_occupants.erase(entrant.get_instance_id())
 	_test_enter_empty_elapsed = 0.0
+	test_exited.emit(entrant)
+
+
+func set_checkpoint_managed(value: bool) -> void:
+	_checkpoint_managed = bool(value)
+	if _checkpoint_managed:
+		_test_enter_empty_elapsed = 0.0
+
+
+func is_checkpoint_managed() -> bool:
+	return _checkpoint_managed
+
+
+func get_test_enter_occupants() -> Array[Node]:
+	var result: Array[Node] = []
+	for entrant_value in _test_enter_occupants.values():
+		if is_instance_valid(entrant_value) and entrant_value is Node:
+			result.append(entrant_value as Node)
+	return result
 
 
 func _create_test_enter_area_outline() -> void:
@@ -532,6 +586,15 @@ func _set_defense_active(value: bool) -> void:
 		_set_hit_area_active(_control_hit_area, gameplay_active)
 	if is_instance_valid(_arm_hit_area):
 		_set_hit_area_active(_arm_hit_area, gameplay_active and not arm_destroyed)
+	if is_instance_valid(_test_enter_area):
+		var test_enter_active := gameplay_active and not arm_destroyed
+		_test_enter_area.set_deferred("collision_layer", TEST_ENTER_AREA_LAYER if test_enter_active else 0)
+		_test_enter_area.set_deferred("collision_mask", TEST_ENTER_AREA_MASK if test_enter_active else 0)
+		_test_enter_area.set_deferred("monitoring", test_enter_active)
+		_test_enter_area.set_deferred("monitorable", test_enter_active)
+		if not test_enter_active:
+			_test_enter_occupants.clear()
+			_test_enter_empty_elapsed = 0.0
 	if is_instance_valid(_barrier_arm):
 		# Network-only replicas disable gameplay collision, but must still render
 		# the arm. Visibility follows the facility state, not gameplay_active.
@@ -636,6 +699,7 @@ func _transformed_box_aabb(half: Vector3, transform: Transform3D) -> AABB:
 
 
 func apply_network_health(value: float) -> void:
+	var was_destroyed := destroyed
 	current_hp = clampf(value, 0.0, maxf(max_hp, 0.0))
 	if current_hp <= 0.0:
 		_stop_barrier_motion()
@@ -644,6 +708,8 @@ func apply_network_health(value: float) -> void:
 		arm_destroyed = true
 		is_raised = false
 	_set_defense_active(not destroyed)
+	if was_destroyed and not destroyed:
+		defense_respawned.emit()
 
 
 func apply_network_destroyed() -> void:
@@ -672,6 +738,8 @@ func apply_network_respawned(value: float = -1.0) -> void:
 func apply_network_state(state: Dictionary) -> void:
 	if state.is_empty():
 		return
+	var was_destroyed := destroyed
+	var was_arm_destroyed := arm_destroyed
 	arm_max_hp = maxf(0.0, float(state.get("arm_max_hp", arm_max_hp)))
 	current_hp = clampf(float(state.get("hp", current_hp)), 0.0, maxf(max_hp, 0.0))
 	arm_current_hp = clampf(
@@ -695,6 +763,10 @@ func apply_network_state(state: Dictionary) -> void:
 		# collision arm travel to that state instead of teleporting it.
 		set_barrier_raised(target_raised, false)
 	_set_defense_active(not destroyed)
+	if (was_destroyed or was_arm_destroyed) and not destroyed and not arm_destroyed:
+		# A repaired arm is one logical checkpoint member. Notify its owner so
+		# accumulated damage/threshold state is cleared just like a full respawn.
+		defense_respawned.emit()
 
 
 func get_network_state() -> Dictionary:

@@ -97,6 +97,21 @@ func impact_with_friendly_fire(_effect: String, strength: float, _attacker_team 
 	return _apply_impact_strength(strength)
 
 
+## Common collider-preserving entry point used by GameAuthority.  Keeping this
+## on the base class lets all map defense facilities (including the five
+## checkpoint defenses) participate in one authoritative damage pipeline.
+func impact_from_collider(
+	_collider: Variant,
+	effect: String,
+	strength: float,
+	attacker_team := "",
+	_shape_index := -1,
+	_attacker_peer_id := 0,
+	_attacker_node: Node3D = null
+) -> bool:
+	return impact(effect, strength, attacker_team)
+
+
 func _apply_impact_strength(strength: float) -> bool:
 	current_hp = maxf(0.0, current_hp - strength)
 	if current_hp <= 0.0:
@@ -116,6 +131,8 @@ func apply_network_health(value: float) -> void:
 	elif not destroyed and was_destroyed:
 		_destruction_effect_played = false
 	_set_defense_active(not destroyed)
+	if was_destroyed and not destroyed:
+		defense_respawned.emit()
 
 
 func apply_network_destroyed() -> void:

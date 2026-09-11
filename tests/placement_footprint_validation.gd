@@ -1,6 +1,7 @@
 extends Node
 
 const PLACEMENT_QUERY := preload("res://src/placement_query.gd")
+const MAP_INDOOR_FLOOR_Y_META := "map_indoor_floor_y"
 const DEFENSE_SCENES := [
 	"res://character/weapons/TallBrick.tscn",
 	"res://character/weapons/TallLogWall.tscn",
@@ -20,6 +21,7 @@ func _run() -> void:
 	var paths: Array[String] = []
 	_collect_scenes("res://buildings", paths, true)
 	_collect_scenes("res://facilities", paths, false)
+	_collect_scenes("res://kitchens", paths, false)
 	for scene_path in DEFENSE_SCENES:
 		paths.append(scene_path)
 	paths.sort()
@@ -52,6 +54,17 @@ func _validate_scene(scene_path: String) -> void:
 	if instance == null:
 		return
 	var footprint := PLACEMENT_QUERY.placement_footprint_for_node(instance)
+	if bool(instance.get_meta("map_enterable", false)):
+		_check(
+			instance.has_meta(MAP_INDOOR_FLOOR_Y_META),
+			"%s declares its finished indoor floor height" % scene_path,
+		)
+		if instance.has_meta(MAP_INDOOR_FLOOR_Y_META):
+			var indoor_floor_y := float(instance.get_meta(MAP_INDOOR_FLOOR_Y_META))
+			_check(
+				not is_nan(indoor_floor_y) and not is_inf(indoor_floor_y),
+				"%s indoor floor height is finite" % scene_path,
+			)
 	if scene_path.contains("/GroundDecorations/"):
 		_check(bool(instance.get_meta("map_ground_decoration", false)), "%s is marked as a ground decoration" % scene_path)
 		_check(footprint.is_empty(), "%s remains a collision-free ground decoration" % scene_path)
@@ -63,7 +76,66 @@ func _validate_scene(scene_path: String) -> void:
 		_check(not footprint.is_empty(), "%s has a placement footprint" % scene_path)
 		_check(footprint.get("shape", null) is BoxShape3D, "%s footprint is a BoxShape3D" % scene_path)
 		_check(is_equal_approx(float(footprint.get("clearance", 0.0)), 0.02), "%s uses 2 cm placement clearance" % scene_path)
+		if scene_path.begins_with("res://facilities/") or scene_path.begins_with("res://kitchens/"):
+			_validate_facility_support_plane(scene_path, instance, footprint)
 	instance.free()
+
+
+func _validate_facility_support_plane(
+	scene_path: String,
+	instance: Node3D,
+	footprint: Dictionary
+) -> void:
+	var box := footprint.get("shape", null) as BoxShape3D
+	if box == null:
+		return
+	var footprint_transform := footprint.get("transform", Transform3D.IDENTITY) as Transform3D
+	var half := box.size * 0.5
+	var footprint_bottom := INF
+	for x_sign in [-1.0, 1.0]:
+		for y_sign in [-1.0, 1.0]:
+			for z_sign in [-1.0, 1.0]:
+				footprint_bottom = minf(
+					footprint_bottom,
+					(footprint_transform * Vector3(
+						half.x * x_sign,
+						half.y * y_sign,
+						half.z * z_sign,
+					)).y,
+				)
+	var mesh_bottom := INF
+	for child_value in instance.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := child_value as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		var mesh_transform := _node_transform_relative_to_root(mesh_instance, instance)
+		var mesh_aabb := mesh_instance.mesh.get_aabb()
+		for x_amount in [0.0, 1.0]:
+			for y_amount in [0.0, 1.0]:
+				for z_amount in [0.0, 1.0]:
+					var local_corner := mesh_aabb.position + mesh_aabb.size * Vector3(
+						x_amount,
+						y_amount,
+						z_amount,
+					)
+					mesh_bottom = minf(mesh_bottom, (mesh_transform * local_corner).y)
+	if is_inf(mesh_bottom):
+		return
+	_check(
+		absf(footprint_bottom - mesh_bottom) <= 0.002,
+		"%s placement footprint bottom matches its visible base" % scene_path,
+	)
+
+
+func _node_transform_relative_to_root(node: Node3D, root: Node3D) -> Transform3D:
+	var result := node.transform
+	var current := node.get_parent() as Node3D
+	while current != null and current != root:
+		result = current.transform * result
+		current = current.get_parent() as Node3D
+	return result
+
+
 func _validate_key_footprints() -> void:
 	var tower := (load("res://buildings/checkpoint_tower.tscn") as PackedScene).instantiate() as Node3D
 	var tower_footprint := PLACEMENT_QUERY.placement_footprint_for_node(tower)
